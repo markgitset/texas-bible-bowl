@@ -52,8 +52,49 @@ curl localhost:8080/health          # {"status":"ok","service":"texas-bible-bowl
 bootstrap `ADMIN_EMAIL` / `ADMIN_PASSWORD`. The ESV API token will be added
 server-side only (never shipped to clients).
 
+## Deployment (target: < $50/yr infrastructure)
+
+### Backend → Google Cloud Run
+
+The server ships as a container ([server/Dockerfile](server/Dockerfile)) bundling
+the JRE, the app fat jar, the **Typst** binary, and the Libertinus fonts.
+
+```bash
+# Build & verify locally
+docker build -f server/Dockerfile -t tbb-server .
+docker run --rm -p 8080:8080 \
+  -e DATABASE_URL=jdbc:postgresql://host.docker.internal:5432/biblebowl \
+  -e JWT_SECRET=... -e ESV_API_TOKEN=... tbb-server
+
+# Deploy (one-time: gcloud auth login && gcloud config set project <proj>)
+gcloud run deploy tbb-server --source . --region us-central1 \
+  --allow-unauthenticated --min-instances 0 \
+  --set-env-vars DATABASE_URL=...,JWT_SECRET=...,ESV_API_TOKEN=...,ADMIN_EMAIL=...,ADMIN_PASSWORD=...
+```
+
+Scale-to-zero keeps this in the free tier at hobby traffic (~$0–20/yr).
+
+### Postgres → Neon (free tier)
+
+Create a free project at neon.tech; put its JDBC URL/credentials in
+`DATABASE_URL`/`DATABASE_USER`/`DATABASE_PASSWORD`. Keeps the backend stateless.
+
+### Web app → Cloudflare Pages / GitHub Pages ($0)
+
+```bash
+./gradlew :app:wasmJsBrowserDistribution
+# upload app/build/dist/wasmJs/productionExecutable (CI also saves it as the
+# `web-dist` artifact on every push)
+```
+
+Point `TbbApi.DEFAULT_BASE_URL` (or a build-time override) at the Cloud Run URL,
+and restrict the server's CORS `anyHost()` to the web origin before launch.
+
 ## Status
 
-Phase 0 (scaffold) + the accounts/RBAC/question-bank MVP backbone are in place
-and tested. Next: swap the in-memory repositories for Exposed/Postgres, add the
-ESV proxy + cache, then port the study-material generators and Typst PDF export.
+Working now, verified end-to-end: accounts + JWT auth, five-role RBAC,
+crowd-sourced question bank (submit → moderate → study → vote), licensed ESV
+proxy with Postgres chapter cache, and Typst practice-test PDF generation
+(server endpoint + one-tap download in the app). Next: port the remaining
+bible-bowl generators (flashcards, indices, chapter drills), team/registration
+flows, and on-test-day grading.
