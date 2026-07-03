@@ -6,10 +6,15 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.model.ChapterRef
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.seconds
 
 /** Matches bible-bowl's INDENT_POETRY_LINES; keeps server-rendered text identical to the CLI's output. */
 private const val INDENT_POETRY_LINES = 4
@@ -54,15 +59,45 @@ class EsvPassageService(
     private val cache: EsvCache,
     private val token: String? = System.getenv("ESV_API_TOKEN"),
     private val baseUrl: String = "https://api.esv.org",
+    /**
+     * Minimum spacing between *live* ESV API calls, mirroring bible-bowl's EsvClient
+     * `timeBetweenChapters` (default 1s) so we stay polite and avoid being rate-limited when
+     * priming the cache (e.g. all 28 chapters of Acts back-to-back). Cache hits are never throttled.
+     */
+    private val minFetchInterval: Duration = 1.seconds,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    // Serializes upstream fetches and enforces the minimum interval between them.
+    private val fetchMutex = Mutex()
+    private var lastFetchAtNanos: Long = 0L
 
     val isConfigured: Boolean get() = !token.isNullOrBlank()
 
     /** Returns the full text of [chapterRef], from cache when available. */
     suspend fun chapterText(chapterRef: ChapterRef): CachedChapter {
         cache.get(chapterRef)?.let { return it }
+        // Only one live fetch at a time; re-check the cache under the lock in case a concurrent
+        // request just populated it while we were waiting, so we don't double-fetch.
+        return fetchMutex.withLock {
+            cache.get(chapterRef) ?: run {
+                throttle()
+                fetchFromUpstream(chapterRef).also(cache::put)
+            }
+        }
+    }
 
+    /** Delays as needed so consecutive live fetches are at least [minFetchInterval] apart. */
+    private suspend fun throttle() {
+        if (lastFetchAtNanos != 0L) {
+            val elapsed = System.nanoTime() - lastFetchAtNanos
+            val waitMillis = (minFetchInterval.inWholeNanoseconds - elapsed) / 1_000_000
+            if (waitMillis > 0) delay(waitMillis)
+        }
+        lastFetchAtNanos = System.nanoTime()
+    }
+
+    private suspend fun fetchFromUpstream(chapterRef: ChapterRef): CachedChapter {
         // Same query form as bible-bowl's EsvClient.chapterRefToQuery: packed absolute-verse range.
         val query = with(chapterRef.verseRange()) { "${start.absoluteVerse}-${endInclusive.absoluteVerse}" }
         val response = client.get("$baseUrl/v3/passage/text/") {
@@ -100,6 +135,6 @@ class EsvPassageService(
             chapter = chapterRef.chapter,
             canonical = passageText.canonical,
             text = text,
-        ).also(cache::put)
+        )
     }
 }

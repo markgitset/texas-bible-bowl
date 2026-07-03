@@ -30,6 +30,8 @@ import net.markdrew.biblebowl.server.security.JwtService
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.measureTime
 
 /** Canned ESV v3/passage/text response for Acts 2 (truncated text). */
 private const val ACTS_2_RESPONSE = """
@@ -73,6 +75,34 @@ class EsvPassageServiceTest {
         assertEquals("Acts 2", first.canonical)
         assertTrue(first.text.contains("Pentecost"))
         assertEquals(first, second)
+    }
+
+    @Test
+    fun throttlesConsecutiveLiveFetchesButNotCacheHits() = runBlocking {
+        val hits = mutableListOf<String>()
+        val interval = 150L // ms; keep the test quick while still measurable
+        val service = EsvPassageService(
+            client = mockEsvClient(hits),
+            cache = InMemoryEsvCache(),
+            token = "test-esv-token",
+            baseUrl = "https://fake.esv",
+            minFetchInterval = interval.milliseconds,
+        )
+
+        // First fetch has no predecessor to wait on; the second (different chapter) must be spaced out.
+        service.chapterText(Book.ACT.chapterRef(1))
+        val elapsed = measureTime {
+            service.chapterText(Book.ACT.chapterRef(2))
+        }.inWholeMilliseconds
+        assertEquals(2, hits.size, "both chapters are live fetches")
+        assertTrue(elapsed >= interval - 30, "second live fetch was throttled (waited ${elapsed}ms, want >= ${interval}ms)")
+
+        // A cache hit must not be throttled.
+        val cachedElapsed = measureTime {
+            service.chapterText(Book.ACT.chapterRef(1))
+        }.inWholeMilliseconds
+        assertEquals(2, hits.size, "cache hit made no upstream call")
+        assertTrue(cachedElapsed < interval, "cache hit skipped the throttle (took ${cachedElapsed}ms)")
     }
 
     @Test
