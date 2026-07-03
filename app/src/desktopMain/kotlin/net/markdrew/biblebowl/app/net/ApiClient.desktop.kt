@@ -9,3 +9,7 @@ import kotlinx.serialization.json.Json
 actual fun createHttpClient(): HttpClient = HttpClient(CIO) {
     install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true; encodeDefaults = true }) }
 }
+
+/** Desktop points at a locally-running backend; override the TBB_BACKEND_URL env var to target a deploy. */
+actual fun defaultBaseUrl(): String =
+    System.getenv("TBB_BACKEND_URL") ?: TbbApi.DEFAULT_BASE_URL

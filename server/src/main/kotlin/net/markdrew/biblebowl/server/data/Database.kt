@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.server.data
 
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
+import java.net.URI
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.SchemaUtils
@@ -62,18 +63,55 @@ object EsvChaptersTable : Table("esv_chapters") {
     override val primaryKey = PrimaryKey(bookCode, chapter)
 }
 
+/** JDBC url + credentials, however they were supplied (a single PG URL or separate env vars). */
+data class DbSettings(val jdbcUrl: String, val user: String?, val password: String?) {
+    companion object {
+        /**
+         * Resolves connection settings from the environment.
+         *
+         * Accepts either a managed-Postgres connection string (`postgres://user:pass@host/db?sslmode=require`,
+         * as Neon/Supabase/Heroku/Fly hand out) in `DATABASE_URL`, or a `jdbc:postgresql://…` url with the
+         * credentials in `DATABASE_USER`/`DATABASE_PASSWORD`. Explicit `DATABASE_USER`/`DATABASE_PASSWORD`
+         * always override any credentials embedded in the URL.
+         */
+        fun fromEnv(
+            rawUrl: String? = System.getenv("DATABASE_URL"),
+            envUser: String? = System.getenv("DATABASE_USER"),
+            envPassword: String? = System.getenv("DATABASE_PASSWORD"),
+        ): DbSettings {
+            val url = rawUrl ?: "jdbc:postgresql://localhost:5432/biblebowl"
+            return if (url.startsWith("postgres://") || url.startsWith("postgresql://")) {
+                val uri = URI(url)
+                val (embeddedUser, embeddedPassword) = uri.userInfo
+                    ?.split(":", limit = 2)
+                    ?.let { it[0] to it.getOrNull(1) }
+                    ?: (null to null)
+                val portPart = if (uri.port >= 0) ":${uri.port}" else ""
+                val queryPart = uri.query?.let { "?$it" } ?: ""
+                DbSettings(
+                    jdbcUrl = "jdbc:postgresql://${uri.host}$portPart${uri.path}$queryPart",
+                    user = envUser ?: embeddedUser,
+                    password = envPassword ?: embeddedPassword,
+                )
+            } else {
+                DbSettings(
+                    jdbcUrl = url,
+                    user = envUser ?: "biblebowl",
+                    password = envPassword ?: "biblebowl-dev",
+                )
+            }
+        }
+    }
+}
+
 /** Connects a Hikari pool to Postgres and creates any missing tables. */
 object DatabaseFactory {
-    fun connect(
-        url: String = System.getenv("DATABASE_URL") ?: "jdbc:postgresql://localhost:5432/biblebowl",
-        user: String = System.getenv("DATABASE_USER") ?: "biblebowl",
-        password: String = System.getenv("DATABASE_PASSWORD") ?: "biblebowl-dev",
-    ): Database {
+    fun connect(settings: DbSettings = DbSettings.fromEnv()): Database {
         val config = HikariConfig().apply {
-            jdbcUrl = url
-            username = user
-            this.password = password
-            maximumPoolSize = 5 // Cloud Run scale-to-zero friendly
+            jdbcUrl = settings.jdbcUrl
+            settings.user?.let { username = it }
+            settings.password?.let { this.password = it }
+            maximumPoolSize = 5 // scale-to-zero friendly (Cloud Run / Fly auto-stop)
             isAutoCommit = false
         }
         val db = Database.connect(HikariDataSource(config))

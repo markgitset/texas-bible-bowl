@@ -29,10 +29,17 @@ import net.markdrew.biblebowl.api.UserDto
 expect fun createHttpClient(): HttpClient
 
 /**
+ * The backend base URL for this platform. Web reads it from a `window.TBB_BACKEND_URL` global (injected
+ * into the published page), so the same Wasm bundle runs against localhost in dev and the deployed
+ * backend once served from GitHub Pages. Desktop/Android default to localhost for now.
+ */
+expect fun defaultBaseUrl(): String
+
+/**
  * Thin typed client for the Ktor backend, shared across every platform. Holds the auth token and the
  * signed-in [user] in memory after sign-in so the UI can gate features on [UserDto.permissions].
  */
-class TbbApi(private val baseUrl: String = DEFAULT_BASE_URL) {
+class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
     private val client: HttpClient = createHttpClient()
 
     var token: String? = null

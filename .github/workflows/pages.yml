@@ -1,0 +1,68 @@
+name: Deploy web to GitHub Pages
+
+# Builds the Compose/Wasm bundle and publishes it to GitHub Pages. The backend URL is injected
+# from the repository variable BACKEND_URL (Settings → Secrets and variables → Actions → Variables),
+# e.g. https://texas-bible-bowl.fly.dev — no rebuild of the app is needed to point at a new backend.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow one concurrent Pages deployment; let an in-progress run finish.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 23
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 23
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build web (Wasm) distribution
+        run: ./gradlew :app:wasmJsBrowserDistribution
+
+      - name: Inject backend URL and SPA fallback
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+        run: |
+          dist=app/build/dist/wasmJs/productionExecutable
+          if [ -n "$BACKEND_URL" ]; then
+            # Define the global the Wasm client reads, before the app script runs.
+            sed -i "s#<script src=\"tbb.js\"></script>#<script>window.TBB_BACKEND_URL=\"${BACKEND_URL}\";</script>\n    <script src=\"tbb.js\"></script>#" "$dist/index.html"
+            echo "Injected BACKEND_URL=$BACKEND_URL"
+          else
+            echo "::warning::BACKEND_URL repo variable is unset; the published app will fall back to localhost."
+          fi
+          # SPA fallback so deep links / refreshes don't 404 on Pages.
+          cp "$dist/index.html" "$dist/404.html"
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/build/dist/wasmJs/productionExecutable
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

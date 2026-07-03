@@ -9,3 +9,9 @@ import kotlinx.serialization.json.Json
 actual fun createHttpClient(): HttpClient = HttpClient(Js) {
     install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true; encodeDefaults = true }) }
 }
+
+/**
+ * Reads the backend URL from a `window.TBB_BACKEND_URL` global the host page may define (the GitHub Pages
+ * publish step injects the Fly URL). Absent in local `wasmJsBrowserRun`, so it falls back to localhost.
+ */
+actual fun defaultBaseUrl(): String = js("window.TBB_BACKEND_URL || 'http://localhost:8080'")

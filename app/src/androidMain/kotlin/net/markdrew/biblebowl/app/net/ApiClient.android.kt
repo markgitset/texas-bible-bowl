@@ -9,3 +9,6 @@ import kotlinx.serialization.json.Json
 actual fun createHttpClient(): HttpClient = HttpClient(CIO) {
     install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true; encodeDefaults = true }) }
 }
+
+// Android dev builds hit the local backend; a released build bakes in the deployed URL here.
+actual fun defaultBaseUrl(): String = TbbApi.DEFAULT_BASE_URL

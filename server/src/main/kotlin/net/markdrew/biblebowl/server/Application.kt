@@ -77,8 +77,20 @@ fun Application.module(
         allowHeader(HttpHeaders.Authorization)
         allowHeader(HttpHeaders.ContentType)
         HttpMethod.DefaultMethods.forEach { allowMethod(it) }
-        // Dev: permissive. Restrict to the web app's origin(s) before production.
-        anyHost()
+        // Production: restrict to the web app's origin(s) via ALLOWED_ORIGINS (comma-separated,
+        // e.g. "https://markgitset.github.io"). Unset (dev/tests) stays permissive.
+        val origins = System.getenv("ALLOWED_ORIGINS")
+            ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
+            .orEmpty()
+        if (origins.isEmpty()) {
+            anyHost()
+        } else {
+            origins.forEach { origin ->
+                val scheme = origin.substringBefore("://", "https")
+                val host = origin.substringAfter("://")
+                allowHost(host, schemes = listOf(scheme))
+            }
+        }
     }
     install(StatusPages) {
         exception<Throwable> { call, cause ->

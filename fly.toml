@@ -1,0 +1,31 @@
+# Fly.io deployment for the Texas Bible Bowl backend (Ktor + embedded Typst binary).
+# Build context is the repo root because server/Dockerfile does `COPY . .` and the
+# server module depends on :core, :shared-api, and :generation.
+#
+# App name is globally unique across Fly; if "texas-bible-bowl" is taken, change it
+# here and update ALLOWED_ORIGINS / the Pages backend URL to match the new *.fly.dev host.
+app = "texas-bible-bowl"
+primary_region = "dfw" # Dallas — closest Fly region to Texas
+
+[build]
+  dockerfile = "server/Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scale to zero when idle; Fly cold-starts the machine on the next request.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    # Generous so a cold JVM boot + Postgres connect finishes before the first check.
+    grace_period = "40s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb" # room for the JVM heap plus the Typst subprocess during PDF generation
