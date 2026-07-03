@@ -17,7 +17,9 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":core"))
-            implementation(libs.kotlinx.serialization.json)
+            // api, not implementation: @Serializable companions extend SerializerFactory,
+            // so consumers need serialization-core on their compile classpath.
+            api(libs.kotlinx.serialization.json)
             implementation(libs.kotlinx.datetime)
         }
         commonTest.dependencies {

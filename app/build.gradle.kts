@@ -33,6 +33,7 @@ kotlin {
         commonMain.dependencies {
             implementation(project(":core"))
             implementation(project(":shared-api"))
+            implementation(project(":generation"))
 
             implementation(compose.runtime)
             implementation(compose.foundation)
