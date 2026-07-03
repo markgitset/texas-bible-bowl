@@ -16,9 +16,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,7 +38,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.QuestionDto
+import net.markdrew.biblebowl.api.RoundType
 import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.app.platform.savePdf
 
 /** Acts has 28 chapters; used for the chapter filter strip. */
 private const val ACTS_CHAPTERS = 28
@@ -58,26 +63,63 @@ fun StudyScreen(api: TbbApi) {
 
     LaunchedEffect(chapter) { reload() }
 
+    var pdfMenuOpen by remember { mutableStateOf(false) }
+    var pdfBusy by remember { mutableStateOf(false) }
+    var pdfMessage by remember { mutableStateOf<String?>(null) }
+
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        // One-tap chapter filter; "All" plus 1..28.
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            FilterChip(
-                selected = chapter == null,
-                onClick = { chapter = null },
-                label = { Text("All") },
-            )
-            (1..ACTS_CHAPTERS).forEach { ch ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            // One-tap chapter filter; "All" plus 1..28.
+            Row(
+                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
                 FilterChip(
-                    selected = chapter == ch,
-                    onClick = { chapter = if (chapter == ch) null else ch },
-                    label = { Text("$ch") },
+                    selected = chapter == null,
+                    onClick = { chapter = null },
+                    label = { Text("All") },
                 )
+                (1..ACTS_CHAPTERS).forEach { ch ->
+                    FilterChip(
+                        selected = chapter == ch,
+                        onClick = { chapter = if (chapter == ch) null else ch },
+                        label = { Text("$ch") },
+                    )
+                }
+            }
+            Spacer(Modifier.weight(0.02f))
+            Box {
+                OutlinedButton(onClick = { pdfMenuOpen = true }, enabled = !pdfBusy) {
+                    if (pdfBusy) CircularProgressIndicator(Modifier.height(16.dp))
+                    else Text("Practice PDF")
+                }
+                DropdownMenu(expanded = pdfMenuOpen, onDismissRequest = { pdfMenuOpen = false }) {
+                    RoundType.entries.forEach { round ->
+                        DropdownMenuItem(
+                            text = { Text(round.displayName) },
+                            onClick = {
+                                pdfMenuOpen = false
+                                pdfBusy = true; pdfMessage = null
+                                scope.launch {
+                                    try {
+                                        val bytes = api.practiceTestPdf(round, chapter)
+                                        val name = "practice-${round.name.lowercase()}" +
+                                            (chapter?.let { "-ch$it" } ?: "") + ".pdf"
+                                        pdfMessage = savePdf(name, bytes)
+                                    } catch (e: Throwable) {
+                                        pdfMessage = "PDF failed: ${e.message}"
+                                    } finally {
+                                        pdfBusy = false
+                                    }
+                                }
+                            },
+                        )
+                    }
+                }
             }
         }
 
+        pdfMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
         error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
 
         when (val list = questions) {

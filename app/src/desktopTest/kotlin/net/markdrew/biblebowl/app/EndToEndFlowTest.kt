@@ -73,6 +73,11 @@ class EndToEndFlowTest {
             assertEquals(QuestionStatus.APPROVED, approved?.status)
             val voted = contestantApi.vote(q.id)
             assertEquals(1, voted.votes)
+
+            // 6. Contestant downloads a practice-test PDF for the round (StudyScreen's "Practice PDF" path).
+            val pdf = contestantApi.practiceTestPdf(RoundType.FACT_FINDER, chapter = 1)
+            assertTrue(pdf.size > 1000, "PDF should be non-trivial")
+            assertEquals("%PDF", pdf.decodeToString(0, 4))
         }
     }
 }

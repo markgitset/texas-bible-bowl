@@ -17,6 +17,7 @@ import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
+import net.markdrew.biblebowl.api.RoundType
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.api.UserDto
 
@@ -89,6 +90,14 @@ class TbbApi(private val baseUrl: String = DEFAULT_BASE_URL) {
     suspend fun moderate(questionId: String, status: QuestionStatus): QuestionDto =
         client.post("$baseUrl/questions/$questionId/moderate") {
             authorize(); contentType(ContentType.Application.Json); setBody(ModerateQuestionRequest(status))
+        }.body()
+
+    /** Fetches a generated practice-test PDF for [round] (optionally chapter-filtered) as raw bytes. */
+    suspend fun practiceTestPdf(round: RoundType, chapter: Int? = null): ByteArray =
+        client.get("$baseUrl/generate/practice-test.pdf") {
+            authorize()
+            parameter("round", round.name)
+            if (chapter != null) parameter("chapter", chapter)
         }.body()
 
     companion object {
