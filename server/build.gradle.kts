@@ -14,6 +14,7 @@ application {
 dependencies {
     implementation(project(":core"))
     implementation(project(":shared-api"))
+    implementation(project(":generation"))
 
     implementation(libs.ktor.server.core)
     implementation(libs.ktor.server.netty)

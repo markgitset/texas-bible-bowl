@@ -36,6 +36,7 @@ import net.markdrew.biblebowl.server.esv.InMemoryEsvCache
 import net.markdrew.biblebowl.server.esv.PostgresEsvCache
 import net.markdrew.biblebowl.server.routes.authRoutes
 import net.markdrew.biblebowl.server.routes.bibleRoutes
+import net.markdrew.biblebowl.server.routes.generateRoutes
 import net.markdrew.biblebowl.server.routes.questionRoutes
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
@@ -95,6 +96,7 @@ fun Application.module(
         authRoutes(users, jwt)
         questionRoutes(users, questions)
         bibleRoutes(esv)
+        generateRoutes(questions)
     }
 }
 
