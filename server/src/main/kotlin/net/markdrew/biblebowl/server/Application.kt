@@ -1,0 +1,99 @@
+package net.markdrew.biblebowl.server
+
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
+import io.ktor.serialization.kotlinx.json.json
+import io.ktor.server.application.Application
+import io.ktor.server.application.install
+import io.ktor.server.auth.Authentication
+import io.ktor.server.auth.jwt.JWTPrincipal
+import io.ktor.server.auth.jwt.jwt
+import io.ktor.server.engine.embeddedServer
+import io.ktor.server.netty.Netty
+import io.ktor.server.plugins.calllogging.CallLogging
+import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.server.plugins.cors.routing.CORS
+import io.ktor.server.plugins.statuspages.StatusPages
+import io.ktor.server.response.respond
+import io.ktor.server.routing.get
+import io.ktor.server.routing.routing
+import kotlinx.serialization.json.Json
+import net.markdrew.biblebowl.api.ApiError
+import net.markdrew.biblebowl.api.Role
+import net.markdrew.biblebowl.api.RoleGrant
+import net.markdrew.biblebowl.server.data.DatabaseFactory
+import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
+import net.markdrew.biblebowl.server.data.InMemoryUserRepository
+import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
+import net.markdrew.biblebowl.server.data.PostgresUserRepository
+import net.markdrew.biblebowl.server.data.QuestionRepository
+import net.markdrew.biblebowl.server.data.UserRepository
+import net.markdrew.biblebowl.server.routes.authRoutes
+import net.markdrew.biblebowl.server.routes.questionRoutes
+import net.markdrew.biblebowl.server.security.JwtService
+import net.markdrew.biblebowl.server.security.Passwords
+
+fun main() {
+    val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
+    // Use Postgres when configured (production / docker-compose dev); fall back to in-memory otherwise.
+    val (users, questions) = if (System.getenv("DATABASE_URL") != null) {
+        val db = DatabaseFactory.connect()
+        PostgresUserRepository(db) to PostgresQuestionRepository(db)
+    } else {
+        InMemoryUserRepository() to InMemoryQuestionRepository()
+    }
+    embeddedServer(Netty, port = port, host = "0.0.0.0") { module(users, questions) }.start(wait = true)
+}
+
+/**
+ * The application module. Repositories and [jwt] are injectable so tests can supply in-memory doubles or
+ * pre-seeded data. In production these default to the in-memory implementations until Phase 1 wires Postgres.
+ */
+fun Application.module(
+    users: UserRepository = InMemoryUserRepository(),
+    questions: QuestionRepository = InMemoryQuestionRepository(),
+    jwt: JwtService = JwtService(),
+) {
+    seedAdminFromEnv(users)
+
+    install(ContentNegotiation) {
+        json(Json { ignoreUnknownKeys = true; encodeDefaults = true })
+    }
+    install(CallLogging)
+    install(CORS) {
+        allowHeader(HttpHeaders.Authorization)
+        allowHeader(HttpHeaders.ContentType)
+        HttpMethod.DefaultMethods.forEach { allowMethod(it) }
+        // Dev: permissive. Restrict to the web app's origin(s) before production.
+        anyHost()
+    }
+    install(StatusPages) {
+        exception<Throwable> { call, cause ->
+            call.application.environment.log.error("Unhandled error", cause)
+            call.respond(HttpStatusCode.InternalServerError, ApiError("internal", cause.message ?: "Unexpected error"))
+        }
+    }
+    install(Authentication) {
+        jwt {
+            realm = "texas-bible-bowl"
+            verifier(jwt.verifier)
+            validate { cred -> cred.subject?.let { JWTPrincipal(cred.payload) } }
+        }
+    }
+
+    routing {
+        get("/health") { call.respond(mapOf("status" to "ok", "service" to "texas-bible-bowl", "season" to "Acts")) }
+        authRoutes(users, jwt)
+        questionRoutes(users, questions)
+    }
+}
+
+/** Optionally bootstraps a global admin from ADMIN_EMAIL / ADMIN_PASSWORD env vars on first run. */
+private fun seedAdminFromEnv(users: UserRepository) {
+    val email = System.getenv("ADMIN_EMAIL") ?: return
+    val password = System.getenv("ADMIN_PASSWORD") ?: return
+    if (users.findByEmail(email) == null) {
+        users.create(email, "Administrator", null, Passwords.hash(password), listOf(RoleGrant(Role.ADMIN)))
+    }
+}

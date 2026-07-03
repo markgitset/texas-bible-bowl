@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    # Real Postgres so PostgresRepositoryTest runs against an actual database in CI.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: biblebowl
+          POSTGRES_USER: biblebowl
+          POSTGRES_PASSWORD: biblebowl-dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U biblebowl"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 23
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 23
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v4
+
+      # Android SDK is pre-installed on ubuntu-latest runners (ANDROID_HOME is set).
+
+      - name: Unit & integration tests
+        run: ./gradlew :core:jvmTest :shared-api:jvmTest :server:test :app:desktopTest
+
+      - name: Build Android APK
+        run: ./gradlew :app:assembleDebug
+
+      - name: Build web (Wasm) distribution
+        run: ./gradlew :app:wasmJsBrowserDistribution
+
+      - name: Upload web distribution
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: app/build/dist/wasmJs/productionExecutable
+          retention-days: 14
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+
+      - name: Publish test results summary
+        if: always()
+        run: |
+          echo "## Test results" >> "$GITHUB_STEP_SUMMARY"
+          for f in $(find . -path '*/test-results/*/TEST-*.xml' 2>/dev/null); do
+            grep -h "<testsuite " "$f" | sed -E 's/.*name="([^"]+)".*tests="([0-9]+)".*failures="([0-9]+)".*errors="([0-9]+)".*/- \1: \2 tests, \3 failures, \4 errors/' >> "$GITHUB_STEP_SUMMARY"
+          done

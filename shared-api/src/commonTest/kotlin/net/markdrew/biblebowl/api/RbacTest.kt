@@ -1,0 +1,60 @@
+package net.markdrew.biblebowl.api
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class RbacTest {
+
+    @Test
+    fun adminHasEveryPermission() {
+        assertEquals(Permission.entries.toSet(), permissionsFor(listOf(Role.ADMIN)))
+    }
+
+    @Test
+    fun contestantCannotModerateButCanSubmit() {
+        val perms = permissionsFor(listOf(Role.CONTESTANT))
+        assertTrue(Permission.QUESTION_SUBMIT in perms)
+        assertFalse(Permission.QUESTION_MODERATE in perms)
+        assertFalse(Permission.SCORE_ENTER in perms)
+    }
+
+    @Test
+    fun stackedRolesUnionPermissions() {
+        val perms = permissionsFor(listOf(Role.CONTESTANT, Role.COACH))
+        assertTrue(Permission.TEAM_MANAGE in perms)
+        assertTrue(Permission.QUESTION_SUBMIT in perms)
+    }
+
+    @Test
+    fun graderCanEnterAndReleaseScores() {
+        val perms = permissionsFor(listOf(Role.GRADER))
+        assertTrue(Permission.SCORE_ENTER in perms)
+        assertTrue(Permission.SCORE_RELEASE in perms)
+    }
+}
+
+class DomainTest {
+
+    @Test
+    fun gradeMapsToDivision() {
+        assertEquals(Division.ELEMENTARY, Division.forGrade(4))
+        assertEquals(Division.JUNIOR, Division.forGrade(8))
+        assertEquals(Division.SENIOR, Division.forGrade(11))
+        assertEquals(null, Division.forGrade(1))
+    }
+
+    @Test
+    fun elementaryHasNoPowerRound() {
+        assertFalse(Division.ELEMENTARY.hasPowerRound)
+        assertTrue(Division.SENIOR.hasPowerRound)
+    }
+
+    @Test
+    fun closedBibleRoundsAreFourAndFive() {
+        assertFalse(RoundType.KNOW_THE_CHAPTER_QUOTES.openBible)
+        assertFalse(RoundType.KNOW_THE_CHAPTER_HEADINGS.openBible)
+        assertTrue(RoundType.FIND_THE_VERSE.openBible)
+    }
+}

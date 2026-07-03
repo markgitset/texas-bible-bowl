@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Kotlin / KMP
+.kotlin/
+*.klib
+
+# Node (Wasm/JS webpack)
+node_modules/
+
+# IDE
+.idea/
+*.iml
+.fleet/
+local.properties
+
+# OS
+.DS_Store
+
+# Secrets / env
+.env
+*.local
