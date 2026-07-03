@@ -1,5 +1,7 @@
 package net.markdrew.biblebowl.server
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -29,7 +31,11 @@ import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
 import net.markdrew.biblebowl.server.data.PostgresUserRepository
 import net.markdrew.biblebowl.server.data.QuestionRepository
 import net.markdrew.biblebowl.server.data.UserRepository
+import net.markdrew.biblebowl.server.esv.EsvPassageService
+import net.markdrew.biblebowl.server.esv.InMemoryEsvCache
+import net.markdrew.biblebowl.server.esv.PostgresEsvCache
 import net.markdrew.biblebowl.server.routes.authRoutes
+import net.markdrew.biblebowl.server.routes.bibleRoutes
 import net.markdrew.biblebowl.server.routes.questionRoutes
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
@@ -37,13 +43,14 @@ import net.markdrew.biblebowl.server.security.Passwords
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
     // Use Postgres when configured (production / docker-compose dev); fall back to in-memory otherwise.
-    val (users, questions) = if (System.getenv("DATABASE_URL") != null) {
-        val db = DatabaseFactory.connect()
-        PostgresUserRepository(db) to PostgresQuestionRepository(db)
-    } else {
-        InMemoryUserRepository() to InMemoryQuestionRepository()
-    }
-    embeddedServer(Netty, port = port, host = "0.0.0.0") { module(users, questions) }.start(wait = true)
+    val db = if (System.getenv("DATABASE_URL") != null) DatabaseFactory.connect() else null
+    val users = db?.let(::PostgresUserRepository) ?: InMemoryUserRepository()
+    val questions = db?.let(::PostgresQuestionRepository) ?: InMemoryQuestionRepository()
+    val esv = EsvPassageService(
+        client = HttpClient(CIO),
+        cache = db?.let(::PostgresEsvCache) ?: InMemoryEsvCache(),
+    )
+    embeddedServer(Netty, port = port, host = "0.0.0.0") { module(users, questions, esv = esv) }.start(wait = true)
 }
 
 /**
@@ -54,6 +61,7 @@ fun Application.module(
     users: UserRepository = InMemoryUserRepository(),
     questions: QuestionRepository = InMemoryQuestionRepository(),
     jwt: JwtService = JwtService(),
+    esv: EsvPassageService? = null,
 ) {
     seedAdminFromEnv(users)
 
@@ -86,6 +94,7 @@ fun Application.module(
         get("/health") { call.respond(mapOf("status" to "ok", "service" to "texas-bible-bowl", "season" to "Acts")) }
         authRoutes(users, jwt)
         questionRoutes(users, questions)
+        bibleRoutes(esv)
     }
 }
 

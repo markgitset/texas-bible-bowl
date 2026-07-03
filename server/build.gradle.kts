@@ -39,5 +39,6 @@ dependencies {
     implementation(libs.logback.classic)
 
     testImplementation(libs.ktor.server.tests)
+    testImplementation(libs.ktor.client.mock)
     testImplementation(kotlin("test"))
 }

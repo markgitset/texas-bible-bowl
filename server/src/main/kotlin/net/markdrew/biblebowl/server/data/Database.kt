@@ -53,6 +53,15 @@ object QuestionVotesTable : Table("question_votes") {
     }
 }
 
+/** Cached ESV chapter text (licensed; server-side only). Key = (book code, chapter). */
+object EsvChaptersTable : Table("esv_chapters") {
+    val bookCode = varchar("book_code", 3)
+    val chapter = integer("chapter")
+    val canonical = varchar("canonical", 80)
+    val body = text("body")
+    override val primaryKey = PrimaryKey(bookCode, chapter)
+}
+
 /** Connects a Hikari pool to Postgres and creates any missing tables. */
 object DatabaseFactory {
     fun connect(
@@ -69,7 +78,7 @@ object DatabaseFactory {
         }
         val db = Database.connect(HikariDataSource(config))
         transaction(db) {
-            SchemaUtils.create(UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable)
+            SchemaUtils.create(UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable, EsvChaptersTable)
         }
         return db
     }

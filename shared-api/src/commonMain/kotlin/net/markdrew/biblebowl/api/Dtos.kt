@@ -74,6 +74,24 @@ data class SubmitQuestionRequest(
 data class ModerateQuestionRequest(val status: QuestionStatus, val note: String? = null)
 
 // ---------------------------------------------------------------------------
+// Bible text
+// ---------------------------------------------------------------------------
+
+/** One chapter of Bible text served by the backend's licensed ESV proxy. */
+@Serializable
+data class ChapterTextDto(
+    /** Three-letter book code, e.g. "ACT" (see core Book). */
+    val bookCode: String,
+    val chapter: Int,
+    /** Canonical reference from the ESV API, e.g. "Acts 2". */
+    val canonical: String,
+    val text: String,
+    val translation: String = "ESV",
+    /** Required attribution for display alongside the text. */
+    val copyright: String = "Scripture quotations are from the ESV® Bible, © 2001 by Crossway. Used by permission.",
+)
+
+// ---------------------------------------------------------------------------
 // Generic API envelope for errors
 // ---------------------------------------------------------------------------
 
