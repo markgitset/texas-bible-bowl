@@ -1,0 +1,90 @@
+package net.markdrew.biblebowl.model
+
+import net.markdrew.biblebowl.model.StandardStudySet.Companion.DEFAULT
+
+
+/**
+ * Predefined Bible Bowl study sets, exposed as an enum so the CLI can resolve them by name
+ *
+ * The [DEFAULT] member determines what's used when the user invokes the pipeline without specifying a set.
+ */
+enum class StandardStudySet(val set: StudySet) {
+    GENESIS(StudySet(Book.GEN, "gen")),
+    MATTHEW(StudySet(Book.MAT, "matt")),
+    LIFE_OF_MOSES(
+        StudySet(
+            "Life of Moses", "moses", listOf(
+                Book.EXO.chapterRange(1, 20),
+                Book.EXO.chapterRange(32, 34),
+                Book.NUM.chapterRange(1, 3),
+                Book.NUM.chapterRange(10, 14),
+                Book.NUM.chapterRange(16, 17),
+                Book.NUM.chapterRange(20, 27),
+                Book.NUM.chapterRange(31, 36),
+                Book.DEU.chapterRange(31, 34),
+            ),
+            "the Life of Moses (Exo 1-20,32-34, Num 1-3,10-14,16-17,20-27,31-36, and Deut 31-34)"
+        )
+    ),
+    LIFE_OF_MOSES_LTC(
+        StudySet(
+            "Life of Moses LTC", "moses-ltc",
+            Book.EXO.chapterRange(1, 20),
+            Book.NUM.chapterRange(10, 14),
+            Book.NUM.chapterRange(20, 24),
+            Book.DEU.chapterRange(31, 34),
+        )
+    ),
+    LUKE(StudySet(Book.LUK, "luke")),
+    JOSHUA_JUDGES_RUTH(
+        StudySet(
+            "Joshua, Judges, and Ruth", "josh-judg-ruth", listOf(
+                Book.JOS.allChapters(),
+                Book.JDG.allChapters(),
+                Book.RUT.allChapters()
+            ),
+            "the books of Joshua, Judges, and Ruth"
+        )
+    ),
+    ACTS(StudySet(Book.ACT, "acts")),
+    I_SAMUEL(StudySet(Book.SA1, "1sam")),
+    JOHN(StudySet(Book.JOH, "john")),
+    II_SAMUEL(StudySet(Book.SA2, "2sam")),
+    REVELATION(StudySet(Book.REV, "rev")),;
+
+    companion object {
+        /** Default study set used when the CLI is invoked without a study-set argument */
+        val DEFAULT: StudySet = ACTS.set
+
+        /**
+         * Resolves a user-supplied name to a [StudySet], falling back to [default] when [queryName] is null or
+         * nothing matches.
+         *
+         * See [parseOrNull] for the match order. Callers that want to reject an unrecognized name (rather than
+         * silently defaulting) should use [parseOrNull] instead.
+         */
+        fun parse(queryName: String?, default: StudySet = DEFAULT): StudySet =
+            if (queryName == null) default else parseOrNull(queryName) ?: default
+
+        /**
+         * Resolves a non-null [queryName] to a [StudySet], or returns null when nothing matches.
+         *
+         * Match order: exact enum name (case-insensitive), then a prefix match against the enum name, the
+         * [StudySet.simpleName], or the [StudySet.name]. If none match, the input is parsed as a single [Book]
+         * via [Book.parse].
+         */
+        fun parseOrNull(queryName: String): StudySet? {
+            val studySet: StudySet? = try {
+                valueOf(queryName.uppercase())
+            } catch (e: IllegalArgumentException) {
+                val lowerQueryName = queryName.lowercase()
+                entries.firstOrNull { sss ->
+                    setOf(sss.name, sss.set.simpleName, sss.set.name).any {
+                        it.lowercase().startsWith(lowerQueryName)
+                    }
+                }
+            }?.set
+            return studySet ?: Book.parse(queryName, null)?.let { StudySet(it) }
+        }
+    }
+}
