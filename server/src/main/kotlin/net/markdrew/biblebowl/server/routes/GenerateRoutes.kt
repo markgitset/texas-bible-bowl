@@ -15,7 +15,9 @@ import kotlinx.coroutines.withContext
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.generation.typst.flashcardsTypst
 import net.markdrew.biblebowl.generation.typst.practiceTestTypst
+import net.markdrew.biblebowl.generation.typst.toFlashcards
 import net.markdrew.biblebowl.server.data.QuestionRepository
 import net.markdrew.biblebowl.server.typst.TypstCompiler
 import net.markdrew.biblebowl.server.typst.TypstException
@@ -45,20 +47,41 @@ fun Route.generateRoutes(questions: QuestionRepository) {
             }
 
             val typstSource = practiceTestTypst(round, pool)
-            try {
-                // Typst compilation is CPU/process work — keep it off the event loop.
-                val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(typstSource) }
-                call.response.header(
-                    HttpHeaders.ContentDisposition,
-                    ContentDisposition.Attachment.withParameter(
-                        ContentDisposition.Parameters.FileName,
-                        "practice-${round.name.lowercase()}${chapter?.let { "-ch$it" } ?: ""}.pdf",
-                    ).toString(),
-                )
-                call.respondBytes(pdf, ContentType.Application.Pdf)
-            } catch (e: TypstException) {
-                call.respond(HttpStatusCode.ServiceUnavailable, ApiError("typst_failed", e.message ?: "PDF generation failed"))
-            }
+            respondPdf(typstSource, "practice-${round.name.lowercase()}${chapter?.let { "-ch$it" } ?: ""}.pdf")
         }
+
+        // GET /generate/flashcards.pdf?chapter=2&round=IDENTIFICATION (both filters optional)
+        get("/generate/flashcards.pdf") {
+            val chapter = call.request.queryParameters["chapter"]?.toIntOrNull()
+            val round = call.request.queryParameters["round"]
+                ?.let { runCatching { RoundType.valueOf(it) }.getOrNull() }
+
+            val pool = questions.list(QuestionStatus.APPROVED, chapter)
+                .filter { round == null || it.roundType == round }
+                .take(200)
+            if (pool.isEmpty()) {
+                return@get call.respond(
+                    HttpStatusCode.NotFound,
+                    ApiError("no_questions", "No approved questions" + (chapter?.let { " for chapter $it" } ?: "")),
+                )
+            }
+            respondPdf(flashcardsTypst(pool.toFlashcards()), "flashcards${chapter?.let { "-ch$it" } ?: ""}.pdf")
+        }
+    }
+}
+
+/** Compiles [typstSource] off the event loop and responds with PDF bytes as a named attachment. */
+private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(typstSource: String, fileName: String) {
+    try {
+        val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(typstSource) }
+        call.response.header(
+            HttpHeaders.ContentDisposition,
+            ContentDisposition.Attachment.withParameter(
+                ContentDisposition.Parameters.FileName, fileName,
+            ).toString(),
+        )
+        call.respondBytes(pdf, ContentType.Application.Pdf)
+    } catch (e: TypstException) {
+        call.respond(HttpStatusCode.ServiceUnavailable, ApiError("typst_failed", e.message ?: "PDF generation failed"))
     }
 }

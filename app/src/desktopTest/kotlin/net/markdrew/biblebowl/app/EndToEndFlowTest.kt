@@ -78,6 +78,11 @@ class EndToEndFlowTest {
             val pdf = contestantApi.practiceTestPdf(RoundType.FACT_FINDER, chapter = 1)
             assertTrue(pdf.size > 1000, "PDF should be non-trivial")
             assertEquals("%PDF", pdf.decodeToString(0, 4))
+
+            // 7. And a flashcard deck built from the approved pool.
+            val deck = contestantApi.flashcardsPdf(chapter = 1)
+            assertTrue(deck.size > 1000, "deck PDF should be non-trivial")
+            assertEquals("%PDF", deck.decodeToString(0, 4))
         }
     }
 }

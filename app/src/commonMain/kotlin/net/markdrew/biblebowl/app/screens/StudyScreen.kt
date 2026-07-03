@@ -20,6 +20,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -94,23 +95,32 @@ fun StudyScreen(api: TbbApi) {
                     else Text("Practice PDF")
                 }
                 DropdownMenu(expanded = pdfMenuOpen, onDismissRequest = { pdfMenuOpen = false }) {
+                    fun download(name: String, fetch: suspend () -> ByteArray) {
+                        pdfMenuOpen = false
+                        pdfBusy = true; pdfMessage = null
+                        scope.launch {
+                            try {
+                                pdfMessage = savePdf(name, fetch())
+                            } catch (e: Throwable) {
+                                pdfMessage = "PDF failed: ${e.message}"
+                            } finally {
+                                pdfBusy = false
+                            }
+                        }
+                    }
+
+                    val chSuffix = chapter?.let { "-ch$it" } ?: ""
+                    DropdownMenuItem(
+                        text = { Text("Flashcards (all rounds)") },
+                        onClick = { download("flashcards$chSuffix.pdf") { api.flashcardsPdf(chapter) } },
+                    )
+                    HorizontalDivider()
                     RoundType.entries.forEach { round ->
                         DropdownMenuItem(
-                            text = { Text(round.displayName) },
+                            text = { Text("Practice: ${round.displayName}") },
                             onClick = {
-                                pdfMenuOpen = false
-                                pdfBusy = true; pdfMessage = null
-                                scope.launch {
-                                    try {
-                                        val bytes = api.practiceTestPdf(round, chapter)
-                                        val name = "practice-${round.name.lowercase()}" +
-                                            (chapter?.let { "-ch$it" } ?: "") + ".pdf"
-                                        pdfMessage = savePdf(name, bytes)
-                                    } catch (e: Throwable) {
-                                        pdfMessage = "PDF failed: ${e.message}"
-                                    } finally {
-                                        pdfBusy = false
-                                    }
+                                download("practice-${round.name.lowercase()}$chSuffix.pdf") {
+                                    api.practiceTestPdf(round, chapter)
                                 }
                             },
                         )

@@ -100,6 +100,14 @@ class TbbApi(private val baseUrl: String = DEFAULT_BASE_URL) {
             if (chapter != null) parameter("chapter", chapter)
         }.body()
 
+    /** Fetches a duplex flashcard deck PDF built from approved questions (filters optional). */
+    suspend fun flashcardsPdf(chapter: Int? = null, round: RoundType? = null): ByteArray =
+        client.get("$baseUrl/generate/flashcards.pdf") {
+            authorize()
+            if (chapter != null) parameter("chapter", chapter)
+            if (round != null) parameter("round", round.name)
+        }.body()
+
     companion object {
         // Local dev default; the web build points at the deployed Cloud Run URL at build time.
         const val DEFAULT_BASE_URL = "http://localhost:8080"
