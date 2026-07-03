@@ -114,6 +114,14 @@ fun StudyScreen(api: TbbApi) {
                         text = { Text("Flashcards (all rounds)") },
                         onClick = { download("flashcards$chSuffix.pdf") { api.flashcardsPdf(chapter) } },
                     )
+                    DropdownMenuItem(
+                        text = { Text("Chapter-heading flashcards" + (chapter?.let { " (through ch $it)" } ?: "")) },
+                        onClick = {
+                            download("heading-flashcards${chapter?.let { "-through-ch$it" } ?: ""}.pdf") {
+                                api.headingFlashcardsPdf(chapter)
+                            }
+                        },
+                    )
                     HorizontalDivider()
                     RoundType.entries.forEach { round ->
                         DropdownMenuItem(

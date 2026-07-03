@@ -12,6 +12,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import net.markdrew.biblebowl.api.AuthResponse
+import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.QuestionDto
@@ -106,6 +107,20 @@ class TbbApi(private val baseUrl: String = DEFAULT_BASE_URL) {
             authorize()
             if (chapter != null) parameter("chapter", chapter)
             if (round != null) parameter("round", round.name)
+        }.body()
+
+    /** Lists the season book's ESV section headings (Round 5 material), optionally through a chapter. */
+    suspend fun headings(throughChapter: Int? = null): List<HeadingDto> =
+        client.get("$baseUrl/study/headings") {
+            authorize()
+            if (throughChapter != null) parameter("throughChapter", throughChapter)
+        }.body()
+
+    /** Fetches a chapter-headings flashcard deck PDF, optionally limited through a chapter. */
+    suspend fun headingFlashcardsPdf(throughChapter: Int? = null): ByteArray =
+        client.get("$baseUrl/generate/heading-flashcards.pdf") {
+            authorize()
+            if (throughChapter != null) parameter("throughChapter", throughChapter)
         }.body()
 
     companion object {

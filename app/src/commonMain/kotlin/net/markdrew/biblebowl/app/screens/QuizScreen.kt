@@ -32,11 +32,41 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.QuestionDto
+import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RoundType
 import net.markdrew.biblebowl.app.net.TbbApi
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 
 private const val ACTS_CHAPTERS = 28
+
+/** What a quiz draws from: the community question bank, or ESV chapter headings (Round 5). */
+private enum class QuizSource(val displayName: String) {
+    QUESTIONS("Question bank"),
+    HEADINGS("Chapter headings"),
+}
+
+/**
+ * Turns the season's headings into multiple-choice "which chapter?" items. Distractors are other
+ * chapters in scope, so cumulative practice (through chapter N) never leaks future chapters.
+ */
+private fun headingQuestions(headings: List<net.markdrew.biblebowl.api.HeadingDto>): List<QuestionDto> {
+    val chaptersInScope = headings.map { it.chapter }.distinct()
+    return headings.map { h ->
+        val distractors = (chaptersInScope - h.chapter).shuffled().take(4)
+        QuestionDto(
+            id = "heading-${h.index}",
+            roundType = RoundType.KNOW_THE_CHAPTER_HEADINGS,
+            prompt = "Which chapter has the heading “${h.title}”?",
+            answer = "Chapter ${h.chapter}",
+            references = listOf(h.reference),
+            choices = (distractors + h.chapter).map { "Chapter $it" },
+            chapter = h.chapter,
+            status = QuestionStatus.APPROVED,
+            authorId = "esv-headings",
+        )
+    }
+}
 
 /** Quiz mode: setup → stepper with instant feedback → results. All quiz logic lives in QuizEngine. */
 @Composable
@@ -44,6 +74,7 @@ fun QuizScreen(api: TbbApi) {
     var engine by remember { mutableStateOf<QuizEngine?>(null) }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var source by remember { mutableStateOf(QuizSource.QUESTIONS) }
     var round by remember { mutableStateOf<RoundType?>(null) }
     var chapter by remember { mutableStateOf<Int?>(null) }
     // Bumped on every answer/advance so Compose re-reads the engine's state.
@@ -55,6 +86,7 @@ fun QuizScreen(api: TbbApi) {
         loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
 
         quiz == null -> QuizSetup(
+            source = source, onSource = { source = it },
             round = round, onRound = { round = it },
             chapter = chapter, onChapter = { chapter = it },
             error = error,
@@ -62,10 +94,18 @@ fun QuizScreen(api: TbbApi) {
                 loading = true; error = null
                 scope.launch {
                     try {
-                        val pool = api.questions(chapter = chapter)
-                            .filter { round == null || it.roundType == round }
+                        val pool = when (source) {
+                            QuizSource.QUESTIONS -> api.questions(chapter = chapter)
+                                .filter { round == null || it.roundType == round }
+                            // Chapter chip means "through chapter N" here so drills stay cumulative.
+                            QuizSource.HEADINGS -> headingQuestions(api.headings(throughChapter = chapter))
+                        }
                         val e = QuizEngine(pool)
-                        if (e.isEmpty) error = "No approved questions match — loosen the filters or contribute some!"
+                        if (e.isEmpty) error = when (source) {
+                            QuizSource.QUESTIONS ->
+                                "No approved questions match — loosen the filters or contribute some!"
+                            QuizSource.HEADINGS -> "No headings available — is the server's ESV service configured?"
+                        }
                         else engine = e
                     } catch (t: Throwable) {
                         error = t.message
@@ -84,6 +124,7 @@ fun QuizScreen(api: TbbApi) {
 
 @Composable
 private fun QuizSetup(
+    source: QuizSource, onSource: (QuizSource) -> Unit,
     round: RoundType?, onRound: (RoundType?) -> Unit,
     chapter: Int?, onChapter: (Int?) -> Unit,
     error: String?,
@@ -94,18 +135,33 @@ private fun QuizSetup(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text("Quiz me", style = MaterialTheme.typography.titleLarge)
-        Text("Round", style = MaterialTheme.typography.labelLarge)
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(selected = round == null, onClick = { onRound(null) }, label = { Text("All") })
-            RoundType.entries.forEach { rt ->
+        Text("Source", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            QuizSource.entries.forEach { s ->
                 FilterChip(
-                    selected = round == rt,
-                    onClick = { onRound(if (round == rt) null else rt) },
-                    label = { Text(rt.displayName) },
+                    selected = source == s,
+                    onClick = { onSource(s) },
+                    label = { Text(s.displayName) },
                 )
             }
         }
-        Text("Chapter", style = MaterialTheme.typography.labelLarge)
+        if (source == QuizSource.QUESTIONS) {
+            Text("Round", style = MaterialTheme.typography.labelLarge)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected = round == null, onClick = { onRound(null) }, label = { Text("All") })
+                RoundType.entries.forEach { rt ->
+                    FilterChip(
+                        selected = round == rt,
+                        onClick = { onRound(if (round == rt) null else rt) },
+                        label = { Text(rt.displayName) },
+                    )
+                }
+            }
+        }
+        Text(
+            if (source == QuizSource.HEADINGS) "Through chapter" else "Chapter",
+            style = MaterialTheme.typography.labelLarge,
+        )
         Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             FilterChip(selected = chapter == null, onClick = { onChapter(null) }, label = { Text("All") })
             (1..ACTS_CHAPTERS).forEach { ch ->

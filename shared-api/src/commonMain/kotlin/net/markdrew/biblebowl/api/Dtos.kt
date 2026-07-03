@@ -91,6 +91,21 @@ data class ChapterTextDto(
     val copyright: String = "Scripture quotations are from the ESV® Bible, © 2001 by Crossway. Used by permission.",
 )
 
+/** One ESV section heading, for chapter-heading drills and flashcards (Round 5 material). */
+@Serializable
+data class HeadingDto(
+    /** The heading text as it appears in the ESV, e.g. "The Coming of the Holy Spirit". */
+    val title: String,
+    /** Human-readable verse reference the heading spans, e.g. "2:1-13". */
+    val reference: String,
+    /** Chapter the heading starts in (1-based, within the season book). */
+    val chapter: Int,
+    /** 1-based position of this heading within the study set. */
+    val index: Int,
+    /** Total number of headings in the study set. */
+    val total: Int,
+)
+
 // ---------------------------------------------------------------------------
 // Generic API envelope for errors
 // ---------------------------------------------------------------------------

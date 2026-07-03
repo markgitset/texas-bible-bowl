@@ -38,8 +38,10 @@ import net.markdrew.biblebowl.server.routes.authRoutes
 import net.markdrew.biblebowl.server.routes.bibleRoutes
 import net.markdrew.biblebowl.server.routes.generateRoutes
 import net.markdrew.biblebowl.server.routes.questionRoutes
+import net.markdrew.biblebowl.server.routes.studyRoutes
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
+import net.markdrew.biblebowl.server.study.StudyDataService
 
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
@@ -63,6 +65,7 @@ fun Application.module(
     questions: QuestionRepository = InMemoryQuestionRepository(),
     jwt: JwtService = JwtService(),
     esv: EsvPassageService? = null,
+    study: StudyDataService? = esv?.let(::StudyDataService),
 ) {
     seedAdminFromEnv(users)
 
@@ -96,7 +99,8 @@ fun Application.module(
         authRoutes(users, jwt)
         questionRoutes(users, questions)
         bibleRoutes(esv)
-        generateRoutes(questions)
+        studyRoutes(study)
+        generateRoutes(questions, study)
     }
 }
 

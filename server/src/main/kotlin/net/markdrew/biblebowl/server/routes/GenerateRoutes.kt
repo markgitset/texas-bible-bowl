@@ -15,14 +15,18 @@ import kotlinx.coroutines.withContext
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.generation.typst.Flashcard
 import net.markdrew.biblebowl.generation.typst.flashcardsTypst
 import net.markdrew.biblebowl.generation.typst.practiceTestTypst
 import net.markdrew.biblebowl.generation.typst.toFlashcards
+import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.server.data.QuestionRepository
+import net.markdrew.biblebowl.server.esv.EsvUpstreamException
+import net.markdrew.biblebowl.server.study.StudyDataService
 import net.markdrew.biblebowl.server.typst.TypstCompiler
 import net.markdrew.biblebowl.server.typst.TypstException
 
-fun Route.generateRoutes(questions: QuestionRepository) {
+fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService? = null) {
     authenticate {
         // GET /generate/practice-test.pdf?round=FACT_FINDER&chapter=2&limit=40
         get("/generate/practice-test.pdf") {
@@ -66,6 +70,36 @@ fun Route.generateRoutes(questions: QuestionRepository) {
                 )
             }
             respondPdf(flashcardsTypst(pool.toFlashcards()), "flashcards${chapter?.let { "-ch$it" } ?: ""}.pdf")
+        }
+
+        // GET /generate/heading-flashcards.pdf?throughChapter=5 — Round 5 (chapter headings) deck
+        get("/generate/heading-flashcards.pdf") {
+            if (study == null || !study.isConfigured) {
+                return@get call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+                )
+            }
+            val throughChapter = call.request.queryParameters["throughChapter"]?.toIntOrNull()
+
+            try {
+                val headings = study.studyData().headings
+                    .filter { throughChapter == null || it.chapterRange.start.chapter <= throughChapter }
+                val cards = headings.map { h ->
+                    Flashcard(
+                        front = h.title,
+                        back = "Chapter ${h.chapterRange.start.chapter}",
+                        note = h.verseRange.format(NO_BOOK_FORMAT),
+                        footer = "${h.index} of ${h.maxIndex}",
+                    )
+                }
+                respondPdf(
+                    flashcardsTypst(cards),
+                    "heading-flashcards${throughChapter?.let { "-through-ch$it" } ?: ""}.pdf",
+                )
+            } catch (e: EsvUpstreamException) {
+                call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+            }
         }
     }
 }
