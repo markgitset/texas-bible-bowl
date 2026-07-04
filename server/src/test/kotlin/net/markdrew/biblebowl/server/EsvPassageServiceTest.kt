@@ -71,6 +71,7 @@ class EsvPassageServiceTest {
         val second = service.chapterText(Book.ACT.chapterRef(2))
 
         assertEquals(1, hits.size, "second call must come from cache")
+        assertEquals(1L, service.liveCallCount, "exactly one live ESV call for a chapter, ever")
         assertEquals("44002001-44002999", hits.single(), "query uses packed absolute-verse range")
         assertEquals("Acts 2", first.canonical)
         assertTrue(first.text.contains("Pentecost"))
@@ -134,6 +135,7 @@ class EsvPassageServiceTest {
 
         val chapter = service.chapterText(Book.ACT.chapterRef(2))
         assertEquals(2, calls, "one 429 then a successful retry")
+        assertEquals(2L, service.liveCallCount, "429 retry is counted as a live call for auditing")
         assertTrue(chapter.text.contains("Pentecost"))
     }
 

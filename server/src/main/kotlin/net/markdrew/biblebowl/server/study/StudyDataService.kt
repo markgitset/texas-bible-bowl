@@ -30,6 +30,9 @@ class StudyDataService(
 
     val isConfigured: Boolean get() = esv.isConfigured
 
+    /** Cumulative live ESV API calls made by the backing service this process (for usage auditing). */
+    val esvCallCount: Long get() = esv.liveCallCount
+
     suspend fun studyData(): StudyData = cached ?: mutex.withLock {
         cached ?: build().also { cached = it }
     }

@@ -132,7 +132,11 @@ private fun Application.warmStudyCache(study: StudyDataService?) {
     if (System.getenv("PRIME_CACHE_ON_START")?.toBooleanStrictOrNull() != true) return
     launch {
         runCatching { study.studyData() }
-            .onSuccess { environment.log.info("ESV cache primed: ${it.headings.size} headings indexed") }
+            .onSuccess {
+                environment.log.info(
+                    "ESV cache primed: ${it.headings.size} headings indexed (${study.esvCallCount} live ESV calls this process)"
+                )
+            }
             .onFailure { environment.log.warn("ESV cache priming failed (falling back to lazy load): ${it.message}") }
     }
 }

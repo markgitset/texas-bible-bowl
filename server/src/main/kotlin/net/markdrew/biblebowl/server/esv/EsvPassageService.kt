@@ -14,6 +14,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.model.ChapterRef
+import org.slf4j.LoggerFactory
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -71,16 +73,28 @@ class EsvPassageService(
     private val maxRetriesOn429: Int = 4,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val log = LoggerFactory.getLogger(EsvPassageService::class.java)
 
     // Serializes upstream fetches and enforces the minimum interval between them.
     private val fetchMutex = Mutex()
     private var lastFetchAtNanos: Long = 0L
 
+    /**
+     * Count of *live* ESV API calls made by this process (every HTTP request to Crossway, including 429
+     * retries). Because chapters are cached in Postgres, this should reach at most one successful call per
+     * chapter for the life of the installation and then stay flat — the licence budget depends on it.
+     */
+    private val liveCalls = AtomicLong(0)
+    val liveCallCount: Long get() = liveCalls.get()
+
     val isConfigured: Boolean get() = !token.isNullOrBlank()
 
     /** Returns the full text of [chapterRef], from cache when available. */
     suspend fun chapterText(chapterRef: ChapterRef): CachedChapter {
-        cache.get(chapterRef)?.let { return it }
+        cache.get(chapterRef)?.let {
+            log.debug("ESV cache hit: {} {} (no API call)", chapterRef.book.name, chapterRef.chapter)
+            return it
+        }
         // Only one live fetch at a time; re-check the cache under the lock in case a concurrent
         // request just populated it while we were waiting, so we don't double-fetch.
         return fetchMutex.withLock {
@@ -107,6 +121,13 @@ class EsvPassageService(
         var attempt = 0
         while (true) {
             val response = requestChapter(query)
+            val total = liveCalls.incrementAndGet()
+            // Every live ESV call is logged so usage can be audited against the licence budget; in steady
+            // state (cache warm) this line should never appear again for an already-fetched chapter.
+            log.info(
+                "ESV_API_CALL book={} chapter={} q={} attempt={} status={} totalThisProcess={}",
+                chapterRef.book.name, chapterRef.chapter, query, attempt + 1, response.status.value, total,
+            )
             if (response.status == HttpStatusCode.TooManyRequests && attempt < maxRetriesOn429) {
                 // Back off and retry — honor Retry-After if present, else grow the wait each attempt.
                 val retryAfterSecs = response.headers["Retry-After"]?.toLongOrNull()
