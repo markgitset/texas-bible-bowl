@@ -63,6 +63,20 @@ object EsvChaptersTable : Table("esv_chapters") {
     override val primaryKey = PrimaryKey(bookCode, chapter)
 }
 
+/**
+ * Persistent cache of computed text-analysis layers (e.g. the word-list category resolution that drives
+ * name/number highlighting) — the Postgres equivalent of bible-bowl's on-disk annotation sidecars. A row is
+ * valid only while [textHash] and [defDigest] match the current study text and word-list/override content.
+ */
+object TextAnnotationsTable : Table("text_annotations") {
+    val studySet = varchar("study_set", 64)
+    val sourceKey = varchar("source_key", 64)
+    val textHash = integer("text_hash")
+    val defDigest = varchar("def_digest", 128)
+    val body = text("body") // TSV: startOffset<TAB>endOffset<TAB>value per line
+    override val primaryKey = PrimaryKey(studySet, sourceKey)
+}
+
 /** JDBC url + credentials, however they were supplied (a single PG URL or separate env vars). */
 data class DbSettings(val jdbcUrl: String, val user: String?, val password: String?) {
     companion object {
@@ -116,7 +130,10 @@ object DatabaseFactory {
         }
         val db = Database.connect(HikariDataSource(config))
         transaction(db) {
-            SchemaUtils.create(UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable, EsvChaptersTable)
+            SchemaUtils.create(
+                UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable, EsvChaptersTable,
+                TextAnnotationsTable,
+            )
         }
         return db
     }

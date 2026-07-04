@@ -125,7 +125,7 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
             val highlight = qp["highlight"]?.toBooleanStrictOrNull() ?: true
             try {
                 val typst = if (highlight) {
-                    highlightedBibleTextTypst(study.studyData(), study.annotations(), options)
+                    highlightedBibleTextTypst(study.studyData(), study.categoryResolution(), options)
                 } else {
                     bibleTextTypst(study.studyData(), options)
                 }

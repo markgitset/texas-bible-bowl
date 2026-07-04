@@ -51,6 +51,20 @@ fun highlightedBibleTextDoc(
         .apply { setAnnotations(REGEX, regexRanges) }
 }
 
+/** Builds the render doc from a precomputed category [resolution] (e.g. loaded from the Postgres cache). */
+fun highlightedBibleTextDoc(
+    studyData: StudyData,
+    resolution: DisjointRangeMap<String>,
+    palette: HighlightPalette,
+): AnnotatedDoc<AnalysisUnit> {
+    val paletteCategories: Set<String> = palette.rules.map { it.first }.toSet()
+    val regexRanges = DisjointRangeMap<String>().apply {
+        resolution.forEach { (range, category) -> if (category in paletteCategories) put(range, category) }
+    }
+    return studyData.toAnnotatedDoc(BOOK, CHAPTER, HEADING, VERSE, POETRY, PARAGRAPH, LEADING_FOOTNOTE, FOOTNOTE, REGEX)
+        .apply { setAnnotations(REGEX, regexRanges) }
+}
+
 /** Renders the covered text with categorized name/number highlighting (the key feature of the text download). */
 fun highlightedBibleTextTypst(
     studyData: StudyData,
@@ -59,4 +73,14 @@ fun highlightedBibleTextTypst(
 ): String {
     val palette = tbbHighlightPalette()
     return bibleTextTypst(studyData, options.copy(customHighlights = palette), highlightedBibleTextDoc(studyData, store, palette))
+}
+
+/** As above, but from a precomputed category [resolution] rather than recomputing it via a store. */
+fun highlightedBibleTextTypst(
+    studyData: StudyData,
+    resolution: DisjointRangeMap<String>,
+    options: TextOptions = TextOptions(),
+): String {
+    val palette = tbbHighlightPalette()
+    return bibleTextTypst(studyData, options.copy(customHighlights = palette), highlightedBibleTextDoc(studyData, resolution, palette))
 }

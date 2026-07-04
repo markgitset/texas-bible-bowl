@@ -43,6 +43,7 @@ import net.markdrew.biblebowl.server.routes.questionRoutes
 import net.markdrew.biblebowl.server.routes.studyRoutes
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
+import net.markdrew.biblebowl.server.study.PostgresAnnotationCache
 import net.markdrew.biblebowl.server.study.StudyDataService
 
 fun main() {
@@ -62,7 +63,11 @@ fun main() {
         refresh = System.getenv("ESV_CACHE_REFRESH")?.toBooleanStrictOrNull() == true,
     )
     val esv = EsvPassageService(client = HttpClient(CIO), cache = esvCache)
-    embeddedServer(Netty, port = port, host = "0.0.0.0") { module(users, questions, esv = esv) }.start(wait = true)
+    // Persist the text-analysis (highlight category) resolution in Postgres when available, so it survives
+    // scale-to-zero restarts instead of being recomputed on each cold start.
+    val study = StudyDataService(esv, annotationCache = db?.let(::PostgresAnnotationCache))
+    embeddedServer(Netty, port = port, host = "0.0.0.0") { module(users, questions, esv = esv, study = study) }
+        .start(wait = true)
 }
 
 /**

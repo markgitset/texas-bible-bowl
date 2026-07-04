@@ -4,7 +4,9 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import net.markdrew.biblebowl.analysis.AnnotationStore
 import net.markdrew.biblebowl.analysis.WordIndexEntryC
+import net.markdrew.biblebowl.analysis.WordList
 import net.markdrew.biblebowl.analysis.numbersIndex
+import net.markdrew.chupacabra.core.DisjointRangeMap
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.IndexRefDto
@@ -29,6 +31,7 @@ import net.markdrew.biblebowl.ws.PassageMeta
 class StudyDataService(
     private val esv: EsvPassageService,
     val studySet: StudySet = StandardStudySet.DEFAULT,
+    private val annotationCache: AnnotationCache? = null,
 ) {
     private val mutex = Mutex()
     @Volatile private var cached: StudyData? = null
@@ -45,14 +48,24 @@ class StudyDataService(
     /** The season's numbers index (every numeral/cardinal/ordinal/fraction → its verses) as wire DTOs. */
     suspend fun numbers(): List<IndexEntryDto> = numbersIndex(studyData()).map { it.toDto() }
 
-    @Volatile private var annotationStore: AnnotationStore? = null
+    @Volatile private var resolution: DisjointRangeMap<String>? = null
 
     /**
-     * The memoized text-annotation store for this study set (word-list category resolution + curated
-     * overrides). Computed once per process; its resolution is what drives name/number highlighting.
+     * The word-list category resolution (char range → category id) that drives name/number highlighting.
+     * Memoized per process and cached in Postgres across restarts (keyed by text hash + word-list/override
+     * digest), so the expensive resolution runs at most once for a given text + definition.
      */
-    suspend fun annotations(): AnnotationStore = annotationStore ?: mutex.withLock {
-        annotationStore ?: AnnotationStore(studyData(), cacheDir = null).also { annotationStore = it }
+    suspend fun categoryResolution(): DisjointRangeMap<String> = resolution ?: mutex.withLock {
+        resolution ?: run {
+            val sd = studyData()
+            val annotator = WordList.categoryAnnotator(studySet)
+            val textHash = sd.text.hashCode()
+            val computed = annotationCache?.get(studySet.simpleName, annotator.name, textHash, annotator.defDigest)
+                ?: AnnotationStore(sd, cacheDir = null).categoryResolution(studySet).also {
+                    annotationCache?.put(studySet.simpleName, annotator.name, textHash, annotator.defDigest, it)
+                }
+            computed.also { resolution = it }
+        }
     }
 
     private suspend fun build(): StudyData {
