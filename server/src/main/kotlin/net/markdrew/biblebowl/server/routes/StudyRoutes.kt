@@ -33,17 +33,30 @@ fun Route.studyRoutes(study: StudyDataService?) {
 
         // GET /study/numbers — the season's numbers index (alphabetical), for the in-app study view.
         get("/study/numbers") {
-            if (study == null || !study.isConfigured) {
-                return@get call.respond(
-                    HttpStatusCode.ServiceUnavailable,
-                    ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
-                )
-            }
-            try {
-                call.respond(study.numbers())
-            } catch (e: EsvUpstreamException) {
-                call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
-            }
+            respondIndex(study) { it.numbers() }
         }
+
+        // GET /study/names — the season's names index (all proper names), for the in-app study view.
+        get("/study/names") {
+            respondIndex(study) { it.names() }
+        }
+    }
+}
+
+/** Responds with an index (numbers/names) or the standard 503/502 when the study service is unavailable. */
+private suspend fun io.ktor.server.routing.RoutingContext.respondIndex(
+    study: StudyDataService?,
+    index: suspend (StudyDataService) -> Any,
+) {
+    if (study == null || !study.isConfigured) {
+        return call.respond(
+            HttpStatusCode.ServiceUnavailable,
+            ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+        )
+    }
+    try {
+        call.respond(index(study))
+    } catch (e: EsvUpstreamException) {
+        call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
     }
 }

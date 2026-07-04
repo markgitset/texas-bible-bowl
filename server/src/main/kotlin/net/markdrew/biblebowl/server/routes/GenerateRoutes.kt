@@ -19,6 +19,8 @@ import net.markdrew.biblebowl.generate.practice.PracticeTest
 import net.markdrew.biblebowl.generate.practice.eventsTypst
 import net.markdrew.biblebowl.generate.practice.findTheVerseTypst
 import net.markdrew.biblebowl.generate.practice.quotesTypst
+import net.markdrew.biblebowl.analysis.namesIndex
+import net.markdrew.biblebowl.generate.indices.indexTypst
 import net.markdrew.biblebowl.generate.indices.numbersIndexTypst
 import net.markdrew.biblebowl.generate.text.TextOptions
 import net.markdrew.biblebowl.generate.text.highlightedBibleTextTypst
@@ -145,6 +147,21 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
             }
             try {
                 respondPdf(numbersIndexTypst(study.studyData()), "numbers-index.pdf")
+            } catch (e: EsvUpstreamException) {
+                call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+            }
+        }
+
+        // GET /generate/names-index.pdf — the season's names index (alphabetical + by frequency)
+        get("/generate/names-index.pdf") {
+            if (study == null || !study.isConfigured) {
+                return@get call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+                )
+            }
+            try {
+                respondPdf(indexTypst(study.studyData(), namesIndex(study.studyData(), study.categoryResolution()), "Name"), "names-index.pdf")
             } catch (e: EsvUpstreamException) {
                 call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
             }

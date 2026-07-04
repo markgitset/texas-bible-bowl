@@ -159,6 +159,14 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
     suspend fun numbersIndexPdf(): ByteArray =
         client.get("$baseUrl/generate/numbers-index.pdf") { authorize() }.pdfBytesOrThrow()
 
+    /** Lists the season's names index (every proper name and the verses it occurs in). */
+    suspend fun namesIndex(): List<IndexEntryDto> =
+        client.get("$baseUrl/study/names") { authorize() }.body()
+
+    /** Fetches the names-index PDF (alphabetical + by-frequency sections). */
+    suspend fun namesIndexPdf(): ByteArray =
+        client.get("$baseUrl/generate/names-index.pdf") { authorize() }.pdfBytesOrThrow()
+
     /**
      * Returns the response body as PDF bytes, or throws [PdfException] with the server's error message on a
      * non-2xx status. Without this the client would happily "download" a JSON error body as a `.pdf`, which

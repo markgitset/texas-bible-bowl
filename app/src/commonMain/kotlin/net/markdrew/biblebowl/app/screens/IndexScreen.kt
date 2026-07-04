@@ -10,17 +10,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,36 +30,48 @@ import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.app.net.TbbApi
 import net.markdrew.biblebowl.app.platform.savePdf
 
+/** The two study indices, each generated from the ESV text (word lists + curated overrides). */
+private enum class IndexKind(val label: String, val pdfName: String) {
+    NUMBERS("Numbers", "numbers-index.pdf"),
+    NAMES("Names", "names-index.pdf"),
+}
+
 /**
- * The Numbers index: every numeral, cardinal, ordinal, and fraction in the season book with the verses it
- * appears in. Generated deterministically from the ESV text (like R1/R4/R5), with a text filter and a PDF
- * export of the full alphabetical + by-frequency index.
+ * Study indices: every number or proper name in the season book with the verses it occurs in. A segmented
+ * toggle switches between the two; each has a text filter and a PDF export (alphabetical + by-frequency).
  */
 @Composable
-fun NumbersScreen(api: TbbApi) {
+fun IndexScreen(api: TbbApi) {
+    var kind by remember { mutableStateOf(IndexKind.NUMBERS) }
     var entries by remember { mutableStateOf<List<IndexEntryDto>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var filter by remember { mutableStateOf("") }
     var pdfMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(kind) {
+        entries = null; error = null
         try {
-            entries = api.numbersIndex()
+            entries = when (kind) {
+                IndexKind.NUMBERS -> api.numbersIndex()
+                IndexKind.NAMES -> api.namesIndex()
+            }
         } catch (e: Throwable) {
             error = e.message
         }
     }
 
     Column(Modifier.fillMaxSize().padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            IndexKind.entries.forEach { k ->
+                FilterChip(selected = kind == k, onClick = { if (kind != k) { kind = k; filter = ""; pdfMessage = null } }, label = { Text(k.label) })
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedTextField(
                 value = filter,
                 onValueChange = { filter = it },
-                label = { Text("Filter numbers") },
+                label = { Text("Filter ${kind.label.lowercase()}") },
                 singleLine = true,
                 modifier = Modifier.weight(1f),
             )
@@ -66,7 +79,7 @@ fun NumbersScreen(api: TbbApi) {
                 pdfMessage = null
                 scope.launch {
                     pdfMessage = try {
-                        savePdf("numbers-index.pdf", api.numbersIndexPdf())
+                        savePdf(kind.pdfName, if (kind == IndexKind.NUMBERS) api.numbersIndexPdf() else api.namesIndexPdf())
                     } catch (e: Throwable) {
                         "PDF failed: ${e.message}"
                     }
@@ -77,22 +90,17 @@ fun NumbersScreen(api: TbbApi) {
 
         val list = entries
         when {
-            error != null -> Text(
-                "Couldn't load the numbers index: $error",
-                color = MaterialTheme.colorScheme.error,
-            )
-
+            error != null -> Text("Couldn't load the ${kind.label.lowercase()} index: $error", color = MaterialTheme.colorScheme.error)
             list == null -> CircularProgressIndicator()
-
             else -> {
                 val shown = list.filter { filter.isBlank() || it.key.contains(filter.trim(), ignoreCase = true) }
                 Text(
-                    "${shown.size} of ${list.size} numbers",
+                    "${shown.size} of ${list.size} ${kind.label.lowercase()}",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.outline,
                 )
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(shown, key = { it.key }) { entry -> NumberEntryCard(entry) }
+                    items(shown, key = { it.key }) { entry -> IndexEntryCard(entry) }
                 }
             }
         }
@@ -100,7 +108,7 @@ fun NumbersScreen(api: TbbApi) {
 }
 
 @Composable
-private fun NumberEntryCard(entry: IndexEntryDto) {
+private fun IndexEntryCard(entry: IndexEntryDto) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {

@@ -5,6 +5,7 @@ import kotlinx.coroutines.sync.withLock
 import net.markdrew.biblebowl.analysis.AnnotationStore
 import net.markdrew.biblebowl.analysis.WordIndexEntryC
 import net.markdrew.biblebowl.analysis.WordList
+import net.markdrew.biblebowl.analysis.namesIndex
 import net.markdrew.biblebowl.analysis.numbersIndex
 import net.markdrew.chupacabra.core.DisjointRangeMap
 import net.markdrew.biblebowl.api.HeadingDto
@@ -47,6 +48,9 @@ class StudyDataService(
 
     /** The season's numbers index (every numeral/cardinal/ordinal/fraction → its verses) as wire DTOs. */
     suspend fun numbers(): List<IndexEntryDto> = numbersIndex(studyData()).map { it.toDto() }
+
+    /** The season's names index (every proper name → its verses) as wire DTOs, using the cached resolution. */
+    suspend fun names(): List<IndexEntryDto> = namesIndex(studyData(), categoryResolution()).map { it.toDto() }
 
     @Volatile private var resolution: DisjointRangeMap<String>? = null
 

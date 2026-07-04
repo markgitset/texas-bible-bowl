@@ -65,17 +65,19 @@ private fun <K, V> StringBuilder.appendIndex(
 }
 
 /**
- * Renders the numbers index for [studyData] as a complete Typst document (alphabetical section + an
- * increasing-frequency section) and returns the source, ready for the server to compile to a PDF.
+ * Renders a complete Typst index document for [entries] — an alphabetical section (3 cols, with verse
+ * references) followed by an increasing-frequency section (4 cols) — and returns the source.
+ *
+ * @param singular label for one entry, e.g. "Number" or "Name" (pluralized with "s")
  */
-fun numbersIndexTypst(studyData: StudyData): String {
-    val entries: List<WordIndexEntryC> = numbersIndex(studyData)
+fun indexTypst(studyData: StudyData, entries: List<WordIndexEntryC>, singular: String): String {
+    val plural = "${singular}s"
     val name = studyData.studySet.name
     val longName = studyData.studySet.longName
     return buildString {
-        appendDoc("$name Number Index", "The following is a complete index of all numbers in $longName.") {
+        appendDoc("$name $singular Index", "The following is a complete index of all ${plural.lowercase()} in $longName.") {
             appendIndex(
-                entries,
+                entries.sortedBy { it.key.lowercase() },
                 columns = 3,
                 formatValues = studyData.compactWithCountVerseRefListFormat,
             )
@@ -86,10 +88,13 @@ fun numbersIndexTypst(studyData: StudyData): String {
                 .sortedWith(compareBy({ it.values.single() }, { it.key }))
             appendIndex(
                 frequencies,
-                indexTitle = "Numbers in $name in Order of Increasing Frequency",
-                indexPreface = "Each number here occurs in $longName the number of times shown next to it.",
+                indexTitle = "$plural in $name in Order of Increasing Frequency",
+                indexPreface = "Each ${singular.lowercase()} here occurs in $longName the number of times shown next to it.",
                 columns = 4,
             )
         }
     }
 }
+
+/** The season's numbers index (alphabetical + by frequency) as a Typst document. */
+fun numbersIndexTypst(studyData: StudyData): String = indexTypst(studyData, numbersIndex(studyData), "Number")

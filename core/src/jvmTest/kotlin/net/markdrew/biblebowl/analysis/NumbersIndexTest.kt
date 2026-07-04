@@ -56,4 +56,33 @@ class NumbersIndexTest {
     }
 
     private fun WordIndexEntryC.total(): Int = values.sumOf { it.count }
+
+    @Test
+    fun namesIndexPicksUpProperNamesFromTheResolution() {
+        val meta = PassageMeta(
+            canonical = "Genesis 1:1–2",
+            chapterStart = listOf(1001001, 1001002),
+            chapterEnd = listOf(1001001, 1001002),
+            prevVerse = null, nextVerse = null, prevChapter = null, nextChapter = null,
+        )
+        val passage = Passage(
+            canonical = "Genesis 1:1–2",
+            range = 1001001..1001002,
+            meta = meta,
+            text = """
+                _______________________________________________________
+                A Heading
+
+                [1] Abraham went to Egypt with Sarah. [2] Abraham built an altar.
+            """.trimIndent(),
+        )
+        val studyData = EsvIndexer(StandardStudySet.GENESIS.set).indexBook(sequenceOf(passage))
+        val resolution = AnnotationStore(studyData, cacheDir = null).categoryResolution(studyData.studySet)
+
+        val index = namesIndex(studyData, resolution).associateBy { it.key.lowercase() }
+        // "Abraham" (man) occurs twice, both in verse 1..2; "Egypt" (place) and "Sarah" (woman) once each.
+        assertTrue("abraham" in index, "found the man Abraham: ${index.keys}")
+        assertTrue("egypt" in index, "found the place Egypt: ${index.keys}")
+        assertEquals(2, index.getValue("abraham").values.sumOf { it.count })
+    }
 }
