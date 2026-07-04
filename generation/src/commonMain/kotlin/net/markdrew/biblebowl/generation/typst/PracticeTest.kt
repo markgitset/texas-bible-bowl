@@ -82,6 +82,6 @@ fun practiceTestTypst(
 /** Wider blanks for verse references, narrower for chapter numbers. */
 private fun answerBlankWidth(roundType: Round): String = when (roundType) {
     Round.FIND_THE_VERSE -> "1.6in"
-    Round.KNOW_THE_CHAPTER_QUOTES, Round.KNOW_THE_CHAPTER_HEADINGS -> "0.9in"
+    Round.QUOTES, Round.EVENTS -> "0.9in"
     else -> "2.2in"
 }

@@ -83,7 +83,7 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
                     ApiError(
                         "not_crowd_sourced",
                         "${round.displayName} is generated from the text, not the question bank" +
-                            (if (round == Round.KNOW_THE_CHAPTER_HEADINGS) " — use /generate/heading-flashcards.pdf" else ""),
+                            (if (round == Round.EVENTS) " — use /generate/heading-flashcards.pdf" else ""),
                     ),
                 )
             }
@@ -164,8 +164,8 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
     val practiceTest = PracticeTest(round, content, randomSeed = seed ?: Random.nextInt(1..9_999))
     val typstSource: String? = when (round) {
         Round.FIND_THE_VERSE -> findTheVerseTypst(practiceTest)
-        Round.KNOW_THE_CHAPTER_QUOTES -> quotesTypst(practiceTest)
-        Round.KNOW_THE_CHAPTER_HEADINGS -> eventsTypst(practiceTest)
+        Round.QUOTES -> quotesTypst(practiceTest)
+        Round.EVENTS -> eventsTypst(practiceTest)
         else -> null // unreachable: guarded by round.textGenerated at the call site
     }
     if (typstSource == null) {

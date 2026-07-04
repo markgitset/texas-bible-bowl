@@ -4,6 +4,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import net.markdrew.biblebowl.model.Round
 
 class RbacTest {
 
@@ -53,8 +54,8 @@ class DomainTest {
 
     @Test
     fun closedBibleRoundsAreFourAndFive() {
-        assertFalse(RoundType.KNOW_THE_CHAPTER_QUOTES.openBible)
-        assertFalse(RoundType.KNOW_THE_CHAPTER_HEADINGS.openBible)
-        assertTrue(RoundType.FIND_THE_VERSE.openBible)
+        assertFalse(Round.QUOTES.openBible)
+        assertFalse(Round.EVENTS.openBible)
+        assertTrue(Round.FIND_THE_VERSE.openBible)
     }
 }

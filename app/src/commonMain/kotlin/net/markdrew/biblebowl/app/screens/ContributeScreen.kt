@@ -144,6 +144,6 @@ fun ContributeScreen(api: TbbApi) {
 
 private fun answerLabel(roundType: Round): String = when (roundType) {
     Round.FIND_THE_VERSE -> "Answer (chapter:verse, e.g. 2:38)"
-    Round.KNOW_THE_CHAPTER_QUOTES, Round.KNOW_THE_CHAPTER_HEADINGS -> "Answer (chapter number)"
+    Round.QUOTES, Round.EVENTS -> "Answer (chapter number)"
     else -> "Answer"
 }

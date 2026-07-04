@@ -56,7 +56,7 @@ private fun headingQuestions(headings: List<net.markdrew.biblebowl.api.HeadingDt
         val distractors = (chaptersInScope - h.chapter).shuffled().take(4)
         QuestionDto(
             id = "heading-${h.index}",
-            roundType = Round.KNOW_THE_CHAPTER_HEADINGS,
+            roundType = Round.EVENTS,
             prompt = "Which chapter has the heading “${h.title}”?",
             answer = "Chapter ${h.chapter}",
             references = listOf(h.reference),

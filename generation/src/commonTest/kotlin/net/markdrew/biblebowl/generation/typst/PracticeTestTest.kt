@@ -76,7 +76,7 @@ class PracticeTestTypstTest {
 
     @Test
     fun closedBibleRoundIsLabeled() {
-        val typ = practiceTestTypst(Round.KNOW_THE_CHAPTER_QUOTES, listOf(question("q", "3")))
+        val typ = practiceTestTypst(Round.QUOTES, listOf(question("q", "3")))
         assertContains(typ, "Closed Bible")
     }
 }

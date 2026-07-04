@@ -62,7 +62,7 @@ enum class Round(
         multipleChoice = true,
         maxPoints = 40,
     ),
-    KNOW_THE_CHAPTER_QUOTES(
+    QUOTES(
         number = 4,
         shortName = "quotes",
         displayName = "Know the Chapter — Quotations",
@@ -72,7 +72,7 @@ enum class Round(
         multipleChoice = false,
         maxPoints = 40,
     ),
-    KNOW_THE_CHAPTER_HEADINGS(
+    EVENTS(
         number = 5,
         shortName = "events",
         displayName = "Know the Chapter — Headings/Events",
@@ -96,8 +96,8 @@ enum class Round(
     val bibleUse: BibleUse get() = if (openBible) BibleUse.OPEN else BibleUse.CLOSED
 
     val longName: String get() = when (this) {
-        KNOW_THE_CHAPTER_QUOTES -> "In What Chapter - Quotes"
-        KNOW_THE_CHAPTER_HEADINGS -> "In What Chapter - Events"
+        QUOTES -> "In What Chapter - Quotes"
+        EVENTS -> "In What Chapter - Events"
         else -> displayName
     }
 
@@ -112,7 +112,7 @@ enum class Round(
 
     /** Whether this round's material is generated from the study text rather than crowd-sourced. */
     val textGenerated: Boolean
-        get() = this == FIND_THE_VERSE || this == KNOW_THE_CHAPTER_QUOTES || this == KNOW_THE_CHAPTER_HEADINGS
+        get() = this == FIND_THE_VERSE || this == QUOTES || this == EVENTS
 
     /** Time limit in minutes for a test of [questions] question(s) at this round's standard pace. */
     fun minutesAtPaceFor(questions: Int): Int = questions * minutes / this.questions
