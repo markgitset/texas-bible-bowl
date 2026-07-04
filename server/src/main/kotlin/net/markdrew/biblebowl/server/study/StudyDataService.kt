@@ -42,7 +42,11 @@ class StudyDataService(
             require(range.start.book == range.endInclusive.book) {
                 "Chapter ranges spanning books are not supported: $range"
             }
-            (range.start.chapter..range.endInclusive.chapter).map { range.start.book.chapterRef(it) }
+            // StudySet ranges can use an open-ended sentinel upper bound (Book.lastChapterRef ≈ chapter 999)
+            // to mean "to end of book". Clamp to the book's real chapter count so we never fire ESV calls
+            // for chapters that don't exist — every live ESV call costs against the licence budget.
+            val lastChapter = minOf(range.endInclusive.chapter, range.start.book.chapterCount)
+            (range.start.chapter..lastChapter).map { range.start.book.chapterRef(it) }
         }
         val passages: List<Passage> = chapterRefs.map { ref ->
             val chapter = esv.chapterText(ref)

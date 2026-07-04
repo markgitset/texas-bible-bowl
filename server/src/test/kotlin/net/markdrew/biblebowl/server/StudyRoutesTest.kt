@@ -21,8 +21,11 @@ import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.RegisterRequest
+import kotlinx.coroutines.runBlocking
 import net.markdrew.biblebowl.model.Book
+import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.model.StudySet
+import kotlin.time.Duration.Companion.milliseconds
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.esv.EsvPassageService
@@ -78,6 +81,43 @@ class StudyRoutesTest {
         ),
         studySet = StudySet("Acts 1-2", "acts-test", Book.ACT.chapterRange(1, 2)),
     )
+
+    @Test
+    fun defaultActsSetFetchesExactlyItsChapterCountNotTheSentinel() = runBlocking {
+        // Regression: the DEFAULT Acts set uses an open-ended sentinel chapter range (to end of book). Build
+        // must clamp to Book.ACT.chapterCount (28) — not fire ~999 ESV calls for chapters that don't exist.
+        val queries = mutableListOf<String>()
+        val client = HttpClient(MockEngine { request ->
+            val query = request.url.parameters["q"] ?: ""
+            queries += query
+            respond(
+                content = """
+                    {
+                      "query": "$query",
+                      "canonical": "Acts",
+                      "passages": [${Json.encodeToString("_______________________________________________________\nA Heading\n\n  [1] Some verse text.")}]
+                    }
+                """.trimIndent(),
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        })
+        val service = StudyDataService(
+            esv = EsvPassageService(
+                client = client,
+                cache = InMemoryEsvCache(),
+                token = "test-esv-token",
+                baseUrl = "https://fake.esv",
+                minFetchInterval = 0.milliseconds,
+            ),
+            studySet = StandardStudySet.DEFAULT, // Acts, sentinel "to end of book" range
+        )
+
+        service.studyData()
+        assertEquals(Book.ACT.chapterCount, queries.size, "one ESV call per real chapter of Acts, no more")
+        assertEquals(28, queries.size)
+        assertEquals(28L, service.esvCallCount)
+    }
 
     @Test
     fun headingsEndpointServesParsedHeadings() = testApplication {
