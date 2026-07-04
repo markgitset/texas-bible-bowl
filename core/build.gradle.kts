@@ -1,6 +1,3 @@
-import org.gradle.jvm.toolchain.JavaLanguageVersion
-import org.gradle.jvm.toolchain.JavaToolchainService
-import org.gradle.kotlin.dsl.support.serviceOf
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 
 plugins {
@@ -43,15 +40,4 @@ android {
     namespace = "net.markdrew.biblebowl.core"
     compileSdk = 35
     defaultConfig { minSdk = 26 }
-}
-
-// chupacabra-core's JVM classes are Java 25 bytecode, so the JVM tests that load them
-// at runtime must execute on a JDK 25. Gradle itself keeps running on its launcher JDK
-// (compilation is fine there); only this test task is routed to a JDK 25 toolchain.
-tasks.named<Test>("jvmTest") {
-    javaLauncher.set(
-        serviceOf<JavaToolchainService>().launcherFor {
-            languageVersion.set(JavaLanguageVersion.of(25))
-        }
-    )
 }
