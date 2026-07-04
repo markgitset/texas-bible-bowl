@@ -5,7 +5,7 @@ import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.app.net.TbbApi
 import java.net.HttpURLConnection
@@ -48,7 +48,7 @@ class EndToEndFlowTest {
             // 2. Contestant submits a question (ContributeScreen path).
             val q = contestantApi.submitQuestion(
                 SubmitQuestionRequest(
-                    roundType = RoundType.FACT_FINDER,
+                    roundType = Round.FACT_FINDER,
                     prompt = "E2E-$suffix: Who was chosen to replace Judas?",
                     answer = "Matthias",
                     references = listOf("Acts 1:26"),
@@ -75,7 +75,7 @@ class EndToEndFlowTest {
             assertEquals(1, voted.votes)
 
             // 6. Contestant downloads a practice-test PDF for the round (StudyScreen's "Practice PDF" path).
-            val pdf = contestantApi.practiceTestPdf(RoundType.FACT_FINDER, chapter = 1)
+            val pdf = contestantApi.practiceTestPdf(Round.FACT_FINDER, chapter = 1)
             assertTrue(pdf.size > 1000, "PDF should be non-trivial")
             assertEquals("%PDF", pdf.decodeToString(0, 4))
 

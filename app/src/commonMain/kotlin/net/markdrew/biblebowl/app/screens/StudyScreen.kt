@@ -39,7 +39,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.QuestionDto
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.app.net.TbbApi
 import net.markdrew.biblebowl.app.platform.savePdf
 
@@ -123,7 +123,7 @@ fun StudyScreen(api: TbbApi) {
                         },
                     )
                     HorizontalDivider()
-                    RoundType.entries.forEach { round ->
+                    Round.entries.forEach { round ->
                         DropdownMenuItem(
                             text = { Text("Practice: ${round.displayName}") },
                             onClick = {

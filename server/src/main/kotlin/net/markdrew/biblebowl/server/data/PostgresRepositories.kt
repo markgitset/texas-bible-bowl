@@ -7,7 +7,7 @@ import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import org.jetbrains.exposed.v1.core.ResultRow
@@ -150,7 +150,7 @@ class PostgresQuestionRepository(private val db: Database) : QuestionRepository 
             .singleOrNull()?.get(UsersTable.displayName)
         return QuestionDto(
             id = qId,
-            roundType = RoundType.valueOf(this[QuestionsTable.roundType]),
+            roundType = Round.valueOf(this[QuestionsTable.roundType]),
             prompt = this[QuestionsTable.prompt],
             answer = this[QuestionsTable.answer],
             references = this[QuestionsTable.references].split(",").filter { it.isNotBlank() },

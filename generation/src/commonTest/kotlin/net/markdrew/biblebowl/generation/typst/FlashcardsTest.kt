@@ -2,7 +2,7 @@ package net.markdrew.biblebowl.generation.typst
 
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -10,7 +10,7 @@ import kotlin.test.assertEquals
 class FlashcardsTest {
 
     private fun question(prompt: String, answer: String, refs: List<String> = emptyList()) = QuestionDto(
-        id = "q", roundType = RoundType.IDENTIFICATION, prompt = prompt, answer = answer,
+        id = "q", roundType = Round.IDENTIFICATION, prompt = prompt, answer = answer,
         references = refs, chapter = 2, status = QuestionStatus.APPROVED, authorId = "a",
     )
 

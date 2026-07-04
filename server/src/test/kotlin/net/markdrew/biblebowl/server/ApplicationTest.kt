@@ -22,7 +22,7 @@ import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.security.JwtService
@@ -75,7 +75,7 @@ class ApplicationTest {
             header(HttpHeaders.Authorization, "Bearer ${contestant.token}")
             setBody(
                 SubmitQuestionRequest(
-                    roundType = RoundType.FIND_THE_VERSE,
+                    roundType = Round.FIND_THE_VERSE,
                     prompt = "\"Repent and be baptized every one of you\"",
                     answer = "Acts 2:38",
                     references = listOf("Acts 2:38"),
@@ -91,7 +91,7 @@ class ApplicationTest {
             header(HttpHeaders.Authorization, "Bearer ${contestant.token}")
             setBody(
                 SubmitQuestionRequest(
-                    roundType = RoundType.FACT_FINDER,
+                    roundType = Round.FACT_FINDER,
                     prompt = "Who preached at Pentecost?",
                     answer = "Peter",
                     references = listOf("Acts 2:14"),

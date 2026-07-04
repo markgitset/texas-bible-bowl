@@ -14,9 +14,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.QuestionStatus
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.generate.practice.PracticeTest
-import net.markdrew.biblebowl.generate.practice.Round
 import net.markdrew.biblebowl.generate.practice.eventsTypst
 import net.markdrew.biblebowl.generate.practice.findTheVerseTypst
 import net.markdrew.biblebowl.generate.practice.quotesTypst
@@ -42,10 +41,10 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
         // "through chapter" for the text rounds (matching how the study material scopes cumulative tests).
         get("/generate/practice-test.pdf") {
             val round = call.request.queryParameters["round"]
-                ?.let { runCatching { RoundType.valueOf(it) }.getOrNull() }
+                ?.let { runCatching { Round.valueOf(it) }.getOrNull() }
                 ?: return@get call.respond(
                     HttpStatusCode.BadRequest,
-                    ApiError("bad_round", "round must be one of ${RoundType.entries.joinToString()}"),
+                    ApiError("bad_round", "round must be one of ${Round.entries.joinToString()}"),
                 )
             val chapter = call.request.queryParameters["chapter"]?.toIntOrNull()
 
@@ -74,7 +73,7 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
         get("/generate/flashcards.pdf") {
             val chapter = call.request.queryParameters["chapter"]?.toIntOrNull()
             val round = call.request.queryParameters["round"]
-                ?.let { runCatching { RoundType.valueOf(it) }.getOrNull() }
+                ?.let { runCatching { Round.valueOf(it) }.getOrNull() }
 
             // The question bank only holds crowd-sourced rounds. R1/R4/R5 come from the text; R5 has its
             // own deck at /generate/heading-flashcards.pdf.
@@ -84,7 +83,7 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
                     ApiError(
                         "not_crowd_sourced",
                         "${round.displayName} is generated from the text, not the question bank" +
-                            (if (round == RoundType.KNOW_THE_CHAPTER_HEADINGS) " — use /generate/heading-flashcards.pdf" else ""),
+                            (if (round == Round.EVENTS) " — use /generate/heading-flashcards.pdf" else ""),
                     ),
                 )
             }
@@ -139,7 +138,7 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
  * chapter; [seed] makes selection reproducible.
  */
 private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTest(
-    round: RoundType,
+    round: Round,
     chapter: Int?,
     seed: Int?,
     study: StudyDataService?,
@@ -162,11 +161,11 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
     }
 
     val content = studyData.practice(throughChapter)
-    val practiceTest = PracticeTest(round.toPracticeRound(), content, randomSeed = seed ?: Random.nextInt(1..9_999))
+    val practiceTest = PracticeTest(round, content, randomSeed = seed ?: Random.nextInt(1..9_999))
     val typstSource: String? = when (round) {
-        RoundType.FIND_THE_VERSE -> findTheVerseTypst(practiceTest)
-        RoundType.KNOW_THE_CHAPTER_QUOTES -> quotesTypst(practiceTest)
-        RoundType.KNOW_THE_CHAPTER_HEADINGS -> eventsTypst(practiceTest)
+        Round.FIND_THE_VERSE -> findTheVerseTypst(practiceTest)
+        Round.QUOTES -> quotesTypst(practiceTest)
+        Round.EVENTS -> eventsTypst(practiceTest)
         else -> null // unreachable: guarded by round.textGenerated at the call site
     }
     if (typstSource == null) {
@@ -178,15 +177,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
     respondPdf(typstSource, "practice-${round.name.lowercase()}${chapter?.let { "-through-ch$it" } ?: ""}.pdf")
 }
 
-/** Maps the wire-facing [RoundType] to the print-layout [Round] used by the text generators. */
-private fun RoundType.toPracticeRound(): Round = when (this) {
-    RoundType.POWER -> Round.POWER
-    RoundType.FIND_THE_VERSE -> Round.FIND_THE_VERSE
-    RoundType.FACT_FINDER -> Round.FACT_FINDER
-    RoundType.IDENTIFICATION -> Round.IDENTIFICATION
-    RoundType.KNOW_THE_CHAPTER_QUOTES -> Round.QUOTES
-    RoundType.KNOW_THE_CHAPTER_HEADINGS -> Round.EVENTS
-}
+
 
 /** Compiles [typstSource] off the event loop and responds with PDF bytes as a named attachment. */
 private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(typstSource: String, fileName: String) {

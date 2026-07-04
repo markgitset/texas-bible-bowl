@@ -26,13 +26,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.app.net.TbbApi
 
 @Composable
 fun ContributeScreen(api: TbbApi) {
-    var roundType by remember { mutableStateOf(RoundType.crowdSourcedRounds.first()) }
+    var roundType by remember { mutableStateOf(Round.crowdSourcedRounds.first()) }
     var prompt by remember { mutableStateOf("") }
     var answer by remember { mutableStateOf("") }
     var referencesText by remember { mutableStateOf("") }
@@ -60,7 +60,7 @@ fun ContributeScreen(api: TbbApi) {
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            RoundType.crowdSourcedRounds.forEach { rt ->
+            Round.crowdSourcedRounds.forEach { rt ->
                 FilterChip(
                     selected = roundType == rt,
                     onClick = { roundType = rt },
@@ -142,8 +142,8 @@ fun ContributeScreen(api: TbbApi) {
     }
 }
 
-private fun answerLabel(roundType: RoundType): String = when (roundType) {
-    RoundType.FIND_THE_VERSE -> "Answer (chapter:verse, e.g. 2:38)"
-    RoundType.KNOW_THE_CHAPTER_QUOTES, RoundType.KNOW_THE_CHAPTER_HEADINGS -> "Answer (chapter number)"
+private fun answerLabel(roundType: Round): String = when (roundType) {
+    Round.FIND_THE_VERSE -> "Answer (chapter:verse, e.g. 2:38)"
+    Round.QUOTES, Round.EVENTS -> "Answer (chapter number)"
     else -> "Answer"
 }

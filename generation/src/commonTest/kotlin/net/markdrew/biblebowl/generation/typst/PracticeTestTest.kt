@@ -2,7 +2,7 @@ package net.markdrew.biblebowl.generation.typst
 
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
@@ -30,7 +30,7 @@ class PracticeTestTypstTest {
         refs: List<String> = emptyList(),
     ) = QuestionDto(
         id = "q-$prompt",
-        roundType = RoundType.FACT_FINDER,
+        roundType = Round.FACT_FINDER,
         prompt = prompt,
         answer = answer,
         references = refs,
@@ -43,7 +43,7 @@ class PracticeTestTypstTest {
     @Test
     fun multipleChoiceRoundRendersChoicesAndKeyLetter() {
         val typ = practiceTestTypst(
-            RoundType.FACT_FINDER,
+            Round.FACT_FINDER,
             listOf(question("Who replaced Judas?", "Matthias", choices = listOf("Barsabbas", "Matthias", "Silas"))),
         )
         assertContains(typ, "Fact Finder")
@@ -57,7 +57,7 @@ class PracticeTestTypstTest {
     @Test
     fun shortAnswerRoundRendersBlanksNotChoices() {
         val typ = practiceTestTypst(
-            RoundType.FIND_THE_VERSE,
+            Round.FIND_THE_VERSE,
             listOf(question("\"Repent and be baptized\"", "Acts 2:38", refs = listOf("Acts 2:38"))),
         )
         assertContains(typ, "Answer: #box")
@@ -68,7 +68,7 @@ class PracticeTestTypstTest {
     @Test
     fun promptsAreEscaped() {
         val typ = practiceTestTypst(
-            RoundType.IDENTIFICATION,
+            Round.IDENTIFICATION,
             listOf(question("Who said #blessed* [sic]?", "Peter")),
         )
         assertContains(typ, "\\#blessed\\* \\[sic\\]")
@@ -76,7 +76,7 @@ class PracticeTestTypstTest {
 
     @Test
     fun closedBibleRoundIsLabeled() {
-        val typ = practiceTestTypst(RoundType.KNOW_THE_CHAPTER_QUOTES, listOf(question("q", "3")))
+        val typ = practiceTestTypst(Round.QUOTES, listOf(question("q", "3")))
         assertContains(typ, "Closed Bible")
     }
 }

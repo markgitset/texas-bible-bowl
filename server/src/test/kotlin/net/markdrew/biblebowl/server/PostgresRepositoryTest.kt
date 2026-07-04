@@ -3,7 +3,7 @@ package net.markdrew.biblebowl.server
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.server.data.DatabaseFactory
 import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
@@ -82,7 +82,7 @@ class PostgresRepositoryTest {
             listOf(RoleGrant(Role.CONTESTANT)))
 
         val q = questions.submit(author.id, author.displayName, SubmitQuestionRequest(
-            roundType = RoundType.FIND_THE_VERSE,
+            roundType = Round.FIND_THE_VERSE,
             prompt = "\"Repent and be baptized every one of you\"",
             answer = "Acts 2:38",
             references = listOf("ACT2:38"),

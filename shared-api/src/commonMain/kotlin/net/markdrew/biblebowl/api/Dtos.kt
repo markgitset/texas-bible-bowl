@@ -1,6 +1,7 @@
 package net.markdrew.biblebowl.api
 
 import kotlinx.serialization.Serializable
+import net.markdrew.biblebowl.model.Round
 
 // ---------------------------------------------------------------------------
 // Auth & users
@@ -44,12 +45,12 @@ enum class QuestionStatus { PENDING, APPROVED, REJECTED }
 @Serializable
 data class QuestionDto(
     val id: String,
-    val roundType: RoundType,
+    val roundType: Round,
     val prompt: String,
     val answer: String,
     /** Serialized verse references supporting the answer, e.g. "Acts 2:38" (see core VerseRef). */
     val references: List<String> = emptyList(),
-    /** Optional multiple-choice options for [RoundType.multipleChoice] rounds; the correct one equals [answer]. */
+    /** Optional multiple-choice options for [Round.multipleChoice] rounds; the correct one equals [answer]. */
     val choices: List<String> = emptyList(),
     val chapter: Int? = null,
     val status: QuestionStatus = QuestionStatus.PENDING,
@@ -61,7 +62,7 @@ data class QuestionDto(
 
 @Serializable
 data class SubmitQuestionRequest(
-    val roundType: RoundType,
+    val roundType: Round,
     val prompt: String,
     val answer: String,
     val references: List<String> = emptyList(),
