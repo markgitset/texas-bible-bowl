@@ -20,7 +20,8 @@ import kotlin.io.path.writeText
  * [refresh] (env `ESV_CACHE_REFRESH=true`), which makes [get] ignore existing files so the next access
  * re-fetches and overwrites them.
  *
- * Note: cached ESV text is copyrighted, so [dir] is git-ignored and never committed.
+ * Note: cached ESV text is copyrighted, so [dir] lives outside the repo (default
+ * `~/.cache/texas-bible-bowl/esv`) and is never committed.
  */
 class FileEsvCache(private val dir: Path, private val refresh: Boolean = false) : EsvCache {
     private val log = LoggerFactory.getLogger(FileEsvCache::class.java)

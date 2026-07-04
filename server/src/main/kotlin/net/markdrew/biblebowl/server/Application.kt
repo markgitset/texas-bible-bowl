@@ -52,9 +52,13 @@ fun main() {
     val users = db?.let(::PostgresUserRepository) ?: InMemoryUserRepository()
     val questions = db?.let(::PostgresQuestionRepository) ?: InMemoryQuestionRepository()
     // Prod uses the Postgres cache; local dev (no DATABASE_URL) uses a persisted on-disk cache so repeated
-    // runs never re-hit the ESV API — only a first run (cache miss) or ESV_CACHE_REFRESH re-fetches.
+    // runs never re-hit the ESV API — only a first run (cache miss) or ESV_CACHE_REFRESH re-fetches. It
+    // lives under the user's home (~/.cache/texas-bible-bowl/esv) so it survives git cleans and fresh clones.
+    val esvCacheDir = System.getenv("ESV_CACHE_DIR")
+        ?.let { Path.of(it) }
+        ?: Path.of(System.getProperty("user.home"), ".cache", "texas-bible-bowl", "esv")
     val esvCache = db?.let(::PostgresEsvCache) ?: FileEsvCache(
-        dir = Path.of(System.getenv("ESV_CACHE_DIR") ?: ".esv-cache"),
+        dir = esvCacheDir,
         refresh = System.getenv("ESV_CACHE_REFRESH")?.toBooleanStrictOrNull() == true,
     )
     val esv = EsvPassageService(client = HttpClient(CIO), cache = esvCache)
