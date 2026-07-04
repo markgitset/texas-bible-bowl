@@ -1,3 +1,7 @@
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
+import org.gradle.kotlin.dsl.support.serviceOf
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
@@ -42,4 +46,15 @@ dependencies {
     testImplementation(libs.ktor.server.tests)
     testImplementation(libs.ktor.client.mock)
     testImplementation(kotlin("test"))
+}
+
+// Tests load chupacabra-core (Java 25 bytecode) at runtime, so route the test task to a
+// JDK 25 toolchain. Compilation and `buildFatJar` (used by the Docker image) still run on
+// the launcher JDK; only the production runtime image needs a JDK 25 (see server/Dockerfile).
+tasks.named<Test>("test") {
+    javaLauncher.set(
+        serviceOf<JavaToolchainService>().launcherFor {
+            languageVersion.set(JavaLanguageVersion.of(25))
+        }
+    )
 }

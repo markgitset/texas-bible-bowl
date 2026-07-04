@@ -14,6 +14,13 @@ pluginManagement {
     }
 }
 
+// Lets Gradle auto-provision a JDK 25 for the toolchain that runs :core:jvmTest and
+// :server:test (chupacabra-core ships Java 25 bytecode). No-op when a JDK 25 is already
+// installed and auto-detected (e.g. via SDKMAN locally).
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+}
+
 dependencyResolutionManagement {
     repositories {
         google {
@@ -24,6 +31,9 @@ dependencyResolutionManagement {
             }
         }
         mavenCentral()
+        maven("https://jitpack.io") {
+            content { includeGroupByRegex("com\\.github\\..*") }
+        }
     }
 }
 

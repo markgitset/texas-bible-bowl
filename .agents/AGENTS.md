@@ -18,11 +18,22 @@ and deploy, plus the non-obvious gotchas.
 ## Reuse strategy (locked in by Mark)
 **Copy bible-bowl JVM source into `core/jvmMain` when needed — do NOT depend on the
 bible-bowl jar.** The earlier ports kept bible-bowl's exact package names
-(`net.markdrew.biblebowl.*`, vendored `net.markdrew.chupacabra.*`), so an external jar
-would collide. Copy code + curated data verbatim; port to `commonMain` only when a
-client (web/app) actually needs to run it. The curated data (`core/src/jvmMain/resources/
-word-lists/*.txt`, `acts/category-overrides.tsv`) is the app's own — safe to commit. ESV
-*text* is copyrighted and stays out of git / server-side only.
+(`net.markdrew.biblebowl.*`), so an external jar would collide. Copy code + curated data
+verbatim; port to `commonMain` only when a client (web/app) actually needs to run it. The
+curated data (`core/src/jvmMain/resources/word-lists/*.txt`, `acts/category-overrides.tsv`)
+is the app's own — safe to commit. ESV *text* is copyrighted and stays out of git /
+server-side only.
+
+**Exception — chupacabra is a real dependency now, not vendored.** The
+`net.markdrew.chupacabra.core` range utilities (DisjointRangeMap/Set, etc.) used to be
+copied into `core/jvmMain`; they now come from the published KMP library
+`com.github.markgitset.chupacabra:chupacabra-core` (JitPack — see the `jitpack.io` repo in
+`settings.gradle.kts`), declared `api` in `core/jvmMain` so `:server` still sees the types.
+That library is built with **Kotlin 2.4.0** and **Java 25 bytecode**, which is *why* this
+repo runs Kotlin 2.4.0 / Compose 1.11.1 and why `:core:jvmTest` + `:server:test` are routed
+to a **JDK 25 toolchain** (Gradle itself still launches on JDK ≤23 — 8.13 can't run on 25;
+foojay auto-provisions the 25 toolchain). The prod server image (`server/Dockerfile`
+runtime stage) is `eclipse-temurin:25-jre` for the same reason; its build stage stays on 23.
 
 ## Build & test — task names differ per module
 Gradle task names are **not** uniform across modules. Use these:

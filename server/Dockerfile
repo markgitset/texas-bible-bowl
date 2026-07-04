@@ -13,7 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
        | tar -xJ --strip-components=1 -C /usr/local/bin typst-x86_64-unknown-linux-musl/typst
 
 # ---------- Runtime stage: JRE + typst ----------
-FROM eclipse-temurin:23-jre
+# JDK 25 JRE: chupacabra-core (a server dependency) ships Java 25 bytecode, so the
+# runtime must be >= 25. The build stage above stays on 23 — assembling the fat jar only
+# compiles/packages (never executes chupacabra), and Gradle 8.13 can't launch on JDK 25.
+FROM eclipse-temurin:25-jre
 # No font packages needed: the typst release binary embeds its default fonts
 # (Libertinus Serif, New Computer Modern) — exactly what the generators use.
 COPY --from=typst /usr/local/bin/typst /usr/local/bin/typst

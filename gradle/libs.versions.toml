@@ -1,6 +1,6 @@
 [versions]
-kotlin = "2.2.20"
-compose = "1.9.0"
+kotlin = "2.4.0"
+compose = "1.11.1"
 agp = "8.7.3"
 ktor = "3.3.1"
 coroutines = "1.10.2"
@@ -12,9 +12,11 @@ hikari = "7.0.2"
 logback = "1.5.19"
 koin = "4.1.1"
 activityCompose = "1.9.3"
+chupacabra = "v0.3.1"
 
 [libraries]
 # Shared / KMP
+chupacabra-core = { module = "com.github.markgitset.chupacabra:chupacabra-core", version.ref = "chupacabra" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
 kotlinx-datetime = { module = "org.jetbrains.kotlinx:kotlinx-datetime", version.ref = "datetime" }
