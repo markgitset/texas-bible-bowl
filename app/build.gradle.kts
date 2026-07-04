@@ -1,5 +1,6 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -12,7 +13,10 @@ plugins {
 kotlin {
     jvm("desktop")
 
-    androidTarget()
+    androidTarget {
+        // Keep the Android Kotlin bytecode target aligned with the Java (BuildConfig) compile below.
+        compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
+    }
 
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
@@ -67,7 +71,9 @@ kotlin {
 
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
-            implementation(libs.ktor.client.cio)
+            // OkHttp (not CIO) on Android: it implements the hostname-aware TLS trust check that
+            // Android's network-security-config requires — CIO throws on any custom domain-config.
+            implementation(libs.ktor.client.okhttp)
         }
     }
 }
@@ -75,17 +81,26 @@ kotlin {
 android {
     namespace = "net.markdrew.biblebowl.app"
     compileSdk = 35
+    buildFeatures { buildConfig = true }
     defaultConfig {
         applicationId = "net.markdrew.biblebowl"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
+        // The APK talks to the live Fly backend by default so a sideloaded build just works. Override for
+        // local dev, e.g. `-Ptbb.backendUrl=http://10.0.2.2:8080` (the emulator's alias for the host).
+        val backendUrl = (project.findProperty("tbb.backendUrl") as String?) ?: "https://texas-bible-bowl.fly.dev"
+        buildConfigField("String", "BACKEND_URL", "\"$backendUrl\"")
     }
     buildTypes {
         release {
             isMinifyEnabled = false // enable + configure proguard before a real release
         }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 }
 

@@ -6,6 +6,7 @@
     <application
         android:label="Texas Bible Bowl"
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:supportsRtl="true">
         <activity
             android:name=".MainActivity"

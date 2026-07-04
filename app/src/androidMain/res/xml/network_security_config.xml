@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Production traffic is HTTPS (the Fly backend), so cleartext stays disabled by default. Permit it only for
+  the local-dev hosts a developer targets with -Ptbb.backendUrl (the emulator host alias and localhost).
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <domain includeSubdomains="true">localhost</domain>
+    </domain-config>
+</network-security-config>

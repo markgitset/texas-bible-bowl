@@ -34,6 +34,12 @@ import net.markdrew.biblebowl.api.UserDto
 expect fun createHttpClient(): HttpClient
 
 /**
+ * Per-request timeout for the shared client. Generous on purpose: the Fly backend scales to zero, so the
+ * first request after idle waits out a JVM cold start (+ Postgres connect) that can take ~10-15s.
+ */
+internal const val BACKEND_REQUEST_TIMEOUT_MS: Long = 30_000L
+
+/**
  * The backend base URL for this platform. Web reads it from a `window.TBB_BACKEND_URL` global (injected
  * into the published page), so the same Wasm bundle runs against localhost in dev and the deployed
  * backend once served from GitHub Pages. Desktop/Android default to localhost for now.
