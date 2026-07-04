@@ -41,4 +41,22 @@ enum class RoundType(
     KNOW_THE_CHAPTER_QUOTES("Know the Chapter — Quotations", openBible = false, multipleChoice = false, maxPoints = 40),
     KNOW_THE_CHAPTER_HEADINGS("Know the Chapter — Headings/Events", openBible = false, multipleChoice = false, maxPoints = 40),
     POWER("Power Round", openBible = false, multipleChoice = false, maxPoints = 50);
+
+    /**
+     * Whether this round's material is contributed to the community question bank.
+     *
+     * Only Fact Finder (R2) and Identification (R3) are crowd-sourced. Find the Verse (R1),
+     * Know the Chapter — Quotations (R4), and — Headings/Events (R5) are generated deterministically
+     * from the ESV text, so they are never submitted or moderated. See [textGenerated].
+     */
+    val crowdSourced: Boolean get() = this == FACT_FINDER || this == IDENTIFICATION
+
+    /** Whether this round's material is generated from the study text rather than crowd-sourced. */
+    val textGenerated: Boolean
+        get() = this == FIND_THE_VERSE || this == KNOW_THE_CHAPTER_QUOTES || this == KNOW_THE_CHAPTER_HEADINGS
+
+    companion object {
+        /** The rounds contestants may contribute to the question bank (R2, R3). */
+        val crowdSourcedRounds: List<RoundType> get() = entries.filter { it.crowdSourced }
+    }
 }

@@ -32,7 +32,7 @@ import net.markdrew.biblebowl.app.net.TbbApi
 
 @Composable
 fun ContributeScreen(api: TbbApi) {
-    var roundType by remember { mutableStateOf(RoundType.FIND_THE_VERSE) }
+    var roundType by remember { mutableStateOf(RoundType.crowdSourcedRounds.first()) }
     var prompt by remember { mutableStateOf("") }
     var answer by remember { mutableStateOf("") }
     var referencesText by remember { mutableStateOf("") }
@@ -49,17 +49,18 @@ fun ContributeScreen(api: TbbApi) {
     ) {
         Text("Contribute a question", style = MaterialTheme.typography.titleLarge)
         Text(
-            "Approved questions join the community study bank. Pick the round it fits.",
+            "Fact Finder and Identification are crowd-sourced. Find the Verse, Quotations, and Headings are " +
+                "generated from the ESV text, so they aren't submitted here.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.outline,
         )
 
-        // Round selector — single-tap chips.
+        // Round selector — single-tap chips (crowd-sourced rounds only).
         Row(
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            RoundType.entries.forEach { rt ->
+            RoundType.crowdSourcedRounds.forEach { rt ->
                 FilterChip(
                     selected = roundType == rt,
                     onClick = { roundType = rt },
@@ -70,7 +71,7 @@ fun ContributeScreen(api: TbbApi) {
 
         OutlinedTextField(
             value = prompt, onValueChange = { prompt = it },
-            label = { Text(if (roundType == RoundType.FIND_THE_VERSE) "Quotation" else "Question / prompt") },
+            label = { Text("Question / prompt") },
             modifier = Modifier.fillMaxWidth(), minLines = 2,
         )
         OutlinedTextField(

@@ -12,6 +12,7 @@ import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionStatus
+import net.markdrew.biblebowl.api.RoundType
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.server.data.QuestionRepository
 import net.markdrew.biblebowl.server.data.UserRepository
@@ -36,6 +37,19 @@ fun Route.questionRoutes(users: UserRepository, questions: QuestionRepository) {
                 val req = call.receive<SubmitQuestionRequest>()
                 if (req.prompt.isBlank() || req.answer.isBlank()) {
                     call.respond(HttpStatusCode.BadRequest, ApiError("invalid", "Prompt and answer are required"))
+                    return@post
+                }
+                // Only Fact Finder (R2) and Identification (R3) are crowd-sourced; the other rounds are
+                // generated from the ESV text and must not enter the question bank.
+                if (!req.roundType.crowdSourced) {
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        ApiError(
+                            "not_crowd_sourced",
+                            "${req.roundType.displayName} is generated from the text, not crowd-sourced. " +
+                                "Only ${RoundType.crowdSourcedRounds.joinToString { it.displayName }} accept submissions.",
+                        ),
+                    )
                     return@post
                 }
                 call.respond(HttpStatusCode.Created, questions.submit(user.id, user.displayName, req))

@@ -149,7 +149,7 @@ private fun QuizSetup(
             Text("Round", style = MaterialTheme.typography.labelLarge)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(selected = round == null, onClick = { onRound(null) }, label = { Text("All") })
-                RoundType.entries.forEach { rt ->
+                RoundType.crowdSourcedRounds.forEach { rt ->
                     FilterChip(
                         selected = round == rt,
                         onClick = { onRound(if (round == rt) null else rt) },

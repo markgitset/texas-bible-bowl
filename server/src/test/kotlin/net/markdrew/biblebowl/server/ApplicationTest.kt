@@ -70,8 +70,8 @@ class ApplicationTest {
         assertTrue(Permission.QUESTION_SUBMIT in contestant.user.permissions)
         assertTrue(Permission.QUESTION_MODERATE !in contestant.user.permissions)
 
-        // Contestant submits a question.
-        val submit = api.post("/questions") {
+        // Text-generated rounds (R1/R4/R5) are NOT crowd-sourced — submitting one is rejected.
+        val rejected = api.post("/questions") {
             header(HttpHeaders.Authorization, "Bearer ${contestant.token}")
             setBody(
                 SubmitQuestionRequest(
@@ -79,6 +79,23 @@ class ApplicationTest {
                     prompt = "\"Repent and be baptized every one of you\"",
                     answer = "Acts 2:38",
                     references = listOf("Acts 2:38"),
+                    chapter = 2,
+                )
+            )
+        }
+        assertEquals(HttpStatusCode.BadRequest, rejected.status)
+        assertTrue(rejected.bodyAsText().contains("not_crowd_sourced"))
+
+        // Contestant submits a crowd-sourced (Fact Finder) question.
+        val submit = api.post("/questions") {
+            header(HttpHeaders.Authorization, "Bearer ${contestant.token}")
+            setBody(
+                SubmitQuestionRequest(
+                    roundType = RoundType.FACT_FINDER,
+                    prompt = "Who preached at Pentecost?",
+                    answer = "Peter",
+                    references = listOf("Acts 2:14"),
+                    choices = listOf("Peter", "Paul", "John", "James"),
                     chapter = 2,
                 )
             )
@@ -114,6 +131,6 @@ class ApplicationTest {
             header(HttpHeaders.Authorization, "Bearer ${contestant.token}")
         }
         assertEquals(HttpStatusCode.OK, list.status)
-        assertTrue(list.bodyAsText().contains("Acts 2:38"))
+        assertTrue(list.bodyAsText().contains("Who preached at Pentecost?"))
     }
 }
