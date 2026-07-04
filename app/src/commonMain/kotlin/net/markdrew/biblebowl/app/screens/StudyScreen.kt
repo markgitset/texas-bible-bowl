@@ -111,6 +111,15 @@ fun StudyScreen(api: TbbApi) {
 
                     val chSuffix = chapter?.let { "-ch$it" } ?: ""
                     DropdownMenuItem(
+                        text = { Text("Formatted text (PDF)") },
+                        onClick = { download("bible-text.pdf") { api.bibleTextPdf() } },
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Formatted text — 2 columns (PDF)") },
+                        onClick = { download("bible-text-2col.pdf") { api.bibleTextPdf(twoColumns = true) } },
+                    )
+                    HorizontalDivider()
+                    DropdownMenuItem(
                         text = { Text("Flashcards (all rounds)") },
                         onClick = { download("flashcards$chSuffix.pdf") { api.flashcardsPdf(chapter) } },
                     )

@@ -20,6 +20,8 @@ import net.markdrew.biblebowl.generate.practice.eventsTypst
 import net.markdrew.biblebowl.generate.practice.findTheVerseTypst
 import net.markdrew.biblebowl.generate.practice.quotesTypst
 import net.markdrew.biblebowl.generate.indices.numbersIndexTypst
+import net.markdrew.biblebowl.generate.text.TextOptions
+import net.markdrew.biblebowl.generate.text.typst.bibleTextTypst
 import net.markdrew.biblebowl.generation.typst.Flashcard
 import net.markdrew.biblebowl.generation.typst.flashcardsTypst
 import net.markdrew.biblebowl.generation.typst.practiceTestTypst
@@ -99,6 +101,30 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
                 )
             }
             respondPdf(flashcardsTypst(pool.toFlashcards()), "flashcards${chapter?.let { "-ch$it" } ?: ""}.pdf")
+        }
+
+        // GET /generate/bible-text.pdf?fontSize=11&twoColumns=false&justified=false&chapterBreaksPage=false
+        // A formatted PDF of the covered text (verse numbers, headings, poetry, footnotes). Highlighting of
+        // categorized names/numbers is a follow-up that layers REGEX annotations onto the same render.
+        get("/generate/bible-text.pdf") {
+            if (study == null || !study.isConfigured) {
+                return@get call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+                )
+            }
+            val qp = call.request.queryParameters
+            val options = TextOptions(
+                fontSize = qp["fontSize"]?.toIntOrNull()?.coerceIn(6, 24) ?: 11,
+                twoColumns = qp["twoColumns"]?.toBooleanStrictOrNull() ?: false,
+                justified = qp["justified"]?.toBooleanStrictOrNull() ?: false,
+                chapterBreaksPage = qp["chapterBreaksPage"]?.toBooleanStrictOrNull() ?: false,
+            )
+            try {
+                respondPdf(bibleTextTypst(study.studyData(), options), "bible-text.pdf")
+            } catch (e: EsvUpstreamException) {
+                call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+            }
         }
 
         // GET /generate/numbers-index.pdf — the season's numbers index (alphabetical + by frequency)
