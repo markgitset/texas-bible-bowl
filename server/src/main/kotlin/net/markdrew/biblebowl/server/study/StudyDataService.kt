@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.server.study
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import net.markdrew.biblebowl.analysis.AnnotationStore
 import net.markdrew.biblebowl.analysis.WordIndexEntryC
 import net.markdrew.biblebowl.analysis.numbersIndex
 import net.markdrew.biblebowl.api.HeadingDto
@@ -43,6 +44,16 @@ class StudyDataService(
 
     /** The season's numbers index (every numeral/cardinal/ordinal/fraction → its verses) as wire DTOs. */
     suspend fun numbers(): List<IndexEntryDto> = numbersIndex(studyData()).map { it.toDto() }
+
+    @Volatile private var annotationStore: AnnotationStore? = null
+
+    /**
+     * The memoized text-annotation store for this study set (word-list category resolution + curated
+     * overrides). Computed once per process; its resolution is what drives name/number highlighting.
+     */
+    suspend fun annotations(): AnnotationStore = annotationStore ?: mutex.withLock {
+        annotationStore ?: AnnotationStore(studyData(), cacheDir = null).also { annotationStore = it }
+    }
 
     private suspend fun build(): StudyData {
         val chapterRefs: List<ChapterRef> = studySet.chapterRanges.flatMap { range ->

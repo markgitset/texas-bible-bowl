@@ -24,6 +24,10 @@ kotlin {
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
+        // JVM-only: the copied bible-bowl generation/analysis code (server-side) uses kotlin-logging.
+        jvmMain.dependencies {
+            implementation(libs.kotlin.logging)
+        }
     }
 }
 

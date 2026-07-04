@@ -50,6 +50,15 @@ class BibleTextTypstTest {
     }
 
     @Test
+    fun highlightingTagsCategorizedWordsWithColors() {
+        val sd = genesis1()
+        val typst = highlightedBibleTextTypst(sd, net.markdrew.biblebowl.analysis.AnnotationStore(sd, cacheDir = null))
+        // "God" is a divine name in the word lists → highlighted; its color is defined in the preamble.
+        assertTrue(typst.contains("#let divine = rgb"), "defines the divine highlight color")
+        assertTrue(typst.contains("#myhl("), "emits highlight spans for categorized words")
+    }
+
+    @Test
     fun twoColumnOptionIsHonored() {
         val oneCol = bibleTextTypst(genesis1(), TextOptions(twoColumns = false))
         val twoCol = bibleTextTypst(genesis1(), TextOptions(twoColumns = true))

@@ -21,6 +21,7 @@ import net.markdrew.biblebowl.generate.practice.findTheVerseTypst
 import net.markdrew.biblebowl.generate.practice.quotesTypst
 import net.markdrew.biblebowl.generate.indices.numbersIndexTypst
 import net.markdrew.biblebowl.generate.text.TextOptions
+import net.markdrew.biblebowl.generate.text.highlightedBibleTextTypst
 import net.markdrew.biblebowl.generate.text.typst.bibleTextTypst
 import net.markdrew.biblebowl.generation.typst.Flashcard
 import net.markdrew.biblebowl.generation.typst.flashcardsTypst
@@ -120,8 +121,15 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
                 justified = qp["justified"]?.toBooleanStrictOrNull() ?: false,
                 chapterBreaksPage = qp["chapterBreaksPage"]?.toBooleanStrictOrNull() ?: false,
             )
+            // Categorized name/number highlighting is the point of the download, so it's on by default.
+            val highlight = qp["highlight"]?.toBooleanStrictOrNull() ?: true
             try {
-                respondPdf(bibleTextTypst(study.studyData(), options), "bible-text.pdf")
+                val typst = if (highlight) {
+                    highlightedBibleTextTypst(study.studyData(), study.annotations(), options)
+                } else {
+                    bibleTextTypst(study.studyData(), options)
+                }
+                respondPdf(typst, "bible-text${if (highlight) "-highlighted" else ""}.pdf")
             } catch (e: EsvUpstreamException) {
                 call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
             }

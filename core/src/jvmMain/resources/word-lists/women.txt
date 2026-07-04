@@ -1,0 +1,37 @@
+Achsah
+Anna
+Deborah
+Delilah
+Dorcas
+Elizabeth
+Herodias
+Jael
+Joanna
+Lot's wife
+Martha
+Mary
+Mary Magdalene
+Naomi
+Orpah
+Rahab
+Rhoda
+Ruth
+Salome
+Simon's mother-in-law
+Susanna
+Tabitha
+Mahlah
+(?<=Mahlah, )Noah
+Hoglah
+Milcah
+(?<!king of )Tirzah
+Rachel
+Leah
+Tamar
+Sapphira
+Candace
+Lydia
+Damaris
+Priscilla
+Drusilla
+Bernice
