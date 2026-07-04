@@ -107,6 +107,26 @@ data class HeadingDto(
     val total: Int,
 )
 
+/** One entry of a study index (e.g. the Numbers index): a key and the verses it occurs in. */
+@Serializable
+data class IndexEntryDto(
+    /** The indexed term as it appears in the text, e.g. "forty" or "1,000". */
+    val key: String,
+    /** Total occurrences across the study set. */
+    val total: Int,
+    /** The verses this term occurs in, each with its per-verse occurrence count, in Bible order. */
+    val references: List<IndexRefDto>,
+)
+
+/** A single verse reference within an [IndexEntryDto], with how many times the term occurs there. */
+@Serializable
+data class IndexRefDto(
+    /** Human-readable verse reference, e.g. "2:41". */
+    val reference: String,
+    /** Occurrences of the term in this verse. */
+    val count: Int,
+)
+
 // ---------------------------------------------------------------------------
 // Generic API envelope for errors
 // ---------------------------------------------------------------------------

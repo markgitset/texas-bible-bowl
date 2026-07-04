@@ -2,7 +2,11 @@ package net.markdrew.biblebowl.server.study
 
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import net.markdrew.biblebowl.analysis.WordIndexEntryC
+import net.markdrew.biblebowl.analysis.numbersIndex
 import net.markdrew.biblebowl.api.HeadingDto
+import net.markdrew.biblebowl.api.IndexEntryDto
+import net.markdrew.biblebowl.api.IndexRefDto
 import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.Heading
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
@@ -37,6 +41,9 @@ class StudyDataService(
         cached ?: build().also { cached = it }
     }
 
+    /** The season's numbers index (every numeral/cardinal/ordinal/fraction → its verses) as wire DTOs. */
+    suspend fun numbers(): List<IndexEntryDto> = numbersIndex(studyData()).map { it.toDto() }
+
     private suspend fun build(): StudyData {
         val chapterRefs: List<ChapterRef> = studySet.chapterRanges.flatMap { range ->
             require(range.start.book == range.endInclusive.book) {
@@ -67,6 +74,13 @@ class StudyDataService(
         return EsvIndexer(studySet).indexBook(passages.asSequence())
     }
 }
+
+/** Maps a count-carrying word/number index entry to its wire form (references formatted within-book). */
+fun WordIndexEntryC.toDto(): IndexEntryDto = IndexEntryDto(
+    key = key,
+    total = values.sumOf { it.count },
+    references = values.map { IndexRefDto(reference = it.item.format(NO_BOOK_FORMAT), count = it.count) },
+)
 
 /** Maps a domain [Heading] to its wire form. */
 fun Heading.toDto(): HeadingDto = HeadingDto(

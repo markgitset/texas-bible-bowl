@@ -20,6 +20,7 @@ import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.HeadingDto
+import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.RegisterRequest
 import kotlinx.coroutines.runBlocking
 import net.markdrew.biblebowl.model.Book
@@ -184,6 +185,35 @@ class StudyRoutesTest {
         assertEquals(HttpStatusCode.OK, res.status)
         val bytes = res.bodyAsBytes()
         assertTrue(bytes.size > 4 && bytes.decodeToString(0, 4) == "%PDF", "response should be a PDF")
+    }
+
+    @Test
+    fun numbersEndpointServesTheNumbersIndex() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+            )
+        }
+        val json = Json { ignoreUnknownKeys = true }
+        val api = createClient { install(ContentNegotiation) { json(json) } }
+
+        assertEquals(HttpStatusCode.Unauthorized, api.get("/study/numbers").status)
+
+        val reg = api.post("/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(RegisterRequest("counter@tbb.org", "password123", "Counter"))
+        }
+        val auth: AuthResponse = json.decodeFromString(reg.bodyAsText())
+
+        val res = api.get("/study/numbers") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }
+        assertEquals(HttpStatusCode.OK, res.status)
+        val entries: List<IndexEntryDto> = json.decodeFromString(res.bodyAsText())
+        // The Acts 1-2 fixture contains "one" ("in one place") and "first" ("the first book").
+        val keys = entries.map { it.key }
+        assertTrue(entries.isNotEmpty(), "expected some numbers, got $keys")
+        assertTrue(keys.any { it == "one" || it == "first" }, "expected 'one'/'first' among $keys")
+        entries.forEach { e -> assertEquals(e.total, e.references.sumOf { it.count }) }
     }
 
     @Test

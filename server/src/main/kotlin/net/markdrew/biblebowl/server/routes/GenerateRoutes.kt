@@ -19,6 +19,7 @@ import net.markdrew.biblebowl.generate.practice.PracticeTest
 import net.markdrew.biblebowl.generate.practice.eventsTypst
 import net.markdrew.biblebowl.generate.practice.findTheVerseTypst
 import net.markdrew.biblebowl.generate.practice.quotesTypst
+import net.markdrew.biblebowl.generate.indices.numbersIndexTypst
 import net.markdrew.biblebowl.generation.typst.Flashcard
 import net.markdrew.biblebowl.generation.typst.flashcardsTypst
 import net.markdrew.biblebowl.generation.typst.practiceTestTypst
@@ -98,6 +99,21 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
                 )
             }
             respondPdf(flashcardsTypst(pool.toFlashcards()), "flashcards${chapter?.let { "-ch$it" } ?: ""}.pdf")
+        }
+
+        // GET /generate/numbers-index.pdf — the season's numbers index (alphabetical + by frequency)
+        get("/generate/numbers-index.pdf") {
+            if (study == null || !study.isConfigured) {
+                return@get call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+                )
+            }
+            try {
+                respondPdf(numbersIndexTypst(study.studyData()), "numbers-index.pdf")
+            } catch (e: EsvUpstreamException) {
+                call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+            }
         }
 
         // GET /generate/heading-flashcards.pdf?throughChapter=5 — Round 5 (chapter headings) deck

@@ -31,6 +31,7 @@ import net.markdrew.biblebowl.app.net.TbbApi
 private enum class MainTab(val title: String) {
     STUDY("Study"),
     QUIZ("Quiz"),
+    NUMBERS("Numbers"),
     CONTRIBUTE("Contribute"),
     MODERATE("Moderate"),
 }
@@ -42,6 +43,7 @@ fun MainScreen(api: TbbApi, user: UserDto, onSignOut: () -> Unit) {
         buildList {
             add(MainTab.STUDY)
             add(MainTab.QUIZ)
+            add(MainTab.NUMBERS)
             if (Permission.QUESTION_SUBMIT in user.permissions) add(MainTab.CONTRIBUTE)
             if (Permission.QUESTION_MODERATE in user.permissions) add(MainTab.MODERATE)
         }
@@ -88,6 +90,7 @@ fun MainScreen(api: TbbApi, user: UserDto, onSignOut: () -> Unit) {
                     when (tabs[selected]) {
                         MainTab.STUDY -> StudyScreen(api)
                         MainTab.QUIZ -> QuizScreen(api)
+                        MainTab.NUMBERS -> NumbersScreen(api)
                         MainTab.CONTRIBUTE -> ContributeScreen(api)
                         MainTab.MODERATE -> ModerateScreen(api)
                     }

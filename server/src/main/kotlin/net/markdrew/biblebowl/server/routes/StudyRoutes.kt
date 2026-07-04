@@ -30,5 +30,20 @@ fun Route.studyRoutes(study: StudyDataService?) {
                 call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
             }
         }
+
+        // GET /study/numbers — the season's numbers index (alphabetical), for the in-app study view.
+        get("/study/numbers") {
+            if (study == null || !study.isConfigured) {
+                return@get call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+                )
+            }
+            try {
+                call.respond(study.numbers())
+            } catch (e: EsvUpstreamException) {
+                call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+            }
+        }
     }
 }

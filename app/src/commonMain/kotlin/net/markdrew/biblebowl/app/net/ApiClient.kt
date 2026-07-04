@@ -18,6 +18,7 @@ import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.HeadingDto
+import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.QuestionDto
@@ -140,6 +141,14 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             authorize()
             if (throughChapter != null) parameter("throughChapter", throughChapter)
         }.pdfBytesOrThrow()
+
+    /** Lists the season's numbers index (every numeral/cardinal/ordinal/fraction and the verses it occurs in). */
+    suspend fun numbersIndex(): List<IndexEntryDto> =
+        client.get("$baseUrl/study/numbers") { authorize() }.body()
+
+    /** Fetches the numbers-index PDF (alphabetical + by-frequency sections). */
+    suspend fun numbersIndexPdf(): ByteArray =
+        client.get("$baseUrl/generate/numbers-index.pdf") { authorize() }.pdfBytesOrThrow()
 
     /**
      * Returns the response body as PDF bytes, or throws [PdfException] with the server's error message on a
