@@ -5,6 +5,7 @@ import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
@@ -14,7 +15,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.model.ChapterRef
 import kotlin.time.Duration
-import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Matches bible-bowl's INDENT_POETRY_LINES; keeps server-rendered text identical to the CLI's output. */
 private const val INDENT_POETRY_LINES = 4
@@ -61,10 +62,13 @@ class EsvPassageService(
     private val baseUrl: String = "https://api.esv.org",
     /**
      * Minimum spacing between *live* ESV API calls, mirroring bible-bowl's EsvClient
-     * `timeBetweenChapters` (default 1s) so we stay polite and avoid being rate-limited when
-     * priming the cache (e.g. all 28 chapters of Acts back-to-back). Cache hits are never throttled.
+     * `timeBetweenChapters` so we stay polite and avoid being rate-limited when priming the cache (e.g.
+     * all 28 chapters of Acts back-to-back). Cache hits are never throttled. Kept a little above 1s
+     * because Crossway's limit is ~60 requests/minute — 1s flat can tip over on jitter.
      */
-    private val minFetchInterval: Duration = 1.seconds,
+    private val minFetchInterval: Duration = 1_200.milliseconds,
+    /** How many times to retry a single chapter after an HTTP 429 (honoring Retry-After) before giving up. */
+    private val maxRetriesOn429: Int = 4,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -100,41 +104,54 @@ class EsvPassageService(
     private suspend fun fetchFromUpstream(chapterRef: ChapterRef): CachedChapter {
         // Same query form as bible-bowl's EsvClient.chapterRefToQuery: packed absolute-verse range.
         val query = with(chapterRef.verseRange()) { "${start.absoluteVerse}-${endInclusive.absoluteVerse}" }
-        val response = client.get("$baseUrl/v3/passage/text/") {
-            token?.let { header("Authorization", "Token $it") }
-            parameter("q", query)
-            parameter("include-passage-references", false)
-            parameter("include-first-verse-numbers", true)
-            parameter("include-verse-numbers", true)
-            parameter("include-footnotes", true)
-            parameter("include-footnote-body", true)
-            parameter("include-short-copyright", false)
-            parameter("include-copyright", false)
-            parameter("include-passage-horizontal-lines", false)
-            parameter("include-heading-horizontal-lines", true)
-            parameter("horizontal-line-length", 55)
-            parameter("include-headings", true)
-            parameter("include-selahs", true)
-            parameter("indent-using", "space")
-            parameter("indent-paragraphs", 2)
-            parameter("indent-poetry", true)
-            parameter("indent-poetry-lines", INDENT_POETRY_LINES)
-            parameter("indent-declares", 40)
-            parameter("indent-psalm-doxology", 30)
-            parameter("line-length", 0)
-        }
-        if (!response.status.isSuccess()) {
-            throw EsvUpstreamException("ESV API returned ${response.status}")
-        }
-        val passageText: EsvPassageText = json.decodeFromString(response.body<String>())
-        val text = passageText.passages.firstOrNull()
-            ?: throw EsvUpstreamException("ESV API returned no passage for $chapterRef")
+        var attempt = 0
+        while (true) {
+            val response = requestChapter(query)
+            if (response.status == HttpStatusCode.TooManyRequests && attempt < maxRetriesOn429) {
+                // Back off and retry — honor Retry-After if present, else grow the wait each attempt.
+                val retryAfterSecs = response.headers["Retry-After"]?.toLongOrNull()
+                val waitSecs = (retryAfterSecs ?: (2L * (attempt + 1))).coerceIn(1, 60)
+                delay(waitSecs * 1_000)
+                attempt++
+                continue
+            }
+            if (!response.status.isSuccess()) {
+                throw EsvUpstreamException("ESV API returned ${response.status}")
+            }
+            val passageText: EsvPassageText = json.decodeFromString(response.body<String>())
+            val text = passageText.passages.firstOrNull()
+                ?: throw EsvUpstreamException("ESV API returned no passage for $chapterRef")
 
-        return CachedChapter(
-            bookCode = chapterRef.book.name,
-            chapter = chapterRef.chapter,
-            canonical = passageText.canonical,
-            text = text,
-        )
+            return CachedChapter(
+                bookCode = chapterRef.book.name,
+                chapter = chapterRef.chapter,
+                canonical = passageText.canonical,
+                text = text,
+            )
+        }
+    }
+
+    private suspend fun requestChapter(query: String) = client.get("$baseUrl/v3/passage/text/") {
+        token?.let { header("Authorization", "Token $it") }
+        parameter("q", query)
+        parameter("include-passage-references", false)
+        parameter("include-first-verse-numbers", true)
+        parameter("include-verse-numbers", true)
+        parameter("include-footnotes", true)
+        parameter("include-footnote-body", true)
+        parameter("include-short-copyright", false)
+        parameter("include-copyright", false)
+        parameter("include-passage-horizontal-lines", false)
+        parameter("include-heading-horizontal-lines", true)
+        parameter("horizontal-line-length", 55)
+        parameter("include-headings", true)
+        parameter("include-selahs", true)
+        parameter("indent-using", "space")
+        parameter("indent-paragraphs", 2)
+        parameter("indent-poetry", true)
+        parameter("indent-poetry-lines", INDENT_POETRY_LINES)
+        parameter("indent-declares", 40)
+        parameter("indent-psalm-doxology", 30)
+        parameter("line-length", 0)
     }
 }

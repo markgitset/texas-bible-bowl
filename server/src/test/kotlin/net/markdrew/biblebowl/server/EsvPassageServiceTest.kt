@@ -106,6 +106,38 @@ class EsvPassageServiceTest {
     }
 
     @Test
+    fun retriesAfterRateLimitThenSucceeds() = runBlocking {
+        var calls = 0
+        val client = HttpClient(MockEngine { _ ->
+            calls++
+            if (calls == 1) {
+                respond(
+                    content = "rate limited",
+                    status = HttpStatusCode.TooManyRequests,
+                    headers = headersOf(HttpHeaders.RetryAfter, "1"), // 1s keeps the test quick
+                )
+            } else {
+                respond(
+                    content = ACTS_2_RESPONSE,
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+                )
+            }
+        })
+        val service = EsvPassageService(
+            client = client,
+            cache = InMemoryEsvCache(),
+            token = "test-esv-token",
+            baseUrl = "https://fake.esv",
+            minFetchInterval = 0.milliseconds,
+        )
+
+        val chapter = service.chapterText(Book.ACT.chapterRef(2))
+        assertEquals(2, calls, "one 429 then a successful retry")
+        assertTrue(chapter.text.contains("Pentecost"))
+    }
+
+    @Test
     fun bibleRouteServesChapterToAuthenticatedUser() = testApplication {
         val hits = mutableListOf<String>()
         val esv = EsvPassageService(
