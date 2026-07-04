@@ -23,3 +23,6 @@ local.properties
 # Secrets / env
 .env
 *.local
+
+# Local on-disk ESV chapter cache (copyrighted text — never committed)
+.esv-cache/

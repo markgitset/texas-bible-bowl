@@ -31,6 +31,7 @@ data class EsvPassageText(
 )
 
 /** A cached chapter of ESV text. */
+@Serializable
 data class CachedChapter(val bookCode: String, val chapter: Int, val canonical: String, val text: String)
 
 /** Pluggable chapter cache; Postgres in production, in-memory for tests. */

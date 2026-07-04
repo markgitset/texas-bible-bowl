@@ -21,6 +21,7 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.launch
+import java.nio.file.Path
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.Role
@@ -33,7 +34,7 @@ import net.markdrew.biblebowl.server.data.PostgresUserRepository
 import net.markdrew.biblebowl.server.data.QuestionRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.esv.EsvPassageService
-import net.markdrew.biblebowl.server.esv.InMemoryEsvCache
+import net.markdrew.biblebowl.server.esv.FileEsvCache
 import net.markdrew.biblebowl.server.esv.PostgresEsvCache
 import net.markdrew.biblebowl.server.routes.authRoutes
 import net.markdrew.biblebowl.server.routes.bibleRoutes
@@ -50,10 +51,13 @@ fun main() {
     val db = if (System.getenv("DATABASE_URL") != null) DatabaseFactory.connect() else null
     val users = db?.let(::PostgresUserRepository) ?: InMemoryUserRepository()
     val questions = db?.let(::PostgresQuestionRepository) ?: InMemoryQuestionRepository()
-    val esv = EsvPassageService(
-        client = HttpClient(CIO),
-        cache = db?.let(::PostgresEsvCache) ?: InMemoryEsvCache(),
+    // Prod uses the Postgres cache; local dev (no DATABASE_URL) uses a persisted on-disk cache so repeated
+    // runs never re-hit the ESV API — only a first run (cache miss) or ESV_CACHE_REFRESH re-fetches.
+    val esvCache = db?.let(::PostgresEsvCache) ?: FileEsvCache(
+        dir = Path.of(System.getenv("ESV_CACHE_DIR") ?: ".esv-cache"),
+        refresh = System.getenv("ESV_CACHE_REFRESH")?.toBooleanStrictOrNull() == true,
     )
+    val esv = EsvPassageService(client = HttpClient(CIO), cache = esvCache)
     embeddedServer(Netty, port = port, host = "0.0.0.0") { module(users, questions, esv = esv) }.start(wait = true)
 }
 

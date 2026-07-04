@@ -88,7 +88,7 @@ enum class Book(
     val number = ordinal + 1
 
     /** Largest possible chapter ref for this book, useful as a sentinel "to end of book" upper bound */
-    val lastChapterRef = ChapterRef(this, BCV_FACTOR - 1)
+    val lastChapterRef = ChapterRef(this, chapterCount)
 
     /** Two-letter uppercase code for this book (e.g. "GE", "JG", "DT") */
     val twoLetter = (twoLetterCode ?: name.take(2)).uppercase()
