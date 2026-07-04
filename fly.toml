@@ -10,6 +10,12 @@ primary_region = "dfw" # Dallas — closest Fly region to Texas
 [build]
   dockerfile = "server/Dockerfile"
 
+[env]
+  # Warm the ESV chapter cache (all of Acts) in the background on startup so /study/headings and the
+  # text-generated practice tests (R1/R4/R5) respond immediately. Cache-first: does live ESV fetches
+  # only on the first boot after the Neon cache is empty; every later start is served from Postgres.
+  PRIME_CACHE_ON_START = "true"
+
 [http_service]
   internal_port = 8080
   force_https = true

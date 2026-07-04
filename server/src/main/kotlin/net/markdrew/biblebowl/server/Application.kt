@@ -20,6 +20,7 @@ import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.Role
@@ -113,6 +114,26 @@ fun Application.module(
         bibleRoutes(esv)
         studyRoutes(study)
         generateRoutes(questions, study)
+    }
+
+    warmStudyCache(study)
+}
+
+/**
+ * When PRIME_CACHE_ON_START is set, indexes the season's [StudyData] in the background so the ESV chapter
+ * cache is warm before the first study/headings or text-generated practice-test request. Cache-first, so
+ * after the first successful run every restart is served from Postgres with no live ESV calls. Non-blocking
+ * (won't delay health checks) and best-effort — a failure just falls back to lazy on-demand loading.
+ *
+ * Gated by an env flag (not on by default) so tests never trigger live ESV fetches.
+ */
+private fun Application.warmStudyCache(study: StudyDataService?) {
+    if (study == null || !study.isConfigured) return
+    if (System.getenv("PRIME_CACHE_ON_START")?.toBooleanStrictOrNull() != true) return
+    launch {
+        runCatching { study.studyData() }
+            .onSuccess { environment.log.info("ESV cache primed: ${it.headings.size} headings indexed") }
+            .onFailure { environment.log.warn("ESV cache priming failed (falling back to lazy load): ${it.message}") }
     }
 }
 

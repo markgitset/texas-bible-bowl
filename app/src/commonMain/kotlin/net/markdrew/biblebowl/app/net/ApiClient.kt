@@ -8,9 +8,14 @@ import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
+import kotlinx.serialization.json.Json
+import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.LoginRequest
@@ -106,7 +111,7 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             authorize()
             parameter("round", round.name)
             if (chapter != null) parameter("chapter", chapter)
-        }.body()
+        }.pdfBytesOrThrow()
 
     /** Fetches a duplex flashcard deck PDF built from approved questions (filters optional). */
     suspend fun flashcardsPdf(chapter: Int? = null, round: RoundType? = null): ByteArray =
@@ -114,7 +119,7 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             authorize()
             if (chapter != null) parameter("chapter", chapter)
             if (round != null) parameter("round", round.name)
-        }.body()
+        }.pdfBytesOrThrow()
 
     /** Lists the season book's ESV section headings (Round 5 material), optionally through a chapter. */
     suspend fun headings(throughChapter: Int? = null): List<HeadingDto> =
@@ -128,10 +133,30 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
         client.get("$baseUrl/generate/heading-flashcards.pdf") {
             authorize()
             if (throughChapter != null) parameter("throughChapter", throughChapter)
-        }.body()
+        }.pdfBytesOrThrow()
+
+    /**
+     * Returns the response body as PDF bytes, or throws [PdfException] with the server's error message on a
+     * non-2xx status. Without this the client would happily "download" a JSON error body as a `.pdf`, which
+     * the browser then reports as a corrupt/failed PDF with no clue what actually went wrong.
+     */
+    private suspend fun HttpResponse.pdfBytesOrThrow(): ByteArray {
+        if (status.isSuccess()) return body()
+        val raw = runCatching { bodyAsText() }.getOrNull()
+        val message = raw
+            ?.let { runCatching { errorJson.decodeFromString<ApiError>(it).message }.getOrNull() }
+            ?: raw?.takeIf { it.isNotBlank() }
+            ?: "Server returned $status"
+        throw PdfException(message)
+    }
 
     companion object {
+        private val errorJson = Json { ignoreUnknownKeys = true }
+
         // Local dev default; the web build points at the deployed Cloud Run URL at build time.
         const val DEFAULT_BASE_URL = "http://localhost:8080"
     }
 }
+
+/** Thrown when a PDF request fails; [message] carries the server's human-readable reason. */
+class PdfException(message: String) : Exception(message)
