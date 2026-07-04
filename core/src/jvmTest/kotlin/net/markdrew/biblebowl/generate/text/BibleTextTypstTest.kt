@@ -59,6 +59,19 @@ class BibleTextTypstTest {
     }
 
     @Test
+    fun underlineUniqueWordsIsOffByDefaultAndOnWhenRequested() {
+        val sd = genesis1()
+        // "beginning" occurs exactly once in the fixture → a hapax that should be underlined when enabled.
+        assertTrue("beginning" in sd.wordIndex.filterValues { it.size == 1 }.keys, "fixture has a hapax to underline")
+
+        val plain = bibleTextTypst(sd)
+        assertTrue(!plain.contains("#underline["), "no underlining without the option")
+
+        val underlined = bibleTextTypst(sd, TextOptions(underlineUniqueWords = true))
+        assertTrue(underlined.contains("#underline["), "underlines hapax words when the option is set")
+    }
+
+    @Test
     fun twoColumnOptionIsHonored() {
         val oneCol = bibleTextTypst(genesis1(), TextOptions(twoColumns = false))
         val twoCol = bibleTextTypst(genesis1(), TextOptions(twoColumns = true))

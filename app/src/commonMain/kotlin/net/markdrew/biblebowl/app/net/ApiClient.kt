@@ -142,13 +142,23 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             if (throughChapter != null) parameter("throughChapter", throughChapter)
         }.pdfBytesOrThrow()
 
-    /** Fetches a formatted PDF of the covered text (verse numbers, headings, poetry, footnotes). */
-    suspend fun bibleTextPdf(fontSize: Int? = null, twoColumns: Boolean = false, justified: Boolean = false): ByteArray =
+    /**
+     * Fetches a formatted PDF of the covered text (verse numbers, headings, poetry, footnotes) with
+     * categorized name/number highlighting; set [underlineUniqueWords] to also underline hapax words
+     * (those occurring exactly once in the season book).
+     */
+    suspend fun bibleTextPdf(
+        fontSize: Int? = null,
+        twoColumns: Boolean = false,
+        justified: Boolean = false,
+        underlineUniqueWords: Boolean = false,
+    ): ByteArray =
         client.get("$baseUrl/generate/bible-text.pdf") {
             authorize()
             if (fontSize != null) parameter("fontSize", fontSize)
             if (twoColumns) parameter("twoColumns", true)
             if (justified) parameter("justified", true)
+            if (underlineUniqueWords) parameter("underlineUniqueWords", true)
         }.pdfBytesOrThrow()
 
     /** Lists the season's numbers index (every numeral/cardinal/ordinal/fraction and the verses it occurs in). */

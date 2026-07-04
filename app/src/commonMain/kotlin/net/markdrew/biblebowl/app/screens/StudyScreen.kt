@@ -118,6 +118,12 @@ fun StudyScreen(api: TbbApi) {
                         text = { Text("Formatted text — 2 columns (PDF)") },
                         onClick = { download("bible-text-2col.pdf") { api.bibleTextPdf(twoColumns = true) } },
                     )
+                    DropdownMenuItem(
+                        text = { Text("Formatted text — underline unique words (PDF)") },
+                        onClick = {
+                            download("bible-text-unique-words.pdf") { api.bibleTextPdf(underlineUniqueWords = true) }
+                        },
+                    )
                     HorizontalDivider()
                     DropdownMenuItem(
                         text = { Text("Flashcards (all rounds)") },

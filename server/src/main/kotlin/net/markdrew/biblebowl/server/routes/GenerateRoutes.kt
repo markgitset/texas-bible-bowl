@@ -106,9 +106,10 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
             respondPdf(flashcardsTypst(pool.toFlashcards()), "flashcards${chapter?.let { "-ch$it" } ?: ""}.pdf")
         }
 
-        // GET /generate/bible-text.pdf?fontSize=11&twoColumns=false&justified=false&chapterBreaksPage=false
-        // A formatted PDF of the covered text (verse numbers, headings, poetry, footnotes). Highlighting of
-        // categorized names/numbers is a follow-up that layers REGEX annotations onto the same render.
+        // GET /generate/bible-text.pdf?fontSize=11&twoColumns=false&justified=false&chapterBreaksPage=false&underlineUniqueWords=false
+        // A formatted PDF of the covered text (verse numbers, headings, poetry, footnotes) with categorized
+        // name/number highlighting (highlight=true by default) and optional underlining of hapax words
+        // (underlineUniqueWords) — words that appear exactly once in the season book.
         get("/generate/bible-text.pdf") {
             if (study == null || !study.isConfigured) {
                 return@get call.respond(
@@ -122,6 +123,7 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
                 twoColumns = qp["twoColumns"]?.toBooleanStrictOrNull() ?: false,
                 justified = qp["justified"]?.toBooleanStrictOrNull() ?: false,
                 chapterBreaksPage = qp["chapterBreaksPage"]?.toBooleanStrictOrNull() ?: false,
+                underlineUniqueWords = qp["underlineUniqueWords"]?.toBooleanStrictOrNull() ?: false,
             )
             // Categorized name/number highlighting is the point of the download, so it's on by default.
             val highlight = qp["highlight"]?.toBooleanStrictOrNull() ?: true

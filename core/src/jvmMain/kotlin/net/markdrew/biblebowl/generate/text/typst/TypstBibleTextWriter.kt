@@ -9,7 +9,9 @@ import net.markdrew.biblebowl.generate.text.HighlightContext
 import net.markdrew.biblebowl.generate.text.Typst
 import net.markdrew.biblebowl.generate.text.OutputFormat
 import net.markdrew.biblebowl.generate.text.toAnnotatedDoc
+import net.markdrew.biblebowl.analysis.oneTimeWords
 import net.markdrew.biblebowl.model.AnalysisUnit
+import net.markdrew.biblebowl.model.AnalysisUnit.UNIQUE_WORD
 import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.FULL_BOOK_FORMAT
@@ -24,6 +26,7 @@ import net.markdrew.biblebowl.model.AnalysisUnit.VERSE
 import net.markdrew.biblebowl.model.StudyData
 import net.markdrew.biblebowl.model.VerseRef
 import net.markdrew.biblebowl.ws.DEFAULT_COPYRIGHT_DISCLAIMER
+import net.markdrew.chupacabra.core.DisjointRangeSet
 import java.time.format.DateTimeFormatter
 
 private val asteriskBracketedWordRegex = Regex("""\*([^*]+)\*""")
@@ -43,6 +46,13 @@ fun bibleTextTypst(
     ),
     copyrightDisclaimer: String = DEFAULT_COPYRIGHT_DISCLAIMER,
 ): String = buildString {
+    // Underlining the study set's hapaxes (words that occur exactly once) is a pure structural feature —
+    // it needs only StudyData.wordIndex, no NLP — so add its layer here rather than in the doc builders.
+    // The walker gates the actual underline emission on options.underlineUniqueWords; adding the layer
+    // unconditionally would be harmless, but skipping it when off avoids building the range set for nothing.
+    if (options.underlineUniqueWords) {
+        doc.setAnnotations(UNIQUE_WORD, DisjointRangeSet(oneTimeWords(studyData)))
+    }
     BibleTextWalker.walk(doc, studyData, options, TypstHandler(this, options, copyrightDisclaimer))
 }
 
