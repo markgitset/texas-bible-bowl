@@ -38,7 +38,7 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.app.net.TbbApi
 
@@ -79,7 +79,7 @@ private fun RoundsStrip() {
         Modifier.horizontalScroll(rememberScrollState()),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        RoundType.entries.forEach { round ->
+        Round.entries.forEach { round ->
             AssistChip(
                 onClick = {},
                 label = { Text(round.displayName) },

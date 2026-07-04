@@ -14,7 +14,7 @@ PostgreSQL** backend, sharing domain logic ported from
 | Module        | Kind                    | Purpose |
 |---------------|-------------------------|---------|
 | `:core`       | KMP (jvm, wasmJs)       | Pure domain: `VerseRef`, `ChapterRef`, `VerseRange`, `Book`, `Heading`. Ported from `bible-bowl/model`. |
-| `:shared-api` | KMP (jvm, wasmJs)       | RBAC (`Role`/`Permission`), `Division`/`RoundType`, and serializable DTOs shared by clients **and** server. |
+| `:shared-api` | KMP (jvm, wasmJs)       | RBAC (`Role`/`Permission`), `Division`/`Round`, and serializable DTOs shared by clients **and** server. |
 | `:server`     | Ktor (JVM)              | JWT auth, RBAC-guarded question bank, `/health`; ESV proxy + Postgres + Typst PDF land here in later phases. |
 | `:app`        | Compose MP (web, desktop) | Shared UI. Android/iOS targets slot in once an Android SDK / macOS host is available. |
 

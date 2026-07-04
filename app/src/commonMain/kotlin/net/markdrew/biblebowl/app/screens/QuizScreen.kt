@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.app.net.TbbApi
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 
@@ -56,7 +56,7 @@ private fun headingQuestions(headings: List<net.markdrew.biblebowl.api.HeadingDt
         val distractors = (chaptersInScope - h.chapter).shuffled().take(4)
         QuestionDto(
             id = "heading-${h.index}",
-            roundType = RoundType.KNOW_THE_CHAPTER_HEADINGS,
+            roundType = Round.KNOW_THE_CHAPTER_HEADINGS,
             prompt = "Which chapter has the heading “${h.title}”?",
             answer = "Chapter ${h.chapter}",
             references = listOf(h.reference),
@@ -75,7 +75,7 @@ fun QuizScreen(api: TbbApi) {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var source by remember { mutableStateOf(QuizSource.QUESTIONS) }
-    var round by remember { mutableStateOf<RoundType?>(null) }
+    var round by remember { mutableStateOf<Round?>(null) }
     var chapter by remember { mutableStateOf<Int?>(null) }
     // Bumped on every answer/advance so Compose re-reads the engine's state.
     var tick by remember { mutableIntStateOf(0) }
@@ -125,7 +125,7 @@ fun QuizScreen(api: TbbApi) {
 @Composable
 private fun QuizSetup(
     source: QuizSource, onSource: (QuizSource) -> Unit,
-    round: RoundType?, onRound: (RoundType?) -> Unit,
+    round: Round?, onRound: (Round?) -> Unit,
     chapter: Int?, onChapter: (Int?) -> Unit,
     error: String?,
     onStart: () -> Unit,
@@ -149,7 +149,7 @@ private fun QuizSetup(
             Text("Round", style = MaterialTheme.typography.labelLarge)
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FilterChip(selected = round == null, onClick = { onRound(null) }, label = { Text("All") })
-                RoundType.crowdSourcedRounds.forEach { rt ->
+                Round.crowdSourcedRounds.forEach { rt ->
                     FilterChip(
                         selected = round == rt,
                         onClick = { onRound(if (round == rt) null else rt) },

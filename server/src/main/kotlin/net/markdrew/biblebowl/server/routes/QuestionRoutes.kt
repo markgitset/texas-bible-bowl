@@ -12,7 +12,7 @@ import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionStatus
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.server.data.QuestionRepository
 import net.markdrew.biblebowl.server.data.UserRepository
@@ -47,7 +47,7 @@ fun Route.questionRoutes(users: UserRepository, questions: QuestionRepository) {
                         ApiError(
                             "not_crowd_sourced",
                             "${req.roundType.displayName} is generated from the text, not crowd-sourced. " +
-                                "Only ${RoundType.crowdSourcedRounds.joinToString { it.displayName }} accept submissions.",
+                                "Only ${Round.crowdSourcedRounds.joinToString { it.displayName }} accept submissions.",
                         ),
                     )
                     return@post

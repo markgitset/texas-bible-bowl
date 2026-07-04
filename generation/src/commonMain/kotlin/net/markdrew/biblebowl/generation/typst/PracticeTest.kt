@@ -1,7 +1,7 @@
 package net.markdrew.biblebowl.generation.typst
 
 import net.markdrew.biblebowl.api.QuestionDto
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 
 /**
  * Builds a Typst document for a printable practice test in Texas Bible Bowl round formats.
@@ -12,7 +12,7 @@ import net.markdrew.biblebowl.api.RoundType
  * on its own page.
  */
 fun practiceTestTypst(
-    roundType: RoundType,
+    roundType: Round,
     questions: List<QuestionDto>,
     seasonBook: String = "Acts",
     title: String = "Texas Bible Bowl Practice Test",
@@ -80,8 +80,8 @@ fun practiceTestTypst(
 }
 
 /** Wider blanks for verse references, narrower for chapter numbers. */
-private fun answerBlankWidth(roundType: RoundType): String = when (roundType) {
-    RoundType.FIND_THE_VERSE -> "1.6in"
-    RoundType.KNOW_THE_CHAPTER_QUOTES, RoundType.KNOW_THE_CHAPTER_HEADINGS -> "0.9in"
+private fun answerBlankWidth(roundType: Round): String = when (roundType) {
+    Round.FIND_THE_VERSE -> "1.6in"
+    Round.KNOW_THE_CHAPTER_QUOTES, Round.KNOW_THE_CHAPTER_HEADINGS -> "0.9in"
     else -> "2.2in"
 }

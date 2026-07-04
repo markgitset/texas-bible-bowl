@@ -23,7 +23,7 @@ import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.api.UserDto
 
@@ -106,7 +106,7 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
         }.body()
 
     /** Fetches a generated practice-test PDF for [round] (optionally chapter-filtered) as raw bytes. */
-    suspend fun practiceTestPdf(round: RoundType, chapter: Int? = null): ByteArray =
+    suspend fun practiceTestPdf(round: Round, chapter: Int? = null): ByteArray =
         client.get("$baseUrl/generate/practice-test.pdf") {
             authorize()
             parameter("round", round.name)
@@ -114,7 +114,7 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
         }.pdfBytesOrThrow()
 
     /** Fetches a duplex flashcard deck PDF built from approved questions (filters optional). */
-    suspend fun flashcardsPdf(chapter: Int? = null, round: RoundType? = null): ByteArray =
+    suspend fun flashcardsPdf(chapter: Int? = null, round: Round? = null): ByteArray =
         client.get("$baseUrl/generate/flashcards.pdf") {
             authorize()
             if (chapter != null) parameter("chapter", chapter)

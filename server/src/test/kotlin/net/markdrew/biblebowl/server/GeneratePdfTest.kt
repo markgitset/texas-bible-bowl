@@ -20,7 +20,7 @@ import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
@@ -69,7 +69,7 @@ class GeneratePdfTest {
                     contentType(ContentType.Application.Json)
                     setBody(
                         SubmitQuestionRequest(
-                            roundType = RoundType.FACT_FINDER,
+                            roundType = Round.FACT_FINDER,
                             prompt = "Question number $n about Pentecost?",
                             answer = "Answer $n",
                             choices = listOf("Answer $n", "Wrong", "Also wrong"),

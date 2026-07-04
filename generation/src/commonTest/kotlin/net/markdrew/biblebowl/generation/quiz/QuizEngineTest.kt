@@ -2,7 +2,7 @@ package net.markdrew.biblebowl.generation.quiz
 
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
-import net.markdrew.biblebowl.api.RoundType
+import net.markdrew.biblebowl.model.Round
 import kotlin.random.Random
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -13,12 +13,12 @@ class QuizEngineTest {
 
     private fun mc(id: String, answer: String = "Right", wrong: List<String> = listOf("Wrong1", "Wrong2")) =
         QuestionDto(
-            id = id, roundType = RoundType.FACT_FINDER, prompt = "Prompt $id", answer = answer,
+            id = id, roundType = Round.FACT_FINDER, prompt = "Prompt $id", answer = answer,
             choices = listOf(answer) + wrong, chapter = 1, status = QuestionStatus.APPROVED, authorId = "a",
         )
 
     private fun shortAnswer(id: String) = QuestionDto(
-        id = id, roundType = RoundType.FIND_THE_VERSE, prompt = "Quote $id", answer = "Acts 1:$id",
+        id = id, roundType = Round.FIND_THE_VERSE, prompt = "Quote $id", answer = "Acts 1:$id",
         chapter = 1, status = QuestionStatus.APPROVED, authorId = "a",
     )
 

@@ -1,5 +1,7 @@
 package net.markdrew.biblebowl.generate.practice
 
+import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.model.BibleUse
 import net.markdrew.biblebowl.generate.normalizeWS
 import net.markdrew.biblebowl.model.FULL_BOOK_FORMAT
 import net.markdrew.biblebowl.model.PracticeContent
