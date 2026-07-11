@@ -101,12 +101,19 @@ private fun AppScaffold(
     val currentTop = topDestinationOf(backStackEntry?.destination?.route)
 
     fun navigateTop(dest: TopDestination) {
-        navController.navigate(dest.route) {
-            // Standard top-level navigation: one back press from any tab exits via the start
-            // destination, and each tab's state survives switching away and back.
-            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-            launchSingleTop = true
-            restoreState = true
+        if (dest == currentTop) {
+            // Re-selecting the active destination returns to its root (e.g. Study hub from
+            // study/headings). Plain navigate-with-restoreState would restore the saved stack —
+            // including the sub-screen the user is trying to leave — and visibly do nothing.
+            navController.popBackStack(dest.route, inclusive = false)
+        } else {
+            navController.navigate(dest.route) {
+                // Standard top-level navigation: one back press from any tab exits via the start
+                // destination, and each tab's state survives switching away and back.
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                launchSingleTop = true
+                restoreState = true
+            }
         }
     }
 

@@ -204,7 +204,9 @@ fun DownloadsScreen(api: TbbApi) {
         null -> {}
         else -> ModalBottomSheet(onDismissRequest = { customize = null }) {
             Column(
-                Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
+                // Scrollable: on short viewports the options push the Download button past the fold.
+                Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                    .padding(horizontal = 24.dp).padding(bottom = 32.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 when (target) {
