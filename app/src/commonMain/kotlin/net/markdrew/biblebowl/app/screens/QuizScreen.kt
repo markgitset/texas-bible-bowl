@@ -38,8 +38,6 @@ import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.app.net.TbbApi
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 
-private const val ACTS_CHAPTERS = 28
-
 /** What a quiz draws from: the community question bank, or ESV chapter headings (Round 5). */
 private enum class QuizSource(val displayName: String) {
     QUESTIONS("Question bank"),

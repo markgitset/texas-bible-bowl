@@ -12,6 +12,7 @@ hikari = "7.0.2"
 logback = "1.5.19"
 koin = "4.1.1"
 activityCompose = "1.9.3"
+navigationCompose = "2.9.2"
 chupacabra = "v0.3.1"
 
 [libraries]
@@ -51,6 +52,9 @@ hikari = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
 
 # Android
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+
+# Navigation (JetBrains KMP build of androidx navigation-compose; works on desktop/wasm/Android)
+navigation-compose = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "navigationCompose" }
 
 # Logging / DI
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }

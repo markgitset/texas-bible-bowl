@@ -9,18 +9,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -38,16 +35,27 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionDto
-import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.app.net.TbbApi
-import net.markdrew.biblebowl.app.platform.savePdf
 
 /** Acts has 28 chapters; used for the chapter filter strip. */
-private const val ACTS_CHAPTERS = 28
+internal const val ACTS_CHAPTERS = 28
 
+/**
+ * Community question bank — browse is public (docs/gui-redesign.md §5D). Voting requires sign-in:
+ * an anonymous tap on the vote button routes to contextual sign-in via [onRequireSignIn].
+ * Submit/moderate affordances render only for permission holders (§7.8 — never disabled-but-visible).
+ */
 @Composable
-fun StudyScreen(api: TbbApi) {
+fun QuestionsScreen(
+    api: TbbApi,
+    user: UserDto?,
+    onRequireSignIn: () -> Unit,
+    onNewQuestion: () -> Unit,
+    onModerate: () -> Unit,
+) {
     var questions by remember { mutableStateOf<List<QuestionDto>?>(null) }
     var chapter by remember { mutableStateOf<Int?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -64,95 +72,39 @@ fun StudyScreen(api: TbbApi) {
 
     LaunchedEffect(chapter) { reload() }
 
-    var pdfMenuOpen by remember { mutableStateOf(false) }
-    var pdfBusy by remember { mutableStateOf(false) }
-    var pdfMessage by remember { mutableStateOf<String?>(null) }
-
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // One-tap chapter filter; "All" plus 1..28.
-            Row(
-                Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                FilterChip(
-                    selected = chapter == null,
-                    onClick = { chapter = null },
-                    label = { Text("All") },
-                )
-                (1..ACTS_CHAPTERS).forEach { ch ->
-                    FilterChip(
-                        selected = chapter == ch,
-                        onClick = { chapter = if (chapter == ch) null else ch },
-                        label = { Text("$ch") },
-                    )
+        val canSubmit = user != null && Permission.QUESTION_SUBMIT in user.permissions
+        val canModerate = user != null && Permission.QUESTION_MODERATE in user.permissions
+        if (canSubmit || canModerate) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (canSubmit) {
+                    FilledTonalButton(onClick = onNewQuestion) { Text("New question") }
                 }
-            }
-            Spacer(Modifier.weight(0.02f))
-            Box {
-                OutlinedButton(onClick = { pdfMenuOpen = true }, enabled = !pdfBusy) {
-                    if (pdfBusy) CircularProgressIndicator(Modifier.height(16.dp))
-                    else Text("Practice PDF")
-                }
-                DropdownMenu(expanded = pdfMenuOpen, onDismissRequest = { pdfMenuOpen = false }) {
-                    fun download(name: String, fetch: suspend () -> ByteArray) {
-                        pdfMenuOpen = false
-                        pdfBusy = true; pdfMessage = null
-                        scope.launch {
-                            try {
-                                pdfMessage = savePdf(name, fetch())
-                            } catch (e: Throwable) {
-                                pdfMessage = "PDF failed: ${e.message}"
-                            } finally {
-                                pdfBusy = false
-                            }
-                        }
-                    }
-
-                    val chSuffix = chapter?.let { "-ch$it" } ?: ""
-                    DropdownMenuItem(
-                        text = { Text("Formatted text (PDF)") },
-                        onClick = { download("bible-text.pdf") { api.bibleTextPdf() } },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Formatted text — 2 columns (PDF)") },
-                        onClick = { download("bible-text-2col.pdf") { api.bibleTextPdf(twoColumns = true) } },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Formatted text — underline unique words (PDF)") },
-                        onClick = {
-                            download("bible-text-unique-words.pdf") { api.bibleTextPdf(underlineUniqueWords = true) }
-                        },
-                    )
-                    HorizontalDivider()
-                    DropdownMenuItem(
-                        text = { Text("Flashcards (all rounds)") },
-                        onClick = { download("flashcards$chSuffix.pdf") { api.flashcardsPdf(chapter) } },
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Chapter-heading flashcards" + (chapter?.let { " (through ch $it)" } ?: "")) },
-                        onClick = {
-                            download("heading-flashcards${chapter?.let { "-through-ch$it" } ?: ""}.pdf") {
-                                api.headingFlashcardsPdf(chapter)
-                            }
-                        },
-                    )
-                    HorizontalDivider()
-                    Round.entries.forEach { round ->
-                        DropdownMenuItem(
-                            text = { Text("Practice: ${round.displayName}") },
-                            onClick = {
-                                download("practice-${round.name.lowercase()}$chSuffix.pdf") {
-                                    api.practiceTestPdf(round, chapter)
-                                }
-                            },
-                        )
-                    }
+                if (canModerate) {
+                    OutlinedButton(onClick = onModerate) { Text("Moderate") }
                 }
             }
         }
 
-        pdfMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+        // One-tap chapter filter; "All" plus 1..28.
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            FilterChip(
+                selected = chapter == null,
+                onClick = { chapter = null },
+                label = { Text("All") },
+            )
+            (1..ACTS_CHAPTERS).forEach { ch ->
+                FilterChip(
+                    selected = chapter == ch,
+                    onClick = { chapter = if (chapter == ch) null else ch },
+                    label = { Text("$ch") },
+                )
+            }
+        }
+
         error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
 
         when (val list = questions) {
@@ -161,15 +113,16 @@ fun StudyScreen(api: TbbApi) {
             }
             else -> if (list.isEmpty()) {
                 Text(
-                    "No approved questions yet" + (chapter?.let { " for Acts $it" } ?: "") +
-                        ". Be the first — add one in Contribute!",
+                    "No approved questions yet" + (chapter?.let { " for Acts $it" } ?: "") + ".",
                     style = MaterialTheme.typography.bodyLarge,
                 )
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(list, key = { it.id }) { q ->
                         QuestionCard(q, onVote = {
-                            scope.launch {
+                            if (user == null) {
+                                onRequireSignIn()
+                            } else scope.launch {
                                 try {
                                     api.vote(q.id)
                                     reload()
