@@ -75,20 +75,20 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
         user = it.user
     }
 
-    suspend fun health(): String = client.get("$baseUrl/health").body()
+    suspend fun health(): String = client.get("$baseUrl/health").bodyOrThrow()
 
     suspend fun register(req: RegisterRequest): AuthResponse =
         remember(
             client.post("$baseUrl/auth/register") {
                 contentType(ContentType.Application.Json); setBody(req)
-            }.body()
+            }.bodyOrThrow()
         )
 
     suspend fun login(req: LoginRequest): AuthResponse =
         remember(
             client.post("$baseUrl/auth/login") {
                 contentType(ContentType.Application.Json); setBody(req)
-            }.body()
+            }.bodyOrThrow()
         )
 
     /** Lists questions; the server defaults to APPROVED when [status] is null. */
@@ -97,20 +97,20 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             authorize()
             if (status != null) parameter("status", status.name)
             if (chapter != null) parameter("chapter", chapter)
-        }.body()
+        }.bodyOrThrow()
 
     suspend fun submitQuestion(req: SubmitQuestionRequest): QuestionDto =
         client.post("$baseUrl/questions") {
             authorize(); contentType(ContentType.Application.Json); setBody(req)
-        }.body()
+        }.bodyOrThrow()
 
     suspend fun vote(questionId: String): QuestionDto =
-        client.post("$baseUrl/questions/$questionId/vote") { authorize() }.body()
+        client.post("$baseUrl/questions/$questionId/vote") { authorize() }.bodyOrThrow()
 
     suspend fun moderate(questionId: String, status: QuestionStatus): QuestionDto =
         client.post("$baseUrl/questions/$questionId/moderate") {
             authorize(); contentType(ContentType.Application.Json); setBody(ModerateQuestionRequest(status))
-        }.body()
+        }.bodyOrThrow()
 
     /**
      * Fetches a generated practice-test PDF for [round] (optionally chapter-filtered) as raw bytes.
@@ -123,7 +123,7 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             if (chapter != null) parameter("chapter", chapter)
             if (limit != null) parameter("limit", limit)
             if (seed != null) parameter("seed", seed)
-        }.bytesOrThrow()
+        }.bodyOrThrow()
 
     /** Fetches a duplex flashcard deck PDF built from approved questions (filters optional). */
     suspend fun flashcardsPdf(chapter: Int? = null, round: Round? = null): ByteArray =
@@ -131,21 +131,21 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             authorize()
             if (chapter != null) parameter("chapter", chapter)
             if (round != null) parameter("round", round.name)
-        }.bytesOrThrow()
+        }.bodyOrThrow()
 
     /** Lists the season book's ESV section headings (Round 5 material), optionally through a chapter. */
     suspend fun headings(throughChapter: Int? = null): List<HeadingDto> =
         client.get("$baseUrl/study/headings") {
             authorize()
             if (throughChapter != null) parameter("throughChapter", throughChapter)
-        }.body()
+        }.bodyOrThrow()
 
     /** Fetches a chapter-headings flashcard deck PDF, optionally limited through a chapter. */
     suspend fun headingFlashcardsPdf(throughChapter: Int? = null): ByteArray =
         client.get("$baseUrl/generate/heading-flashcards.pdf") {
             authorize()
             if (throughChapter != null) parameter("throughChapter", throughChapter)
-        }.bytesOrThrow()
+        }.bodyOrThrow()
 
     /**
      * Fetches a formatted PDF of the covered text (verse numbers, headings, poetry, footnotes) with
@@ -169,23 +169,23 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             if (chapterBreaksPage) parameter("chapterBreaksPage", true)
             if (!highlight) parameter("highlight", false)
             if (underlineUniqueWords) parameter("underlineUniqueWords", true)
-        }.bytesOrThrow()
+        }.bodyOrThrow()
 
     /** Lists the season's numbers index (every numeral/cardinal/ordinal/fraction and the verses it occurs in). */
     suspend fun numbersIndex(): List<IndexEntryDto> =
-        client.get("$baseUrl/study/numbers") { authorize() }.body()
+        client.get("$baseUrl/study/numbers") { authorize() }.bodyOrThrow()
 
     /** Fetches the numbers-index PDF (alphabetical + by-frequency sections). */
     suspend fun numbersIndexPdf(): ByteArray =
-        client.get("$baseUrl/generate/numbers-index.pdf") { authorize() }.bytesOrThrow()
+        client.get("$baseUrl/generate/numbers-index.pdf") { authorize() }.bodyOrThrow()
 
     /** Lists the season's names index (every proper name and the verses it occurs in). */
     suspend fun namesIndex(): List<IndexEntryDto> =
-        client.get("$baseUrl/study/names") { authorize() }.body()
+        client.get("$baseUrl/study/names") { authorize() }.bodyOrThrow()
 
     /** Fetches the names-index PDF (alphabetical + by-frequency sections). */
     suspend fun namesIndexPdf(): ByteArray =
-        client.get("$baseUrl/generate/names-index.pdf") { authorize() }.bytesOrThrow()
+        client.get("$baseUrl/generate/names-index.pdf") { authorize() }.bodyOrThrow()
 
     /**
      * Fetches a Quizlet/Space-importable TSV: the approved question bank (prompt -> answer) or,
@@ -197,7 +197,7 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             if (headingsSource) parameter("source", "headings")
             if (round != null) parameter("round", round.name)
             if (chapter != null) parameter("chapter", chapter)
-        }.bytesOrThrow()
+        }.bodyOrThrow()
 
     /** Fetches a Kahoot-importable .xlsx (multiple-choice material only; params as [questionsTsv]). */
     suspend fun questionsXlsx(headingsSource: Boolean = false, round: Round? = null, chapter: Int? = null): ByteArray =
@@ -206,21 +206,22 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             if (headingsSource) parameter("source", "headings")
             if (round != null) parameter("round", round.name)
             if (chapter != null) parameter("chapter", chapter)
-        }.bytesOrThrow()
+        }.bodyOrThrow()
 
     /**
-     * Returns the response body as PDF bytes, or throws [PdfException] with the server's error message on a
-     * non-2xx status. Without this the client would happily "download" a JSON error body as a `.pdf`, which
-     * the browser then reports as a corrupt/failed PDF with no clue what actually went wrong.
+     * Returns the response body decoded as [T], or throws [ApiException] with the server's error message on
+     * a non-2xx status. Without this the client would try to deserialize an [ApiError] body as [T] and
+     * surface a cryptic JsonConvertException dump — or, for byte endpoints, happily "download" the JSON
+     * error body as a `.pdf` that the browser then reports as corrupt with no clue what actually went wrong.
      */
-    private suspend fun HttpResponse.bytesOrThrow(): ByteArray {
+    private suspend inline fun <reified T> HttpResponse.bodyOrThrow(): T {
         if (status.isSuccess()) return body()
         val raw = runCatching { bodyAsText() }.getOrNull()
         val message = raw
             ?.let { runCatching { errorJson.decodeFromString<ApiError>(it).message }.getOrNull() }
             ?: raw?.takeIf { it.isNotBlank() }
             ?: "Server returned $status"
-        throw PdfException(message)
+        throw ApiException(message)
     }
 
     companion object {
@@ -231,5 +232,5 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
     }
 }
 
-/** Thrown when a PDF request fails; [message] carries the server's human-readable reason. */
-class PdfException(message: String) : Exception(message)
+/** Thrown when a backend request fails; [message] carries the server's human-readable reason. */
+class ApiException(message: String) : Exception(message)

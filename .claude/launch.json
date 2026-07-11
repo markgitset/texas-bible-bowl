@@ -3,9 +3,10 @@
   "configurations": [
     {
       "name": "web-dist",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8090", "--directory", "app/build/dist/wasmJs/productionExecutable"],
-      "port": 8090
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-8090}\" --directory app/build/dist/wasmJs/productionExecutable"],
+      "port": 8090,
+      "autoPort": true
     },
     {
       "name": "backend",
