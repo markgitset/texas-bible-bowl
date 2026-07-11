@@ -188,6 +188,40 @@ class StudyRoutesTest {
     }
 
     @Test
+    fun headingsExportAsQuizletTsvAndKahootXlsx() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+            )
+        }
+        val api = createClient { }
+
+        // Quizlet TSV: title<TAB>chapter, anonymous; `chapter` scopes cumulatively.
+        val tsv = api.get("/generate/questions.tsv?source=headings")
+        assertEquals(HttpStatusCode.OK, tsv.status)
+        assertEquals(
+            listOf(
+                "The Promise of the Holy Spirit\tChapter 1",
+                "The Coming of the Holy Spirit\tChapter 2",
+            ),
+            tsv.bodyAsText().trim().lines(),
+        )
+        val filtered = api.get("/generate/questions.tsv?source=headings&chapter=1")
+        assertEquals("The Promise of the Holy Spirit\tChapter 1", filtered.bodyAsText().trim())
+
+        // Kahoot xlsx: which-chapter questions, distractors only from in-scope chapters.
+        val xlsx = api.get("/generate/questions.xlsx?source=headings")
+        assertEquals(HttpStatusCode.OK, xlsx.status)
+        val bytes = xlsx.bodyAsBytes()
+        assertEquals("PK", bytes.decodeToString(0, 2), "xlsx must be a zip")
+        val sheet = readZipEntry(bytes, "xl/worksheets/sheet1.xml")
+        assertTrue("Which chapter has the heading" in sheet)
+        assertTrue("The Coming of the Holy Spirit" in sheet)
+        assertTrue("Chapter 3" !in sheet, "distractors must stay within the two-chapter fixture scope")
+    }
+
+    @Test
     fun headingsEndpointReturns503WithoutStudyService() = testApplication {
         application {
             module(

@@ -33,6 +33,9 @@ import net.markdrew.biblebowl.generation.typst.toFlashcards
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.server.data.QuestionRepository
 import net.markdrew.biblebowl.server.esv.EsvUpstreamException
+import net.markdrew.biblebowl.server.export.KahootQuestion
+import net.markdrew.biblebowl.server.export.kahootXlsx
+import net.markdrew.biblebowl.server.export.quizletTsv
 import net.markdrew.biblebowl.server.study.StudyDataService
 import net.markdrew.biblebowl.server.typst.TypstCompiler
 import net.markdrew.biblebowl.server.typst.TypstException
@@ -175,6 +178,22 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
             }
         }
 
+        // GET /generate/questions.tsv?source=questions|headings&round=FACT_FINDER&chapter=2
+        // Tab-separated term/definition pairs, import-ready for Quizlet/Space/Anki. `source=questions`
+        // (default) exports the approved bank (prompt -> answer); `source=headings` exports the R5
+        // headings (title -> chapter), with `chapter` meaning "through chapter" as usual for headings.
+        get("/generate/questions.tsv") {
+            respondExport(questions, study, format = ExportFormat.TSV)
+        }
+
+        // GET /generate/questions.xlsx?source=questions|headings&round=FACT_FINDER&chapter=2
+        // A Kahoot-import spreadsheet (their template layout). Only multiple-choice material can go
+        // to Kahoot, so `source=questions` keeps just questions whose choices contain the answer;
+        // `source=headings` builds which-chapter questions with in-scope distractor chapters.
+        get("/generate/questions.xlsx") {
+            respondExport(questions, study, format = ExportFormat.KAHOOT_XLSX)
+        }
+
         // GET /generate/heading-flashcards.pdf?throughChapter=5 — Round 5 (chapter headings) deck
         get("/generate/heading-flashcards.pdf") {
             if (study == null || !study.isConfigured) {
@@ -253,6 +272,115 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
 }
 
 
+
+private enum class ExportFormat { TSV, KAHOOT_XLSX }
+
+/**
+ * Responds with an import-ready export of the question bank or the R5 headings (see the route
+ * comments for parameter semantics). Both formats share source selection; only the rendering and
+ * the multiple-choice requirement (Kahoot) differ.
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
+    questions: QuestionRepository,
+    study: StudyDataService?,
+    format: ExportFormat,
+) {
+    val qp = call.request.queryParameters
+    val source = qp["source"]?.lowercase() ?: "questions"
+    if (source !in setOf("questions", "headings")) {
+        return call.respond(HttpStatusCode.BadRequest, ApiError("bad_source", "source must be questions or headings"))
+    }
+    val round = qp["round"]?.let { runCatching { Round.valueOf(it) }.getOrNull() }
+    val chapter = qp["chapter"]?.toIntOrNull()
+    val chSuffix = chapter?.let { "-ch$it" } ?: ""
+
+    if (source == "questions") {
+        val pool = questions.list(QuestionStatus.APPROVED, chapter)
+            .filter { round == null || it.roundType == round }
+            .take(500)
+        val baseName = "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}$chSuffix"
+        when (format) {
+            ExportFormat.TSV -> {
+                if (pool.isEmpty()) return call.respond(HttpStatusCode.NotFound, ApiError("no_questions", "No approved questions match"))
+                respondAttachment(quizletTsv(pool.map { it.prompt to it.answer }).toByteArray(), "quizlet-$baseName.tsv", TSV_CONTENT_TYPE)
+            }
+            ExportFormat.KAHOOT_XLSX -> {
+                // Kahoot is multiple-choice only: the answer must be among 2+ choices.
+                val mc = pool.filter { it.choices.size >= 2 && it.answer in it.choices }
+                if (mc.isEmpty()) {
+                    return call.respond(
+                        HttpStatusCode.NotFound,
+                        ApiError("no_questions", "No approved multiple-choice questions match (Kahoot needs choices)"),
+                    )
+                }
+                val rows = mc.take(100).map { q ->
+                    // Kahoot allows at most 4 answers: keep the correct one plus the first 3 others.
+                    val answers =
+                        if (q.choices.size <= 4) q.choices
+                        else listOf(q.answer) + q.choices.filterNot { it == q.answer }.take(3)
+                    KahootQuestion(q.prompt, answers, listOf(answers.indexOf(q.answer) + 1))
+                }
+                respondAttachment(kahootXlsx(rows), "kahoot-$baseName.xlsx", XLSX_CONTENT_TYPE)
+            }
+        }
+        return
+    }
+
+    // source == "headings" — the R5 material; `chapter` scopes cumulatively (through chapter N).
+    if (study == null || !study.isConfigured) {
+        return call.respond(
+            HttpStatusCode.ServiceUnavailable,
+            ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+        )
+    }
+    val headings = try {
+        study.studyData().headings.filter { chapter == null || it.chapterRange.start.chapter <= chapter }
+    } catch (e: EsvUpstreamException) {
+        return call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+    }
+    if (headings.isEmpty()) return call.respond(HttpStatusCode.NotFound, ApiError("no_headings", "No headings in scope"))
+    val throughSuffix = chapter?.let { "-through-ch$it" } ?: ""
+    when (format) {
+        ExportFormat.TSV -> respondAttachment(
+            quizletTsv(headings.map { it.title to "Chapter ${it.chapterRange.start.chapter}" }).toByteArray(),
+            "quizlet-headings$throughSuffix.tsv",
+            TSV_CONTENT_TYPE,
+        )
+        ExportFormat.KAHOOT_XLSX -> {
+            val chaptersInScope = headings.map { it.chapterRange.start.chapter }.distinct()
+            val rows = headings.take(100).mapIndexed { i, h ->
+                val own = h.chapterRange.start.chapter
+                // Seeded per row so the same export is reproducible; distractors never leak
+                // chapters beyond the requested scope.
+                val random = Random(i * 31 + own)
+                val distractors = (chaptersInScope - own).shuffled(random).take(3)
+                val answers = (distractors + own).sorted().map { "Chapter $it" }
+                KahootQuestion(
+                    question = "Which chapter has the heading “${h.title}”?",
+                    answers = answers,
+                    correctIndices = listOf(answers.indexOf("Chapter $own") + 1),
+                )
+            }
+            respondAttachment(kahootXlsx(rows), "kahoot-headings$throughSuffix.xlsx", XLSX_CONTENT_TYPE)
+        }
+    }
+}
+
+private val TSV_CONTENT_TYPE = ContentType("text", "tab-separated-values")
+private val XLSX_CONTENT_TYPE = ContentType("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+/** Responds with [bytes] as a named download attachment. */
+private suspend fun io.ktor.server.routing.RoutingContext.respondAttachment(
+    bytes: ByteArray,
+    fileName: String,
+    contentType: ContentType,
+) {
+    call.response.header(
+        HttpHeaders.ContentDisposition,
+        ContentDisposition.Attachment.withParameter(ContentDisposition.Parameters.FileName, fileName).toString(),
+    )
+    call.respondBytes(bytes, contentType)
+}
 
 /** Compiles [typstSource] off the event loop and responds with PDF bytes as a named attachment. */
 private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(typstSource: String, fileName: String) {

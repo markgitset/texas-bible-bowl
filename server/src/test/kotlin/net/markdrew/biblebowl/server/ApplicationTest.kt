@@ -6,6 +6,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -28,9 +29,21 @@ import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
 import kotlinx.serialization.json.Json
+import java.io.ByteArrayInputStream
+import java.util.zip.ZipInputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+
+/** Reads one entry of an in-memory zip (an .xlsx is a zip of XML parts) as UTF-8 text. */
+internal fun readZipEntry(zipBytes: ByteArray, entryName: String): String {
+    ZipInputStream(ByteArrayInputStream(zipBytes)).use { zip ->
+        generateSequence { zip.nextEntry }.forEach { entry ->
+            if (entry.name == entryName) return zip.readBytes().decodeToString()
+        }
+    }
+    error("Entry $entryName not found in zip")
+}
 
 class ApplicationTest {
 
@@ -105,6 +118,72 @@ class ApplicationTest {
             )
         }
         assertEquals(HttpStatusCode.Unauthorized, anonSubmit.status)
+    }
+
+    @Test
+    fun questionBankExportsAsQuizletTsvAndKahootXlsx() = testApplication {
+        val users = InMemoryUserRepository()
+        val questions = InMemoryQuestionRepository()
+        val jwt = JwtService(secret = "test-secret")
+        users.create("admin@tbb.org", "Admin", null, Passwords.hash("supersecret"), listOf(RoleGrant(Role.ADMIN)))
+        application { module(users, questions, jwt) }
+
+        val api = createClient {
+            install(ContentNegotiation) { json(json) }
+            defaultRequest { contentType(ContentType.Application.Json) }
+        }
+
+        // Seed one approved multiple-choice question.
+        val contestant: AuthResponse = json.decodeFromString(
+            api.post("/auth/register") {
+                setBody(RegisterRequest("kid3@tbb.org", "password123", "Rhoda", grade = 6))
+            }.bodyAsText()
+        )
+        val q: QuestionDto = json.decodeFromString(
+            api.post("/questions") {
+                header(HttpHeaders.Authorization, "Bearer ${contestant.token}")
+                setBody(
+                    SubmitQuestionRequest(
+                        roundType = Round.FACT_FINDER,
+                        prompt = "Who preached at Pentecost?",
+                        answer = "Peter",
+                        choices = listOf("Peter", "Paul", "John", "James", "Silas"),
+                        chapter = 2,
+                    )
+                )
+            }.bodyAsText()
+        )
+        val admin: AuthResponse = json.decodeFromString(
+            api.post("/auth/login") {
+                setBody(net.markdrew.biblebowl.api.LoginRequest("admin@tbb.org", "supersecret"))
+            }.bodyAsText()
+        )
+        api.post("/questions/${q.id}/moderate") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(ModerateQuestionRequest(QuestionStatus.APPROVED))
+        }
+
+        // Quizlet TSV: anonymous, one prompt<TAB>answer line.
+        val tsv = api.get("/generate/questions.tsv?chapter=2")
+        assertEquals(HttpStatusCode.OK, tsv.status)
+        assertEquals("Who preached at Pentecost?\tPeter", tsv.bodyAsText().trim())
+        assertTrue(tsv.headers[HttpHeaders.ContentDisposition]!!.contains("quizlet-questions-ch2.tsv"))
+
+        // Kahoot xlsx: a zip (PK magic) whose sheet holds the question with at most 4 answers,
+        // the correct one preserved.
+        val xlsx = api.get("/generate/questions.xlsx?round=FACT_FINDER")
+        assertEquals(HttpStatusCode.OK, xlsx.status)
+        val bytes = xlsx.bodyAsBytes()
+        assertEquals("PK", bytes.decodeToString(0, 2), "xlsx must be a zip")
+        val sheet = readZipEntry(bytes, "xl/worksheets/sheet1.xml")
+        assertTrue("Who preached at Pentecost?" in sheet)
+        assertTrue("Peter" in sheet)
+        assertTrue("Silas" !in sheet, "5th choice is dropped (Kahoot allows 4)")
+
+        // No approved matches -> 404.
+        assertEquals(HttpStatusCode.NotFound, api.get("/generate/questions.tsv?chapter=27").status)
+        // Unknown source -> 400.
+        assertEquals(HttpStatusCode.BadRequest, api.get("/generate/questions.tsv?source=nope").status)
     }
 
     @Test
