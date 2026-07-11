@@ -22,6 +22,7 @@ registration, event ops/grading) need a coherent home before they're built.
 - Public results: **nothing public.** Results visible only to signed-in, scoped users; the public history page shows only admin-curated past champions.
 - Download center includes **CSV/TSV exports** for Kahoot/Quizlet/Space import.
 - Contestant accounts: **roster entries first, optional accounts** — coach enters names; a contestant/parent may later create an account and claim their entry via a coach-shared code.
+- Photos: **do not migrate the image assets.** Galleries become Google Photos albums; the site's `photos/` page is just a list of album links (one per year/event).
 
 ## 1. Design thesis
 
@@ -44,7 +45,7 @@ texasbiblebowl.org/                      [S] Home — hero, season banner (year/
 ├── scholarships/ (+3 children)          [S]
 ├── about/ (story, leadership,           [S]
 │           volunteers, in-the-news)
-├── photos/ (+year galleries)            [S] JSON-driven galleries stay in Hugo
+├── photos/                              [S] links to Google Photos albums (no hosted galleries)
 ├── champions/                           [S] admin-curated past champions (the only public "results")
 ├── donate/ · contact/ · search/         [S] as today (PayPal, email, Fuse.js)
 │
@@ -97,11 +98,12 @@ nav is identical for everyone, and the five app destinations fit an Android bott
 **Rule of thumb: prose and photos are static; anything that computes is Compose.** The Register
 static page deliberately overlaps: evergreen prose + live pricing + one CTA into the app flow.
 
-- **Keep Hugo, move it in-repo as `/site`.** The Hugo site already handles the hard static parts
-  (JSON-driven photo galleries with 1000+ images, Fuse.js search, 30 consistent pages); rewriting
-  that in Kotlin-generated HTML is cost without benefit. Restructure `details/` → `event/`; replace
-  the hand-maintained downloads/practice-tests pages with redirect stubs → `/app#/downloads` (keep a
-  slim "external study games" page for the Kahoot/CRAM links).
+- **Keep Hugo, move it in-repo as `/site`.** The Hugo site already handles the static parts well
+  (Fuse.js search, 30 consistent pages); rewriting that in Kotlin-generated HTML is cost without
+  benefit. Restructure `details/` → `event/`; replace the hand-maintained downloads/practice-tests
+  pages with redirect stubs → `/app#/downloads` (keep a slim "external study games" page for the
+  Kahoot/CRAM links). The 1000+ gallery images do **not** move into the repo: photos live in Google
+  Photos albums and `photos/` becomes a page of album links (per Mark, 2026-07-11).
 - **One header design, two implementations.** Hugo header partial and Compose top bar render the
   same logo (`tbb-logo.png` + white variant), same five labels, same navy/gold. Every static page
   links "Study App" → `/app#/study`; the app logo links back to `/`; Event hub deep-links to static
