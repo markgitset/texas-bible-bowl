@@ -19,6 +19,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -260,36 +261,46 @@ fun DownloadsScreen(api: TbbApi) {
 
     when (val target = customize) {
         null -> {}
-        else -> ModalBottomSheet(onDismissRequest = { customize = null }) {
-            Column(
-                // Scrollable: on short viewports the options push the Download button past the fold.
-                Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
-                    .padding(horizontal = 24.dp).padding(bottom = 32.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                when (target) {
-                    Customize.StudyText -> StudyTextOptions(
-                        choices = textChoices,
-                        onChange = { textChoices = it },
-                        onDownload = ::downloadStudyText,
-                    )
-                    Customize.QuestionFlashcards -> QuestionFlashcardOptions(
-                        round = flashcardRound,
-                        onChange = { flashcardRound = it },
-                        onDownload = ::downloadQuestionFlashcards,
-                    )
-                    is Customize.PracticeTest -> PracticeTestOptions(
-                        round = target.round,
-                        limit = practiceLimit, onLimit = { practiceLimit = it },
-                        seedText = practiceSeed, onSeedText = { practiceSeed = it },
-                        onDownload = { downloadPracticeTest(target.round) },
-                    )
-                    is Customize.Export -> ExportOptions(
-                        kahoot = target.kahoot,
-                        headingsSource = exportHeadings, onHeadingsSource = { exportHeadings = it },
-                        round = exportRound, onRound = { exportRound = it },
-                        onDownload = { downloadExport(target.kahoot) },
-                    )
+        else -> ModalBottomSheet(
+            onDismissRequest = { customize = null },
+            // Fully expanded from the start: the default half-expansion hides most options (and
+            // the action) behind a drag gesture that mouse users never discover.
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp)) {
+                Column(
+                    // Only the options scroll; the Download button below stays pinned and visible.
+                    Modifier.weight(1f, fill = false).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    when (target) {
+                        Customize.StudyText -> StudyTextOptions(
+                            choices = textChoices,
+                            onChange = { textChoices = it },
+                        )
+                        Customize.QuestionFlashcards -> QuestionFlashcardOptions(
+                            round = flashcardRound,
+                            onChange = { flashcardRound = it },
+                        )
+                        is Customize.PracticeTest -> PracticeTestOptions(
+                            round = target.round,
+                            limit = practiceLimit, onLimit = { practiceLimit = it },
+                            seedText = practiceSeed, onSeedText = { practiceSeed = it },
+                        )
+                        is Customize.Export -> ExportOptions(
+                            kahoot = target.kahoot,
+                            headingsSource = exportHeadings, onHeadingsSource = { exportHeadings = it },
+                            round = exportRound, onRound = { exportRound = it },
+                        )
+                    }
+                }
+                SheetDownloadButton {
+                    when (target) {
+                        Customize.StudyText -> downloadStudyText()
+                        Customize.QuestionFlashcards -> downloadQuestionFlashcards()
+                        is Customize.PracticeTest -> downloadPracticeTest(target.round)
+                        is Customize.Export -> downloadExport(target.kahoot)
+                    }
                 }
             }
         }
@@ -300,7 +311,6 @@ fun DownloadsScreen(api: TbbApi) {
 private fun StudyTextOptions(
     choices: StudyTextChoices,
     onChange: (StudyTextChoices) -> Unit,
-    onDownload: () -> Unit,
 ) {
     SheetTitle("Customize study text")
     Text("Font size", style = MaterialTheme.typography.labelLarge)
@@ -324,11 +334,10 @@ private fun StudyTextOptions(
     OptionSwitch("Underline words that appear only once", choices.underlineUniqueWords) {
         onChange(choices.copy(underlineUniqueWords = it))
     }
-    SheetDownloadButton(onDownload)
 }
 
 @Composable
-private fun QuestionFlashcardOptions(round: Round?, onChange: (Round?) -> Unit, onDownload: () -> Unit) {
+private fun QuestionFlashcardOptions(round: Round?, onChange: (Round?) -> Unit) {
     SheetTitle("Customize question flashcards")
     Text("Round", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -337,7 +346,6 @@ private fun QuestionFlashcardOptions(round: Round?, onChange: (Round?) -> Unit, 
             FilterChip(selected = round == rt, onClick = { onChange(rt) }, label = { Text(rt.displayName) })
         }
     }
-    SheetDownloadButton(onDownload)
 }
 
 @Composable
@@ -345,7 +353,6 @@ private fun PracticeTestOptions(
     round: Round,
     limit: Int?, onLimit: (Int?) -> Unit,
     seedText: String, onSeedText: (String) -> Unit,
-    onDownload: () -> Unit,
 ) {
     SheetTitle("Customize: ${round.displayName}")
     if (round.crowdSourced) {
@@ -371,7 +378,6 @@ private fun PracticeTestOptions(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    SheetDownloadButton(onDownload)
 }
 
 @Composable
@@ -379,7 +385,6 @@ private fun ExportOptions(
     kahoot: Boolean,
     headingsSource: Boolean, onHeadingsSource: (Boolean) -> Unit,
     round: Round?, onRound: (Round?) -> Unit,
-    onDownload: () -> Unit,
 ) {
     SheetTitle(if (kahoot) "Customize Kahoot export" else "Customize Quizlet/Space export")
     Text("Source", style = MaterialTheme.typography.labelLarge)
@@ -411,7 +416,6 @@ private fun ExportOptions(
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    SheetDownloadButton(onDownload)
 }
 
 @Composable
