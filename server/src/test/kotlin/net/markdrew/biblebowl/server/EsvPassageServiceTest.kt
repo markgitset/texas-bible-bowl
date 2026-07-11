@@ -5,22 +5,16 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.contentType
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
-import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ChapterTextDto
-import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
@@ -140,7 +134,7 @@ class EsvPassageServiceTest {
     }
 
     @Test
-    fun bibleRouteServesChapterToAuthenticatedUser() = testApplication {
+    fun bibleRouteServesChapterAnonymously() = testApplication {
         val hits = mutableListOf<String>()
         val esv = EsvPassageService(
             client = mockEsvClient(hits),
@@ -157,17 +151,8 @@ class EsvPassageServiceTest {
             install(ContentNegotiation) { json(json) }
         }
 
-        // Unauthenticated -> 401
-        assertEquals(HttpStatusCode.Unauthorized, api.get("/bible/ACT/2").status)
-
-        // Register, then fetch Acts 2 by code and by full name.
-        val reg = api.post("/auth/register") {
-            contentType(ContentType.Application.Json)
-            setBody(RegisterRequest("reader@tbb.org", "password123", "Reader"))
-        }
-        val auth: AuthResponse = json.decodeFromString(reg.bodyAsText())
-
-        val res = api.get("/bible/ACT/2") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }
+        // Study material is public — no sign-in needed. Fetch Acts 2 by code and by full name.
+        val res = api.get("/bible/ACT/2")
         assertEquals(HttpStatusCode.OK, res.status)
         val dto: ChapterTextDto = json.decodeFromString(res.bodyAsText())
         assertEquals("ACT", dto.bookCode)
@@ -176,12 +161,12 @@ class EsvPassageServiceTest {
         assertTrue(dto.text.contains("Pentecost"))
         assertTrue(dto.copyright.contains("Crossway"))
 
-        val byName = api.get("/bible/Acts/2") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }
+        val byName = api.get("/bible/Acts/2")
         assertEquals(HttpStatusCode.OK, byName.status)
         assertEquals(1, hits.size, "both requests should share one upstream fetch via the cache")
 
         // Bad book -> 400
-        val bad = api.get("/bible/NOPE/2") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }
+        val bad = api.get("/bible/NOPE/2")
         assertEquals(HttpStatusCode.BadRequest, bad.status)
     }
 
@@ -193,12 +178,7 @@ class EsvPassageServiceTest {
         }
         val json = Json { ignoreUnknownKeys = true }
         val api = createClient { install(ContentNegotiation) { json(json) } }
-        val reg = api.post("/auth/register") {
-            contentType(ContentType.Application.Json)
-            setBody(RegisterRequest("reader2@tbb.org", "password123", "Reader"))
-        }
-        val auth: AuthResponse = json.decodeFromString(reg.bodyAsText())
-        val res = api.get("/bible/ACT/2") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }
+        val res = api.get("/bible/ACT/2")
         assertEquals(HttpStatusCode.ServiceUnavailable, res.status)
     }
 }

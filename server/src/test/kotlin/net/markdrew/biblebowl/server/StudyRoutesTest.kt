@@ -5,23 +5,17 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
-import io.ktor.client.request.header
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.contentType
 import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
-import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
-import net.markdrew.biblebowl.api.RegisterRequest
 import kotlinx.coroutines.runBlocking
 import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.StandardStudySet
@@ -131,15 +125,8 @@ class StudyRoutesTest {
         val json = Json { ignoreUnknownKeys = true }
         val api = createClient { install(ContentNegotiation) { json(json) } }
 
-        assertEquals(HttpStatusCode.Unauthorized, api.get("/study/headings").status)
-
-        val reg = api.post("/auth/register") {
-            contentType(ContentType.Application.Json)
-            setBody(RegisterRequest("student@tbb.org", "password123", "Student"))
-        }
-        val auth: AuthResponse = json.decodeFromString(reg.bodyAsText())
-
-        val res = api.get("/study/headings") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }
+        // Study material is public — no sign-in needed.
+        val res = api.get("/study/headings")
         assertEquals(HttpStatusCode.OK, res.status)
         val headings: List<HeadingDto> = json.decodeFromString(res.bodyAsText())
         assertEquals(
@@ -152,9 +139,7 @@ class StudyRoutesTest {
         assertEquals("1:1-2", headings.first().reference)
 
         // throughChapter filter
-        val filtered = api.get("/study/headings?throughChapter=1") {
-            header(HttpHeaders.Authorization, "Bearer ${auth.token}")
-        }
+        val filtered = api.get("/study/headings?throughChapter=1")
         val filteredHeadings: List<HeadingDto> = json.decodeFromString(filtered.bodyAsText())
         assertEquals(listOf("The Promise of the Holy Spirit"), filteredHeadings.map { it.title })
     }
@@ -173,15 +158,9 @@ class StudyRoutesTest {
         }
         val json = Json { ignoreUnknownKeys = true }
         val api = createClient { install(ContentNegotiation) { json(json) } }
-        val reg = api.post("/auth/register") {
-            contentType(ContentType.Application.Json)
-            setBody(RegisterRequest("printer@tbb.org", "password123", "Printer"))
-        }
-        val auth: AuthResponse = json.decodeFromString(reg.bodyAsText())
 
-        val res = api.get("/generate/heading-flashcards.pdf") {
-            header(HttpHeaders.Authorization, "Bearer ${auth.token}")
-        }
+        // PDF generation is public (rate-limited, not auth-gated).
+        val res = api.get("/generate/heading-flashcards.pdf")
         assertEquals(HttpStatusCode.OK, res.status)
         val bytes = res.bodyAsBytes()
         assertTrue(bytes.size > 4 && bytes.decodeToString(0, 4) == "%PDF", "response should be a PDF")
@@ -198,15 +177,7 @@ class StudyRoutesTest {
         val json = Json { ignoreUnknownKeys = true }
         val api = createClient { install(ContentNegotiation) { json(json) } }
 
-        assertEquals(HttpStatusCode.Unauthorized, api.get("/study/numbers").status)
-
-        val reg = api.post("/auth/register") {
-            contentType(ContentType.Application.Json)
-            setBody(RegisterRequest("counter@tbb.org", "password123", "Counter"))
-        }
-        val auth: AuthResponse = json.decodeFromString(reg.bodyAsText())
-
-        val res = api.get("/study/numbers") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }
+        val res = api.get("/study/numbers")
         assertEquals(HttpStatusCode.OK, res.status)
         val entries: List<IndexEntryDto> = json.decodeFromString(res.bodyAsText())
         // The Acts 1-2 fixture contains "one" ("in one place") and "first" ("the first book").
@@ -226,12 +197,7 @@ class StudyRoutesTest {
         }
         val json = Json { ignoreUnknownKeys = true }
         val api = createClient { install(ContentNegotiation) { json(json) } }
-        val reg = api.post("/auth/register") {
-            contentType(ContentType.Application.Json)
-            setBody(RegisterRequest("nobody@tbb.org", "password123", "Nobody"))
-        }
-        val auth: AuthResponse = json.decodeFromString(reg.bodyAsText())
-        val res = api.get("/study/headings") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }
+        val res = api.get("/study/headings")
         assertEquals(HttpStatusCode.ServiceUnavailable, res.status)
     }
 }

@@ -4,7 +4,8 @@ import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.auth.authenticate
+import io.ktor.server.plugins.ratelimit.RateLimitName
+import io.ktor.server.plugins.ratelimit.rateLimit
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
@@ -38,8 +39,13 @@ import net.markdrew.biblebowl.server.typst.TypstException
 import kotlin.random.Random
 import kotlin.random.nextInt
 
+/** Name of the per-client rate limit applied to the generate endpoints (Typst compiles are CPU-bound). */
+val GENERATE_RATE_LIMIT = RateLimitName("generate")
+
 fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService? = null) {
-    authenticate {
+    // Public (study material never requires sign-in), but rate-limited per client: each request
+    // shells out to Typst, so an anonymous hot loop must not be able to pin the CPU.
+    rateLimit(GENERATE_RATE_LIMIT) {
         // GET /generate/practice-test.pdf?round=FACT_FINDER&chapter=2&limit=40&seed=1234
         //
         // R1/R4/R5 are generated deterministically from the ESV text; R2/R3 come from the approved

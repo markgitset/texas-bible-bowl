@@ -16,12 +16,15 @@ import io.ktor.server.netty.Netty
 import io.ktor.server.plugins.calllogging.CallLogging
 import io.ktor.server.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.server.plugins.cors.routing.CORS
+import io.ktor.server.plugins.origin
+import io.ktor.server.plugins.ratelimit.RateLimit
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.response.respond
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.launch
 import java.nio.file.Path
+import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.Role
@@ -36,6 +39,7 @@ import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.esv.EsvPassageService
 import net.markdrew.biblebowl.server.esv.FileEsvCache
 import net.markdrew.biblebowl.server.esv.PostgresEsvCache
+import net.markdrew.biblebowl.server.routes.GENERATE_RATE_LIMIT
 import net.markdrew.biblebowl.server.routes.authRoutes
 import net.markdrew.biblebowl.server.routes.bibleRoutes
 import net.markdrew.biblebowl.server.routes.generateRoutes
@@ -117,6 +121,19 @@ fun Application.module(
             realm = "texas-bible-bowl"
             verifier(jwt.verifier)
             validate { cred -> cred.subject?.let { JWTPrincipal(cred.payload) } }
+        }
+    }
+    install(RateLimit) {
+        // Mild per-client limit on the public /generate/* endpoints (each request runs Typst, which is
+        // CPU-bound). Keyed on the original client IP: Fly's proxy terminates the connection, so the
+        // socket address alone would lump all users into one bucket.
+        register(GENERATE_RATE_LIMIT) {
+            rateLimiter(limit = 10, refillPeriod = 60.seconds)
+            requestKey { call ->
+                call.request.headers["Fly-Client-IP"]
+                    ?: call.request.headers[HttpHeaders.XForwardedFor]?.substringBefore(',')?.trim()
+                    ?: call.request.origin.remoteHost
+            }
         }
     }
 

@@ -85,13 +85,8 @@ class GeneratePdfTest {
             }
         }
 
-        // Unauthenticated -> 401.
-        assertEquals(HttpStatusCode.Unauthorized, api.get("/generate/practice-test.pdf?round=FACT_FINDER").status)
-
-        // Authenticated -> valid PDF bytes.
-        val res = api.get("/generate/practice-test.pdf?round=FACT_FINDER&chapter=2") {
-            header(HttpHeaders.Authorization, "Bearer ${kid.token}")
-        }
+        // Anonymous -> valid PDF bytes (generation is public; study material never requires sign-in).
+        val res = api.get("/generate/practice-test.pdf?round=FACT_FINDER&chapter=2")
         assertEquals(HttpStatusCode.OK, res.status)
         assertEquals(ContentType.Application.Pdf, res.contentType())
         val bytes = res.readRawBytes()
@@ -99,9 +94,7 @@ class GeneratePdfTest {
         assertEquals("%PDF", bytes.decodeToString(0, 4), "must start with PDF magic")
 
         // No matching questions -> 404.
-        val none = api.get("/generate/practice-test.pdf?round=POWER") {
-            header(HttpHeaders.Authorization, "Bearer ${kid.token}")
-        }
+        val none = api.get("/generate/practice-test.pdf?round=POWER")
         assertEquals(HttpStatusCode.NotFound, none.status)
     }
 }

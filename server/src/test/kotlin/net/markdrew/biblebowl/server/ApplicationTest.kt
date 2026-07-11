@@ -48,6 +48,79 @@ class ApplicationTest {
     }
 
     @Test
+    fun anonymousBrowseSeesApprovedOnly() = testApplication {
+        val users = InMemoryUserRepository()
+        val questions = InMemoryQuestionRepository()
+        val jwt = JwtService(secret = "test-secret")
+        application { module(users, questions, jwt) }
+
+        val api = createClient {
+            install(ContentNegotiation) { json(json) }
+            defaultRequest { contentType(ContentType.Application.Json) }
+        }
+
+        // A contestant registers and submits a question (it lands PENDING).
+        val contestant: AuthResponse = json.decodeFromString(
+            api.post("/auth/register") {
+                setBody(RegisterRequest("kid2@tbb.org", "password123", "Lydia", grade = 7))
+            }.bodyAsText()
+        )
+        api.post("/questions") {
+            header(HttpHeaders.Authorization, "Bearer ${contestant.token}")
+            setBody(
+                SubmitQuestionRequest(
+                    roundType = Round.FACT_FINDER,
+                    prompt = "Who sold purple goods?",
+                    answer = "Lydia",
+                    references = listOf("Acts 16:14"),
+                    chapter = 16,
+                )
+            )
+        }
+
+        // Anonymous browse works (no token) but never reveals unapproved questions — even when
+        // the request explicitly asks for PENDING.
+        val anonDefault = api.get("/questions")
+        assertEquals(HttpStatusCode.OK, anonDefault.status)
+        assertEquals("[]", anonDefault.bodyAsText().trim())
+
+        val anonPending = api.get("/questions?status=PENDING")
+        assertEquals(HttpStatusCode.OK, anonPending.status)
+        assertEquals("[]", anonPending.bodyAsText().trim(), "anonymous callers are pinned to APPROVED")
+
+        // Signed-in callers can still see the pending queue (their own submissions / moderation).
+        val signedInPending = api.get("/questions?status=PENDING") {
+            header(HttpHeaders.Authorization, "Bearer ${contestant.token}")
+        }
+        assertTrue(signedInPending.bodyAsText().contains("Who sold purple goods?"))
+
+        // Anonymous writes are still rejected.
+        val anonSubmit = api.post("/questions") {
+            setBody(
+                SubmitQuestionRequest(
+                    roundType = Round.FACT_FINDER,
+                    prompt = "Anonymous?",
+                    answer = "No",
+                )
+            )
+        }
+        assertEquals(HttpStatusCode.Unauthorized, anonSubmit.status)
+    }
+
+    @Test
+    fun generateEndpointsAreRateLimitedPerClient() = testApplication {
+        application { module(InMemoryUserRepository(), InMemoryQuestionRepository(), JwtService(secret = "test-secret")) }
+        val api = createClient { }
+
+        // Bad-round requests are cheap (400, no Typst run) but still consume the bucket: 10 pass through…
+        repeat(10) {
+            assertEquals(HttpStatusCode.BadRequest, api.get("/generate/practice-test.pdf?round=BOGUS").status)
+        }
+        // …and the 11th within the window is throttled.
+        assertEquals(HttpStatusCode.TooManyRequests, api.get("/generate/practice-test.pdf?round=BOGUS").status)
+    }
+
+    @Test
     fun rbacGovernsQuestionModeration() = testApplication {
         val users = InMemoryUserRepository()
         val questions = InMemoryQuestionRepository()

@@ -2,6 +2,8 @@ package net.markdrew.biblebowl.server.routes
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.auth.authenticate
+import io.ktor.server.auth.jwt.JWTPrincipal
+import io.ktor.server.auth.principal
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -20,16 +22,21 @@ import net.markdrew.biblebowl.server.security.currentUser
 import net.markdrew.biblebowl.server.security.requirePermission
 
 fun Route.questionRoutes(users: UserRepository, questions: QuestionRepository) {
-    authenticate {
-        route("/questions") {
-            // Browse — defaults to approved questions; filter by chapter of Acts.
+    route("/questions") {
+        // Browse — public. Anonymous visitors always see the approved list (the community bank is
+        // study material); signed-in users may also request other statuses (the moderation queue).
+        authenticate(optional = true) {
             get {
-                val status = call.request.queryParameters["status"]?.let { runCatching { QuestionStatus.valueOf(it) }.getOrNull() }
-                    ?: QuestionStatus.APPROVED
+                val requested = call.request.queryParameters["status"]
+                    ?.let { runCatching { QuestionStatus.valueOf(it) }.getOrNull() }
+                val signedIn = call.principal<JWTPrincipal>() != null
+                val status = if (signedIn) requested ?: QuestionStatus.APPROVED else QuestionStatus.APPROVED
                 val chapter = call.request.queryParameters["chapter"]?.toIntOrNull()
                 call.respond(questions.list(status, chapter))
             }
+        }
 
+        authenticate {
             // Contribute a new question (any contestant).
             post {
                 val user = currentUser(users) ?: return@post

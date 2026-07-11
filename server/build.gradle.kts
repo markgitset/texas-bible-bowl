@@ -25,6 +25,7 @@ dependencies {
     implementation(libs.ktor.server.cors)
     implementation(libs.ktor.server.status.pages)
     implementation(libs.ktor.server.call.logging)
+    implementation(libs.ktor.server.rate.limit)
 
     // ESV fetch (server-side only) — Ktor client
     implementation(libs.ktor.client.core)
