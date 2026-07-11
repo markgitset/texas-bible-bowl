@@ -222,6 +222,37 @@ class StudyRoutesTest {
     }
 
     @Test
+    fun bibleTextPdfHonorsRenderOptions() = testApplication {
+        if (!TypstCompiler.isAvailable) {
+            println("typst not on PATH; skipping PDF compile test")
+            return@testApplication
+        }
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+            )
+        }
+        val api = createClient { }
+
+        suspend fun pdf(query: String): ByteArray {
+            val res = api.get("/generate/bible-text.pdf$query")
+            assertEquals(HttpStatusCode.OK, res.status, "for query '$query'")
+            return res.bodyAsBytes().also {
+                assertEquals("%PDF", it.decodeToString(0, 4), "for query '$query'")
+            }
+        }
+
+        val default = pdf("")
+        val customized = pdf("?fontSize=14&twoColumns=true&justified=true&chapterBreaksPage=true&underlineUniqueWords=true")
+        val plain = pdf("?highlight=false")
+
+        // Typst output is deterministic, so byte-identical PDFs would mean the options were ignored.
+        assertTrue(!default.contentEquals(customized), "render options must change the PDF")
+        assertTrue(!default.contentEquals(plain), "highlight=false must change the PDF")
+    }
+
+    @Test
     fun headingsEndpointReturns503WithoutStudyService() = testApplication {
         application {
             module(

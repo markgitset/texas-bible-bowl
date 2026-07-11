@@ -99,6 +99,67 @@ fun DownloadsScreen(api: TbbApi) {
     val chSuffix = chapter?.let { "-ch$it" } ?: ""
     val throughSuffix = chapter?.let { "-through-ch$it" } ?: ""
 
+    // One download action per card, honoring the (sticky) customize choices. Used by BOTH the
+    // card's primary button and the sheet's Download button — customizing and then pressing
+    // either button yields the customized document, and the file name spells out the options.
+    fun downloadStudyText() {
+        val c = textChoices
+        val name = buildString {
+            append("bible-text")
+            if (c.highlight) append("-highlighted")
+            if (c.twoColumns) append("-2col")
+            if (c.justified) append("-justified")
+            if (c.chapterBreaksPage) append("-page-per-ch")
+            if (c.underlineUniqueWords) append("-unique-words")
+            if (c.fontSize != 11) append("-${c.fontSize}pt")
+            append(".pdf")
+        }
+        download("Highlighted study text", name) {
+            api.bibleTextPdf(
+                fontSize = c.fontSize.takeIf { it != 11 },
+                twoColumns = c.twoColumns,
+                justified = c.justified,
+                chapterBreaksPage = c.chapterBreaksPage,
+                highlight = c.highlight,
+                underlineUniqueWords = c.underlineUniqueWords,
+            )
+        }
+    }
+
+    fun downloadQuestionFlashcards() {
+        val round = flashcardRound
+        download("Question flashcards", "flashcards${round?.let { "-${it.name.lowercase()}" } ?: ""}$chSuffix.pdf") {
+            api.flashcardsPdf(chapter, round)
+        }
+    }
+
+    fun downloadPracticeTest(round: Round) {
+        val limit = practiceLimit.takeIf { round.crowdSourced }
+        val seed = practiceSeed.toIntOrNull().takeIf { !round.crowdSourced }
+        download(
+            "Round ${round.number}: ${round.displayName}",
+            "practice-${round.name.lowercase()}$chSuffix${seed?.let { "-seed$it" } ?: ""}.pdf",
+        ) {
+            api.practiceTestPdf(round, chapter, limit = limit, seed = seed)
+        }
+    }
+
+    fun downloadExport(kahoot: Boolean) {
+        val headings = exportHeadings
+        val round = exportRound.takeIf { !headings }
+        val base = if (headings) "headings$throughSuffix" else
+            "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}$chSuffix"
+        if (kahoot) {
+            download("Kahoot spreadsheet", "kahoot-$base.xlsx", Mime.XLSX) {
+                api.questionsXlsx(headings, round, chapter)
+            }
+        } else {
+            download("Quizlet / Space TSV", "quizlet-$base.tsv", Mime.TSV) {
+                api.questionsTsv(headings, round, chapter)
+            }
+        }
+    }
+
     Column(
         Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -121,18 +182,19 @@ fun DownloadsScreen(api: TbbApi) {
         DownloadCard(
             title = "Highlighted study text",
             subtitle = "The full text of Acts with names, numbers, and more highlighted by category — " +
-                "the flagship study document.",
+                "the flagship study document." + customizedNote(textChoices != StudyTextChoices()),
             busyCard = busyCard,
-            onClick = { download("Highlighted study text", "bible-text-highlighted.pdf") { api.bibleTextPdf() } },
+            onClick = ::downloadStudyText,
             onCustomize = { customize = Customize.StudyText },
         )
 
         GroupHeader("Flashcards")
         DownloadCard(
             title = "Question flashcards",
-            subtitle = "Duplex deck built from the approved community questions." + scopeNote(chapter),
+            subtitle = "Duplex deck built from the approved community questions." + scopeNote(chapter) +
+                customizedNote(flashcardRound != null),
             busyCard = busyCard,
-            onClick = { download("Question flashcards", "flashcards$chSuffix.pdf") { api.flashcardsPdf(chapter) } },
+            onClick = ::downloadQuestionFlashcards,
             onCustomize = { customize = Customize.QuestionFlashcards },
         )
         DownloadCard(
@@ -164,44 +226,34 @@ fun DownloadsScreen(api: TbbApi) {
         GroupHeader("Practice tests")
         // R1–R5 only: the Power Round has no generator or question bank behind it.
         Round.entries.filter { it.number in 1..5 }.forEach { round ->
+            val roundCustomized =
+                if (round.crowdSourced) practiceLimit != null else practiceSeed.toIntOrNull() != null
             DownloadCard(
                 title = "Round ${round.number}: ${round.displayName}",
                 subtitle = (if (round.crowdSourced) "Built from the approved community questions."
-                else "Generated from the ESV text.") + scopeNote(chapter),
+                else "Generated from the ESV text.") + scopeNote(chapter) + customizedNote(roundCustomized),
                 busyCard = busyCard,
-                onClick = {
-                    download("Round ${round.number}: ${round.displayName}",
-                        "practice-${round.name.lowercase()}$chSuffix.pdf") {
-                        api.practiceTestPdf(round, chapter)
-                    }
-                },
+                onClick = { downloadPracticeTest(round) },
                 onCustomize = { customize = Customize.PracticeTest(round) },
             )
         }
 
         GroupHeader("Exports")
+        val exportCustomized = exportHeadings || exportRound != null
         DownloadCard(
             title = "Kahoot spreadsheet",
             subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout)." +
-                scopeNote(chapter),
+                scopeNote(chapter) + customizedNote(exportCustomized),
             busyCard = busyCard,
-            onClick = {
-                download("Kahoot spreadsheet", "kahoot-questions$chSuffix.xlsx", Mime.XLSX) {
-                    api.questionsXlsx(chapter = chapter)
-                }
-            },
+            onClick = { downloadExport(kahoot = true) },
             onCustomize = { customize = Customize.Export(kahoot = true) },
         )
         DownloadCard(
             title = "Quizlet / Space TSV",
             subtitle = "Question-and-answer pairs as tab-separated text, import-ready for " +
-                "Quizlet, Space, or Anki." + scopeNote(chapter),
+                "Quizlet, Space, or Anki." + scopeNote(chapter) + customizedNote(exportCustomized),
             busyCard = busyCard,
-            onClick = {
-                download("Quizlet / Space TSV", "quizlet-questions$chSuffix.tsv", Mime.TSV) {
-                    api.questionsTsv(chapter = chapter)
-                }
-            },
+            onClick = { downloadExport(kahoot = false) },
             onCustomize = { customize = Customize.Export(kahoot = false) },
         )
     }
@@ -216,59 +268,28 @@ fun DownloadsScreen(api: TbbApi) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 when (target) {
-                    Customize.StudyText -> StudyTextOptions(textChoices, onChange = { textChoices = it }) {
-                        val c = textChoices
-                        download(
-                            "Highlighted study text",
-                            "bible-text${if (c.highlight) "-highlighted" else ""}.pdf",
-                        ) {
-                            api.bibleTextPdf(
-                                fontSize = c.fontSize.takeIf { it != 11 },
-                                twoColumns = c.twoColumns,
-                                justified = c.justified,
-                                chapterBreaksPage = c.chapterBreaksPage,
-                                highlight = c.highlight,
-                                underlineUniqueWords = c.underlineUniqueWords,
-                            )
-                        }
-                    }
-                    Customize.QuestionFlashcards -> QuestionFlashcardOptions(flashcardRound, onChange = { flashcardRound = it }) {
-                        val round = flashcardRound
-                        val name = "flashcards${round?.let { "-${it.name.lowercase()}" } ?: ""}$chSuffix.pdf"
-                        download("Question flashcards", name) { api.flashcardsPdf(chapter, round) }
-                    }
+                    Customize.StudyText -> StudyTextOptions(
+                        choices = textChoices,
+                        onChange = { textChoices = it },
+                        onDownload = ::downloadStudyText,
+                    )
+                    Customize.QuestionFlashcards -> QuestionFlashcardOptions(
+                        round = flashcardRound,
+                        onChange = { flashcardRound = it },
+                        onDownload = ::downloadQuestionFlashcards,
+                    )
                     is Customize.PracticeTest -> PracticeTestOptions(
                         round = target.round,
                         limit = practiceLimit, onLimit = { practiceLimit = it },
                         seedText = practiceSeed, onSeedText = { practiceSeed = it },
-                    ) {
-                        val seed = practiceSeed.toIntOrNull()
-                        download(
-                            "Round ${target.round.number}: ${target.round.displayName}",
-                            "practice-${target.round.name.lowercase()}$chSuffix.pdf",
-                        ) {
-                            api.practiceTestPdf(target.round, chapter, limit = practiceLimit, seed = seed)
-                        }
-                    }
+                        onDownload = { downloadPracticeTest(target.round) },
+                    )
                     is Customize.Export -> ExportOptions(
                         kahoot = target.kahoot,
                         headingsSource = exportHeadings, onHeadingsSource = { exportHeadings = it },
                         round = exportRound, onRound = { exportRound = it },
-                    ) {
-                        val headings = exportHeadings
-                        val round = exportRound.takeIf { !headings }
-                        val base = if (headings) "headings$throughSuffix" else
-                            "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}$chSuffix"
-                        if (target.kahoot) {
-                            download("Kahoot spreadsheet", "kahoot-$base.xlsx", Mime.XLSX) {
-                                api.questionsXlsx(headings, round, chapter)
-                            }
-                        } else {
-                            download("Quizlet / Space TSV", "quizlet-$base.tsv", Mime.TSV) {
-                                api.questionsTsv(headings, round, chapter)
-                            }
-                        }
-                    }
+                        onDownload = { downloadExport(target.kahoot) },
+                    )
                 }
             }
         }
@@ -414,6 +435,9 @@ private fun SheetDownloadButton(onClick: () -> Unit) {
 }
 
 private fun scopeNote(chapter: Int?): String = chapter?.let { " Scoped to chapter $it." } ?: ""
+
+private fun customizedNote(customized: Boolean): String =
+    if (customized) " Using your customized settings." else ""
 
 @Composable
 private fun GroupHeader(title: String) {
