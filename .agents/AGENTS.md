@@ -59,6 +59,20 @@ instantly and everything is UP-TO-DATE right after you edited files, re-run with
 The wasmJs build prints many `ExperimentalWasmJsInterop` opt-in warnings from
 `SavePdf.wasmJs.kt` — pre-existing and harmless, not from your change.
 
+## App navigation (Phase 1 of docs/gui-redesign.md, as built)
+Five public destinations (`Routes.kt`): study, quiz, questions, downloads, event (+ signin,
+account) via JetBrains navigation-compose; adaptive scaffold in `App.kt` (bottom nav < 600dp,
+top-bar text tabs otherwise). No auth wall — GET routes are public server-side; JWT only on
+submit/vote/moderate. **Wasm gotcha:** the NavHost sits inside `Scaffold` (a SubcomposeLayout),
+so `window.bindToNavigation` and initial-hash deep-linking must run from the `onNavHostReady`
+callback (fired by a `LaunchedEffect` right after `NavHost` in `App.kt`) — a top-level
+`LaunchedEffect` in `Main.kt` runs before the graph is set and fails with "Navigation graph has
+not been set". Also: `bindToNavigation` never *reads* the initial URL hash; `Main.kt` navigates
+to it explicitly before binding. To eyeball the web app: `preview_start` the `web-dist` +
+`backend` configs in `.claude/launch.json` (backend is in-memory without `DATABASE_URL`;
+ESV endpoints 503 without the token — expected). Stop the local backend before
+`:app:desktopTest`: a live :8080 un-skips `EndToEndFlowTest`, which expects the Postgres stack.
+
 ## Verifying generated PDFs locally (no ESV token needed)
 Typst is installed at `/home/mark/bin/typst` (v0.14.2); the server shells out to it.
 To eyeball a PDF feature without the ESV token: write a throwaway jvmTest that builds

@@ -22,6 +22,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -56,13 +57,15 @@ import net.markdrew.biblebowl.app.ui.TbbTheme
 
 /**
  * Public-first app shell (docs/gui-redesign.md): no auth wall — everything study-related works
- * anonymously, and signing in only *adds* capabilities. [navController] is hoisted so the wasm
- * entry point can bind it to the browser's history/URL.
+ * anonymously, and signing in only *adds* capabilities. [onNavHostReady] fires once the NavHost
+ * has set its graph on the controller, so the wasm entry point can apply the initial URL route
+ * and bind browser history — earlier binding races the Scaffold subcomposition and fails.
  */
 @Composable
 fun App(
     api: TbbApi = remember { TbbApi() },
     navController: NavHostController = rememberNavController(),
+    onNavHostReady: suspend (NavHostController) -> Unit = {},
 ) {
     // The signed-in user is app-level UI state; TbbApi keeps the token for requests.
     var user by remember { mutableStateOf(api.user) }
@@ -74,6 +77,7 @@ fun App(
                 navController = navController,
                 user = user,
                 onUserChange = { user = it },
+                onNavHostReady = onNavHostReady,
             )
         }
     }
@@ -90,6 +94,7 @@ private fun AppScaffold(
     navController: NavHostController,
     user: UserDto?,
     onUserChange: (UserDto?) -> Unit,
+    onNavHostReady: suspend (NavHostController) -> Unit,
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentTop = topDestinationOf(backStackEntry?.destination?.route)
@@ -173,7 +178,7 @@ private fun AppScaffold(
                 contentAlignment = Alignment.TopCenter,
             ) {
                 Box(Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(16.dp)) {
-                    AppNavHost(api, navController, user, onUserChange)
+                    AppNavHost(api, navController, user, onUserChange, onNavHostReady)
                 }
             }
         }
@@ -186,6 +191,7 @@ private fun AppNavHost(
     navController: NavHostController,
     user: UserDto?,
     onUserChange: (UserDto?) -> Unit,
+    onNavHostReady: suspend (NavHostController) -> Unit,
 ) {
     // Tapping a gated action while anonymous routes to sign-in; on success we pop back to where
     // the user was (return-to via the back stack).
@@ -237,4 +243,7 @@ private fun AppNavHost(
             )
         }
     }
+
+    // Runs after NavHost has set its graph (same subcomposition, effects in composition order).
+    LaunchedEffect(navController) { onNavHostReady(navController) }
 }

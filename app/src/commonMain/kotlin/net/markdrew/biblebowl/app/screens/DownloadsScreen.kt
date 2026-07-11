@@ -153,7 +153,8 @@ fun DownloadsScreen(api: TbbApi) {
         )
 
         GroupHeader("Practice tests")
-        Round.entries.forEach { round ->
+        // R1–R5 only: the Power Round has no generator or question bank behind it.
+        Round.entries.filter { it.number in 1..5 }.forEach { round ->
             DownloadCard(
                 title = "Round ${round.number}: ${round.displayName}",
                 subtitle = (if (round.crowdSourced) "Built from the approved community questions."

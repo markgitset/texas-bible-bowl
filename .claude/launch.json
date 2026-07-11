@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "8090", "--directory", "app/build/dist/wasmJs/productionExecutable"],
       "port": 8090
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "./gradlew",
+      "runtimeArgs": [":server:run"],
+      "port": 8080
     }
   ]
 }
