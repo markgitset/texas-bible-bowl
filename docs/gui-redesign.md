@@ -23,6 +23,7 @@ registration, event ops/grading) need a coherent home before they're built.
 - Download center includes **CSV/TSV exports** for Kahoot/Quizlet/Space import.
 - Contestant accounts: **roster entries first, optional accounts** — coach enters names; a contestant/parent may later create an account and claim their entry via a coach-shared code.
 - Photos: **do not migrate the image assets.** Galleries become Google Photos albums; the site's `photos/` page is just a list of album links (one per year/event).
+- **No in-app reading view.** Reading the text is better served by dedicated apps/sites; the Study hub links out to good ESV readers (ESV.org, YouVersion, BibleGateway) instead of hosting one.
 
 ## 1. Design thesis
 
@@ -50,8 +51,7 @@ texasbiblebowl.org/                      [S] Home — hero, season banner (year/
 ├── donate/ · contact/ · search/         [S] as today (PayPal, email, Fuse.js)
 │
 └── app/                                 [A] Compose wasm bundle, hash-routed
-    ├── #/study                          [A] Study hub (default landing)
-    │   ├── #/study/read/{chapter?}      [A] online reading view
+    ├── #/study                          [A] Study hub (default landing; links out to ESV readers)
     │   ├── #/study/indices/{names|numbers} [A]
     │   └── #/study/headings             [A] headings browser + self-check mode
     ├── #/quiz (+ /run, /results)        [A]
@@ -155,13 +155,12 @@ Typst compile.
 | **Exports** | **Kahoot spreadsheet** (xlsx template) · **Quizlet/Space TSV** — question bank + headings as import-ready files (new endpoints) | round, chapter, source |
 
 ### C. Interactive study (public)
-- **`#/study` — hub & default landing.** Compact cards: Continue reading (last position), Indices,
-  Headings, "This season: {book}" header. One tap to everything.
-- **`#/study/read/{chapter}` — reading view (new).** ESV text via existing `/bible/{book}/{chapter}`
-  + `/study/headings`: verse numbers, heading landmarks, optional name/number highlight toggle
-  (server's annotation categories), prev/next, headings drawer for jumping. Remembers position.
+- **`#/study` — hub & default landing.** Compact cards: Indices, Headings, Downloads,
+  "This season: {book}" header, plus a **"Read {book} online"** card of external links (ESV.org,
+  YouVersion, BibleGateway — deep-linked to the season book). No in-app reading view (per Mark):
+  reading is better served by dedicated apps, and not hosting one keeps ESV text off the client.
 - **`#/study/indices/{names|numbers}`.** Current `IndexScreen` behavior (search, alpha/frequency);
-  references deep-link into the reading view; PDF button delegates to the download center.
+  PDF button delegates to the download center.
 - **`#/study/headings`.** Headings list (R5 material) with a flip-to-test self-check mode — the
   interactive twin of the heading-flashcards PDF.
 - **`#/quiz`** — setup defaults to last-used settings + global scope; one tap "Start". **`/run`**
@@ -214,7 +213,7 @@ coach-shared code → account becomes the entry's owner), roles held, sign out.
 - **Colors:** primary navy `#1a3a5c` (replaces indigo `#3B4A78`), secondary gold `#c9952a`
   (replaces `#B88A2E`); keep the paper background `#FAF8F4` + ink text — suits a reading-heavy app.
 - **Type:** **Fraunces** display/headlines, **Inter** body/UI — bundled as compose-resources fonts,
-  wired into `Typography` (currently defaults). Slightly larger body for ESV reading view.
+  wired into `Typography` (currently defaults).
 - **Components:** Material 3. Standardize: elevated cards (questions/downloads/hub), filter chips
   (chapter/round), segmented buttons (names|numbers, alpha|frequency), one primary button per card,
   bottom/side sheets for "Customize".
@@ -224,11 +223,11 @@ coach-shared code → account becomes the entry's owner), roles held, sign out.
 ## 7. Click-efficiency principles
 
 1. **Defaults over configuration** — every generator works with zero choices; options behind one "Customize".
-2. **One global study scope** — persistent "through chapter N / all" chip in the app bar (localStorage web / DataStore Android), shared by quiz, downloads, indices, reading. Set once per season.
+2. **One global study scope** — persistent "through chapter N / all" chip in the app bar (localStorage web / DataStore Android), shared by quiz, downloads, and indices. Set once per season.
 3. **No dropdowns for primary actions** — the 11-item menu becomes scannable cards.
 4. **Public-first** — zero auth clicks on the study path; sign-in appears only at a gated action, with return-to.
 5. **Deep links as a feature** — every useful state has a URL; coaches share links, not instructions.
-6. **Remember everything cheap** — last quiz settings, reading position, index tab.
+6. **Remember everything cheap** — last quiz settings, index tab.
 7. **Two-click ceiling** — any leaf screen ≤2 interactions from app landing.
 8. **Role-aware surfacing** — holders see extra cards/tabs in place; non-holders see nothing.
 
@@ -273,7 +272,7 @@ When implementation starts (future sessions), each phase verifies as: `./gradlew
 ## Appendix A — suggested phasing (lightweight)
 
 1. **Public-first core:** open read-only routes, routing + adaptive scaffold, navy/gold rebrand — app usable anonymously with current features.
-2. **Download center + reading view** (the two highest-traffic wins) + CSV/xlsx exports.
+2. **Download center polish** (customize sheets) + CSV/xlsx exports + headings browser.
 3. **Hybrid merge:** Hugo into `/site`, unified Pages deploy, shared header, `params.js`, seasons endpoint + admin season screen.
 4. **Registration:** schema + coach flow + registration desk + claim codes.
 5. **Event ops:** grading, tally, release, My Scores with owner/coach scoping; curated champions page.

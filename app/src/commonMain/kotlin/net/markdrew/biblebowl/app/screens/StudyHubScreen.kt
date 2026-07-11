@@ -1,27 +1,40 @@
 package net.markdrew.biblebowl.app.screens
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
+/** Good ESV readers to link out to — the app deliberately hosts no reading view (per Mark). */
+private val READING_LINKS = listOf(
+    "ESV.org" to "https://www.esv.org/Acts+1/",
+    "YouVersion" to "https://www.bible.com/bible/59/ACT.1.ESV",
+    "BibleGateway" to "https://www.biblegateway.com/passage/?search=Acts+1&version=ESV",
+)
+
 /**
  * Study hub — the app's default landing (docs/gui-redesign.md §5C): compact cards, one tap to
- * everything, zero auth. The online reading view joins these cards in a later phase.
+ * everything, zero auth. Reading the text links out to dedicated ESV readers rather than an
+ * in-app view — better reading tools, and no ESV text on the client.
  */
 @Composable
 fun StudyHubScreen(
     onOpenIndices: () -> Unit,
+    onOpenHeadings: () -> Unit,
     onOpenQuiz: () -> Unit,
     onOpenDownloads: () -> Unit,
 ) {
@@ -41,10 +54,16 @@ fun StudyHubScreen(
             color = MaterialTheme.colorScheme.secondary,
         )
 
+        ReadOnlineCard()
         HubCard(
             title = "Names & numbers indices",
             subtitle = "Every proper name and number in Acts, with all its verses. Search or browse.",
             onClick = onOpenIndices,
+        )
+        HubCard(
+            title = "Chapter headings",
+            subtitle = "Browse every ESV section heading (the Round 5 material) or flip to self-check mode.",
+            onClick = onOpenHeadings,
         )
         HubCard(
             title = "Quiz yourself",
@@ -56,6 +75,30 @@ fun StudyHubScreen(
             subtitle = "The highlighted study text, flashcards, indices, and practice tests.",
             onClick = onOpenDownloads,
         )
+    }
+}
+
+@Composable
+private fun ReadOnlineCard() {
+    val uriHandler = LocalUriHandler.current
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Read Acts online", style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold)
+            Text(
+                "Read the ESV text in a dedicated Bible app or site:",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                READING_LINKS.forEach { (name, url) ->
+                    AssistChip(onClick = { uriHandler.openUri(url) }, label = { Text(name) })
+                }
+            }
+        }
     }
 }
 

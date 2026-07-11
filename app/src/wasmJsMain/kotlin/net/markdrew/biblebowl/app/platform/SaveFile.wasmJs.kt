@@ -8,12 +8,12 @@ import org.w3c.dom.url.URL
 import org.w3c.files.Blob
 import org.w3c.files.BlobPropertyBag
 
-actual suspend fun savePdf(fileName: String, bytes: ByteArray): String {
+actual suspend fun saveFile(fileName: String, bytes: ByteArray, mimeType: String): String {
     val array = Int8Array(bytes.size)
     bytes.forEachIndexed { i, b -> array[i] = b }
     val blob = Blob(
         blobParts = arrayOf<JsAny?>(array.buffer).toJsArray(),
-        options = BlobPropertyBag(type = "application/pdf"),
+        options = BlobPropertyBag(type = mimeType),
     )
     val url = URL.createObjectURL(blob)
     val anchor = document.createElement("a") as HTMLAnchorElement

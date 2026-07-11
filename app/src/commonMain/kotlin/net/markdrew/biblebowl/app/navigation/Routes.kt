@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 object Routes {
     const val STUDY = "study"
     const val STUDY_INDICES = "study/indices"
+    const val STUDY_HEADINGS = "study/headings"
     const val QUIZ = "quiz"
     const val QUESTIONS = "questions"
     const val QUESTIONS_NEW = "questions/new"

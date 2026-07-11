@@ -48,6 +48,7 @@ import net.markdrew.biblebowl.app.screens.AuthScreen
 import net.markdrew.biblebowl.app.screens.ContributeScreen
 import net.markdrew.biblebowl.app.screens.DownloadsScreen
 import net.markdrew.biblebowl.app.screens.EventScreen
+import net.markdrew.biblebowl.app.screens.HeadingsScreen
 import net.markdrew.biblebowl.app.screens.IndexScreen
 import net.markdrew.biblebowl.app.screens.ModerateScreen
 import net.markdrew.biblebowl.app.screens.QuestionsScreen
@@ -201,11 +202,13 @@ private fun AppNavHost(
         composable(Routes.STUDY) {
             StudyHubScreen(
                 onOpenIndices = { navController.navigate(Routes.STUDY_INDICES) },
+                onOpenHeadings = { navController.navigate(Routes.STUDY_HEADINGS) },
                 onOpenQuiz = { navController.navigate(Routes.QUIZ) },
                 onOpenDownloads = { navController.navigate(Routes.DOWNLOADS) },
             )
         }
         composable(Routes.STUDY_INDICES) { IndexScreen(api) }
+        composable(Routes.STUDY_HEADINGS) { HeadingsScreen(api) }
         composable(Routes.QUIZ) { QuizScreen(api) }
         composable(Routes.QUESTIONS) {
             QuestionsScreen(

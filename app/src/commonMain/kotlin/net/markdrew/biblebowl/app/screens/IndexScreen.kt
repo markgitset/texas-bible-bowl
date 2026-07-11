@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.app.net.TbbApi
-import net.markdrew.biblebowl.app.platform.savePdf
+import net.markdrew.biblebowl.app.platform.saveFile
 
 /** The two study indices, each generated from the ESV text (word lists + curated overrides). */
 private enum class IndexKind(val label: String, val pdfName: String) {
@@ -79,7 +79,7 @@ fun IndexScreen(api: TbbApi) {
                 pdfMessage = null
                 scope.launch {
                     pdfMessage = try {
-                        savePdf(kind.pdfName, if (kind == IndexKind.NUMBERS) api.numbersIndexPdf() else api.namesIndexPdf())
+                        saveFile(kind.pdfName, if (kind == IndexKind.NUMBERS) api.numbersIndexPdf() else api.namesIndexPdf())
                     } catch (e: Throwable) {
                         "PDF failed: ${e.message}"
                     }

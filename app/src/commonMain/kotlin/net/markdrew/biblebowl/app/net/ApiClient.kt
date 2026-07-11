@@ -112,13 +112,18 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             authorize(); contentType(ContentType.Application.Json); setBody(ModerateQuestionRequest(status))
         }.body()
 
-    /** Fetches a generated practice-test PDF for [round] (optionally chapter-filtered) as raw bytes. */
-    suspend fun practiceTestPdf(round: Round, chapter: Int? = null): ByteArray =
+    /**
+     * Fetches a generated practice-test PDF for [round] (optionally chapter-filtered) as raw bytes.
+     * [limit] caps bank-round (R2/R3) tests; [seed] reproduces the same text-round (R1/R4/R5) test.
+     */
+    suspend fun practiceTestPdf(round: Round, chapter: Int? = null, limit: Int? = null, seed: Int? = null): ByteArray =
         client.get("$baseUrl/generate/practice-test.pdf") {
             authorize()
             parameter("round", round.name)
             if (chapter != null) parameter("chapter", chapter)
-        }.pdfBytesOrThrow()
+            if (limit != null) parameter("limit", limit)
+            if (seed != null) parameter("seed", seed)
+        }.bytesOrThrow()
 
     /** Fetches a duplex flashcard deck PDF built from approved questions (filters optional). */
     suspend fun flashcardsPdf(chapter: Int? = null, round: Round? = null): ByteArray =
@@ -126,7 +131,7 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             authorize()
             if (chapter != null) parameter("chapter", chapter)
             if (round != null) parameter("round", round.name)
-        }.pdfBytesOrThrow()
+        }.bytesOrThrow()
 
     /** Lists the season book's ESV section headings (Round 5 material), optionally through a chapter. */
     suspend fun headings(throughChapter: Int? = null): List<HeadingDto> =
@@ -140,17 +145,20 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
         client.get("$baseUrl/generate/heading-flashcards.pdf") {
             authorize()
             if (throughChapter != null) parameter("throughChapter", throughChapter)
-        }.pdfBytesOrThrow()
+        }.bytesOrThrow()
 
     /**
      * Fetches a formatted PDF of the covered text (verse numbers, headings, poetry, footnotes) with
-     * categorized name/number highlighting; set [underlineUniqueWords] to also underline hapax words
-     * (those occurring exactly once in the season book).
+     * categorized name/number highlighting ([highlight], on by default server-side); set
+     * [underlineUniqueWords] to also underline hapax words (those occurring exactly once in the
+     * season book) and [chapterBreaksPage] to start each chapter on a new page.
      */
     suspend fun bibleTextPdf(
         fontSize: Int? = null,
         twoColumns: Boolean = false,
         justified: Boolean = false,
+        chapterBreaksPage: Boolean = false,
+        highlight: Boolean = true,
         underlineUniqueWords: Boolean = false,
     ): ByteArray =
         client.get("$baseUrl/generate/bible-text.pdf") {
@@ -158,8 +166,10 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             if (fontSize != null) parameter("fontSize", fontSize)
             if (twoColumns) parameter("twoColumns", true)
             if (justified) parameter("justified", true)
+            if (chapterBreaksPage) parameter("chapterBreaksPage", true)
+            if (!highlight) parameter("highlight", false)
             if (underlineUniqueWords) parameter("underlineUniqueWords", true)
-        }.pdfBytesOrThrow()
+        }.bytesOrThrow()
 
     /** Lists the season's numbers index (every numeral/cardinal/ordinal/fraction and the verses it occurs in). */
     suspend fun numbersIndex(): List<IndexEntryDto> =
@@ -167,7 +177,7 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
 
     /** Fetches the numbers-index PDF (alphabetical + by-frequency sections). */
     suspend fun numbersIndexPdf(): ByteArray =
-        client.get("$baseUrl/generate/numbers-index.pdf") { authorize() }.pdfBytesOrThrow()
+        client.get("$baseUrl/generate/numbers-index.pdf") { authorize() }.bytesOrThrow()
 
     /** Lists the season's names index (every proper name and the verses it occurs in). */
     suspend fun namesIndex(): List<IndexEntryDto> =
@@ -175,14 +185,35 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
 
     /** Fetches the names-index PDF (alphabetical + by-frequency sections). */
     suspend fun namesIndexPdf(): ByteArray =
-        client.get("$baseUrl/generate/names-index.pdf") { authorize() }.pdfBytesOrThrow()
+        client.get("$baseUrl/generate/names-index.pdf") { authorize() }.bytesOrThrow()
+
+    /**
+     * Fetches a Quizlet/Space-importable TSV: the approved question bank (prompt -> answer) or,
+     * with [headingsSource], the R5 headings (title -> chapter; [chapter] scopes cumulatively).
+     */
+    suspend fun questionsTsv(headingsSource: Boolean = false, round: Round? = null, chapter: Int? = null): ByteArray =
+        client.get("$baseUrl/generate/questions.tsv") {
+            authorize()
+            if (headingsSource) parameter("source", "headings")
+            if (round != null) parameter("round", round.name)
+            if (chapter != null) parameter("chapter", chapter)
+        }.bytesOrThrow()
+
+    /** Fetches a Kahoot-importable .xlsx (multiple-choice material only; params as [questionsTsv]). */
+    suspend fun questionsXlsx(headingsSource: Boolean = false, round: Round? = null, chapter: Int? = null): ByteArray =
+        client.get("$baseUrl/generate/questions.xlsx") {
+            authorize()
+            if (headingsSource) parameter("source", "headings")
+            if (round != null) parameter("round", round.name)
+            if (chapter != null) parameter("chapter", chapter)
+        }.bytesOrThrow()
 
     /**
      * Returns the response body as PDF bytes, or throws [PdfException] with the server's error message on a
      * non-2xx status. Without this the client would happily "download" a JSON error body as a `.pdf`, which
      * the browser then reports as a corrupt/failed PDF with no clue what actually went wrong.
      */
-    private suspend fun HttpResponse.pdfBytesOrThrow(): ByteArray {
+    private suspend fun HttpResponse.bytesOrThrow(): ByteArray {
         if (status.isSuccess()) return body()
         val raw = runCatching { bodyAsText() }.getOrNull()
         val message = raw
