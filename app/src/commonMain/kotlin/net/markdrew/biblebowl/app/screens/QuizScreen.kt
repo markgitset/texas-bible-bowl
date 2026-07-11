@@ -36,6 +36,7 @@ import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.app.ui.ChapterChips
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 
 /** What a quiz draws from: the community question bank, or ESV chapter headings (Round 5). */
@@ -160,16 +161,7 @@ private fun QuizSetup(
             if (source == QuizSource.HEADINGS) "Through chapter" else "Chapter",
             style = MaterialTheme.typography.labelLarge,
         )
-        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(selected = chapter == null, onClick = { onChapter(null) }, label = { Text("All") })
-            (1..ACTS_CHAPTERS).forEach { ch ->
-                FilterChip(
-                    selected = chapter == ch,
-                    onClick = { onChapter(if (chapter == ch) null else ch) },
-                    label = { Text("$ch") },
-                )
-            }
-        }
+        ChapterChips(selected = chapter, onSelect = onChapter)
         Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("Start quiz") }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }

@@ -37,6 +37,7 @@ import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.app.net.TbbApi
 import net.markdrew.biblebowl.app.platform.Mime
 import net.markdrew.biblebowl.app.platform.saveFile
+import net.markdrew.biblebowl.app.ui.ChapterChips
 
 /** Which card's "Customize" sheet is open. */
 private sealed interface Customize {
@@ -45,6 +46,16 @@ private sealed interface Customize {
     data class PracticeTest(val round: Round) : Customize
     data class Export(val kahoot: Boolean) : Customize
 }
+
+/** Study-text options, hoisted so choices stick for the whole visit (§7.6 "remember everything cheap"). */
+private data class StudyTextChoices(
+    val fontSize: Int = 11,
+    val twoColumns: Boolean = false,
+    val justified: Boolean = false,
+    val chapterBreaksPage: Boolean = false,
+    val highlight: Boolean = true,
+    val underlineUniqueWords: Boolean = false,
+)
 
 /**
  * Download center (docs/gui-redesign.md §5B): one scrolling page of preset cards in five groups —
@@ -59,6 +70,13 @@ fun DownloadsScreen(api: TbbApi) {
     var message by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
     var customize by remember { mutableStateOf<Customize?>(null) }
+    // Sheet choices live at screen level so closing/reopening a sheet keeps the last selections.
+    var textChoices by remember { mutableStateOf(StudyTextChoices()) }
+    var flashcardRound by remember { mutableStateOf<Round?>(null) }
+    var practiceLimit by remember { mutableStateOf<Int?>(null) }
+    var practiceSeed by remember { mutableStateOf("") }
+    var exportHeadings by remember { mutableStateOf(false) }
+    var exportRound by remember { mutableStateOf<Round?>(null) }
     val scope = rememberCoroutineScope()
 
     fun download(cardTitle: String, fileName: String, mime: String = Mime.PDF, fetch: suspend () -> ByteArray) {
@@ -89,19 +107,7 @@ fun DownloadsScreen(api: TbbApi) {
             "Chapter scope (flashcards, practice tests & exports)",
             style = MaterialTheme.typography.labelLarge,
         )
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            FilterChip(selected = chapter == null, onClick = { chapter = null }, label = { Text("All") })
-            (1..ACTS_CHAPTERS).forEach { ch ->
-                FilterChip(
-                    selected = chapter == ch,
-                    onClick = { chapter = if (chapter == ch) null else ch },
-                    label = { Text("$ch") },
-                )
-            }
-        }
+        ChapterChips(selected = chapter, onSelect = { chapter = it })
 
         message?.let {
             Text(
@@ -210,39 +216,56 @@ fun DownloadsScreen(api: TbbApi) {
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 when (target) {
-                    Customize.StudyText -> StudyTextOptions { fontSize, twoCol, justified, pageBreaks, highlight, unique ->
+                    Customize.StudyText -> StudyTextOptions(textChoices, onChange = { textChoices = it }) {
+                        val c = textChoices
                         download(
                             "Highlighted study text",
-                            "bible-text${if (highlight) "-highlighted" else ""}.pdf",
+                            "bible-text${if (c.highlight) "-highlighted" else ""}.pdf",
                         ) {
                             api.bibleTextPdf(
-                                fontSize = fontSize, twoColumns = twoCol, justified = justified,
-                                chapterBreaksPage = pageBreaks, highlight = highlight, underlineUniqueWords = unique,
+                                fontSize = c.fontSize.takeIf { it != 11 },
+                                twoColumns = c.twoColumns,
+                                justified = c.justified,
+                                chapterBreaksPage = c.chapterBreaksPage,
+                                highlight = c.highlight,
+                                underlineUniqueWords = c.underlineUniqueWords,
                             )
                         }
                     }
-                    Customize.QuestionFlashcards -> QuestionFlashcardOptions { round ->
+                    Customize.QuestionFlashcards -> QuestionFlashcardOptions(flashcardRound, onChange = { flashcardRound = it }) {
+                        val round = flashcardRound
                         val name = "flashcards${round?.let { "-${it.name.lowercase()}" } ?: ""}$chSuffix.pdf"
                         download("Question flashcards", name) { api.flashcardsPdf(chapter, round) }
                     }
-                    is Customize.PracticeTest -> PracticeTestOptions(target.round) { limit, seed ->
+                    is Customize.PracticeTest -> PracticeTestOptions(
+                        round = target.round,
+                        limit = practiceLimit, onLimit = { practiceLimit = it },
+                        seedText = practiceSeed, onSeedText = { practiceSeed = it },
+                    ) {
+                        val seed = practiceSeed.toIntOrNull()
                         download(
                             "Round ${target.round.number}: ${target.round.displayName}",
                             "practice-${target.round.name.lowercase()}$chSuffix.pdf",
                         ) {
-                            api.practiceTestPdf(target.round, chapter, limit = limit, seed = seed)
+                            api.practiceTestPdf(target.round, chapter, limit = practiceLimit, seed = seed)
                         }
                     }
-                    is Customize.Export -> ExportOptions(kahoot = target.kahoot) { headingsSource, round ->
-                        val base = if (headingsSource) "headings$throughSuffix" else
+                    is Customize.Export -> ExportOptions(
+                        kahoot = target.kahoot,
+                        headingsSource = exportHeadings, onHeadingsSource = { exportHeadings = it },
+                        round = exportRound, onRound = { exportRound = it },
+                    ) {
+                        val headings = exportHeadings
+                        val round = exportRound.takeIf { !headings }
+                        val base = if (headings) "headings$throughSuffix" else
                             "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}$chSuffix"
                         if (target.kahoot) {
                             download("Kahoot spreadsheet", "kahoot-$base.xlsx", Mime.XLSX) {
-                                api.questionsXlsx(headingsSource, round, chapter)
+                                api.questionsXlsx(headings, round, chapter)
                             }
                         } else {
                             download("Quizlet / Space TSV", "quizlet-$base.tsv", Mime.TSV) {
-                                api.questionsTsv(headingsSource, round, chapter)
+                                api.questionsTsv(headings, round, chapter)
                             }
                         }
                     }
@@ -254,66 +277,68 @@ fun DownloadsScreen(api: TbbApi) {
 
 @Composable
 private fun StudyTextOptions(
-    onDownload: (fontSize: Int?, twoColumns: Boolean, justified: Boolean, chapterBreaksPage: Boolean,
-                 highlight: Boolean, underlineUniqueWords: Boolean) -> Unit,
+    choices: StudyTextChoices,
+    onChange: (StudyTextChoices) -> Unit,
+    onDownload: () -> Unit,
 ) {
-    var fontSize by remember { mutableStateOf(11) }
-    var twoColumns by remember { mutableStateOf(false) }
-    var justified by remember { mutableStateOf(false) }
-    var chapterBreaksPage by remember { mutableStateOf(false) }
-    var highlight by remember { mutableStateOf(true) }
-    var underlineUniqueWords by remember { mutableStateOf(false) }
-
     SheetTitle("Customize study text")
     Text("Font size", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(9, 10, 11, 12, 14).forEach { size ->
-            FilterChip(selected = fontSize == size, onClick = { fontSize = size }, label = { Text("$size pt") })
+            FilterChip(
+                selected = choices.fontSize == size,
+                onClick = { onChange(choices.copy(fontSize = size)) },
+                label = { Text("$size pt") },
+            )
         }
     }
-    OptionSwitch("Two columns", twoColumns) { twoColumns = it }
-    OptionSwitch("Justified text", justified) { justified = it }
-    OptionSwitch("Each chapter starts a new page", chapterBreaksPage) { chapterBreaksPage = it }
-    OptionSwitch("Highlight names & numbers by category", highlight) { highlight = it }
-    OptionSwitch("Underline words that appear only once", underlineUniqueWords) { underlineUniqueWords = it }
-    SheetDownloadButton {
-        onDownload(fontSize.takeIf { it != 11 }, twoColumns, justified, chapterBreaksPage, highlight, underlineUniqueWords)
+    OptionSwitch("Two columns", choices.twoColumns) { onChange(choices.copy(twoColumns = it)) }
+    OptionSwitch("Justified text", choices.justified) { onChange(choices.copy(justified = it)) }
+    OptionSwitch("Each chapter starts a new page", choices.chapterBreaksPage) {
+        onChange(choices.copy(chapterBreaksPage = it))
     }
+    OptionSwitch("Highlight names & numbers by category", choices.highlight) {
+        onChange(choices.copy(highlight = it))
+    }
+    OptionSwitch("Underline words that appear only once", choices.underlineUniqueWords) {
+        onChange(choices.copy(underlineUniqueWords = it))
+    }
+    SheetDownloadButton(onDownload)
 }
 
 @Composable
-private fun QuestionFlashcardOptions(onDownload: (round: Round?) -> Unit) {
-    var round by remember { mutableStateOf<Round?>(null) }
-
+private fun QuestionFlashcardOptions(round: Round?, onChange: (Round?) -> Unit, onDownload: () -> Unit) {
     SheetTitle("Customize question flashcards")
     Text("Round", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        FilterChip(selected = round == null, onClick = { round = null }, label = { Text("All") })
+        FilterChip(selected = round == null, onClick = { onChange(null) }, label = { Text("All") })
         Round.crowdSourcedRounds.forEach { rt ->
-            FilterChip(selected = round == rt, onClick = { round = rt }, label = { Text(rt.displayName) })
+            FilterChip(selected = round == rt, onClick = { onChange(rt) }, label = { Text(rt.displayName) })
         }
     }
-    SheetDownloadButton { onDownload(round) }
+    SheetDownloadButton(onDownload)
 }
 
 @Composable
-private fun PracticeTestOptions(round: Round, onDownload: (limit: Int?, seed: Int?) -> Unit) {
-    var limit by remember { mutableStateOf<Int?>(null) }
-    var seedText by remember { mutableStateOf("") }
-
+private fun PracticeTestOptions(
+    round: Round,
+    limit: Int?, onLimit: (Int?) -> Unit,
+    seedText: String, onSeedText: (String) -> Unit,
+    onDownload: () -> Unit,
+) {
     SheetTitle("Customize: ${round.displayName}")
     if (round.crowdSourced) {
         Text("Number of questions", style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(selected = limit == null, onClick = { limit = null }, label = { Text("Default (40)") })
+            FilterChip(selected = limit == null, onClick = { onLimit(null) }, label = { Text("Default (40)") })
             listOf(10, 20, 60, 100).forEach { n ->
-                FilterChip(selected = limit == n, onClick = { limit = n }, label = { Text("$n") })
+                FilterChip(selected = limit == n, onClick = { onLimit(n) }, label = { Text("$n") })
             }
         }
     } else {
         OutlinedTextField(
             value = seedText,
-            onValueChange = { seedText = it.filter(Char::isDigit).take(4) },
+            onValueChange = { onSeedText(it.filter(Char::isDigit).take(4)) },
             label = { Text("Seed (same seed → same test again)") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
@@ -325,34 +350,36 @@ private fun PracticeTestOptions(round: Round, onDownload: (limit: Int?, seed: In
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    SheetDownloadButton { onDownload(limit, seedText.toIntOrNull()) }
+    SheetDownloadButton(onDownload)
 }
 
 @Composable
-private fun ExportOptions(kahoot: Boolean, onDownload: (headingsSource: Boolean, round: Round?) -> Unit) {
-    var headingsSource by remember { mutableStateOf(false) }
-    var round by remember { mutableStateOf<Round?>(null) }
-
+private fun ExportOptions(
+    kahoot: Boolean,
+    headingsSource: Boolean, onHeadingsSource: (Boolean) -> Unit,
+    round: Round?, onRound: (Round?) -> Unit,
+    onDownload: () -> Unit,
+) {
     SheetTitle(if (kahoot) "Customize Kahoot export" else "Customize Quizlet/Space export")
     Text("Source", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(
             selected = !headingsSource,
-            onClick = { headingsSource = false },
+            onClick = { onHeadingsSource(false) },
             label = { Text("Question bank") },
         )
         FilterChip(
             selected = headingsSource,
-            onClick = { headingsSource = true },
+            onClick = { onHeadingsSource(true) },
             label = { Text("Chapter headings") },
         )
     }
     if (!headingsSource) {
         Text("Round", style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(selected = round == null, onClick = { round = null }, label = { Text("All") })
+            FilterChip(selected = round == null, onClick = { onRound(null) }, label = { Text("All") })
             Round.crowdSourcedRounds.forEach { rt ->
-                FilterChip(selected = round == rt, onClick = { round = rt }, label = { Text(rt.displayName) })
+                FilterChip(selected = round == rt, onClick = { onRound(rt) }, label = { Text(rt.displayName) })
             }
         }
     }
@@ -363,7 +390,7 @@ private fun ExportOptions(kahoot: Boolean, onDownload: (headingsSource: Boolean,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
-    SheetDownloadButton { onDownload(headingsSource, round.takeIf { !headingsSource }) }
+    SheetDownloadButton(onDownload)
 }
 
 @Composable

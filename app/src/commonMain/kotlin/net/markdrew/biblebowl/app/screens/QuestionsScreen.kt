@@ -39,9 +39,7 @@ import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.app.net.TbbApi
-
-/** Acts has 28 chapters; used for the chapter filter strip. */
-internal const val ACTS_CHAPTERS = 28
+import net.markdrew.biblebowl.app.ui.ChapterChips
 
 /**
  * Community question bank — browse is public (docs/gui-redesign.md §5D). Voting requires sign-in:
@@ -87,23 +85,7 @@ fun QuestionsScreen(
         }
 
         // One-tap chapter filter; "All" plus 1..28.
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            FilterChip(
-                selected = chapter == null,
-                onClick = { chapter = null },
-                label = { Text("All") },
-            )
-            (1..ACTS_CHAPTERS).forEach { ch ->
-                FilterChip(
-                    selected = chapter == ch,
-                    onClick = { chapter = if (chapter == ch) null else ch },
-                    label = { Text("$ch") },
-                )
-            }
-        }
+        ChapterChips(selected = chapter, onSelect = { chapter = it })
 
         error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
 
