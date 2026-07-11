@@ -107,13 +107,7 @@ private fun AppScaffold(
             // including the sub-screen the user is trying to leave — and visibly do nothing.
             navController.popBackStack(dest.route, inclusive = false)
         } else {
-            navController.navigate(dest.route) {
-                // Standard top-level navigation: one back press from any tab exits via the start
-                // destination, and each tab's state survives switching away and back.
-                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                launchSingleTop = true
-                restoreState = true
-            }
+            navController.navigateTopLevel(dest.route)
         }
     }
 
@@ -193,6 +187,21 @@ private fun AppScaffold(
     }
 }
 
+/**
+ * Standard top-level navigation: one back press from any tab exits via the start destination, and
+ * each tab's state survives switching away and back. Exception: navigating to Study (the start
+ * destination) never restores state — restoring there resurrects whatever was stacked above it
+ * (e.g. Downloads opened from a hub card), which made the Study tab appear to show another tab's
+ * screen. The Study button always means the hub.
+ */
+private fun NavHostController.navigateTopLevel(route: String) {
+    navigate(route) {
+        popUpTo(graph.findStartDestination().id) { saveState = true }
+        launchSingleTop = true
+        restoreState = route != Routes.STUDY
+    }
+}
+
 @Composable
 private fun AppNavHost(
     api: TbbApi,
@@ -208,10 +217,13 @@ private fun AppNavHost(
     NavHost(navController, startDestination = Routes.STUDY) {
         composable(Routes.STUDY) {
             StudyHubScreen(
+                // Indices/headings are study sub-screens (plain pushes); quiz and downloads are
+                // top-level destinations, so the hub shortcuts switch tabs like the nav bar does —
+                // pushing them inside the Study stack corrupts tab state save/restore.
                 onOpenIndices = { navController.navigate(Routes.STUDY_INDICES) },
                 onOpenHeadings = { navController.navigate(Routes.STUDY_HEADINGS) },
-                onOpenQuiz = { navController.navigate(Routes.QUIZ) },
-                onOpenDownloads = { navController.navigate(Routes.DOWNLOADS) },
+                onOpenQuiz = { navController.navigateTopLevel(Routes.QUIZ) },
+                onOpenDownloads = { navController.navigateTopLevel(Routes.DOWNLOADS) },
             )
         }
         composable(Routes.STUDY_INDICES) { IndexScreen(api) }
