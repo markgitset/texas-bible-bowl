@@ -41,6 +41,15 @@ data class StudySet(
     operator fun contains(chapterRef: ChapterRef): Boolean = chapterRanges.any { chapterRef in it }
 
     /**
+     * Total number of chapters this set covers across all its ranges. Open-ended ranges ("to end
+     * of book" sentinels, as built by [Book.allChapters]) clamp to the book's real chapter count.
+     */
+    val chapterCount: Int
+        get() = chapterRanges.sumOf { range ->
+            minOf(range.endInclusive.chapter, range.start.book.chapterCount) - range.start.chapter + 1
+        }
+
+    /**
      * Renders the distinct books in this set as "Full Name (TL), …, and Full Name (TL)" using each book's
      * two-letter code.
      */

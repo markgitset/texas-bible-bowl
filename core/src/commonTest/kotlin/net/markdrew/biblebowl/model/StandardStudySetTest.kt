@@ -42,3 +42,20 @@ class StandardStudySetTest {
         assertEquals(StandardStudySet.DEFAULT, StandardStudySet.parse("zzznotabook"))
     }
 }
+
+class StudySetChapterCountTest {
+
+    @kotlin.test.Test
+    fun singleBookSetClampsOpenEndedRangeToTheRealChapterCount() {
+        kotlin.test.assertEquals(28, StandardStudySet.ACTS.set.chapterCount)
+        kotlin.test.assertEquals(24, StandardStudySet.LUKE.set.chapterCount)
+    }
+
+    @kotlin.test.Test
+    fun multiBookSetsSumTheirRanges() {
+        // Joshua (24) + Judges (21) + Ruth (4)
+        kotlin.test.assertEquals(49, StandardStudySet.JOSHUA_JUDGES_RUTH.set.chapterCount)
+        // Exo 1-20, 32-34 + Num 1-3, 10-14, 16-17, 20-27, 31-36 + Deut 31-34
+        kotlin.test.assertEquals(20 + 3 + 3 + 5 + 2 + 8 + 6 + 4, StandardStudySet.LIFE_OF_MOSES.set.chapterCount)
+    }
+}

@@ -144,11 +144,17 @@ data class SeasonDto(
     /** Event dates without the year, e.g. "April 2–4". */
     val eventDateRange: String,
     val eventTheme: String,
-    /** The season book as prose, e.g. "Acts". */
+    /** The season material as prose, e.g. "Acts" or "Joshua, Judges, and Ruth". */
     val eventScripture: String,
-    /** The season book's 3-letter code for app APIs, e.g. "ACT". */
+    /**
+     * StandardStudySet slug (e.g. "acts", "josh-judg-ruth") — the canonical key for the season's
+     * material. Study sets may span several books or partial chapters of multiple books, so
+     * season-scoped features should key off this rather than a single book.
+     */
+    val studySet: String = "acts",
+    /** First (often only) book's 3-letter code, e.g. "ACT" — a convenience for single-book uses. */
     val bookCode: String,
-    /** Chapters in the season book — drives every chapter filter in the app. */
+    /** Total chapters covered by the study set — derived from [studySet], drives chapter filters. */
     val chapterCount: Int,
     /** Total scholarships awarded in the prior year, e.g. "$25,000". */
     val scholarshipAmount: String,

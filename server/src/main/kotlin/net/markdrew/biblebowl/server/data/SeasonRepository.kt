@@ -22,6 +22,7 @@ val DEFAULT_SEASON = SeasonDto(
     eventDateRange = "April 2–4",
     eventTheme = "TBD",
     eventScripture = "Acts",
+    studySet = "acts",
     bookCode = "ACT",
     chapterCount = 28,
     scholarshipAmount = "$25,000",

@@ -239,7 +239,7 @@ class ApplicationTest {
                 setBody(net.markdrew.biblebowl.api.LoginRequest("admin@tbb.org", "supersecret"))
             }.bodyAsText()
         )
-        val updated = season.copy(eventScripture = "Luke", bookCode = "LUK", chapterCount = 24, eventTheme = "Certainty")
+        val updated = season.copy(eventScripture = "Luke", studySet = "luke", bookCode = "LUK", chapterCount = 24, eventTheme = "Certainty")
         val put = api.put("/seasons/current") {
             header(HttpHeaders.Authorization, "Bearer ${admin.token}")
             setBody(updated)
@@ -256,6 +256,11 @@ class ApplicationTest {
             setBody(updated.copy(chapterCount = 0))
         }
         assertEquals(HttpStatusCode.BadRequest, bad.status)
+        val badSet = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(updated.copy(studySet = "not-a-real-set"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, badSet.status)
     }
 
     @Test

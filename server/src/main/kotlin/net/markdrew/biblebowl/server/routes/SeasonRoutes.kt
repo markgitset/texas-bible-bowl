@@ -10,6 +10,7 @@ import io.ktor.server.routing.put
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.SeasonDto
+import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.currentUser
@@ -37,6 +38,12 @@ fun Route.seasonRoutes(users: UserRepository, seasons: SeasonRepository) {
                 return@put call.respond(
                     HttpStatusCode.BadRequest,
                     ApiError("invalid_season", "eventYear is required and chapterCount must be positive"),
+                )
+            }
+            if (StandardStudySet.parseOrNull(season.studySet) == null) {
+                return@put call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("invalid_study_set", "Unknown study set '${season.studySet}' — use a StandardStudySet slug"),
                 )
             }
             call.respond(seasons.update(season))
