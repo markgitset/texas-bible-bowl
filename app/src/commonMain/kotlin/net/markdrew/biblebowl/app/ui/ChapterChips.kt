@@ -10,13 +10,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
-/** Acts has 28 chapters; drives every chapter filter in the app until the seasons endpoint lands. */
-const val ACTS_CHAPTERS = 28
 
 /**
- * The "All + 1..28" chapter filter as a wrapping chip flow. Wrapping (not a horizontally
- * scrolling row) on purpose: 29 chips never fit one line, and horizontal scroll is effectively
- * unusable with a mouse on web/desktop.
+ * The "All + 1..N" chapter filter as a wrapping chip flow (N = the season's chapter count).
+ * Wrapping (not a horizontally scrolling row) on purpose: the chips never fit one line, and
+ * horizontal scroll is effectively unusable with a mouse on web/desktop.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -31,7 +29,7 @@ fun ChapterChips(selected: Int?, onSelect: (Int?) -> Unit) {
             onClick = { onSelect(null) },
             label = { Text("All") },
         )
-        (1..ACTS_CHAPTERS).forEach { ch ->
+        (1..LocalSeason.current.chapterCount).forEach { ch ->
             FilterChip(
                 selected = selected == ch,
                 onClick = { onSelect(if (selected == ch) null else ch) },

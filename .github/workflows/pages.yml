@@ -1,8 +1,10 @@
 name: Deploy web to GitHub Pages
 
-# Builds the Compose/Wasm bundle and publishes it to GitHub Pages. The backend URL is injected
-# from the repository variable BACKEND_URL (Settings → Secrets and variables → Actions → Variables),
-# e.g. https://texas-bible-bowl.fly.dev — no rebuild of the app is needed to point at a new backend.
+# One Pages artifact for both halves (docs/gui-redesign.md §3): the Hugo site at the root and the
+# Compose/Wasm app under /app/. Season values are baked into the static build from the live
+# backend (GET /seasons/current) when reachable, falling back to the committed site/data/params.json.
+# The backend URL is injected from the repository variable BACKEND_URL (Settings → Secrets and
+# variables → Actions → Variables), e.g. https://texas-bible-bowl.fly.dev.
 on:
   push:
     branches: [main]
@@ -33,28 +35,51 @@ jobs:
       - name: Set up Gradle (with caching)
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Set up Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: "0.164.0"
+          extended: true
+
+      - name: Bake current season params into the static build
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+        run: |
+          url="${BACKEND_URL:-https://texas-bible-bowl.fly.dev}"
+          if curl -fsS --max-time 30 "$url/seasons/current" -o /tmp/params.json && [ -s /tmp/params.json ]; then
+            cp /tmp/params.json site/data/params.json
+            echo "Baked live season params from $url"
+          else
+            echo "::warning::Could not fetch /seasons/current; building with the committed fallback params"
+          fi
+
+      - name: Build static site (Hugo)
+        run: hugo -s site --gc --minify -d ../public
+
       - name: Build web (Wasm) distribution
         run: ./gradlew :app:wasmJsBrowserDistribution
 
-      - name: Inject backend URL and SPA fallback
+      - name: Assemble app under /app/ and inject backend URL
         env:
           BACKEND_URL: ${{ vars.BACKEND_URL }}
         run: |
           dist=app/build/dist/wasmJs/productionExecutable
+          mkdir -p public/app
+          cp -r "$dist"/. public/app/
           if [ -n "$BACKEND_URL" ]; then
             # Define the global the Wasm client reads, before the app script runs.
-            sed -i "s#<script src=\"tbb.js\"></script>#<script>window.TBB_BACKEND_URL=\"${BACKEND_URL}\";</script>\n    <script src=\"tbb.js\"></script>#" "$dist/index.html"
+            sed -i "s#<script src=\"tbb.js\"></script>#<script>window.TBB_BACKEND_URL=\"${BACKEND_URL}\";</script>\n    <script src=\"tbb.js\"></script>#" public/app/index.html
             echo "Injected BACKEND_URL=$BACKEND_URL"
           else
             echo "::warning::BACKEND_URL repo variable is unset; the published app will fall back to localhost."
           fi
-          # SPA fallback so deep links / refreshes don't 404 on Pages.
-          cp "$dist/index.html" "$dist/404.html"
+          # Hash routing needs no SPA fallback, but keep one so /app/anything still loads the app.
+          cp public/app/index.html public/app/404.html
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: app/build/dist/wasmJs/productionExecutable
+          path: public
 
   deploy:
     needs: build

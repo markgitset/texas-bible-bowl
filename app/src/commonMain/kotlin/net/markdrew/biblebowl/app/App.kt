@@ -22,6 +22,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,9 @@ import net.markdrew.biblebowl.app.screens.ModerateScreen
 import net.markdrew.biblebowl.app.screens.QuestionsScreen
 import net.markdrew.biblebowl.app.screens.QuizScreen
 import net.markdrew.biblebowl.app.screens.StudyHubScreen
+import net.markdrew.biblebowl.app.screens.AdminSeasonScreen
+import net.markdrew.biblebowl.app.ui.FALLBACK_SEASON
+import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.app.ui.TbbTheme
 
 /**
@@ -70,16 +74,24 @@ fun App(
 ) {
     // The signed-in user is app-level UI state; TbbApi keeps the token for requests.
     var user by remember { mutableStateOf(api.user) }
+    // Season parameters drive the chapter filters and season labels; baked fallback until fetched.
+    var season by remember { mutableStateOf(FALLBACK_SEASON) }
+    LaunchedEffect(Unit) {
+        runCatching { api.currentSeason() }.onSuccess { season = it }
+    }
 
     TbbTheme {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            AppScaffold(
-                api = api,
-                navController = navController,
-                user = user,
-                onUserChange = { user = it },
-                onNavHostReady = onNavHostReady,
-            )
+        CompositionLocalProvider(LocalSeason provides season) {
+            Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                AppScaffold(
+                    api = api,
+                    navController = navController,
+                    user = user,
+                    onUserChange = { user = it },
+                    onSeasonChange = { season = it },
+                    onNavHostReady = onNavHostReady,
+                )
+            }
         }
     }
 }
@@ -95,6 +107,7 @@ private fun AppScaffold(
     navController: NavHostController,
     user: UserDto?,
     onUserChange: (UserDto?) -> Unit,
+    onSeasonChange: (net.markdrew.biblebowl.api.SeasonDto) -> Unit,
     onNavHostReady: suspend (NavHostController) -> Unit,
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
@@ -180,7 +193,7 @@ private fun AppScaffold(
                 contentAlignment = Alignment.TopCenter,
             ) {
                 Box(Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(16.dp)) {
-                    AppNavHost(api, navController, user, onUserChange, onNavHostReady)
+                    AppNavHost(api, navController, user, onUserChange, onSeasonChange, onNavHostReady)
                 }
             }
         }
@@ -208,6 +221,7 @@ private fun AppNavHost(
     navController: NavHostController,
     user: UserDto?,
     onUserChange: (UserDto?) -> Unit,
+    onSeasonChange: (net.markdrew.biblebowl.api.SeasonDto) -> Unit,
     onNavHostReady: suspend (NavHostController) -> Unit,
 ) {
     // Tapping a gated action while anonymous routes to sign-in; on success we pop back to where
@@ -262,7 +276,13 @@ private fun AppNavHost(
                     onUserChange(null)
                     navController.popBackStack(Routes.STUDY, inclusive = false)
                 },
+                onOpenSeasonAdmin = { navController.navigate(Routes.ADMIN_SEASON) },
             )
+        }
+        composable(Routes.ADMIN_SEASON) {
+            if (user != null && Permission.SEASON_MANAGE in user.permissions) {
+                AdminSeasonScreen(api, onSaved = onSeasonChange)
+            } else AuthScreen(api, onSignedIn = onUserChange)
         }
     }
 

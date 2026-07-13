@@ -18,13 +18,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import net.markdrew.biblebowl.app.ui.LocalSeason
+import net.markdrew.biblebowl.app.ui.schoolYear
 
-/** Good ESV readers to link out to — the app deliberately hosts no reading view (per Mark). */
-private val READING_LINKS = listOf(
-    "ESV.org" to "https://www.esv.org/Acts+1/",
-    "YouVersion" to "https://www.bible.com/bible/59/ACT.1.ESV",
-    "BibleGateway" to "https://www.biblegateway.com/passage/?search=Acts+1&version=ESV",
-)
 
 /**
  * Study hub — the app's default landing (docs/gui-redesign.md §5C): compact cards, one tap to
@@ -42,14 +38,15 @@ fun StudyHubScreen(
         Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        val season = LocalSeason.current
         Text(
-            "This season: Acts",
+            "This season: ${season.eventScripture}",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
         )
         Text(
-            "2026–27 · all 28 chapters (ESV)",
+            "${season.schoolYear} · all ${season.chapterCount} chapters (ESV)",
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.secondary,
         )
@@ -57,7 +54,7 @@ fun StudyHubScreen(
         ReadOnlineCard()
         HubCard(
             title = "Names & numbers indices",
-            subtitle = "Every proper name and number in Acts, with all its verses. Search or browse.",
+            subtitle = "Every proper name and number in ${season.eventScripture}, with all its verses. Search or browse.",
             onClick = onOpenIndices,
         )
         HubCard(
@@ -81,9 +78,16 @@ fun StudyHubScreen(
 @Composable
 private fun ReadOnlineCard() {
     val uriHandler = LocalUriHandler.current
+    val season = LocalSeason.current
+    // Good ESV readers to link out to — the app deliberately hosts no reading view (per Mark).
+    val readingLinks = listOf(
+        "ESV.org" to "https://www.esv.org/${season.eventScripture}+1/",
+        "YouVersion" to "https://www.bible.com/bible/59/${season.bookCode}.1.ESV",
+        "BibleGateway" to "https://www.biblegateway.com/passage/?search=${season.eventScripture}+1&version=ESV",
+    )
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("Read Acts online", style = MaterialTheme.typography.titleMedium,
+            Text("Read ${season.eventScripture} online", style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold)
             Text(
                 "Read the ESV text in a dedicated Bible app or site:",
@@ -94,7 +98,7 @@ private fun ReadOnlineCard() {
                 Modifier.horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                READING_LINKS.forEach { (name, url) ->
+                readingLinks.forEach { (name, url) ->
                     AssistChip(onClick = { uriHandler.openUri(url) }, label = { Text(name) })
                 }
             }

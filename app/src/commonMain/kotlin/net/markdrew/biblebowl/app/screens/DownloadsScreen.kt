@@ -39,6 +39,7 @@ import net.markdrew.biblebowl.app.net.TbbApi
 import net.markdrew.biblebowl.app.platform.Mime
 import net.markdrew.biblebowl.app.platform.saveFile
 import net.markdrew.biblebowl.app.ui.ChapterChips
+import net.markdrew.biblebowl.app.ui.LocalSeason
 
 /** Which card's "Customize" sheet is open. */
 private sealed interface Customize {
@@ -182,8 +183,8 @@ fun DownloadsScreen(api: TbbApi) {
         GroupHeader("Study text")
         DownloadCard(
             title = "Highlighted study text",
-            subtitle = "The full text of Acts with names, numbers, and more highlighted by category — " +
-                "the flagship study document." + customizedNote(textChoices != StudyTextChoices()),
+            subtitle = "The full text of ${LocalSeason.current.eventScripture} with names, numbers, and more " +
+                "highlighted by category — the flagship study document." + customizedNote(textChoices != StudyTextChoices()),
             busyCard = busyCard,
             onClick = ::downloadStudyText,
             onCustomize = { customize = Customize.StudyText },
@@ -213,13 +214,13 @@ fun DownloadsScreen(api: TbbApi) {
         GroupHeader("Indices")
         DownloadCard(
             title = "Names index",
-            subtitle = "Every proper name in Acts with its verses — alphabetical and by frequency.",
+            subtitle = "Every proper name in ${LocalSeason.current.eventScripture} with its verses — alphabetical and by frequency.",
             busyCard = busyCard,
             onClick = { download("Names index", "names-index.pdf") { api.namesIndexPdf() } },
         )
         DownloadCard(
             title = "Numbers index",
-            subtitle = "Every number in Acts with its verses — alphabetical and by frequency.",
+            subtitle = "Every number in ${LocalSeason.current.eventScripture} with its verses — alphabetical and by frequency.",
             busyCard = busyCard,
             onClick = { download("Numbers index", "numbers-index.pdf") { api.numbersIndexPdf() } },
         )

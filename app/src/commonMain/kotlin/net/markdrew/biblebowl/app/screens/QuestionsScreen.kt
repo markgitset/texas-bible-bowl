@@ -38,6 +38,7 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.UserDto
+import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.app.net.TbbApi
 import net.markdrew.biblebowl.app.ui.ChapterChips
 
@@ -95,7 +96,7 @@ fun QuestionsScreen(
             }
             else -> if (list.isEmpty()) {
                 Text(
-                    "No approved questions yet" + (chapter?.let { " for Acts $it" } ?: "") + ".",
+                    "No approved questions yet" + (chapter?.let { " for ${LocalSeason.current.eventScripture} $it" } ?: "") + ".",
                     style = MaterialTheme.typography.bodyLarge,
                 )
             } else {
@@ -133,7 +134,7 @@ private fun QuestionCard(q: QuestionDto, onVote: () -> Unit) {
                 )
                 q.chapter?.let {
                     Spacer(Modifier.weight(1f))
-                    Text("Acts $it", style = MaterialTheme.typography.labelMedium,
+                    Text("${LocalSeason.current.eventScripture} $it", style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.secondary)
                 }
             }

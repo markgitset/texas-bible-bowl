@@ -14,6 +14,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.app.ui.LocalSeason
+import net.markdrew.biblebowl.app.ui.schoolYear
 
 /**
  * Season/event hub (docs/gui-redesign.md §5F) — public season info now; registration, grading,
@@ -26,15 +28,22 @@ fun EventScreen() {
         Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        val season = LocalSeason.current
         Text(
-            "2026–27 Season",
+            "${season.schoolYear} Season",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
         )
         Text(
-            "This season's book is Acts (ESV).",
+            "This season's book is ${season.eventScripture} (ESV)." +
+                (season.eventTheme.takeIf { it.isNotBlank() && it != "TBD" }?.let { " Theme: $it." } ?: ""),
             style = MaterialTheme.typography.bodyLarge,
+        )
+        Text(
+            "Event: ${season.eventDateRange}, ${season.eventYear}",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
         )
 
         ElevatedCard(Modifier.fillMaxWidth()) {
@@ -55,9 +64,14 @@ fun EventScreen() {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Dates, fees & registration", style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold)
+                Text("Registration opens ${season.registrationOpens}; deadline: ${season.registrationDeadline}.",
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("Adults: ${season.priceAdult}", style = MaterialTheme.typography.bodyMedium)
+                Text("Children (3–8): ${season.priceChild}", style = MaterialTheme.typography.bodyMedium)
+                Text("Extra t-shirts: ${season.priceTshirt}", style = MaterialTheme.typography.bodyMedium)
                 Text(
-                    "Event dates, locations, fees, and team registration are on texasbiblebowl.org " +
-                        "for now. Registration moves into the app in an upcoming season.",
+                    "Locations and team registration are on texasbiblebowl.org for now. " +
+                        "Registration moves into the app in an upcoming season.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

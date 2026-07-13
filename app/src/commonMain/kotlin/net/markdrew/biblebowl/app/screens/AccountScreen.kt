@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.UserDto
 
 /**
@@ -21,7 +22,7 @@ import net.markdrew.biblebowl.api.UserDto
  * entry by coach-shared code arrives with registration (Phase 4).
  */
 @Composable
-fun AccountScreen(user: UserDto?, onSignOut: () -> Unit) {
+fun AccountScreen(user: UserDto?, onSignOut: () -> Unit, onOpenSeasonAdmin: () -> Unit) {
     val current = user ?: return // routed here only when signed in; guard for safety
 
     Column(
@@ -59,6 +60,11 @@ fun AccountScreen(user: UserDto?, onSignOut: () -> Unit) {
             }
         }
 
+        if (Permission.SEASON_MANAGE in current.permissions) {
+            OutlinedButton(onClick = onOpenSeasonAdmin, modifier = Modifier.fillMaxWidth()) {
+                Text("Season settings")
+            }
+        }
         OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
     }
 }

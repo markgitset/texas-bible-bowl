@@ -29,6 +29,7 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.app.ui.LocalSeason
 
 @Composable
 fun ContributeScreen(api: TbbApi) {
@@ -95,7 +96,7 @@ fun ContributeScreen(api: TbbApi) {
             )
             OutlinedTextField(
                 value = referencesText, onValueChange = { referencesText = it },
-                label = { Text("Verse refs (e.g. Acts 2:38)") },
+                label = { Text("Verse refs (e.g. ${LocalSeason.current.eventScripture} 2:38)") },
                 modifier = Modifier.weight(2f), singleLine = true,
             )
         }

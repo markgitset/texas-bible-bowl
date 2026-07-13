@@ -40,6 +40,8 @@ import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.UserDto
+import net.markdrew.biblebowl.app.ui.LocalSeason
+import net.markdrew.biblebowl.app.ui.schoolYear
 import net.markdrew.biblebowl.app.net.TbbApi
 
 @Composable
@@ -66,8 +68,9 @@ private fun Brand() {
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary,
     )
+    val season = LocalSeason.current
     Text(
-        "Study Acts · 2026–27 Season",
+        "Study ${season.eventScripture} · ${season.schoolYear} Season",
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.secondary,
     )

@@ -82,8 +82,15 @@ sequenceOf(passage))` in `BibleTextTypstTest`), dump the Typst string to the scr
 This renders the real pipeline without hitting Crossway.
 
 ## Deploy — what's automatic vs manual
-- **Web (GitHub Pages):** auto on push to `main` via `.github/workflows/pages.yml`.
-  Live: https://markgitset.github.io/texas-bible-bowl/
+- **Web (GitHub Pages):** auto on push to `main` via `.github/workflows/pages.yml` — ONE artifact:
+  the Hugo site (`/site`) at the root and the wasm app under `/app/`. CI bakes
+  `GET /seasons/current` into `site/data/params.json` before `hugo build`; `static/js/params.js`
+  live-patches `[data-tbb-param]` spans on page view. Hugo binary: `/home/mark/bin/hugo`
+  (v0.164.0 extended); local build: `hugo -s site --gc --minify -d <out>`.
+  Live: https://markgitset.github.io/texas-bible-bowl/ (app at `/app/#study`)
+- **Season params:** served by `GET /seasons/current` (public; PUT needs SEASON_MANAGE). The app
+  reads them via `LocalSeason` (baked fallback in `app/.../ui/Season.kt`) — chapter counts and the
+  season book are no longer hardcoded anywhere. Admin edits via #/account → Season settings.
 - **CI (`ci.yml`):** runs tests + builds APK/web on push. **Does NOT deploy the backend.**
 - **Backend (Fly.io):** **manual** — `fly deploy` (Mark's infra/secrets; you never see
   the ESV token or prod secrets, set via `fly secrets set`). Live:

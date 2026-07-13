@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.app.ui.LocalSeason
 
 @Composable
 fun ModerateScreen(api: TbbApi) {
@@ -86,7 +87,7 @@ fun ModerateScreen(api: TbbApi) {
                                     )
                                     q.chapter?.let {
                                         Spacer(Modifier.weight(1f))
-                                        Text("Acts $it", style = MaterialTheme.typography.labelMedium,
+                                        Text("${LocalSeason.current.eventScripture} $it", style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.secondary)
                                     }
                                 }

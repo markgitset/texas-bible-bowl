@@ -7,6 +7,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
@@ -24,6 +25,7 @@ import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
+import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.api.UserDto
@@ -76,6 +78,15 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
     }
 
     suspend fun health(): String = client.get("$baseUrl/health").bodyOrThrow()
+
+    /** Fetches the current season parameters (public; the site's params.js reads the same endpoint). */
+    suspend fun currentSeason(): SeasonDto = client.get("$baseUrl/seasons/current").bodyOrThrow()
+
+    /** Replaces the current season (requires SEASON_MANAGE; same year edits, new year rolls over). */
+    suspend fun updateSeason(season: SeasonDto): SeasonDto =
+        client.put("$baseUrl/seasons/current") {
+            authorize(); contentType(ContentType.Application.Json); setBody(season)
+        }.bodyOrThrow()
 
     suspend fun register(req: RegisterRequest): AuthResponse =
         remember(

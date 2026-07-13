@@ -28,6 +28,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import net.markdrew.biblebowl.api.HeadingDto
+import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.app.net.TbbApi
 
 /**
@@ -55,7 +56,7 @@ fun HeadingsScreen(api: TbbApi) {
             fontWeight = FontWeight.Bold,
         )
         Text(
-            "Every ESV section heading in Acts — the Round 5 material.",
+            "Every ESV section heading in ${LocalSeason.current.eventScripture} — the Round 5 material.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
