@@ -1,0 +1,56 @@
+<nav class="navbar navbar-expand-lg navbar-dark" style="background-color:var(--tbb-navy);">
+  <div class="container">
+    <a class="navbar-brand d-flex align-items-center gap-2 fw-bold" href="{{ .Site.BaseURL }}">
+      <img src="{{ .Site.BaseURL }}images/tbb-logo-white.png" alt="Texas Bible Bowl logo" height="38" class="nav-logo">
+      Texas Bible Bowl
+    </a>
+    <button class="navbar-toggler" type="button"
+            data-bs-toggle="collapse" data-bs-target="#mainNav"
+            aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse" id="mainNav">
+      <ul class="navbar-nav ms-auto">
+
+        {{ range .Site.Menus.main }}
+          {{ $active := or ($.IsMenuCurrent "main" .) ($.HasMenuCurrent "main" .) }}
+          {{ if .HasChildren }}
+            <li class="nav-item dropdown">
+              <a class="nav-link dropdown-toggle{{ if $active }} active{{ end }}" href="{{ .URL }}"
+                 role="button" data-bs-toggle="dropdown" aria-expanded="false"
+                 {{ if $active }}aria-current="page"{{ end }}>
+                {{ .Name }}
+              </a>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="{{ .URL }}">{{ .Name }} overview</a></li>
+                <li><hr class="dropdown-divider"></li>
+                {{ range .Children }}
+                  <li><a class="dropdown-item" href="{{ .URL }}">{{ .Name }}</a></li>
+                {{ end }}
+              </ul>
+            </li>
+          {{ else if eq .Name "Donate" }}
+            <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
+              <a class="btn btn-outline-light btn-sm fw-bold px-3" href="{{ .URL }}">{{ .Name }}</a>
+            </li>
+            <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
+              <a class="btn btn-warning btn-sm fw-bold px-3" href="{{ $.Site.BaseURL }}app/#study">Study App</a>
+            </li>
+          {{ else }}
+            <li class="nav-item">
+              <a class="nav-link{{ if $active }} active{{ end }}" href="{{ .URL }}"
+                 {{ if $active }}aria-current="page"{{ end }}>{{ .Name }}</a>
+            </li>
+          {{ end }}
+        {{ end }}
+
+      </ul>
+
+      <form class="d-flex ms-lg-3 my-2 my-lg-0" role="search" action="{{ .Site.BaseURL }}search/" method="get">
+        <input class="form-control form-control-sm nav-search" type="search" name="q"
+               placeholder="Search" aria-label="Search the site">
+      </form>
+    </div>
+  </div>
+</nav>

@@ -1,0 +1,15 @@
+{{- /* Search index consumed by static/js/search.js (Fuse.js). One entry per
+       content page and section landing page, excluding the search page itself. */ -}}
+{{- $items := slice -}}
+{{- range .Site.Pages -}}
+  {{- if and (in (slice "page" "section") .Kind) (ne .RelPermalink "/search/") -}}
+    {{- $items = $items | append (dict
+        "title"   .Title
+        "url"     .RelPermalink
+        "section" (or .CurrentSection.Title "")
+        "summary" (.Summary | plainify | chomp | truncate 180)
+        "body"    (.Plain | chomp | truncate 3000)
+      ) -}}
+  {{- end -}}
+{{- end -}}
+{{- $items | jsonify -}}

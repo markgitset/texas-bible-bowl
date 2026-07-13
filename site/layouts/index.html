@@ -1,0 +1,105 @@
+{{ define "main" }}
+
+<!-- Scholarship Banner -->
+<div class="scholarship-banner text-center py-2 fw-semibold">
+  In {{ partial "tbb-param.html" "eventYearMinus1" }}, Texas Bible Bowl gave away {{ partial "tbb-param.html" "scholarshipAmount" }} in scholarships to graduating seniors!
+</div>
+
+<!-- Hero -->
+<section class="hero-section">
+  <div class="hero-banner-img">
+    <img src="{{ .Site.BaseURL }}images/hero.jpg" alt="A Texas Bible Bowl coach studying an open Bible with a group of smiling children at a ranch pavilion." class="w-100">
+  </div>
+  <div class="hero-cta">
+    <div class="container text-center">
+      <p class="hero-badge mb-3">{{ partial "tbb-param.html" "eventYear" }} Event</p>
+      <h1 class="display-4 fw-bold mb-2 text-white">Texas Bible Bowl</h1>
+      <p class="fs-5 mb-1 text-white">{{ partial "tbb-param.html" "seasonTitle" }}</p>
+      <p class="fs-5 mb-4 text-white-50">{{ partial "tbb-param.html" "eventDates" }}</p>
+      <div class="d-flex flex-wrap gap-3 justify-content-center">
+        <a href="/registration/" class="btn btn-warning btn-lg fw-bold px-4">Register Now</a>
+        <a href="/app/#study" class="btn btn-outline-light btn-lg px-4">Study Now</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- At a glance -->
+<section class="at-a-glance py-4">
+  <div class="container">
+    <div class="row text-center g-4">
+      <div class="col-6 col-md-4">
+        <div class="glance-label">Registration Opens</div>
+        <div class="glance-value">{{ partial "tbb-param.html" "registrationOpensTitle" }}</div>
+      </div>
+      <div class="col-6 col-md-4">
+        <div class="glance-label">Registration Deadline</div>
+        <div class="glance-value">{{ partial "tbb-param.html" "registrationDeadline" }}</div>
+      </div>
+      <div class="col-12 col-md-4">
+        <div class="glance-label">Who Competes</div>
+        <div class="glance-value">3rd Grade – Adult</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+{{ with .Content }}
+<!-- Welcome / intro -->
+<section class="py-5">
+  <div class="container">
+    <div class="content-body mx-auto" style="max-width:760px;">{{ . }}</div>
+  </div>
+</section>
+{{ end }}
+
+<!-- Quick links -->
+<section class="py-5 bg-light">
+  <div class="container">
+    <div class="row g-4 justify-content-center">
+
+      <div class="col-md-4">
+        <div class="card h-100 border-0 shadow-sm text-center p-3 section-card">
+          <div class="card-body">
+            <div class="feature-icon mb-3"><i class="bi bi-journal-bookmark-fill"></i></div>
+            <h4 class="card-title">The Event</h4>
+            <p class="card-text text-muted">Rules, round descriptions, sample questions, and the curriculum cycle.</p>
+            <a href="/event/" class="btn btn-primary mt-2">How It Works</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="card h-100 border-0 shadow-sm text-center p-3 section-card">
+          <div class="card-body">
+            <div class="feature-icon mb-3"><i class="bi bi-download"></i></div>
+            <h4 class="card-title">Study Resources</h4>
+            <p class="card-text text-muted">Bible text, study guides, one-word lists, practice tests, and study games.</p>
+            <a href="/study-resources/" class="btn btn-primary mt-2">Get Materials</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-4">
+        <div class="card h-100 border-0 shadow-sm text-center p-3 section-card">
+          <div class="card-body">
+            <div class="feature-icon mb-3"><i class="bi bi-mortarboard-fill"></i></div>
+            <h4 class="card-title">Scholarships</h4>
+            <p class="card-text text-muted">Three scholarship programs. {{ partial "tbb-param.html" "scholarshipAmount" }} awarded to graduating seniors in {{ partial "tbb-param.html" "eventYearMinus1" }}.</p>
+            <a href="/scholarships/" class="btn btn-primary mt-2">Learn More</a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- Tagline -->
+<section class="tagline-strip py-5">
+  <div class="container text-center">
+    <p class="fs-3 fst-italic mb-0">Making God's Word Important</p>
+  </div>
+</section>
+
+{{ end }}

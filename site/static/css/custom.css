@@ -1,0 +1,254 @@
+/* ── Brand variables ──────────────────────────────────────────────────────── */
+:root {
+  --tbb-navy: #1a3a5c;
+  --tbb-gold: #c9952a;
+}
+
+/* ── Typography ──────────────────────────────────────────────────────────── */
+body {
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.65;
+  color: #2a2a2a;
+}
+h1, h2, h3, h4, h5, h6, .navbar-brand, .card-title, .display-5 {
+  font-family: "Fraunces", Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+h1, .display-5 { font-weight: 700; }
+.lead, .fs-5 { line-height: 1.5; }
+
+/* ── Bootstrap overrides ─────────────────────────────────────────────────── */
+.btn                  { font-weight: 600; }
+.btn-primary          { background-color: var(--tbb-navy); border-color: var(--tbb-navy); }
+.btn-primary:hover    { background-color: #142e4a; border-color: #142e4a; }
+.btn-outline-primary  { color: var(--tbb-navy); border-color: var(--tbb-navy); }
+.btn-outline-primary:hover { background-color: var(--tbb-navy); color: #fff; }
+.list-group-item.active { background-color: var(--tbb-navy); border-color: var(--tbb-navy); }
+
+/* ── Navbar ──────────────────────────────────────────────────────────────── */
+.navbar        { box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
+.navbar-brand  { font-size: 1.25rem; letter-spacing: .3px; }
+.dropdown-menu { border-top: 3px solid var(--tbb-gold); }
+/* Current-section indicator */
+.navbar-dark .navbar-nav .nav-link.active {
+  color: #fff;
+  box-shadow: inset 0 -3px 0 var(--tbb-gold);
+}
+/* Logo uses the pre-rendered white line-art asset (tbb-logo-white.png) on dark backgrounds */
+
+/* ── Breadcrumbs ─────────────────────────────────────────────────────────── */
+.breadcrumb a { color: var(--tbb-navy); text-decoration: none; }
+.breadcrumb a:hover { color: var(--tbb-gold); }
+.breadcrumb-item.active { color: #6c757d; }
+
+/* ── Homepage: at-a-glance strip ─────────────────────────────────────────── */
+.at-a-glance {
+  background-color: #f5f1e8;
+  border-bottom: 1px solid #e7dfcb;
+}
+.at-a-glance .glance-label {
+  font-size: .8rem;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--tbb-gold);
+  font-weight: 700;
+  margin-bottom: .25rem;
+}
+.at-a-glance .glance-value {
+  font-family: "Fraunces", Georgia, serif;
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: var(--tbb-navy);
+  line-height: 1.25;
+}
+
+/* ── "Start here" section card ───────────────────────────────────────────── */
+.start-here-card {
+  outline: 2px solid var(--tbb-gold);
+  outline-offset: 0;
+}
+.start-here-badge {
+  display: inline-block;
+  background-color: var(--tbb-gold);
+  color: #fff;
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 2px 10px;
+  border-radius: 20px;
+  margin-bottom: .6rem;
+}
+
+/* ── Nav search box ──────────────────────────────────────────────────────── */
+.nav-search { min-width: 180px; }
+
+/* ── Search results ──────────────────────────────────────────────────────── */
+.search-result { border-bottom: 1px solid #eee; padding-bottom: .9rem; }
+.search-result a { color: var(--tbb-navy); text-decoration: none; }
+.search-result a:hover { color: var(--tbb-gold); }
+.search-result-section {
+  display: inline-block;
+  font-size: .72rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  font-weight: 700;
+  color: var(--tbb-gold);
+}
+
+/* ── Site map ────────────────────────────────────────────────────────────── */
+.sitemap-section {
+  color: var(--tbb-navy);
+  border-bottom: 2px solid var(--tbb-gold);
+  padding-bottom: .35rem;
+  margin-bottom: .75rem;
+}
+.sitemap-section a { color: var(--tbb-navy); text-decoration: none; }
+
+/* ── Homepage: tagline closing strip ─────────────────────────────────────── */
+.tagline-strip {
+  background-color: var(--tbb-navy);
+  color: var(--tbb-gold);
+}
+
+/* ── Scholarship banner ──────────────────────────────────────────────────── */
+.scholarship-banner {
+  background-color: var(--tbb-gold);
+  color: #fff;
+  font-size: .95rem;
+}
+
+/* ── Hero ────────────────────────────────────────────────────────────────── */
+.hero-section {
+  background-color: #000;
+  color: #fff;
+}
+.hero-banner-img img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+/* CTA panel sits flush beneath the banner; a gold rule ties the two into one hero */
+.hero-cta {
+  background: linear-gradient(180deg, var(--tbb-navy) 0%, #142e4a 100%);
+  border-top: 4px solid var(--tbb-gold);
+  padding: 2.5rem 1rem 2.75rem;
+}
+.hero-cta h1 { letter-spacing: -0.015em; }
+.hero-badge {
+  display: inline-block;
+  background-color: var(--tbb-gold);
+  color: #fff;
+  font-weight: 600;
+  padding: 4px 14px;
+  border-radius: 20px;
+  font-size: .9rem;
+  letter-spacing: .5px;
+}
+.feature-icon { font-size: 2.5rem; color: var(--tbb-gold); line-height: 1; }
+
+/* ── Cards ───────────────────────────────────────────────────────────────── */
+.section-card { transition: transform .15s, box-shadow .15s; }
+.section-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12) !important;
+}
+
+/* ── Page heading ────────────────────────────────────────────────────────── */
+.page-title {
+  color: var(--tbb-navy);
+  border-bottom: 3px solid var(--tbb-gold);
+  padding-bottom: .5rem;
+  display: inline-block;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+.sidebar { position: sticky; top: 80px; }
+.active-item { background-color: var(--tbb-navy); }
+
+/* ── Content body (markdown-rendered area) ───────────────────────────────── */
+.content-body h2 { color: var(--tbb-navy); margin-top: 2rem; padding-top: .5rem; }
+.content-body h3 { color: var(--tbb-navy); margin-top: 1.5rem; }
+.content-body img { max-width: 100%; height: auto; border-radius: 6px; }
+.content-body a   { color: var(--tbb-navy); }
+.content-body a:hover { color: var(--tbb-gold); }
+
+/* Shared, consistent treatment for embedded photos */
+.content-body .content-photo {
+  border-radius: 8px;
+  border: 1px solid #e6e6e6;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10);
+}
+.content-body .content-photo--right {
+  float: right;
+  max-width: 280px;
+  margin: 0.25rem 0 1rem 1.5rem;
+}
+.content-body .photo-row {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin: 1rem 0 1.75rem;
+}
+.content-body .photo-row .content-photo {
+  flex: 1 1 220px;
+  max-width: calc(50% - 0.5rem);
+  height: 220px;
+  object-fit: cover;
+}
+@media (max-width: 575.98px) {
+  .content-body .photo-row .content-photo { max-width: 100%; height: auto; }
+}
+
+.content-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1.5rem;
+  font-size: .95rem;
+}
+.content-body table th {
+  background-color: var(--tbb-navy);
+  color: #fff;
+  padding: 10px 14px;
+  text-align: left;
+}
+.content-body table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid #dee2e6;
+  vertical-align: top;
+}
+.content-body table tr:nth-child(even) td { background-color: #f8f9fa; }
+.content-body blockquote {
+  border-left: 4px solid var(--tbb-gold);
+  padding-left: 1rem;
+  color: #555;
+  font-style: italic;
+  margin: 1.5rem 0;
+}
+
+/* ── Photo gallery grid ──────────────────────────────────────────────────── */
+.photo-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 6px;
+}
+.photo-thumb img {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  border-radius: 4px;
+  transition: opacity .2s;
+  display: block;
+}
+.photo-thumb:hover img { opacity: .85; }
+
+/* ── Footer ──────────────────────────────────────────────────────────────── */
+.site-footer {
+  background-color: var(--tbb-navy);
+  color: rgba(255,255,255,.65);
+}
+.site-footer a { color: rgba(255,255,255,.65); text-decoration: none; }
+.site-footer a:hover { color: #fff; }
+.footer-tagline { color: var(--tbb-gold); font-style: italic; }

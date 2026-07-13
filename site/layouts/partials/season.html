@@ -1,0 +1,36 @@
+{{- /*
+  Returns the season parameters as one map: hugo.toml [params] as the authoring fallback,
+  overridden by data/params.json (which CI bakes from GET /seasons/current before the build),
+  plus derived display keys. params.js recomputes the same keys client-side so an admin edit
+  is live without a rebuild.
+*/ -}}
+{{- $s := dict
+  "eventYear" site.Params.eventYear
+  "eventDateRange" site.Params.eventDateRange
+  "eventTheme" site.Params.eventTheme
+  "eventScripture" site.Params.eventScripture
+  "scholarshipAmount" site.Params.scholarshipAmount
+  "registrationOpens" site.Params.registrationOpens
+  "registrationDeadline" site.Params.registrationDeadline
+  "scholarshipDeadline" site.Params.scholarshipDeadline
+  "priceAdult" site.Params.priceAdult
+  "priceChild" site.Params.priceChild
+  "priceTshirt" site.Params.priceTshirt
+  "tbbScholarshipAmount" site.Params.tbbScholarshipAmount
+  "maryOrbisonAmount" site.Params.maryOrbisonAmount
+  "paulHendricksonAmount" site.Params.paulHendricksonAmount
+-}}
+{{- with site.Data.params }}{{ $s = merge $s . }}{{ end -}}
+{{- $year := int (index $s "eventYear") -}}
+{{- $theme := index $s "eventTheme" -}}
+{{- $scripture := index $s "eventScripture" -}}
+{{- $deadline := index $s "scholarshipDeadline" -}}
+{{- $s = merge $s (dict
+  "eventYearMinus1" (string (sub $year 1))
+  "schoolYear" (printf "%d–%02d" (sub $year 1) (mod $year 100))
+  "eventDates" (printf "%s, %s" (index $s "eventDateRange") (index $s "eventYear"))
+  "scholarshipDeadlineFull" (cond (eq $deadline "TBD") "TBD" (printf "%s, %d" $deadline $year))
+  "seasonTitle" (cond (and $theme (ne $theme "TBD")) (printf "%s — %s" $theme $scripture) $scripture)
+  "registrationOpensTitle" (title (index $s "registrationOpens"))
+) -}}
+{{- return $s -}}

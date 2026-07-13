@@ -1,0 +1,85 @@
+{{- /*
+  JSON-LD structured data for search engines (Google rich results).
+  - WebSite + Organization: emitted on every page.
+  - Event: emitted on the home page only.
+  Yearly-changing values are read from hugo.toml [params] (see CLAUDE.md), so a new
+  year needs no edits here. The Event start/end dates are DERIVED from `eventDateRange`
+  + `eventYear` (e.g. "April 2–4" + "2027" → 2027-04-02 / 2027-04-04); the parser also
+  handles a cross-month range like "April 30–May 2".
+*/ -}}
+
+{{- $ctx := dict "@context" "https://schema.org" -}}
+
+{{- /* ── Organization ───────────────────────────────────────────── */ -}}
+{{- $org := dict
+  "@type" "Organization"
+  "name" .Site.Title
+  "url" .Site.BaseURL
+  "logo" (printf "%simages/tbb-logo.png" .Site.BaseURL)
+  "address" .Site.Params.mailingAddress
+  "sameAs" (slice .Site.Params.facebook .Site.Params.youtube)
+-}}
+<script type="application/ld+json">
+{{ (merge $ctx $org) | jsonify | safeJS }}
+</script>
+
+{{- /* ── WebSite (+ Sitelinks search box) ───────────────────────── */ -}}
+{{- $website := dict
+  "@type" "WebSite"
+  "name" .Site.Title
+  "url" .Site.BaseURL
+  "potentialAction" (dict
+    "@type" "SearchAction"
+    "target" (dict
+      "@type" "EntryPoint"
+      "urlTemplate" (printf "%ssearch/?q={search_term_string}" .Site.BaseURL))
+    "query-input" "required name=search_term_string")
+-}}
+<script type="application/ld+json">
+{{ (merge $ctx $website) | jsonify | safeJS }}
+</script>
+
+{{- /* ── Event (home page only) ─────────────────────────────────── */ -}}
+{{- if .IsHome -}}
+  {{- $year := .Site.Params.eventYear -}}
+  {{- $range := .Site.Params.eventDateRange -}}
+  {{- $months := dict
+    "January" "01" "February" "02" "March" "03" "April" "04" "May" "05" "June" "06"
+    "July" "07" "August" "08" "September" "09" "October" "10" "November" "11" "December" "12" -}}
+  {{- $dash := split $range "–" -}}
+  {{- if eq (len $dash) 2 -}}
+    {{- $startTok := split (trim (index $dash 0) " ") " " -}}
+    {{- $endTok := split (trim (index $dash 1) " ") " " -}}
+    {{- $startMonth := index $startTok 0 -}}
+    {{- $startDay := index $startTok 1 -}}
+    {{- $endMonth := $startMonth -}}
+    {{- $endDay := index $endTok 0 -}}
+    {{- if gt (len $endTok) 1 -}}
+      {{- $endMonth = index $endTok 0 -}}
+      {{- $endDay = index $endTok 1 -}}
+    {{- end -}}
+    {{- $startDate := printf "%s-%s-%02d" $year (index $months $startMonth) (int $startDay) -}}
+    {{- $endDate := printf "%s-%s-%02d" $year (index $months $endMonth) (int $endDay) -}}
+    {{- $desc := printf "Annual Bible-knowledge competition for students 3rd grade through adult. %s study material: %s." $year .Site.Params.eventScripture -}}
+    {{- $event := dict
+      "@type" "Event"
+      "name" (printf "Texas Bible Bowl %s" $year)
+      "startDate" $startDate
+      "endDate" $endDate
+      "eventStatus" "https://schema.org/EventScheduled"
+      "eventAttendanceMode" "https://schema.org/OfflineEventAttendanceMode"
+      "description" $desc
+      "image" (slice (printf "%simages/hero.jpg" .Site.BaseURL))
+      "url" (printf "%sregistration/" .Site.BaseURL)
+      "organizer" (dict "@type" "Organization" "name" .Site.Title "url" .Site.BaseURL)
+      "location" (slice
+        (dict "@type" "Place" "name" "Bandina Christian Youth Camp" "address"
+          (dict "@type" "PostalAddress" "streetAddress" "320 Bandina Ranch Rd" "addressLocality" "Bandera" "addressRegion" "TX" "postalCode" "78003" "addressCountry" "US"))
+        (dict "@type" "Place" "name" "White River Youth Camp" "address"
+          (dict "@type" "PostalAddress" "streetAddress" "2838 FM 2794" "addressLocality" "Spur" "addressRegion" "TX" "postalCode" "79370" "addressCountry" "US")))
+    -}}
+<script type="application/ld+json">
+{{ (merge $ctx $event) | jsonify | safeJS }}
+</script>
+  {{- end -}}
+{{- end -}}

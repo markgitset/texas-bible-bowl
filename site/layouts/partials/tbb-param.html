@@ -1,0 +1,7 @@
+{{- /*
+  Renders one season value in a span that params.js can patch live from /seasons/current.
+  Usage: {{ partial "tbb-param.html" "eventYear" }}
+*/ -}}
+{{- $s := partialCached "season.html" . "season" -}}
+<span data-tbb-param="{{ . }}">{{ index $s . }}</span>
+{{- /* trailing newline trimmed */ -}}

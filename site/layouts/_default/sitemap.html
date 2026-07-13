@@ -1,0 +1,44 @@
+{{ define "main" }}
+<div class="container py-5">
+
+  {{ partial "breadcrumbs.html" . }}
+  <h1 class="page-title mb-3">{{ .Title }}</h1>
+
+  {{ with .Content }}
+  <div class="content-body mb-4">{{ . }}</div>
+  {{ end }}
+
+  <div class="row g-4">
+
+    {{- /* Top-level standalone pages (Registration, Donate, Contact, etc.) */ -}}
+    {{ $tops := where .Site.RegularPages "Section" "" }}
+    {{ with $tops }}
+    <div class="col-md-6 col-lg-4">
+      <h2 class="h5 sitemap-section"><a href="{{ $.Site.BaseURL }}">Main Pages</a></h2>
+      <ul class="list-unstyled small">
+        {{ range .ByTitle }}
+        {{ if and (ne .RelPermalink $.RelPermalink) (ne .RelPermalink "/search/") }}
+        <li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>
+        {{ end }}
+        {{ end }}
+      </ul>
+    </div>
+    {{ end }}
+
+    {{- /* Each content section and its pages */ -}}
+    {{ range .Site.Sections.ByWeight }}
+    <div class="col-md-6 col-lg-4">
+      <h2 class="h5 sitemap-section"><a href="{{ .RelPermalink }}">{{ .Title }}</a></h2>
+      {{ with .RegularPages }}
+      <ul class="list-unstyled small">
+        {{ range .ByWeight }}
+        <li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>
+        {{ end }}
+      </ul>
+      {{ end }}
+    </div>
+    {{ end }}
+
+  </div>
+</div>
+{{ end }}

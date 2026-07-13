@@ -1,0 +1,38 @@
+{{ define "main" }}
+<div class="container py-5">
+
+  {{ partial "breadcrumbs.html" . }}
+  <h1 class="page-title mb-3">{{ .Title }}</h1>
+
+  {{ with .Content }}
+  <div class="content-body mb-5">{{ . }}</div>
+  {{ end }}
+
+  {{ if .RegularPages }}
+  {{ $start := .Params.startHere }}
+  <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+    {{ range .RegularPages.ByWeight }}
+    {{ $isStart := and $start (in .RelPermalink (printf "/%s/" $start)) }}
+    <div class="col">
+      <div class="card h-100 border-0 shadow-sm section-card{{ if $isStart }} start-here-card{{ end }}">
+        <div class="card-body">
+          {{ if $isStart }}
+          <span class="start-here-badge"><i class="bi bi-arrow-right-circle-fill"></i> Start here</span>
+          {{ end }}
+          <h5 class="card-title">
+            <a href="{{ .RelPermalink }}" class="text-decoration-none stretched-link text-dark">
+              {{ .Title }}
+            </a>
+          </h5>
+          {{ with .Description }}
+          <p class="card-text text-muted small">{{ . }}</p>
+          {{ end }}
+        </div>
+      </div>
+    </div>
+    {{ end }}
+  </div>
+  {{ end }}
+
+</div>
+{{ end }}

@@ -1,0 +1,14 @@
+{{- /* Breadcrumb trail: Home › Section › Page. Skipped on the homepage. */ -}}
+{{- if not .IsHome -}}
+<nav aria-label="breadcrumb">
+  <ol class="breadcrumb small mb-3">
+    <li class="breadcrumb-item"><a href="{{ .Site.BaseURL }}">Home</a></li>
+    {{- range .Ancestors.Reverse -}}
+      {{- if not .IsHome }}
+    <li class="breadcrumb-item"><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>
+      {{- end -}}
+    {{- end }}
+    <li class="breadcrumb-item active" aria-current="page">{{ .Title }}</li>
+  </ol>
+</nav>
+{{- end -}}

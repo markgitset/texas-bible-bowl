@@ -1,0 +1,47 @@
+<footer class="site-footer pt-5 pb-3">
+  <div class="container">
+    <div class="row g-4 mb-4">
+
+      <div class="col-md-4">
+        <div class="d-flex align-items-center gap-3 mb-2">
+          <img src="{{ .Site.BaseURL }}images/tbb-logo-white.png" alt="Texas Bible Bowl logo" height="56" class="nav-logo">
+          <h5 class="text-white fw-bold mb-0">Texas Bible Bowl</h5>
+        </div>
+        <p class="footer-tagline mb-2">Making God's Word Important</p>
+<!--        <p class="small mb-0">{{ .Site.Params.mailingAddress }}</p>-->
+      </div>
+
+      <div class="col-md-4">
+        <h6 class="text-white fw-semibold mb-2">Quick Links</h6>
+        <ul class="list-unstyled small">
+          <li><a href="/registration/">Registration</a></li>
+          <li><a href="/app/#study">Study App</a></li>
+          <li><a href="/app/#downloads">Downloads</a></li>
+          <li><a href="/scholarships/">Scholarships</a></li>
+          <li><a href="/donate/">Donate</a></li>
+          <li><a href="/contact/">Contact Us</a></li>
+          <li><a href="/sitemap/">Site Map</a></li>
+        </ul>
+      </div>
+
+      <div class="col-md-4">
+        <h6 class="text-white fw-semibold mb-2">Connect</h6>
+        <ul class="list-unstyled small">
+          {{ with .Site.Params.facebook }}
+          <li><a href="{{ . }}" target="_blank" rel="noopener">Facebook</a></li>
+          {{ end }}
+          {{ with .Site.Params.youtube }}
+          <li><a href="{{ . }}" target="_blank" rel="noopener">YouTube</a></li>
+          {{ end }}
+          <li><a href="/contact/">Email Us</a></li>
+        </ul>
+      </div>
+
+    </div>
+
+    <hr style="border-color:rgba(255,255,255,0.15);">
+    <p class="text-center small mb-0" style="color:rgba(255,255,255,0.4);">
+      &copy; {{ now.Year }} Texas Bible Bowl. All rights reserved.
+    </p>
+  </div>
+</footer>

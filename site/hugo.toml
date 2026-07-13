@@ -1,0 +1,180 @@
+# Deployed to GitHub Pages under /texas-bible-bowl/ until the domain migration (Phase 6);
+# canonifyURLs (below) keeps root-relative links working on the subpath.
+baseURL = "https://markgitset.github.io/texas-bible-bowl/"
+locale = "en-us"
+title = "Texas Bible Bowl"
+# Rewrite root-relative URLs written in content (e.g. /images/..., /uploads/...) with the
+# build's baseURL so they keep the path prefix on the GitHub Pages subpath deployment.
+canonifyURLs = true
+
+# Emit a JSON search index (/index.json) alongside the home page, consumed by the
+# client-side search on /search/. Template: layouts/index.json.
+[outputs]
+  home = ["HTML", "RSS", "JSON"]
+
+[params]
+  description   = "Making God's Word Important — Annual Bible knowledge competition for students 3rd grade through adult."
+  tagline       = "Making God's Word Important"
+  eventYear     = "2027"
+  eventDateRange = "April 2–4"   # year comes from eventYear; compose in templates
+  eventTheme    = "TBD"
+  eventScripture = "Acts"
+  scholarshipAmount = "$25,000"   # total awarded in the prior year (eventYear - 1)
+  registrationOpens = "in February"      # Month day; year derived from eventYear
+  registrationDeadline = "TBD"   # Month day; year derived from eventYear
+  scholarshipDeadline = "TBD"       # Month day; year derived from eventYear
+  # Prices / amounts
+  priceAdult = "TBD (Was $85 in 2026)"     # adults (standard), per person
+  priceChild = "TBD (Was $65 in 2026)"     # children ages 3–8, per person
+  priceTshirt = "TBD (Was $10 in 2026)"    # extra t-shirts, each
+  tbbScholarshipAmount = "$1,000"
+  maryOrbisonAmount = "$1,500"
+  paulHendricksonAmount = "TBD"
+  facebook      = "https://www.facebook.com/TexasBibleBowl"
+  youtube       = "https://www.youtube.com/channel/UCdlu_qTP5cmoQrNGJSDRbcg"
+  mailingAddress = "10431 Remuda View Drive, San Antonio, TX 78254"
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true   # allows raw HTML in .md files (needed for maps, forms, embeds)
+  [markup.highlight]
+    noClasses = false
+
+# ── Navigation menus ────────────────────────────────────────────────────────
+
+[[menus.main]]
+  name   = "Registration"
+  url    = "/registration/"
+  weight = 10
+
+[[menus.main]]
+  name   = "Event"
+  url    = "/event/"
+  weight = 20
+
+[[menus.main]]
+  name   = "How It Works"
+  url    = "/event/how-it-works/"
+  parent = "Event"
+  weight = 1
+
+[[menus.main]]
+  name   = "Rules & Regulations"
+  url    = "/event/rules/"
+  parent = "Event"
+  weight = 2
+
+[[menus.main]]
+  name   = "Round Description"
+  url    = "/event/round-description/"
+  parent = "Event"
+  weight = 3
+
+[[menus.main]]
+  name   = "Sample Questions"
+  url    = "/event/sample-questions/"
+  parent = "Event"
+  weight = 4
+
+[[menus.main]]
+  name   = "Curriculum"
+  url    = "/event/curriculum/"
+  parent = "Event"
+  weight = 5
+
+[[menus.main]]
+  name   = "Why the ESV?"
+  url    = "/event/why-esv/"
+  parent = "Event"
+  weight = 6
+
+[[menus.main]]
+  name   = "Study Resources"
+  url    = "/study-resources/"
+  weight = 30
+
+[[menus.main]]
+  name   = "Downloads"
+  url    = "/app/#downloads"   # the app's download center replaced the hand-linked PDF page
+  parent = "Study Resources"
+  weight = 1
+
+[[menus.main]]
+  name   = "Study Games"
+  url    = "/study-resources/practice-tests/"
+  parent = "Study Resources"
+  weight = 2
+
+[[menus.main]]
+  name   = "Scholarships"
+  url    = "/scholarships/"
+  weight = 40
+
+[[menus.main]]
+  name   = "TBB Scholarship"
+  url    = "/scholarships/tbb-scholarship/"
+  parent = "Scholarships"
+  weight = 1
+
+[[menus.main]]
+  name   = "Mary Orbison"
+  url    = "/scholarships/mary-orbison/"
+  parent = "Scholarships"
+  weight = 2
+
+[[menus.main]]
+  name   = "Paul Hendrickson"
+  url    = "/scholarships/paul-hendrickson/"
+  parent = "Scholarships"
+  weight = 3
+
+[[menus.main]]
+  name   = "About"
+  url    = "/about/"
+  weight = 50
+
+[[menus.main]]
+  name   = "Our Story"
+  url    = "/about/our-story/"
+  parent = "About"
+  weight = 1
+
+[[menus.main]]
+  name   = "Leadership"
+  url    = "/about/leadership/"
+  parent = "About"
+  weight = 2
+
+[[menus.main]]
+  name   = "Locations"
+  url    = "/about/locations/"
+  parent = "About"
+  weight = 3
+
+[[menus.main]]
+  name   = "Volunteers"
+  url    = "/about/volunteers/"
+  parent = "About"
+  weight = 4
+
+[[menus.main]]
+  name   = "In the News"
+  url    = "/about/in-the-news/"
+  parent = "About"
+  weight = 5
+
+# Photos lives under About; the year galleries are listed on the /photos/ landing page.
+[[menus.main]]
+  name   = "Photos"
+  url    = "/photos/"
+  parent = "About"
+  weight = 6
+
+[[menus.main]]
+  name   = "Donate"
+  url    = "/donate/"
+  weight = 70
+
+# Contact is intentionally not in the top nav — it lives in the footer to keep the
+# primary navigation focused. Update footer.html if that decision changes.

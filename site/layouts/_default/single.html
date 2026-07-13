@@ -1,0 +1,38 @@
+{{ define "main" }}
+{{ $currentPage := . }}
+<div class="container py-5">
+  <div class="row">
+
+    <div class="{{ if .Section }}col-lg-9{{ else }}col-12{{ end }}">
+      {{ partial "breadcrumbs.html" . }}
+      <h1 class="page-title mb-4">{{ .Title }}</h1>
+      <div class="content-body">
+        {{ .Content }}
+      </div>
+    </div>
+
+    {{ if .Section }}
+    <div class="col-lg-3 d-none d-lg-block">
+      <div class="sidebar card border-0 shadow-sm">
+        <div class="card-header fw-semibold text-white" style="background-color:var(--tbb-navy);">
+          <a href="{{ .CurrentSection.RelPermalink }}" class="text-white text-decoration-none">
+            {{ .CurrentSection.Title }}
+          </a>
+        </div>
+        <ul class="list-group list-group-flush">
+          {{ range .CurrentSection.RegularPages.ByWeight }}
+          <li class="list-group-item p-0">
+            <a href="{{ .RelPermalink }}"
+               class="d-block px-3 py-2 text-decoration-none{{ if eq .RelPermalink $currentPage.RelPermalink }} fw-semibold text-white active-item{{ else }} text-dark{{ end }}">
+              {{ .Title }}
+            </a>
+          </li>
+          {{ end }}
+        </ul>
+      </div>
+    </div>
+    {{ end }}
+
+  </div>
+</div>
+{{ end }}
