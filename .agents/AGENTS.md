@@ -92,11 +92,12 @@ This renders the real pipeline without hitting Crossway.
   reads them via `LocalSeason` (baked fallback in `app/.../ui/Season.kt`) — chapter counts and the
   season book are no longer hardcoded anywhere. Admin edits via #/account → Season settings.
 - **CI (`ci.yml`):** runs tests + builds APK/web on push. **Does NOT deploy the backend.**
-- **Backend (Fly.io):** **manual** — `fly deploy` (Mark's infra/secrets; you never see
-  the ESV token or prod secrets, set via `fly secrets set`). Live:
-  https://texas-bible-bowl.fly.dev . So a pushed backend change is NOT live until a
-  manual deploy. Verify backend changes locally (unit test + local render), and only
-  claim "live" after a deploy + hitting the endpoint.
+- **Backend (Fly.io):** NOT deployed by CI — a pushed backend change is not live until
+  someone runs `fly deploy`. Claude MAY run it (Mark OK'd this 2026-07-13) using
+  `/home/linuxbrew/.linuxbrew/bin/fly` (authenticated; the `~/.fly/bin` copy also works), but
+  only after `:server:test` (and any other affected suites) are green, and never concurrently
+  with one of Mark's deploys. Prod secrets (ESV token etc.) live in `fly secrets` and are never
+  visible. Live: https://texas-bible-bowl.fly.dev — only claim "live" after hitting the endpoint.
 
 ## Conventions
 - **No `Co-Authored-By: Claude` trailer** in commit messages (Mark's standing preference).
