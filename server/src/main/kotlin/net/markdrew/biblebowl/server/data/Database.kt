@@ -132,7 +132,7 @@ object DatabaseFactory {
         transaction(db) {
             SchemaUtils.create(
                 UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable, EsvChaptersTable,
-                TextAnnotationsTable,
+                TextAnnotationsTable, SeasonsTable,
             )
         }
         return db

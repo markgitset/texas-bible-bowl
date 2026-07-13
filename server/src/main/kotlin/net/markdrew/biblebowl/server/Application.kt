@@ -31,10 +31,13 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.server.data.DatabaseFactory
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
+import net.markdrew.biblebowl.server.data.InMemorySeasonRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
+import net.markdrew.biblebowl.server.data.PostgresSeasonRepository
 import net.markdrew.biblebowl.server.data.PostgresUserRepository
 import net.markdrew.biblebowl.server.data.QuestionRepository
+import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.esv.EsvPassageService
 import net.markdrew.biblebowl.server.esv.FileEsvCache
@@ -44,6 +47,7 @@ import net.markdrew.biblebowl.server.routes.authRoutes
 import net.markdrew.biblebowl.server.routes.bibleRoutes
 import net.markdrew.biblebowl.server.routes.generateRoutes
 import net.markdrew.biblebowl.server.routes.questionRoutes
+import net.markdrew.biblebowl.server.routes.seasonRoutes
 import net.markdrew.biblebowl.server.routes.studyRoutes
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
@@ -56,6 +60,7 @@ fun main() {
     val db = if (System.getenv("DATABASE_URL") != null) DatabaseFactory.connect() else null
     val users = db?.let(::PostgresUserRepository) ?: InMemoryUserRepository()
     val questions = db?.let(::PostgresQuestionRepository) ?: InMemoryQuestionRepository()
+    val seasons = db?.let(::PostgresSeasonRepository) ?: InMemorySeasonRepository()
     // Prod uses the Postgres cache; local dev (no DATABASE_URL) uses a persisted on-disk cache so repeated
     // runs never re-hit the ESV API — only a first run (cache miss) or ESV_CACHE_REFRESH re-fetches. It
     // lives under the user's home (~/.cache/texas-bible-bowl/esv) so it survives git cleans and fresh clones.
@@ -70,8 +75,9 @@ fun main() {
     // Persist the text-analysis (highlight category) resolution in Postgres when available, so it survives
     // scale-to-zero restarts instead of being recomputed on each cold start.
     val study = StudyDataService(esv, annotationCache = db?.let(::PostgresAnnotationCache))
-    embeddedServer(Netty, port = port, host = "0.0.0.0") { module(users, questions, esv = esv, study = study) }
-        .start(wait = true)
+    embeddedServer(Netty, port = port, host = "0.0.0.0") {
+        module(users, questions, esv = esv, study = study, seasons = seasons)
+    }.start(wait = true)
 }
 
 /**
@@ -84,6 +90,7 @@ fun Application.module(
     jwt: JwtService = JwtService(),
     esv: EsvPassageService? = null,
     study: StudyDataService? = esv?.let(::StudyDataService),
+    seasons: SeasonRepository = InMemorySeasonRepository(),
 ) {
     seedAdminFromEnv(users)
 
@@ -138,12 +145,17 @@ fun Application.module(
     }
 
     routing {
-        get("/health") { call.respond(mapOf("status" to "ok", "service" to "texas-bible-bowl", "season" to "Acts")) }
+        get("/health") {
+            call.respond(
+                mapOf("status" to "ok", "service" to "texas-bible-bowl", "season" to seasons.current().eventScripture),
+            )
+        }
         authRoutes(users, jwt)
         questionRoutes(users, questions)
         bibleRoutes(esv)
         studyRoutes(study)
         generateRoutes(questions, study)
+        seasonRoutes(users, seasons)
     }
 
     warmStudyCache(study)

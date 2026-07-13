@@ -5,6 +5,7 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsText
@@ -21,6 +22,7 @@ import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.Role
+import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.model.Round
@@ -197,6 +199,63 @@ class ApplicationTest {
         }
         // …and the 11th within the window is throttled.
         assertEquals(HttpStatusCode.TooManyRequests, api.get("/generate/practice-test.pdf?round=BOGUS").status)
+    }
+
+    @Test
+    fun seasonIsPubliclyReadableAndAdminEditable() = testApplication {
+        val users = InMemoryUserRepository()
+        val jwt = JwtService(secret = "test-secret")
+        users.create("admin@tbb.org", "Admin", null, Passwords.hash("supersecret"), listOf(RoleGrant(Role.ADMIN)))
+        application { module(users, InMemoryQuestionRepository(), jwt) }
+
+        val api = createClient {
+            install(ContentNegotiation) { json(json) }
+            defaultRequest { contentType(ContentType.Application.Json) }
+        }
+
+        // Anonymous read of the current season (the site's params.js path).
+        val res = api.get("/seasons/current")
+        assertEquals(HttpStatusCode.OK, res.status)
+        val season: SeasonDto = json.decodeFromString(res.bodyAsText())
+        assertEquals("Acts", season.eventScripture)
+        assertEquals(28, season.chapterCount)
+
+        // Anonymous and non-admin writes are rejected.
+        assertEquals(HttpStatusCode.Unauthorized, api.put("/seasons/current") { setBody(season) }.status)
+        val kid: AuthResponse = json.decodeFromString(
+            api.post("/auth/register") {
+                setBody(RegisterRequest("kid4@tbb.org", "password123", "Priscilla"))
+            }.bodyAsText()
+        )
+        val forbidden = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${kid.token}")
+            setBody(season)
+        }
+        assertEquals(HttpStatusCode.Forbidden, forbidden.status)
+
+        // Admin updates; the public read and /health reflect it immediately.
+        val admin: AuthResponse = json.decodeFromString(
+            api.post("/auth/login") {
+                setBody(net.markdrew.biblebowl.api.LoginRequest("admin@tbb.org", "supersecret"))
+            }.bodyAsText()
+        )
+        val updated = season.copy(eventScripture = "Luke", bookCode = "LUK", chapterCount = 24, eventTheme = "Certainty")
+        val put = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(updated)
+        }
+        assertEquals(HttpStatusCode.OK, put.status)
+        val after: SeasonDto = json.decodeFromString(api.get("/seasons/current").bodyAsText())
+        assertEquals("Luke", after.eventScripture)
+        assertEquals(24, after.chapterCount)
+        assertTrue(api.get("/health").bodyAsText().contains("Luke"))
+
+        // Nonsense payloads are rejected.
+        val bad = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(updated.copy(chapterCount = 0))
+        }
+        assertEquals(HttpStatusCode.BadRequest, bad.status)
     }
 
     @Test

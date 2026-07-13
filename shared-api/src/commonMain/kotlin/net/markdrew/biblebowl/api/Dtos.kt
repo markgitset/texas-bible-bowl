@@ -128,6 +128,42 @@ data class IndexRefDto(
 )
 
 // ---------------------------------------------------------------------------
+// Seasons
+// ---------------------------------------------------------------------------
+
+/**
+ * The season parameters shared by the static site and the app (docs/gui-redesign.md §3): the exact
+ * field set of the Hugo site's `[params]`, plus [bookCode]/[chapterCount] for the app's study
+ * scoping. Served publicly at `GET /seasons/current`; edited in-app by SEASON_MANAGE holders.
+ * Prices/dates are display strings on purpose — the site renders values like "TBD (Was $85 in 2026)".
+ */
+@Serializable
+data class SeasonDto(
+    /** Event year, e.g. "2027" (the season label spans two calendar years, e.g. 2026–27). */
+    val eventYear: String,
+    /** Event dates without the year, e.g. "April 2–4". */
+    val eventDateRange: String,
+    val eventTheme: String,
+    /** The season book as prose, e.g. "Acts". */
+    val eventScripture: String,
+    /** The season book's 3-letter code for app APIs, e.g. "ACT". */
+    val bookCode: String,
+    /** Chapters in the season book — drives every chapter filter in the app. */
+    val chapterCount: Int,
+    /** Total scholarships awarded in the prior year, e.g. "$25,000". */
+    val scholarshipAmount: String,
+    val registrationOpens: String,
+    val registrationDeadline: String,
+    val scholarshipDeadline: String,
+    val priceAdult: String,
+    val priceChild: String,
+    val priceTshirt: String,
+    val tbbScholarshipAmount: String,
+    val maryOrbisonAmount: String,
+    val paulHendricksonAmount: String,
+)
+
+// ---------------------------------------------------------------------------
 // Generic API envelope for errors
 // ---------------------------------------------------------------------------
 
