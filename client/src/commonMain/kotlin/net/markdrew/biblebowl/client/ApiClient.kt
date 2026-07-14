@@ -53,7 +53,7 @@ expect fun defaultBaseUrl(): String
  * Thin typed client for the Ktor backend, shared across every platform. Holds the auth token and the
  * signed-in [user] in memory after sign-in so the UI can gate features on [UserDto.permissions].
  */
-class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
+class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     private val client: HttpClient = createHttpClient()
 
     var token: String? = null

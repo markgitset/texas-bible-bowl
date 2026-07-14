@@ -4,6 +4,7 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
 import net.markdrew.biblebowl.api.Permission
+import net.markdrew.biblebowl.web.screens.DownloadsScreen
 import net.markdrew.biblebowl.web.screens.EventScreen
 import net.markdrew.biblebowl.web.screens.StudyHubScreen
 import org.w3c.dom.HTMLElement
@@ -75,7 +76,7 @@ object Shell {
             Routes.STUDY_HEADINGS -> placeholder(container, "Chapter headings")
             Routes.QUIZ -> placeholder(container, "Quiz")
             Routes.QUESTIONS -> placeholder(container, "Questions")
-            Routes.DOWNLOADS -> placeholder(container, "Downloads")
+            Routes.DOWNLOADS -> DownloadsScreen.render(container)
             Routes.EVENT -> EventScreen.render(container)
             Routes.SIGN_IN -> placeholder(container, "Sign in")
             Routes.ACCOUNT -> placeholder(container, "Account")
