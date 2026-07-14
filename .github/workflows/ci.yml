@@ -49,19 +49,19 @@ jobs:
           typst --version
 
       - name: Unit & integration tests
-        run: ./gradlew :core:jvmTest :shared-api:jvmTest :generation:jvmTest :server:test :app:desktopTest
+        run: ./gradlew :core:jvmTest :shared-api:jvmTest :generation:jvmTest :client:jvmTest :server:test :app:desktopTest
 
       - name: Build Android APK
         run: ./gradlew :app:assembleDebug
 
-      - name: Build web (Wasm) distribution
-        run: ./gradlew :app:wasmJsBrowserDistribution
+      - name: Build web (Kotlin/JS) distribution
+        run: ./gradlew :web:jsBrowserDistribution
 
       - name: Upload web distribution
         uses: actions/upload-artifact@v4
         with:
           name: web-dist
-          path: app/build/dist/wasmJs/productionExecutable
+          path: web/build/dist/js/productionExecutable
           retention-days: 14
 
       - name: Upload debug APK

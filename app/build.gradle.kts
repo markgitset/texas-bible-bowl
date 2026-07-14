@@ -1,5 +1,4 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
-import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -18,18 +17,8 @@ kotlin {
         compilerOptions { jvmTarget.set(JvmTarget.JVM_17) }
     }
 
-    @OptIn(ExperimentalWasmDsl::class)
-    wasmJs {
-        outputModuleName.set("tbb")
-        browser {
-            commonWebpackConfig {
-                outputFileName = "tbb.js"
-            }
-        }
-        binaries.executable()
-    }
     // iosX64/iosArm64/iosSimulatorArm64 targets add here once a macOS host is
-    // available — commonMain UI needs no changes.
+    // available — commonMain UI needs no changes. (The web app is :web, plain Kotlin/JS.)
 
     sourceSets {
         val desktopMain by getting

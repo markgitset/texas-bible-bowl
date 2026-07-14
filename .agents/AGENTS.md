@@ -6,7 +6,7 @@ for the roadmap. This file is the operational cheat-sheet: how to build, test, v
 and deploy, plus the non-obvious gotchas.
 
 ## Modules (actual, as built)
-`:core` `:shared-api` `:generation` `:app` `:server` — see `settings.gradle.kts`.
+`:core` `:shared-api` `:generation` `:client` `:app` `:web` `:server` — see `settings.gradle.kts`.
 - **`:core`** is KMP but has a **`jvmMain` source set** that holds *server-only* JVM
   code (the whole Bible-text render engine + NLP/analysis). Common code (VerseRef,
   StudyData, etc.) is in `commonMain`; anything touching the copied bible-bowl JVM
@@ -14,6 +14,21 @@ and deploy, plus the non-obvious gotchas.
   in practice it landed in `core/jvmMain`.)
 - **`:generation`** holds the pure-Kotlin Typst *markup builders* used by both client
   and server (PracticeTest, Flashcards, QuizEngine).
+- **`:client`** holds `TbbApi` (package `net.markdrew.biblebowl.client`), the typed
+  backend client shared by the Compose apps and the web app (jvm/android/js; Ktor engine
+  per platform). Android passes its BuildConfig backend URL to `TbbApi(baseUrl)` in
+  `MainActivity` — `:client` can't see `:app`'s generated BuildConfig.
+- **`:app`** is Compose Multiplatform for **android + desktop only** (iOS later). The
+  wasm web target was removed 2026-07 in favor of `:web`.
+- **`:web`** is the web app: plain Kotlin/JS DOM (no Compose, no JS framework), styled
+  with Bootstrap 5 + the Hugo site's `site/static/css/custom.css` (copied into the dist
+  by a `jsProcessResources` hook in `web/build.gradle.kts` — single source of truth).
+  Hash routes (`#study`, `#questions/new`, …) are identical to the old wasm app so site
+  links keep working. Screens are objects with `render(container)` in `web/.../screens/`;
+  `Session` holds the shared `TbbApi`/season/user with a localStorage JWT restored via
+  `/auth/me` on boot. Downloads are plain `<a target="_blank">` links to the public
+  `/generate/*` endpoints (server sends `Content-Disposition: attachment`). Bundle is
+  ~660 KB js (the wasm app was ~8.6 MB).
 
 ## Reuse strategy (locked in by Mark)
 **Copy bible-bowl JVM source into `core/jvmMain` when needed — do NOT depend on the
@@ -44,34 +59,36 @@ don't downgrade the wrapper below 9.x. Kotlin 2.4.0's KGP officially supports Gr
 Gradle task names are **not** uniform across modules. Use these:
 - Core (JVM): `./gradlew :core:jvmTest` (compile: `:core:compileKotlinJvm`)
 - Server: `./gradlew :server:test` (compile: `:server:compileKotlin`)
-- App: `:app:compileKotlinDesktop`, `:app:compileKotlinWasmJs`,
-  `:app:compileDebugKotlinAndroid`, `:app:desktopTest`
+- App: `:app:compileKotlinDesktop`, `:app:compileDebugKotlinAndroid`, `:app:desktopTest`
   (there is **no** `:app:compileKotlinJvm` / `:app:build`-style single task).
+- Client: `./gradlew :client:jvmTest` (the TbbApi wire/error tests).
+- Web: `./gradlew :web:jsBrowserDistribution` (compile: `:web:compileKotlinJs`) →
+  `web/build/dist/js/productionExecutable`.
 - Full CI locally: `./gradlew :core:jvmTest :shared-api:jvmTest :generation:jvmTest
-  :server:test :app:desktopTest` then `:app:assembleDebug` and
-  `:app:wasmJsBrowserDistribution` (mirrors `.github/workflows/ci.yml`).
+  :client:jvmTest :server:test :app:desktopTest` then `:app:assembleDebug` and
+  `:web:jsBrowserDistribution` (mirrors `.github/workflows/ci.yml`).
 
 **Gotcha:** the Gradle daemon sometimes reports `compileKotlinJvm UP-TO-DATE` /
 `BUILD SUCCESSFUL` after a source edit *without recompiling*. If a run finishes
 instantly and everything is UP-TO-DATE right after you edited files, re-run with
 `--rerun-tasks` to force a real compile before trusting a green result.
 
-The wasmJs build prints many `ExperimentalWasmJsInterop` opt-in warnings from
-`SavePdf.wasmJs.kt` — pre-existing and harmless, not from your change.
+**Yarn-lock gotcha:** adding/removing a Kotlin/JS module (or npm-visible deps) fails the
+build with "Lock file was changed" — run `./gradlew kotlinUpgradeYarnLock` and commit
+`kotlin-js-store/yarn.lock`.
 
-## App navigation (Phase 1 of docs/gui-redesign.md, as built)
-Five public destinations (`Routes.kt`): study, quiz, questions, downloads, event (+ signin,
-account) via JetBrains navigation-compose; adaptive scaffold in `App.kt` (bottom nav < 600dp,
-top-bar text tabs otherwise). No auth wall — GET routes are public server-side; JWT only on
-submit/vote/moderate. **Wasm gotcha:** the NavHost sits inside `Scaffold` (a SubcomposeLayout),
-so `window.bindToNavigation` and initial-hash deep-linking must run from the `onNavHostReady`
-callback (fired by a `LaunchedEffect` right after `NavHost` in `App.kt`) — a top-level
-`LaunchedEffect` in `Main.kt` runs before the graph is set and fails with "Navigation graph has
-not been set". Also: `bindToNavigation` never *reads* the initial URL hash; `Main.kt` navigates
-to it explicitly before binding. To eyeball the web app: `preview_start` the `web-dist` +
-`backend` configs in `.claude/launch.json` (backend is in-memory without `DATABASE_URL`;
-ESV endpoints 503 without the token — expected). Stop the local backend before
-`:app:desktopTest`: a live :8080 un-skips `EndToEndFlowTest`, which expects the Postgres stack.
+## App navigation (Compose apps + web app)
+Five public destinations (`Routes.kt` in both `:app` and `:web`): study, quiz, questions,
+downloads, event (+ signin, account, gated admin routes). No auth wall — GET routes are
+public server-side; JWT only on submit/vote/moderate; permission-gated routes render the
+sign-in screen in place (never disabled-but-visible affordances). The Compose app uses
+JetBrains navigation-compose with an adaptive scaffold in `App.kt`; the web app uses a
+`hashchange` router in `web/.../Shell.kt` with a Bootstrap navbar (unknown hash → study
+hub). To eyeball the web app: `./gradlew :web:jsBrowserDistribution`, then `preview_start`
+the `web-dist` + `backend` configs in `.claude/launch.json` (backend is in-memory without
+`DATABASE_URL` and bootstraps a dev admin, admin@tbb.org / admin-secret-123; ESV endpoints
+503 without the token — expected). Stop the local backend before `:app:desktopTest`: a
+live :8080 un-skips `EndToEndFlowTest`, which expects the Postgres stack.
 
 ## Verifying generated PDFs locally (no ESV token needed)
 Typst is installed at `/home/mark/bin/typst` (v0.14.2); the server shells out to it.
@@ -83,14 +100,15 @@ This renders the real pipeline without hitting Crossway.
 
 ## Deploy — what's automatic vs manual
 - **Web (GitHub Pages):** auto on push to `main` via `.github/workflows/pages.yml` — ONE artifact:
-  the Hugo site (`/site`) at the root and the wasm app under `/app/`. CI bakes
+  the Hugo site (`/site`) at the root and the Kotlin/JS app (`:web`) under `/app/`. CI bakes
   `GET /seasons/current` into `site/data/params.json` before `hugo build`; `static/js/params.js`
   live-patches `[data-tbb-param]` spans on page view. Hugo binary: `/home/mark/bin/hugo`
   (v0.164.0 extended); local build: `hugo -s site --gc --minify -d <out>`.
   Live: https://markgitset.github.io/texas-bible-bowl/ (app at `/app/#study`)
-- **Season params:** served by `GET /seasons/current` (public; PUT needs SEASON_MANAGE). The app
-  reads them via `LocalSeason` (baked fallback in `app/.../ui/Season.kt`) — chapter counts and the
-  season book are no longer hardcoded anywhere. Admin edits via #/account → Season settings.
+- **Season params:** served by `GET /seasons/current` (public; PUT needs SEASON_MANAGE). Clients
+  read them at launch (Compose: `LocalSeason`; web: `Session.season`) over the shared
+  `FALLBACK_SEASON` baked into `:shared-api` — chapter counts and the season book are no longer
+  hardcoded anywhere. Admin edits via #account → Season settings.
 - **CI (`ci.yml`):** runs tests + builds APK/web on push. **Does NOT deploy the backend.**
 - **Backend (Fly.io):** NOT deployed by CI — a pushed backend change is not live until
   someone runs `fly deploy`. Claude MAY run it (Mark OK'd this 2026-07-13) using

@@ -1,7 +1,7 @@
 name: Deploy web to GitHub Pages
 
 # One Pages artifact for both halves (docs/gui-redesign.md §3): the Hugo site at the root and the
-# Compose/Wasm app under /app/. Season values are baked into the static build from the live
+# Kotlin/JS app under /app/. Season values are baked into the static build from the live
 # backend (GET /seasons/current) when reachable, falling back to the committed site/data/params.json.
 # The backend URL is injected from the repository variable BACKEND_URL (Settings → Secrets and
 # variables → Actions → Variables), e.g. https://texas-bible-bowl.fly.dev.
@@ -56,18 +56,18 @@ jobs:
       - name: Build static site (Hugo)
         run: hugo -s site --gc --minify -d ../public
 
-      - name: Build web (Wasm) distribution
-        run: ./gradlew :app:wasmJsBrowserDistribution
+      - name: Build web (Kotlin/JS) distribution
+        run: ./gradlew :web:jsBrowserDistribution
 
       - name: Assemble app under /app/ and inject backend URL
         env:
           BACKEND_URL: ${{ vars.BACKEND_URL }}
         run: |
-          dist=app/build/dist/wasmJs/productionExecutable
+          dist=web/build/dist/js/productionExecutable
           mkdir -p public/app
           cp -r "$dist"/. public/app/
           if [ -n "$BACKEND_URL" ]; then
-            # Define the global the Wasm client reads, before the app script runs.
+            # Define the global the JS client reads, before the app script runs.
             sed -i "s#<script src=\"tbb.js\"></script>#<script>window.TBB_BACKEND_URL=\"${BACKEND_URL}\";</script>\n    <script src=\"tbb.js\"></script>#" public/app/index.html
             echo "Injected BACKEND_URL=$BACKEND_URL"
           else

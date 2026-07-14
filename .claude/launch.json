@@ -4,15 +4,8 @@
     {
       "name": "web-dist",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-8090}\" --directory app/build/dist/wasmJs/productionExecutable"],
+      "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-8090}\" --directory web/build/dist/js/productionExecutable"],
       "port": 8090,
-      "autoPort": true
-    },
-    {
-      "name": "web-js",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-8091}\" --directory web/build/dist/js/productionExecutable"],
-      "port": 8091,
       "autoPort": true
     },
     {

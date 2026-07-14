@@ -13,10 +13,13 @@ PostgreSQL** backend, sharing domain logic ported from
 
 | Module        | Kind                    | Purpose |
 |---------------|-------------------------|---------|
-| `:core`       | KMP (jvm, wasmJs)       | Pure domain: `VerseRef`, `ChapterRef`, `VerseRange`, `Book`, `Heading`. Ported from `bible-bowl/model`. |
-| `:shared-api` | KMP (jvm, wasmJs)       | RBAC (`Role`/`Permission`), `Division`/`Round`, and serializable DTOs shared by clients **and** server. |
-| `:server`     | Ktor (JVM)              | JWT auth, RBAC-guarded question bank, `/health`; ESV proxy + Postgres + Typst PDF land here in later phases. |
-| `:app`        | Compose MP (web, desktop) | Shared UI. Android/iOS targets slot in once an Android SDK / macOS host is available. |
+| `:core`       | KMP (jvm, android, js)  | Pure domain: `VerseRef`, `ChapterRef`, `VerseRange`, `Book`, `Heading`. Ported from `bible-bowl/model`. |
+| `:shared-api` | KMP (jvm, android, js)  | RBAC (`Role`/`Permission`), `Division`/`Round`, and serializable DTOs shared by clients **and** server. |
+| `:generation` | KMP (jvm, android, js)  | Study-material generators shared by clients and server: `QuizEngine`, Typst markup builders. |
+| `:client`     | KMP (jvm, android, js)  | `TbbApi` — the typed backend client shared by the Compose apps and the web app. |
+| `:server`     | Ktor (JVM)              | JWT auth, RBAC-guarded question bank, ESV proxy + Postgres cache, Typst PDF generation. |
+| `:app`        | Compose MP (android, desktop) | Native app UI. iOS target slots in once a macOS host is available. |
+| `:web`        | Kotlin/JS (browser)     | The web app: plain-DOM screens styled with the Hugo site's CSS, deployed under `/app/` on Pages. |
 
 ## Roles (RBAC)
 
@@ -37,10 +40,10 @@ web/desktop.
 ./gradlew :server:run
 curl localhost:8080/health          # {"status":"ok","service":"texas-bible-bowl","season":"Acts"}
 
-# Web app (Compose/Wasm) — dev server with hot reload
-./gradlew :app:wasmJsBrowserRun
-# …or a production static bundle (deploy to Cloudflare/GitHub Pages)
-./gradlew :app:wasmJsBrowserDistribution   # -> app/build/dist/wasmJs/productionExecutable
+# Web app (Kotlin/JS) — production static bundle (deployed to GitHub Pages)
+./gradlew :web:jsBrowserDistribution       # -> web/build/dist/js/productionExecutable
+# …or a dev server with auto-reload
+./gradlew :web:jsBrowserRun
 
 # Desktop app (quick local visual checks)
 ./gradlew :app:desktopRun -DmainClass=net.markdrew.biblebowl.app.MainKt
@@ -93,7 +96,7 @@ Create a free project at neon.tech and copy its pooled connection string into th
 ### Web app → GitHub Pages ($0)
 
 Pushes to `main` trigger [.github/workflows/pages.yml](.github/workflows/pages.yml),
-which builds the Wasm bundle, injects the backend URL from the repo variable
+which builds the Kotlin/JS bundle, injects the backend URL from the repo variable
 `BACKEND_URL`, and publishes. To wire it up: set `BACKEND_URL` (Settings → Secrets
 and variables → Actions → Variables) to the Fly URL, and enable Pages with the
 **GitHub Actions** source.

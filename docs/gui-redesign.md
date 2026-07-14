@@ -277,3 +277,14 @@ When implementation starts (future sessions), each phase verifies as: `./gradlew
 4. **Registration:** schema + coach flow + registration desk + claim codes.
 5. **Event ops:** grading, tally, release, My Scores with owner/coach scoping; curated champions page.
 6. **Domain migration** of texasbiblebowl.org; retire the old site repo.
+
+## Addendum (July 2026): the web app is Kotlin/JS DOM, not Compose-wasm
+
+The hybrid-rendering decision in §3 originally put the Compose app on the web via the
+wasm target. In practice the canvas-rendered app never matched the Hugo site (fonts,
+scrolling, selection, load weight — ~8.6 MB), so the web target was rebuilt as `:web`:
+plain Kotlin/JS rendering real DOM, styled by Bootstrap + the site's own `custom.css`
+(~660 KB). Everything else in this document still holds — same hash routes, same
+public-first gating, same download-center card design, same seasons endpoint — and the
+Compose app remains the UI for Android/desktop/iOS. `TbbApi` moved to `:client` so both
+UIs share one backend client; `QuizEngine` and the DTOs were already shared.

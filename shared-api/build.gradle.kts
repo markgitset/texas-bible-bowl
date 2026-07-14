@@ -1,5 +1,3 @@
-import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
-
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
@@ -9,10 +7,6 @@ plugins {
 kotlin {
     jvm()
     js {
-        browser()
-    }
-    @OptIn(ExperimentalWasmDsl::class)
-    wasmJs {
         browser()
     }
     androidTarget()
