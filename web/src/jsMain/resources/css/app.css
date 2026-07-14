@@ -11,3 +11,7 @@
 .tbb-gold {
   color: var(--tbb-gold);
 }
+
+.tbb-clickable {
+  cursor: pointer;
+}
