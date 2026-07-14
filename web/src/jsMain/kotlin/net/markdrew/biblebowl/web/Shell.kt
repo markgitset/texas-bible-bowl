@@ -4,6 +4,8 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
 import net.markdrew.biblebowl.api.Permission
+import net.markdrew.biblebowl.web.screens.AccountScreen
+import net.markdrew.biblebowl.web.screens.AuthScreen
 import net.markdrew.biblebowl.web.screens.DownloadsScreen
 import net.markdrew.biblebowl.web.screens.EventScreen
 import net.markdrew.biblebowl.web.screens.HeadingsScreen
@@ -82,8 +84,8 @@ object Shell {
             Routes.QUESTIONS -> QuestionsScreen.render(container)
             Routes.DOWNLOADS -> DownloadsScreen.render(container)
             Routes.EVENT -> EventScreen.render(container)
-            Routes.SIGN_IN -> placeholder(container, "Sign in")
-            Routes.ACCOUNT -> placeholder(container, "Account")
+            Routes.SIGN_IN -> AuthScreen.render(container)
+            Routes.ACCOUNT -> AccountScreen.render(container)
             Routes.QUESTIONS_NEW -> gated(container, Permission.QUESTION_SUBMIT) {
                 placeholder(container, "Contribute a question")
             }
@@ -100,11 +102,12 @@ object Shell {
     /**
      * Renders [render] only when the signed-in user holds [permission]; otherwise the sign-in
      * screen takes the whole route (no disabled-but-visible affordances, per the redesign).
+     * The hash stays on the gated route, so signing in re-renders straight into the destination.
      */
     private fun gated(container: HTMLElement, permission: Permission, render: () -> Unit) {
         val user = Session.user
         if (user != null && permission in user.permissions) render()
-        else placeholder(container, "Sign in")
+        else AuthScreen.render(container)
     }
 
     // Phase-2 stand-in until the real screens land.
