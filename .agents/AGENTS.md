@@ -73,8 +73,10 @@ build with "Lock file was changed" — run `./gradlew kotlinUpgradeYarnLock` and
 `kotlin-js-store/yarn.lock`.
 
 ## App navigation (Compose apps + web app)
-Five public destinations (`Routes.kt` in both `:app` and `:web`): study, quiz, questions,
-downloads, event (+ signin, account, gated admin routes). No auth wall — GET routes are
+Top-level destinations (`Routes.kt` per app): the Compose app has five — study, quiz,
+questions, downloads, event; the web app has four — the event tab was removed from `:web`
+2026-07 because the Hugo site already shows season info (the Android app has no site around
+it, so its Event tab stays). Both also have signin, account, and gated admin routes. No auth wall — GET routes are
 public server-side; JWT only on submit/vote/moderate; permission-gated routes render the
 sign-in screen in place (never disabled-but-visible affordances). The Compose app uses
 JetBrains navigation-compose with an adaptive scaffold in `App.kt`; the web app uses a

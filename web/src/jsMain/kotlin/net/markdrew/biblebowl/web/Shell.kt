@@ -9,7 +9,6 @@ import net.markdrew.biblebowl.web.screens.AdminSeasonScreen
 import net.markdrew.biblebowl.web.screens.AuthScreen
 import net.markdrew.biblebowl.web.screens.ContributeScreen
 import net.markdrew.biblebowl.web.screens.DownloadsScreen
-import net.markdrew.biblebowl.web.screens.EventScreen
 import net.markdrew.biblebowl.web.screens.ModerateScreen
 import net.markdrew.biblebowl.web.screens.HeadingsScreen
 import net.markdrew.biblebowl.web.screens.IndexScreen
@@ -86,7 +85,6 @@ object Shell {
             Routes.QUIZ -> QuizScreen.render(container)
             Routes.QUESTIONS -> QuestionsScreen.render(container)
             Routes.DOWNLOADS -> DownloadsScreen.render(container)
-            Routes.EVENT -> EventScreen.render(container)
             Routes.SIGN_IN -> AuthScreen.render(container)
             Routes.ACCOUNT -> AccountScreen.render(container)
             Routes.QUESTIONS_NEW -> gated(container, Permission.QUESTION_SUBMIT) {
