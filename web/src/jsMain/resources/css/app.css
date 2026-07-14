@@ -1,0 +1,9 @@
+/*
+ * Styles specific to the study app. The shared design system (navy/gold tokens, typography,
+ * navbar, cards, buttons) comes from the Hugo site's custom.css, copied into this dist at
+ * build time — put anything both the site and the app need there instead.
+ */
+
+.tbb-spinner {
+  color: var(--tbb-navy);
+}

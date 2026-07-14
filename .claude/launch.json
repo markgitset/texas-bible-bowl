@@ -9,6 +9,13 @@
       "autoPort": true
     },
     {
+      "name": "web-js",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-8091}\" --directory web/build/dist/js/productionExecutable"],
+      "port": 8091,
+      "autoPort": true
+    },
+    {
       "name": "backend",
       "runtimeExecutable": "./gradlew",
       "runtimeArgs": [":server:run"],
