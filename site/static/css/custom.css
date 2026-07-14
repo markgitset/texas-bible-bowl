@@ -172,8 +172,9 @@ h1, .display-5 { font-weight: 700; }
 .content-body h2 { color: var(--tbb-navy); margin-top: 2rem; padding-top: .5rem; }
 .content-body h3 { color: var(--tbb-navy); margin-top: 1.5rem; }
 .content-body img { max-width: 100%; height: auto; border-radius: 6px; }
-.content-body a   { color: var(--tbb-navy); }
-.content-body a:hover { color: var(--tbb-gold); }
+/* :not(.btn) keeps these off <a class="btn"> links, whose colors Bootstrap sets */
+.content-body a:not(.btn)   { color: var(--tbb-navy); }
+.content-body a:not(.btn):hover { color: var(--tbb-gold); }
 
 /* Shared, consistent treatment for embedded photos */
 .content-body .content-photo {
