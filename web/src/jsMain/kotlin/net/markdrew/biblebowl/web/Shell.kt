@@ -5,9 +5,12 @@ import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.web.screens.AccountScreen
+import net.markdrew.biblebowl.web.screens.AdminSeasonScreen
 import net.markdrew.biblebowl.web.screens.AuthScreen
+import net.markdrew.biblebowl.web.screens.ContributeScreen
 import net.markdrew.biblebowl.web.screens.DownloadsScreen
 import net.markdrew.biblebowl.web.screens.EventScreen
+import net.markdrew.biblebowl.web.screens.ModerateScreen
 import net.markdrew.biblebowl.web.screens.HeadingsScreen
 import net.markdrew.biblebowl.web.screens.IndexScreen
 import net.markdrew.biblebowl.web.screens.QuestionsScreen
@@ -87,13 +90,13 @@ object Shell {
             Routes.SIGN_IN -> AuthScreen.render(container)
             Routes.ACCOUNT -> AccountScreen.render(container)
             Routes.QUESTIONS_NEW -> gated(container, Permission.QUESTION_SUBMIT) {
-                placeholder(container, "Contribute a question")
+                ContributeScreen.render(container)
             }
             Routes.QUESTIONS_MODERATE -> gated(container, Permission.QUESTION_MODERATE) {
-                placeholder(container, "Moderate questions")
+                ModerateScreen.render(container)
             }
             Routes.ADMIN_SEASON -> gated(container, Permission.SEASON_MANAGE) {
-                placeholder(container, "Season settings")
+                AdminSeasonScreen.render(container)
             }
             else -> StudyHubScreen.render(container) // unknown deep link → hub, same as the wasm app
         }
@@ -110,10 +113,4 @@ object Shell {
         else AuthScreen.render(container)
     }
 
-    // Phase-2 stand-in until the real screens land.
-    private fun placeholder(container: HTMLElement, title: String) {
-        container.child("h1", "page-title", title)
-        container.child("p", "text-muted", "Coming right up — this screen is being rebuilt in plain HTML.")
-        container.child("p", "", "Season: ${Session.season.eventScripture} (${Session.season.chapterCount} chapters)")
-    }
 }
