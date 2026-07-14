@@ -68,11 +68,6 @@ Gradle task names are **not** uniform across modules. Use these:
   :client:jvmTest :server:test :app:desktopTest` then `:app:assembleDebug` and
   `:web:jsBrowserDistribution` (mirrors `.github/workflows/ci.yml`).
 
-**Gotcha:** the Gradle daemon sometimes reports `compileKotlinJvm UP-TO-DATE` /
-`BUILD SUCCESSFUL` after a source edit *without recompiling*. If a run finishes
-instantly and everything is UP-TO-DATE right after you edited files, re-run with
-`--rerun-tasks` to force a real compile before trusting a green result.
-
 **Yarn-lock gotcha:** adding/removing a Kotlin/JS module (or npm-visible deps) fails the
 build with "Lock file was changed" — run `./gradlew kotlinUpgradeYarnLock` and commit
 `kotlin-js-store/yarn.lock`.
