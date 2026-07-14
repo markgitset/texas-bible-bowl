@@ -4,6 +4,8 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
 import net.markdrew.biblebowl.api.Permission
+import net.markdrew.biblebowl.web.screens.EventScreen
+import net.markdrew.biblebowl.web.screens.StudyHubScreen
 import org.w3c.dom.HTMLElement
 
 /**
@@ -34,7 +36,9 @@ object Shell {
         val route = currentRoute()
         updateNav(route)
         app.clear()
-        renderScreen(route, app)
+        // content-body opts into the site's content styles (navy headings/tables, gold link hovers).
+        val screen = app.child("div", "content-body")
+        renderScreen(route, screen)
         window.scrollTo(0.0, 0.0)
     }
 
@@ -66,13 +70,13 @@ object Shell {
 
     private fun renderScreen(route: String, container: HTMLElement) {
         when (route) {
-            Routes.STUDY -> placeholder(container, "Study")
+            Routes.STUDY -> StudyHubScreen.render(container)
             Routes.STUDY_INDICES -> placeholder(container, "Names & numbers indices")
             Routes.STUDY_HEADINGS -> placeholder(container, "Chapter headings")
             Routes.QUIZ -> placeholder(container, "Quiz")
             Routes.QUESTIONS -> placeholder(container, "Questions")
             Routes.DOWNLOADS -> placeholder(container, "Downloads")
-            Routes.EVENT -> placeholder(container, "Event")
+            Routes.EVENT -> EventScreen.render(container)
             Routes.SIGN_IN -> placeholder(container, "Sign in")
             Routes.ACCOUNT -> placeholder(container, "Account")
             Routes.QUESTIONS_NEW -> gated(container, Permission.QUESTION_SUBMIT) {
@@ -84,7 +88,7 @@ object Shell {
             Routes.ADMIN_SEASON -> gated(container, Permission.SEASON_MANAGE) {
                 placeholder(container, "Season settings")
             }
-            else -> placeholder(container, "Study") // unknown deep link → hub, same as the wasm app
+            else -> StudyHubScreen.render(container) // unknown deep link → hub, same as the wasm app
         }
     }
 
