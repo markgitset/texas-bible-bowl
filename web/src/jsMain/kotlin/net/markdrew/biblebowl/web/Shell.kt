@@ -9,6 +9,7 @@ import net.markdrew.biblebowl.web.screens.EventScreen
 import net.markdrew.biblebowl.web.screens.HeadingsScreen
 import net.markdrew.biblebowl.web.screens.IndexScreen
 import net.markdrew.biblebowl.web.screens.QuestionsScreen
+import net.markdrew.biblebowl.web.screens.QuizScreen
 import net.markdrew.biblebowl.web.screens.StudyHubScreen
 import org.w3c.dom.HTMLElement
 
@@ -77,7 +78,7 @@ object Shell {
             Routes.STUDY -> StudyHubScreen.render(container)
             Routes.STUDY_INDICES -> IndexScreen.render(container)
             Routes.STUDY_HEADINGS -> HeadingsScreen.render(container)
-            Routes.QUIZ -> placeholder(container, "Quiz")
+            Routes.QUIZ -> QuizScreen.render(container)
             Routes.QUESTIONS -> QuestionsScreen.render(container)
             Routes.DOWNLOADS -> DownloadsScreen.render(container)
             Routes.EVENT -> EventScreen.render(container)
