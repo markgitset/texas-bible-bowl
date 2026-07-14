@@ -17,8 +17,8 @@
     },
     {
       "name": "backend",
-      "runtimeExecutable": "./gradlew",
-      "runtimeArgs": [":server:run"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "ADMIN_EMAIL=admin@tbb.org ADMIN_PASSWORD=admin-secret-123 ./gradlew :server:run"],
       "port": 8080
     }
   ]
