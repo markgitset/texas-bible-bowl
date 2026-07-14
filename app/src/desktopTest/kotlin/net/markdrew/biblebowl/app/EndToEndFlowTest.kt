@@ -7,7 +7,7 @@ import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
-import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.client.TbbApi
 import java.net.HttpURLConnection
 import java.net.URI
 import kotlin.random.Random

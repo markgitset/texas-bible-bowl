@@ -29,7 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.app.ui.LocalSeason
-import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.client.TbbApi
 
 /**
  * Headings browser (docs/gui-redesign.md §5C) — the Round 5 material as a browsable list, with a

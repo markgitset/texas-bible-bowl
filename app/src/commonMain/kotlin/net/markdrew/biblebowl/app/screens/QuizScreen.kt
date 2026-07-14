@@ -35,7 +35,7 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.model.Round
-import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.ui.ChapterChips
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 

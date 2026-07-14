@@ -1,4 +1,4 @@
-package net.markdrew.biblebowl.app.net
+package net.markdrew.biblebowl.client
 
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
@@ -101,6 +101,29 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
                 contentType(ContentType.Application.Json); setBody(req)
             }.bodyOrThrow()
         )
+
+    /** Fetches the signed-in user's profile (requires a token). */
+    suspend fun me(): UserDto = client.get("$baseUrl/auth/me") { authorize() }.bodyOrThrow()
+
+    /**
+     * Adopts a previously issued [token] (e.g. restored from the browser's localStorage) and rehydrates
+     * [user] via `/auth/me`. Returns the user, or null — dropping the token — if the server rejects it
+     * as no longer valid. Other failures (offline, cold start) keep the token and rethrow so the caller
+     * can decide what a transient error means for it.
+     */
+    suspend fun restoreSession(token: String): UserDto? {
+        this.token = token
+        return try {
+            me().also { user = it }
+        } catch (e: ApiException) {
+            if (e.status == 401 || e.status == 403) {
+                signOut()
+                null
+            } else {
+                throw e
+            }
+        }
+    }
 
     /** Lists questions; the server defaults to APPROVED when [status] is null. */
     suspend fun questions(status: QuestionStatus? = null, chapter: Int? = null): List<QuestionDto> =
@@ -232,7 +255,7 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
             ?.let { runCatching { errorJson.decodeFromString<ApiError>(it).message }.getOrNull() }
             ?: raw?.takeIf { it.isNotBlank() }
             ?: "Server returned $status"
-        throw ApiException(message)
+        throw ApiException(message, status.value)
     }
 
     companion object {
@@ -243,5 +266,8 @@ class TbbApi(private val baseUrl: String = defaultBaseUrl()) {
     }
 }
 
-/** Thrown when a backend request fails; [message] carries the server's human-readable reason. */
-class ApiException(message: String) : Exception(message)
+/**
+ * Thrown when a backend request fails; [message] carries the server's human-readable reason and
+ * [status] the HTTP status code (null when the failure happened before a response arrived).
+ */
+class ApiException(message: String, val status: Int? = null) : Exception(message)

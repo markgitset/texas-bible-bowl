@@ -1,4 +1,4 @@
-package net.markdrew.biblebowl.app.net
+package net.markdrew.biblebowl.client
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
@@ -14,6 +14,6 @@ actual fun createHttpClient(): HttpClient = HttpClient(Js) {
 
 /**
  * Reads the backend URL from a `window.TBB_BACKEND_URL` global the host page may define (the GitHub Pages
- * publish step injects the Fly URL). Absent in local `wasmJsBrowserRun`, so it falls back to localhost.
+ * publish step injects the Fly URL). Absent when served locally, so it falls back to localhost.
  */
 actual fun defaultBaseUrl(): String = js("window.TBB_BACKEND_URL || 'http://localhost:8080'")

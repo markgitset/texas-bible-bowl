@@ -35,7 +35,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.model.Round
-import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.platform.Mime
 import net.markdrew.biblebowl.app.platform.saveFile
 import net.markdrew.biblebowl.app.ui.ChapterChips

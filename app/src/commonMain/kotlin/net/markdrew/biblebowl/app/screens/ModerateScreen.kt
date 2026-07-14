@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
-import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.ui.LocalSeason
 
 @Composable

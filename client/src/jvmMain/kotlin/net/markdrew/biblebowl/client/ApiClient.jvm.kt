@@ -1,4 +1,4 @@
-package net.markdrew.biblebowl.app.net
+package net.markdrew.biblebowl.client
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO

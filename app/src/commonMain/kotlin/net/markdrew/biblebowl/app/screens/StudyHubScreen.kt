@@ -19,7 +19,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import net.markdrew.biblebowl.app.ui.LocalSeason
-import net.markdrew.biblebowl.app.ui.schoolYear
+import net.markdrew.biblebowl.api.schoolYear
 
 
 /**

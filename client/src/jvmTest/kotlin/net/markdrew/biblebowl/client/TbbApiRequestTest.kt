@@ -1,9 +1,9 @@
-package net.markdrew.biblebowl.app
+package net.markdrew.biblebowl.client
 
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
 import net.markdrew.biblebowl.model.Round
-import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.client.TbbApi
 import java.net.InetSocketAddress
 import kotlin.test.AfterTest
 import kotlin.test.Test

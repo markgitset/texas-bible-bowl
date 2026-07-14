@@ -43,7 +43,7 @@ import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.app.navigation.Routes
 import net.markdrew.biblebowl.app.navigation.TopDestination
 import net.markdrew.biblebowl.app.navigation.topDestinationOf
-import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.screens.AccountScreen
 import net.markdrew.biblebowl.app.screens.AuthScreen
 import net.markdrew.biblebowl.app.screens.ContributeScreen
@@ -56,7 +56,7 @@ import net.markdrew.biblebowl.app.screens.QuestionsScreen
 import net.markdrew.biblebowl.app.screens.QuizScreen
 import net.markdrew.biblebowl.app.screens.StudyHubScreen
 import net.markdrew.biblebowl.app.screens.AdminSeasonScreen
-import net.markdrew.biblebowl.app.ui.FALLBACK_SEASON
+import net.markdrew.biblebowl.api.FALLBACK_SEASON
 import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.app.ui.TbbTheme
 

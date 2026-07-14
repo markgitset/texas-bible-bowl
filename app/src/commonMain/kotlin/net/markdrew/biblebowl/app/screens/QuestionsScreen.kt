@@ -39,7 +39,7 @@ import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.app.ui.LocalSeason
-import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.ui.ChapterChips
 
 /**

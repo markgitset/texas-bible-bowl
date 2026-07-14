@@ -38,6 +38,7 @@ kotlin {
             implementation(project(":core"))
             implementation(project(":shared-api"))
             implementation(project(":generation"))
+            implementation(project(":client"))
 
             implementation(compose.runtime)
             implementation(compose.foundation)
@@ -49,16 +50,10 @@ kotlin {
 
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
-
-            // Shared networking to the Ktor backend (engine chosen per platform below).
-            implementation(libs.ktor.client.core)
-            implementation(libs.ktor.client.content.negotiation)
-            implementation(libs.ktor.serialization.json)
         }
 
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
-            implementation(libs.ktor.client.cio)
             implementation(libs.kotlinx.coroutines.core)
         }
 
@@ -67,16 +62,8 @@ kotlin {
             implementation(kotlin("test"))
         }
 
-        val wasmJsMain by getting
-        wasmJsMain.dependencies {
-            implementation(libs.ktor.client.js)
-        }
-
         androidMain.dependencies {
             implementation(libs.androidx.activity.compose)
-            // OkHttp (not CIO) on Android: it implements the hostname-aware TLS trust check that
-            // Android's network-security-config requires — CIO throws on any custom domain-config.
-            implementation(libs.ktor.client.okhttp)
         }
     }
 }

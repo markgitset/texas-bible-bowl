@@ -41,8 +41,8 @@ import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.app.ui.LocalSeason
-import net.markdrew.biblebowl.app.ui.schoolYear
-import net.markdrew.biblebowl.app.net.TbbApi
+import net.markdrew.biblebowl.api.schoolYear
+import net.markdrew.biblebowl.client.TbbApi
 
 @Composable
 fun AuthScreen(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
