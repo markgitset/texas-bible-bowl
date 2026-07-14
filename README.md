@@ -59,7 +59,9 @@ curl localhost:8080/health          # {"status":"ok","service":"texas-bible-bowl
 - `ESV_API_TOKEN` — licensed ESV API token (server-side only, never shipped to clients).
 - `ALLOWED_ORIGINS` — comma-separated web origins for CORS (e.g. `https://markgitset.github.io`);
   unset stays permissive for dev.
-- `ADMIN_EMAIL` / `ADMIN_PASSWORD` — optional first-run admin bootstrap.
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD` — optional admin bootstrap, honored **only in the
+  in-memory (no `DATABASE_URL`) dev mode**. Grant the first admin of a real database
+  directly in SQL.
 
 ## Deployment (target: < $50/yr infrastructure)
 
