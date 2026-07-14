@@ -119,7 +119,13 @@ This renders the real pipeline without hitting Crossway.
 
 ## Conventions
 - **No `Co-Authored-By: Claude` trailer** in commit messages (Mark's standing preference).
-- Commit + push at each significant step (standing instruction).
+- Commit at each significant step (standing instruction), but **never push directly to
+  `main`** (Mark, 2026-07-13): main is branch-protected (PRs + green `build-and-test`
+  required) — work on a branch and open a PR; do not bypass the protection rules.
+- The local dev admin (`admin@tbb.org` / `admin-secret-123`) is passed by
+  `.claude/launch.json` **only when `DATABASE_URL` is unset** — the server's env-var admin
+  seeding itself works in any mode (a fresh prod DB seeds its first admin from fly
+  secrets; Mark wants that behavior kept).
 - ESV license is a non-profit license: the ESV token, text cache, and all analysis
   caching stay **server-side only**.
 

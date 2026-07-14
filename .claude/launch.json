@@ -11,7 +11,7 @@
     {
       "name": "backend",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "ADMIN_EMAIL=admin@tbb.org ADMIN_PASSWORD=admin-secret-123 ./gradlew :server:run"],
+      "runtimeArgs": ["-c", "if [ -z \"$DATABASE_URL\" ]; then export ADMIN_EMAIL=admin@tbb.org ADMIN_PASSWORD=admin-secret-123; fi; ./gradlew :server:run"],
       "port": 8080
     }
   ]
