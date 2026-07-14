@@ -98,10 +98,7 @@ fun Application.module(
     seasons: SeasonRepository = InMemorySeasonRepository(),
     pdfCache: PdfCache? = null,
 ) {
-    // In-memory (dev) mode only: never seed into Postgres, so a local run accidentally pointed at a
-    // real DATABASE_URL can't plant the well-known dev admin from .claude/launch.json. A fresh
-    // production database gets its first admin granted directly in SQL instead.
-    if (users is InMemoryUserRepository) seedAdminFromEnv(users)
+    seedAdminFromEnv(users)
 
     install(ContentNegotiation) {
         json(Json { ignoreUnknownKeys = true; encodeDefaults = true })
@@ -192,7 +189,7 @@ private fun Application.warmStudyCache(study: StudyDataService?) {
     }
 }
 
-/** Bootstraps a global admin from ADMIN_EMAIL / ADMIN_PASSWORD env vars (dev in-memory mode only). */
+/** Optionally bootstraps a global admin from ADMIN_EMAIL / ADMIN_PASSWORD env vars on first run. */
 private fun seedAdminFromEnv(users: UserRepository) {
     val email = System.getenv("ADMIN_EMAIL") ?: return
     val password = System.getenv("ADMIN_PASSWORD") ?: return
