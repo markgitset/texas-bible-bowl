@@ -77,6 +77,22 @@ object TextAnnotationsTable : Table("text_annotations") {
     override val primaryKey = PrimaryKey(studySet, sourceKey)
 }
 
+/**
+ * Cache of compiled season-text PDFs (the Typst compile is the expensive part of every /generate
+ * request). Keyed by the canonical param-encoded filename (see shared-api's PdfFileNames), so the
+ * key itself spells out how each PDF was generated. A row is valid only while [contentStamp]
+ * matches the current study text + word-list digest; generation-code changes are invalidated
+ * manually via `DELETE /generate/cache`.
+ */
+object GeneratedPdfsTable : Table("generated_pdfs") {
+    val studySet = varchar("study_set", 64)
+    val fileName = varchar("file_name", 160)
+    val contentStamp = integer("content_stamp")
+    val createdAtEpochMs = long("created_at_epoch_ms")
+    val body = binary("body") // bytea
+    override val primaryKey = PrimaryKey(studySet, fileName)
+}
+
 /** JDBC url + credentials, however they were supplied (a single PG URL or separate env vars). */
 data class DbSettings(val jdbcUrl: String, val user: String?, val password: String?) {
     companion object {
@@ -132,7 +148,7 @@ object DatabaseFactory {
         transaction(db) {
             SchemaUtils.create(
                 UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable, EsvChaptersTable,
-                TextAnnotationsTable, SeasonsTable,
+                TextAnnotationsTable, GeneratedPdfsTable, SeasonsTable,
             )
         }
         return db

@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.client
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -18,6 +19,7 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
+import net.markdrew.biblebowl.api.ClearPdfCacheResponse
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.LoginRequest
@@ -241,6 +243,13 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
             if (round != null) parameter("round", round.name)
             if (chapter != null) parameter("chapter", chapter)
         }.bodyOrThrow()
+
+    /**
+     * Drops every server-cached generated PDF so the next download of each regenerates (for when the
+     * generation code changes; requires SEASON_MANAGE). Returns how many were cleared.
+     */
+    suspend fun clearPdfCache(): ClearPdfCacheResponse =
+        client.delete("$baseUrl/generate/cache") { authorize() }.bodyOrThrow()
 
     /**
      * Returns the response body decoded as [T], or throws [ApiException] with the server's error message on

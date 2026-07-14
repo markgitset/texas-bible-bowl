@@ -170,6 +170,14 @@ data class SeasonDto(
 )
 
 // ---------------------------------------------------------------------------
+// Generated-PDF cache administration
+// ---------------------------------------------------------------------------
+
+/** Result of `DELETE /generate/cache`: how many cached PDFs were dropped. */
+@Serializable
+data class ClearPdfCacheResponse(val cleared: Int)
+
+// ---------------------------------------------------------------------------
 // Generic API envelope for errors
 // ---------------------------------------------------------------------------
 

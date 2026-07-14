@@ -52,6 +52,16 @@ class StudyDataService(
     /** The season's names index (every proper name → its verses) as wire DTOs, using the cached resolution. */
     suspend fun names(): List<IndexEntryDto> = namesIndex(studyData(), categoryResolution()).map { it.toDto() }
 
+    /** Word-list/override digest, memoized: it hashes classpath resources, not per-request state. */
+    private val defDigest: String by lazy { WordList.categoryAnnotator(studySet).defDigest }
+
+    /**
+     * Validity stamp for cached generated PDFs: changes whenever the season text or the word-list/
+     * override definitions change, so cached PDFs auto-invalidate on a season rollover or a curated-
+     * list update. Generation-code changes are covered by the manual admin cache clear instead.
+     */
+    suspend fun contentStamp(): Int = 31 * studyData().text.hashCode() + defDigest.hashCode()
+
     @Volatile private var resolution: DisjointRangeMap<String>? = null
 
     /**

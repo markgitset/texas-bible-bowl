@@ -4,16 +4,21 @@ import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.server.auth.authenticate
 import io.ktor.server.plugins.ratelimit.RateLimitName
 import io.ktor.server.plugins.ratelimit.rateLimit
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.markdrew.biblebowl.api.ApiError
+import net.markdrew.biblebowl.api.ClearPdfCacheResponse
+import net.markdrew.biblebowl.api.PdfFileNames
+import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.generate.practice.PracticeTest
@@ -32,10 +37,14 @@ import net.markdrew.biblebowl.generation.typst.practiceTestTypst
 import net.markdrew.biblebowl.generation.typst.toFlashcards
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.server.data.QuestionRepository
+import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.esv.EsvUpstreamException
 import net.markdrew.biblebowl.server.export.KahootQuestion
 import net.markdrew.biblebowl.server.export.kahootXlsx
 import net.markdrew.biblebowl.server.export.quizletTsv
+import net.markdrew.biblebowl.server.security.currentUser
+import net.markdrew.biblebowl.server.security.requirePermission
+import net.markdrew.biblebowl.server.study.PdfCache
 import net.markdrew.biblebowl.server.study.StudyDataService
 import net.markdrew.biblebowl.server.typst.TypstCompiler
 import net.markdrew.biblebowl.server.typst.TypstException
@@ -45,7 +54,12 @@ import kotlin.random.nextInt
 /** Name of the per-client rate limit applied to the generate endpoints (Typst compiles are CPU-bound). */
 val GENERATE_RATE_LIMIT = RateLimitName("generate")
 
-fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService? = null) {
+fun Route.generateRoutes(
+    users: UserRepository,
+    questions: QuestionRepository,
+    study: StudyDataService? = null,
+    pdfCache: PdfCache? = null,
+) {
     // Public (study material never requires sign-in), but rate-limited per client: each request
     // shells out to Typst, so an anonymous hot loop must not be able to pin the CPU.
     rateLimit(GENERATE_RATE_LIMIT) {
@@ -137,12 +151,22 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
             // Categorized name/number highlighting is the point of the download, so it's on by default.
             val highlight = qp["highlight"]?.toBooleanStrictOrNull() ?: true
             try {
-                val typst = if (highlight) {
-                    highlightedBibleTextTypst(study.studyData(), study.categoryResolution(), options)
-                } else {
-                    bibleTextTypst(study.studyData(), options)
+                // Named from the coerced options, so out-of-range requests share the row they resolve to.
+                val fileName = PdfFileNames.bibleText(
+                    highlight = highlight,
+                    twoColumns = options.twoColumns,
+                    justified = options.justified,
+                    chapterBreaksPage = options.chapterBreaksPage,
+                    underlineUniqueWords = options.underlineUniqueWords,
+                    fontSize = options.fontSize,
+                )
+                respondCachedPdf(study, pdfCache, fileName) {
+                    if (highlight) {
+                        highlightedBibleTextTypst(study.studyData(), study.categoryResolution(), options)
+                    } else {
+                        bibleTextTypst(study.studyData(), options)
+                    }
                 }
-                respondPdf(typst, "bible-text${if (highlight) "-highlighted" else ""}.pdf")
             } catch (e: EsvUpstreamException) {
                 call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
             }
@@ -157,7 +181,9 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
                 )
             }
             try {
-                respondPdf(numbersIndexTypst(study.studyData()), "numbers-index.pdf")
+                respondCachedPdf(study, pdfCache, PdfFileNames.numbersIndex()) {
+                    numbersIndexTypst(study.studyData())
+                }
             } catch (e: EsvUpstreamException) {
                 call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
             }
@@ -172,7 +198,9 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
                 )
             }
             try {
-                respondPdf(indexTypst(study.studyData(), namesIndex(study.studyData(), study.categoryResolution()), "Name"), "names-index.pdf")
+                respondCachedPdf(study, pdfCache, PdfFileNames.namesIndex()) {
+                    indexTypst(study.studyData(), namesIndex(study.studyData(), study.categoryResolution()), "Name")
+                }
             } catch (e: EsvUpstreamException) {
                 call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
             }
@@ -205,23 +233,35 @@ fun Route.generateRoutes(questions: QuestionRepository, study: StudyDataService?
             val throughChapter = call.request.queryParameters["throughChapter"]?.toIntOrNull()
 
             try {
-                val headings = study.studyData().headings
-                    .filter { throughChapter == null || it.chapterRange.start.chapter <= throughChapter }
-                val cards = headings.map { h ->
-                    Flashcard(
-                        front = h.title,
-                        back = "Chapter ${h.chapterRange.start.chapter}",
-                        note = h.verseRange.format(NO_BOOK_FORMAT),
-                        footer = "${h.index} of ${h.maxIndex}",
-                    )
+                respondCachedPdf(study, pdfCache, PdfFileNames.headingFlashcards(throughChapter)) {
+                    val headings = study.studyData().headings
+                        .filter { throughChapter == null || it.chapterRange.start.chapter <= throughChapter }
+                    val cards = headings.map { h ->
+                        Flashcard(
+                            front = h.title,
+                            back = "Chapter ${h.chapterRange.start.chapter}",
+                            note = h.verseRange.format(NO_BOOK_FORMAT),
+                            footer = "${h.index} of ${h.maxIndex}",
+                        )
+                    }
+                    flashcardsTypst(cards)
                 }
-                respondPdf(
-                    flashcardsTypst(cards),
-                    "heading-flashcards${throughChapter?.let { "-through-ch$it" } ?: ""}.pdf",
-                )
             } catch (e: EsvUpstreamException) {
                 call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
             }
+        }
+    }
+
+    authenticate {
+        // DELETE /generate/cache — admin: drop every cached PDF (each regenerates on its next request).
+        // For when the generation code changes; season/word-list changes invalidate automatically via
+        // the content stamp. Gated on SEASON_MANAGE rather than a new Permission value: deployed wasm
+        // clients deserialize UserDto.permissions and would break on an unknown enum entry.
+        delete("/generate/cache") {
+            val user = currentUser(users) ?: return@delete
+            if (!requirePermission(user, Permission.SEASON_MANAGE)) return@delete
+            val cleared = pdfCache?.let { withContext(Dispatchers.IO) { it.clear() } } ?: 0
+            call.respond(ClearPdfCacheResponse(cleared))
         }
     }
 }
@@ -386,13 +426,34 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondAttachment(
 private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(typstSource: String, fileName: String) {
     try {
         val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(typstSource) }
-        call.response.header(
-            HttpHeaders.ContentDisposition,
-            ContentDisposition.Attachment.withParameter(
-                ContentDisposition.Parameters.FileName, fileName,
-            ).toString(),
-        )
-        call.respondBytes(pdf, ContentType.Application.Pdf)
+        respondAttachment(pdf, fileName, ContentType.Application.Pdf)
+    } catch (e: TypstException) {
+        call.respond(HttpStatusCode.ServiceUnavailable, ApiError("typst_failed", e.message ?: "PDF generation failed"))
+    }
+}
+
+/**
+ * Serves the PDF from [pdfCache] when a row matches ([fileName], content stamp) — skipping both the
+ * Typst compile and the markup build entirely — otherwise builds [typstSource], compiles, stores, and
+ * responds. [fileName] doubles as the cache key, so it must encode every generation param (use
+ * [PdfFileNames]). Concurrent misses may compile twice; the upsert makes that benign. May throw
+ * [EsvUpstreamException] (resolving the stamp needs the study text) — callers already catch it.
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.respondCachedPdf(
+    study: StudyDataService,
+    pdfCache: PdfCache?,
+    fileName: String,
+    typstSource: suspend () -> String,
+) {
+    val studySet = study.studySet.simpleName
+    val stamp = study.contentStamp()
+    val cached = pdfCache?.let { cache -> withContext(Dispatchers.IO) { cache.get(studySet, fileName, stamp) } }
+    if (cached != null) return respondAttachment(cached, fileName, ContentType.Application.Pdf)
+    val source = typstSource()
+    try {
+        val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(source) }
+        pdfCache?.let { cache -> withContext(Dispatchers.IO) { cache.put(studySet, fileName, stamp, pdf) } }
+        respondAttachment(pdf, fileName, ContentType.Application.Pdf)
     } catch (e: TypstException) {
         call.respond(HttpStatusCode.ServiceUnavailable, ApiError("typst_failed", e.message ?: "PDF generation failed"))
     }

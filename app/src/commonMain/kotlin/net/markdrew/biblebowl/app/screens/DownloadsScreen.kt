@@ -34,6 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.PdfFileNames
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.platform.Mime
@@ -106,16 +107,15 @@ fun DownloadsScreen(api: TbbApi) {
     // either button yields the customized document, and the file name spells out the options.
     fun downloadStudyText() {
         val c = textChoices
-        val name = buildString {
-            append("bible-text")
-            if (c.highlight) append("-highlighted")
-            if (c.twoColumns) append("-2col")
-            if (c.justified) append("-justified")
-            if (c.chapterBreaksPage) append("-page-per-ch")
-            if (c.underlineUniqueWords) append("-unique-words")
-            if (c.fontSize != 11) append("-${c.fontSize}pt")
-            append(".pdf")
-        }
+        // Shared with the server, which uses the same name as its cache key and attachment name.
+        val name = PdfFileNames.bibleText(
+            highlight = c.highlight,
+            twoColumns = c.twoColumns,
+            justified = c.justified,
+            chapterBreaksPage = c.chapterBreaksPage,
+            underlineUniqueWords = c.underlineUniqueWords,
+            fontSize = c.fontSize,
+        )
         download("Highlighted study text", name) {
             api.bibleTextPdf(
                 fontSize = c.fontSize.takeIf { it != 11 },
@@ -205,7 +205,7 @@ fun DownloadsScreen(api: TbbApi) {
                 (chapter?.let { " Through chapter $it." } ?: ""),
             busyCard = busyCard,
             onClick = {
-                download("Chapter-heading flashcards", "heading-flashcards$throughSuffix.pdf") {
+                download("Chapter-heading flashcards", PdfFileNames.headingFlashcards(chapter)) {
                     api.headingFlashcardsPdf(chapter)
                 }
             },
@@ -216,13 +216,13 @@ fun DownloadsScreen(api: TbbApi) {
             title = "Names index",
             subtitle = "Every proper name in ${LocalSeason.current.eventScripture} with its verses — alphabetical and by frequency.",
             busyCard = busyCard,
-            onClick = { download("Names index", "names-index.pdf") { api.namesIndexPdf() } },
+            onClick = { download("Names index", PdfFileNames.namesIndex()) { api.namesIndexPdf() } },
         )
         DownloadCard(
             title = "Numbers index",
             subtitle = "Every number in ${LocalSeason.current.eventScripture} with its verses — alphabetical and by frequency.",
             busyCard = busyCard,
-            onClick = { download("Numbers index", "numbers-index.pdf") { api.numbersIndexPdf() } },
+            onClick = { download("Numbers index", PdfFileNames.numbersIndex()) { api.numbersIndexPdf() } },
         )
 
         GroupHeader("Practice tests")

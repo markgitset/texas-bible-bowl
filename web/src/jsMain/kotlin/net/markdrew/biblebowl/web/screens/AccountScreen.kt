@@ -1,11 +1,15 @@
 package net.markdrew.biblebowl.web.screens
 
+import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.web.Routes
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
+import net.markdrew.biblebowl.web.clear
 import net.markdrew.biblebowl.web.onClick
+import org.w3c.dom.Element
+import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
 
 /**
@@ -44,12 +48,41 @@ object AccountScreen {
                 child("a", "btn btn-outline-primary", "Season settings") {
                     setAttribute("href", "#${Routes.ADMIN_SEASON}")
                 }
+                clearPdfCacheButton(this)
             }
             child("button", "btn btn-outline-primary", "Sign out") {
                 setAttribute("type", "button")
                 onClick {
                     Session.signOut()
                     Shell.navigate(Routes.STUDY)
+                }
+            }
+        }
+    }
+
+    /**
+     * Admin: drops the server's compiled-PDF cache so every study document regenerates on its next
+     * download — for after a generation-code change (season/word-list changes invalidate on their own).
+     */
+    private fun clearPdfCacheButton(container: Element) {
+        val button = container.child("button", "btn btn-outline-primary", "Clear PDF cache") {
+            setAttribute("type", "button")
+        } as HTMLButtonElement
+        val messageSlot = container.child("div")
+        button.onClick {
+            button.disabled = true
+            messageSlot.clear()
+            Shell.scope.launch {
+                try {
+                    val cleared = Session.api.clearPdfCache().cleared
+                    messageSlot.child(
+                        "p", "tbb-gold fw-semibold mb-0",
+                        "Cleared $cleared cached PDF(s) — next downloads regenerate.",
+                    )
+                } catch (e: Throwable) {
+                    messageSlot.child("p", "text-danger mb-0", "Clear failed: ${e.message}")
+                } finally {
+                    button.disabled = false
                 }
             }
         }

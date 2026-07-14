@@ -270,6 +270,7 @@ private fun AppNavHost(
         }
         composable(Routes.ACCOUNT) {
             AccountScreen(
+                api = api,
                 user = user,
                 onSignOut = {
                     api.signOut()

@@ -51,7 +51,10 @@ import net.markdrew.biblebowl.server.routes.seasonRoutes
 import net.markdrew.biblebowl.server.routes.studyRoutes
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
+import net.markdrew.biblebowl.server.study.InMemoryPdfCache
+import net.markdrew.biblebowl.server.study.PdfCache
 import net.markdrew.biblebowl.server.study.PostgresAnnotationCache
+import net.markdrew.biblebowl.server.study.PostgresPdfCache
 import net.markdrew.biblebowl.server.study.StudyDataService
 
 fun main() {
@@ -75,8 +78,10 @@ fun main() {
     // Persist the text-analysis (highlight category) resolution in Postgres when available, so it survives
     // scale-to-zero restarts instead of being recomputed on each cold start.
     val study = StudyDataService(esv, annotationCache = db?.let(::PostgresAnnotationCache))
+    // Compiled-PDF cache: Postgres in prod (survives scale-to-zero), bounded in-memory in local dev.
+    val pdfCache = db?.let(::PostgresPdfCache) ?: InMemoryPdfCache()
     embeddedServer(Netty, port = port, host = "0.0.0.0") {
-        module(users, questions, esv = esv, study = study, seasons = seasons)
+        module(users, questions, esv = esv, study = study, seasons = seasons, pdfCache = pdfCache)
     }.start(wait = true)
 }
 
@@ -91,6 +96,7 @@ fun Application.module(
     esv: EsvPassageService? = null,
     study: StudyDataService? = esv?.let(::StudyDataService),
     seasons: SeasonRepository = InMemorySeasonRepository(),
+    pdfCache: PdfCache? = null,
 ) {
     seedAdminFromEnv(users)
 
@@ -154,7 +160,7 @@ fun Application.module(
         questionRoutes(users, questions)
         bibleRoutes(esv)
         studyRoutes(study)
-        generateRoutes(questions, study)
+        generateRoutes(users, questions, study, pdfCache)
         seasonRoutes(users, seasons)
     }
 

@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.client
 
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
+import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
 import java.net.InetSocketAddress
@@ -18,13 +19,24 @@ import kotlin.test.assertTrue
 class TbbApiRequestTest {
 
     private val requests = mutableListOf<String>()
+    private val methods = mutableListOf<String>()
+    private val authHeaders = mutableListOf<String?>()
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/") { exchange ->
             requests += exchange.requestURI.toString()
-            val body = "%PDF-1.7 fake".toByteArray()
-            exchange.responseHeaders.add("Content-Type", "application/pdf")
-            exchange.sendResponseHeaders(200, body.size.toLong())
-            exchange.responseBody.use { it.write(body) }
+            methods += exchange.requestMethod
+            authHeaders += exchange.requestHeaders.getFirst("Authorization")
+            val (body, contentType) = when (exchange.requestURI.path) {
+                "/auth/login" ->
+                    """{"token":"tok123","user":{"id":"u1","email":"admin@tbb.org","displayName":"Admin"}}""" to
+                        "application/json"
+                "/generate/cache" -> """{"cleared":3}""" to "application/json"
+                else -> "%PDF-1.7 fake" to "application/pdf"
+            }
+            val bytes = body.toByteArray()
+            exchange.responseHeaders.add("Content-Type", contentType)
+            exchange.sendResponseHeaders(200, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
         }
         start()
     }
@@ -64,5 +76,15 @@ class TbbApiRequestTest {
         listOf("round=FIND_THE_VERSE", "chapter=7", "limit=20", "seed=1234").forEach { param ->
             assertTrue(param in uri, "expected $param in $uri")
         }
+    }
+
+    @Test
+    fun clearPdfCacheSendsAuthorizedDelete() = runBlocking {
+        api.login(LoginRequest("admin@tbb.org", "supersecret"))
+        val res = api.clearPdfCache()
+        assertEquals(3, res.cleared)
+        assertEquals("DELETE", methods.last())
+        assertEquals("/generate/cache", requests.last())
+        assertEquals("Bearer tok123", authHeaders.last(), "the clear must carry the signed-in token")
     }
 }
