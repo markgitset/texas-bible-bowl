@@ -138,4 +138,6 @@ LEADING_FOOTNOTE,FOOTNOTE)`. Feature layers are added on top:
 - **Small-caps** — handled inline in `emitText` (`LORD` → `#smallcaps[Lord]`); no layer.
 
 Endpoint: `GET /generate/bible-text.pdf?fontSize&twoColumns&justified&chapterBreaksPage&
-highlight&underlineUniqueWords` (highlight on by default).
+useHeadingsForChapters&chapterEndLines&verseOnNewLine&highlight&underlineUniqueWords`
+(highlight on by default). The footer stamps the season's event dates ("April 2–4, 2027"),
+not the generation date; the cached-PDF stamp is salted with that date line.

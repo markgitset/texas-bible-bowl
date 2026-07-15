@@ -14,15 +14,34 @@ class PdfFileNamesTest {
     @Test
     fun bibleTextEncodesEveryOptionInOrder() {
         assertEquals(
-            "bible-text-highlighted-2col-justified-page-per-ch-unique-words-14pt.pdf",
+            "bible-text-highlighted-2col-justified-page-per-ch-ch-headings-ch-lines-verse-per-line-unique-words-14pt.pdf",
             PdfFileNames.bibleText(
                 highlight = true,
                 twoColumns = true,
                 justified = true,
                 chapterBreaksPage = true,
+                useHeadingsForChapters = true,
+                chapterEndLines = true,
+                verseOnNewLine = true,
                 underlineUniqueWords = true,
                 fontSize = 14,
             ),
+        )
+    }
+
+    @Test
+    fun bibleTextEncodesTheChapterAndVerseLayoutOptions() {
+        assertEquals(
+            "bible-text-highlighted-ch-headings.pdf",
+            PdfFileNames.bibleText(useHeadingsForChapters = true),
+        )
+        assertEquals(
+            "bible-text-highlighted-ch-headings-ch-lines.pdf",
+            PdfFileNames.bibleText(useHeadingsForChapters = true, chapterEndLines = true),
+        )
+        assertEquals(
+            "bible-text-highlighted-verse-per-line.pdf",
+            PdfFileNames.bibleText(verseOnNewLine = true),
         )
     }
 

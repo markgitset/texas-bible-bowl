@@ -50,12 +50,21 @@ private sealed interface Customize {
     data class Export(val kahoot: Boolean) : Customize
 }
 
+/** How chapter titles render: inline with the first verse, or as standalone headings (± divider lines). */
+private enum class ChapterStyle(val label: String, val headings: Boolean, val lines: Boolean) {
+    INLINE("Inline", headings = false, lines = false),
+    HEADING("Heading", headings = true, lines = false),
+    HEADING_LINES("Heading with lines", headings = true, lines = true),
+}
+
 /** Study-text options, hoisted so choices stick for the whole visit (§7.6 "remember everything cheap"). */
 private data class StudyTextChoices(
     val fontSize: Int = 11,
     val twoColumns: Boolean = false,
     val justified: Boolean = false,
     val chapterBreaksPage: Boolean = false,
+    val chapterStyle: ChapterStyle = ChapterStyle.INLINE,
+    val verseOnNewLine: Boolean = false,
     val highlight: Boolean = true,
     val underlineUniqueWords: Boolean = false,
 )
@@ -113,6 +122,9 @@ fun DownloadsScreen(api: TbbApi) {
             twoColumns = c.twoColumns,
             justified = c.justified,
             chapterBreaksPage = c.chapterBreaksPage,
+            useHeadingsForChapters = c.chapterStyle.headings,
+            chapterEndLines = c.chapterStyle.lines,
+            verseOnNewLine = c.verseOnNewLine,
             underlineUniqueWords = c.underlineUniqueWords,
             fontSize = c.fontSize,
         )
@@ -122,6 +134,9 @@ fun DownloadsScreen(api: TbbApi) {
                 twoColumns = c.twoColumns,
                 justified = c.justified,
                 chapterBreaksPage = c.chapterBreaksPage,
+                useHeadingsForChapters = c.chapterStyle.headings,
+                chapterEndLines = c.chapterStyle.lines,
+                verseOnNewLine = c.verseOnNewLine,
                 highlight = c.highlight,
                 underlineUniqueWords = c.underlineUniqueWords,
             )
@@ -328,6 +343,19 @@ private fun StudyTextOptions(
     OptionSwitch("Justified text", choices.justified) { onChange(choices.copy(justified = it)) }
     OptionSwitch("Each chapter starts a new page", choices.chapterBreaksPage) {
         onChange(choices.copy(chapterBreaksPage = it))
+    }
+    OptionSwitch("Each verse starts a new line", choices.verseOnNewLine) {
+        onChange(choices.copy(verseOnNewLine = it))
+    }
+    Text("Chapter titles", style = MaterialTheme.typography.labelLarge)
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        ChapterStyle.entries.forEach { style ->
+            FilterChip(
+                selected = choices.chapterStyle == style,
+                onClick = { onChange(choices.copy(chapterStyle = style)) },
+                label = { Text(style.label) },
+            )
+        }
     }
     OptionSwitch("Highlight names & numbers by category", choices.highlight) {
         onChange(choices.copy(highlight = it))

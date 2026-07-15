@@ -78,4 +78,32 @@ class BibleTextTypstTest {
         assertTrue(oneCol.contains("columns: 1"))
         assertTrue(twoCol.contains("columns: 2"))
     }
+
+    @Test
+    fun footerStampsTheProvidedDateLine() {
+        val typst = bibleTextTypst(genesis1(), TextOptions(dateLine = "April 2–4, 2027"))
+        assertTrue(typst.contains("Texas Bible Bowl, April 2–4, 2027"), "footer carries the date line verbatim")
+    }
+
+    @Test
+    fun chapterTitleOptionsAreHonored() {
+        val inline = bibleTextTypst(genesis1())
+        assertTrue(!inline.contains("#chapter-heading["), "default renders the chapter label inline")
+        assertTrue(inline.contains("*Chapter 1*"), "inline label opens the chapter's first verse")
+
+        val headings = bibleTextTypst(genesis1(), TextOptions(useHeadingsForChapters = true))
+        assertTrue(headings.contains("#chapter-heading[Chapter 1]"), "chapter label becomes a heading")
+        assertTrue(!headings.contains("line(length: 100%"), "no divider lines unless requested")
+
+        val lines = bibleTextTypst(genesis1(), TextOptions(useHeadingsForChapters = true, chapterEndLines = true))
+        assertTrue(lines.contains("line(length: 100%"), "chapterEndLines draws divider lines beside the label")
+    }
+
+    @Test
+    fun verseOnNewLineBreaksBeforeLaterProseVerses() {
+        assertTrue(!bibleTextTypst(genesis1()).contains("#linebreak()"), "no forced breaks by default")
+        // The fixture's first paragraph holds verses 1–2, so verse 2 gets the forced break.
+        val typst = bibleTextTypst(genesis1(), TextOptions(verseOnNewLine = true))
+        assertTrue(typst.contains("#linebreak()"), "later verses in a paragraph start on a new line")
+    }
 }

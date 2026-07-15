@@ -1,11 +1,13 @@
 package net.markdrew.biblebowl.generate.text
 
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 
 /**
  * Format-agnostic layout/structural options and content features for Bible-text rendering.
  *
- * @param testDate date stamped on the cover/footer (currently only honored by the DOCX writer)
+ * @param dateLine date text stamped in the page footer next to "Texas Bible Bowl" — the season's
+ *   event dates in production (e.g. "April 2–4, 2027"); defaults to today's date
  * @param fontSize body text size in points
  * @param twoColumns if true, render in two columns
  * @param chapterBreaksPage if true, force a page break between chapters
@@ -25,7 +27,7 @@ import java.time.LocalDate
  * @param verseOnNewLine if true, start every verse on its own line. Affects prose only.
  */
 data class TextOptions(
-    val testDate: LocalDate = LocalDate.now(),
+    val dateLine: String = LocalDate.now().format(DateTimeFormatter.ofPattern("LLLL d, uuuu")),
     val fontSize: Int = 12,
     val twoColumns: Boolean = false,
     val chapterBreaksPage: Boolean = false,
