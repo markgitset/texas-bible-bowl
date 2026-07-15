@@ -37,6 +37,7 @@ import net.markdrew.biblebowl.generation.typst.practiceTestTypst
 import net.markdrew.biblebowl.generation.typst.toFlashcards
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.server.data.QuestionRepository
+import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.esv.EsvUpstreamException
 import net.markdrew.biblebowl.server.export.KahootQuestion
@@ -57,6 +58,7 @@ val GENERATE_RATE_LIMIT = RateLimitName("generate")
 fun Route.generateRoutes(
     users: UserRepository,
     questions: QuestionRepository,
+    seasons: SeasonRepository,
     study: StudyDataService? = null,
     pdfCache: PdfCache? = null,
 ) {
@@ -129,10 +131,12 @@ fun Route.generateRoutes(
             respondPdf(flashcardsTypst(pool.toFlashcards()), "flashcards${chapter?.let { "-ch$it" } ?: ""}.pdf")
         }
 
-        // GET /generate/bible-text.pdf?fontSize=11&twoColumns=false&justified=false&chapterBreaksPage=false&underlineUniqueWords=false
+        // GET /generate/bible-text.pdf?fontSize=11&twoColumns=false&justified=false&chapterBreaksPage=false
+        //     &useHeadingsForChapters=false&chapterEndLines=false&verseOnNewLine=false&underlineUniqueWords=false
         // A formatted PDF of the covered text (verse numbers, headings, poetry, footnotes) with categorized
         // name/number highlighting (highlight=true by default) and optional underlining of hapax words
-        // (underlineUniqueWords) — words that appear exactly once in the season book.
+        // (underlineUniqueWords) — words that appear exactly once in the season book. The footer stamps the
+        // season's event dates (e.g. "April 2–4, 2027") rather than the generation date.
         get("/generate/bible-text.pdf") {
             if (study == null || !study.isConfigured) {
                 return@get call.respond(
@@ -141,11 +145,16 @@ fun Route.generateRoutes(
                 )
             }
             val qp = call.request.queryParameters
+            val season = seasons.current()
             val options = TextOptions(
+                dateLine = "${season.eventDateRange}, ${season.eventYear}",
                 fontSize = qp["fontSize"]?.toIntOrNull()?.coerceIn(6, 24) ?: 11,
                 twoColumns = qp["twoColumns"]?.toBooleanStrictOrNull() ?: false,
                 justified = qp["justified"]?.toBooleanStrictOrNull() ?: false,
                 chapterBreaksPage = qp["chapterBreaksPage"]?.toBooleanStrictOrNull() ?: false,
+                useHeadingsForChapters = qp["useHeadingsForChapters"]?.toBooleanStrictOrNull() ?: false,
+                chapterEndLines = qp["chapterEndLines"]?.toBooleanStrictOrNull() ?: false,
+                verseOnNewLine = qp["verseOnNewLine"]?.toBooleanStrictOrNull() ?: false,
                 underlineUniqueWords = qp["underlineUniqueWords"]?.toBooleanStrictOrNull() ?: false,
             )
             // Categorized name/number highlighting is the point of the download, so it's on by default.
@@ -157,10 +166,15 @@ fun Route.generateRoutes(
                     twoColumns = options.twoColumns,
                     justified = options.justified,
                     chapterBreaksPage = options.chapterBreaksPage,
+                    useHeadingsForChapters = options.useHeadingsForChapters,
+                    chapterEndLines = options.chapterEndLines,
+                    verseOnNewLine = options.verseOnNewLine,
                     underlineUniqueWords = options.underlineUniqueWords,
                     fontSize = options.fontSize,
                 )
-                respondCachedPdf(study, pdfCache, fileName) {
+                // The footer date comes from the season params, which the content stamp doesn't cover —
+                // salt the stamp with it so editing the event dates refreshes cached study texts.
+                respondCachedPdf(study, pdfCache, fileName, stampSalt = options.dateLine.hashCode()) {
                     if (highlight) {
                         highlightedBibleTextTypst(study.studyData(), study.categoryResolution(), options)
                     } else {
@@ -436,17 +450,20 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(typstSource
  * Serves the PDF from [pdfCache] when a row matches ([fileName], content stamp) — skipping both the
  * Typst compile and the markup build entirely — otherwise builds [typstSource], compiles, stores, and
  * responds. [fileName] doubles as the cache key, so it must encode every generation param (use
- * [PdfFileNames]). Concurrent misses may compile twice; the upsert makes that benign. May throw
- * [EsvUpstreamException] (resolving the stamp needs the study text) — callers already catch it.
+ * [PdfFileNames]). [stampSalt] folds request inputs the content stamp doesn't cover (e.g. the
+ * season's event-date footer) into the row's validity. Concurrent misses may compile twice; the
+ * upsert makes that benign. May throw [EsvUpstreamException] (resolving the stamp needs the study
+ * text) — callers already catch it.
  */
 private suspend fun io.ktor.server.routing.RoutingContext.respondCachedPdf(
     study: StudyDataService,
     pdfCache: PdfCache?,
     fileName: String,
+    stampSalt: Int = 0,
     typstSource: suspend () -> String,
 ) {
     val studySet = study.studySet.simpleName
-    val stamp = study.contentStamp()
+    val stamp = study.contentStamp() + stampSalt
     val cached = pdfCache?.let { cache -> withContext(Dispatchers.IO) { cache.get(studySet, fileName, stamp) } }
     if (cached != null) return respondAttachment(cached, fileName, ContentType.Application.Pdf)
     val source = typstSource()

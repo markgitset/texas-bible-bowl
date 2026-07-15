@@ -27,7 +27,6 @@ import net.markdrew.biblebowl.model.StudyData
 import net.markdrew.biblebowl.model.VerseRef
 import net.markdrew.biblebowl.ws.DEFAULT_COPYRIGHT_DISCLAIMER
 import net.markdrew.chupacabra.core.DisjointRangeSet
-import java.time.format.DateTimeFormatter
 
 private val asteriskBracketedWordRegex = Regex("""\*([^*]+)\*""")
 
@@ -80,7 +79,7 @@ private class TypstHandler(
     override fun documentBegin(studyData: StudyData, options: TextOptions) {
         val columns = if (options.twoColumns) 2 else 1
         val justify = if (options.justified) "true" else "false"
-        val date = options.testDate.format(dateFormatter)
+        val date = options.dateLine
         val title = studyData.studySet.name
 
         val mainFont = resolveTypstFont(options.mainFont)
@@ -359,7 +358,5 @@ private class TypstHandler(
         private const val DIVINE_R = 255
         private const val DIVINE_G = 255
         private const val DIVINE_B = 0
-
-        private val dateFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("LLLL d, uuuu")
     }
 }

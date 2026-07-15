@@ -21,7 +21,9 @@ import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.model.StudySet
 import kotlin.time.Duration.Companion.milliseconds
+import net.markdrew.biblebowl.server.data.DEFAULT_SEASON
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
+import net.markdrew.biblebowl.server.data.InMemorySeasonRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.esv.EsvPassageService
 import net.markdrew.biblebowl.server.esv.InMemoryEsvCache
@@ -246,10 +248,41 @@ class StudyRoutesTest {
         val default = pdf("")
         val customized = pdf("?fontSize=14&twoColumns=true&justified=true&chapterBreaksPage=true&underlineUniqueWords=true")
         val plain = pdf("?highlight=false")
+        val chapterLayout = pdf("?useHeadingsForChapters=true&chapterEndLines=true&verseOnNewLine=true")
 
         // Typst output is deterministic, so byte-identical PDFs would mean the options were ignored.
         assertTrue(!default.contentEquals(customized), "render options must change the PDF")
         assertTrue(!default.contentEquals(plain), "highlight=false must change the PDF")
+        assertTrue(!default.contentEquals(chapterLayout), "chapter/verse layout options must change the PDF")
+    }
+
+    @Test
+    fun bibleTextFooterDateComesFromTheSeason() {
+        if (!TypstCompiler.isAvailable) {
+            println("typst not on PATH; skipping PDF compile test")
+            return
+        }
+        // The footer stamps the season's event dates, so the same request against two seasons that
+        // differ only in event dates must yield different PDFs.
+        fun pdfForSeason(dateRange: String): ByteArray {
+            var bytes = ByteArray(0)
+            testApplication {
+                application {
+                    module(
+                        InMemoryUserRepository(), InMemoryQuestionRepository(),
+                        JwtService(secret = "test-secret"), esv = null, study = studyService(),
+                        seasons = InMemorySeasonRepository(DEFAULT_SEASON.copy(eventDateRange = dateRange)),
+                    )
+                }
+                val res = createClient { }.get("/generate/bible-text.pdf")
+                assertEquals(HttpStatusCode.OK, res.status)
+                bytes = res.bodyAsBytes()
+            }
+            return bytes
+        }
+        val april = pdfForSeason("April 2–4")
+        val march = pdfForSeason("March 5–7")
+        assertTrue(!april.contentEquals(march), "the season's event dates must appear in the PDF")
     }
 
     @Test

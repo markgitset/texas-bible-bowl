@@ -16,6 +16,9 @@ object PdfFileNames {
         twoColumns: Boolean = false,
         justified: Boolean = false,
         chapterBreaksPage: Boolean = false,
+        useHeadingsForChapters: Boolean = false,
+        chapterEndLines: Boolean = false,
+        verseOnNewLine: Boolean = false,
         underlineUniqueWords: Boolean = false,
         fontSize: Int = DEFAULT_FONT_SIZE,
     ): String = buildString {
@@ -24,6 +27,9 @@ object PdfFileNames {
         if (twoColumns) append("-2col")
         if (justified) append("-justified")
         if (chapterBreaksPage) append("-page-per-ch")
+        if (useHeadingsForChapters) append("-ch-headings")
+        if (chapterEndLines) append("-ch-lines")
+        if (verseOnNewLine) append("-verse-per-line")
         if (underlineUniqueWords) append("-unique-words")
         if (fontSize != DEFAULT_FONT_SIZE) append("-${fontSize}pt")
         append(".pdf")

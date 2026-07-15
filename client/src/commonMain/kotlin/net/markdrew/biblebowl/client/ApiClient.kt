@@ -187,13 +187,19 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
      * Fetches a formatted PDF of the covered text (verse numbers, headings, poetry, footnotes) with
      * categorized name/number highlighting ([highlight], on by default server-side); set
      * [underlineUniqueWords] to also underline hapax words (those occurring exactly once in the
-     * season book) and [chapterBreaksPage] to start each chapter on a new page.
+     * season book) and [chapterBreaksPage] to start each chapter on a new page. Chapter titles render
+     * inline with the first verse unless [useHeadingsForChapters] puts them on their own line
+     * ([chapterEndLines] adds divider lines beside them); [verseOnNewLine] starts every prose verse
+     * on a fresh line.
      */
     suspend fun bibleTextPdf(
         fontSize: Int? = null,
         twoColumns: Boolean = false,
         justified: Boolean = false,
         chapterBreaksPage: Boolean = false,
+        useHeadingsForChapters: Boolean = false,
+        chapterEndLines: Boolean = false,
+        verseOnNewLine: Boolean = false,
         highlight: Boolean = true,
         underlineUniqueWords: Boolean = false,
     ): ByteArray =
@@ -203,6 +209,9 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
             if (twoColumns) parameter("twoColumns", true)
             if (justified) parameter("justified", true)
             if (chapterBreaksPage) parameter("chapterBreaksPage", true)
+            if (useHeadingsForChapters) parameter("useHeadingsForChapters", true)
+            if (chapterEndLines) parameter("chapterEndLines", true)
+            if (verseOnNewLine) parameter("verseOnNewLine", true)
             if (!highlight) parameter("highlight", false)
             if (underlineUniqueWords) parameter("underlineUniqueWords", true)
         }.bodyOrThrow()

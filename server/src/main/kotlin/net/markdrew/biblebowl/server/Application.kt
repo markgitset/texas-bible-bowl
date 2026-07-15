@@ -160,7 +160,7 @@ fun Application.module(
         questionRoutes(users, questions)
         bibleRoutes(esv)
         studyRoutes(study)
-        generateRoutes(users, questions, study, pdfCache)
+        generateRoutes(users, questions, seasons, study, pdfCache)
         seasonRoutes(users, seasons)
     }
 

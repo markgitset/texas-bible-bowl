@@ -20,12 +20,21 @@ private sealed interface Customize {
     data class Export(val kahoot: Boolean) : Customize
 }
 
+/** How chapter titles render: inline with the first verse, or as standalone headings (± divider lines). */
+private enum class ChapterStyle(val label: String, val headings: Boolean, val lines: Boolean) {
+    INLINE("Inline", headings = false, lines = false),
+    HEADING("Heading", headings = true, lines = false),
+    HEADING_LINES("Heading with lines", headings = true, lines = true),
+}
+
 /** Study-text options, hoisted so choices stick for the whole visit (§7.6 "remember everything cheap"). */
 private data class StudyTextChoices(
     val fontSize: Int = 11,
     val twoColumns: Boolean = false,
     val justified: Boolean = false,
     val chapterBreaksPage: Boolean = false,
+    val chapterStyle: ChapterStyle = ChapterStyle.INLINE,
+    val verseOnNewLine: Boolean = false,
     val highlight: Boolean = true,
     val underlineUniqueWords: Boolean = false,
 )
@@ -155,6 +164,9 @@ object DownloadsScreen {
             "twoColumns" to true.takeIf { c.twoColumns },
             "justified" to true.takeIf { c.justified },
             "chapterBreaksPage" to true.takeIf { c.chapterBreaksPage },
+            "useHeadingsForChapters" to true.takeIf { c.chapterStyle.headings },
+            "chapterEndLines" to true.takeIf { c.chapterStyle.lines },
+            "verseOnNewLine" to true.takeIf { c.verseOnNewLine },
             "highlight" to false.takeIf { !c.highlight },
             "underlineUniqueWords" to true.takeIf { c.underlineUniqueWords },
         )
@@ -231,6 +243,13 @@ object DownloadsScreen {
                 }
                 optionSwitch("Each chapter starts a new page", textChoices.chapterBreaksPage) {
                     textChoices = textChoices.copy(chapterBreaksPage = it); rerender()
+                }
+                optionSwitch("Each verse starts a new line", textChoices.verseOnNewLine) {
+                    textChoices = textChoices.copy(verseOnNewLine = it); rerender()
+                }
+                child("p", "fw-semibold mb-1", "Chapter titles")
+                chipRow(ChapterStyle.entries.map { it.label to it }, textChoices.chapterStyle) {
+                    textChoices = textChoices.copy(chapterStyle = it); rerender()
                 }
                 optionSwitch("Highlight names & numbers by category", textChoices.highlight) {
                     textChoices = textChoices.copy(highlight = it); rerender()
