@@ -13,6 +13,7 @@ object Routes {
     const val QUESTIONS_NEW = "questions/new"
     const val QUESTIONS_MODERATE = "questions/moderate"
     const val DOWNLOADS = "downloads"
+    const val REGISTER = "event/register"
     const val SIGN_IN = "signin"
     const val ACCOUNT = "account"
     const val ADMIN_SEASON = "admin/season"
