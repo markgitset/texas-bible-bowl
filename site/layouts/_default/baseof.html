@@ -44,7 +44,9 @@
   </main>
   {{ partial "footer.html" . }}
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-  <!-- Live season values: patches [data-tbb-param] spans from GET /seasons/current. -->
-  <script defer src="{{ .Site.BaseURL }}js/params.js"></script>
+  <!-- Live season values: patches [data-tbb-param] spans from the localStorage cache, then
+       GET /seasons/current. Inlined (not an external script) so the cached patch runs during
+       parsing, before first paint — no flash of stale baked values. -->
+  <script>{{ (resources.Get "js/params.js" | minify).Content | safeJS }}</script>
 </body>
 </html>

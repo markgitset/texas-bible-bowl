@@ -9,6 +9,13 @@
       "autoPort": true
     },
     {
+      "name": "site-dist",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "HUGO=$(command -v hugo || echo /home/mark/bin/hugo); \"$HUGO\" -s site --gc -d build/public -b \"http://localhost:${PORT:-8091}/\" && python3 -m http.server \"${PORT:-8091}\" --directory site/build/public"],
+      "port": 8091,
+      "autoPort": true
+    },
+    {
       "name": "backend",
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-c", "if [ -z \"$DATABASE_URL\" ]; then export ADMIN_EMAIL=admin@tbb.org ADMIN_PASSWORD=admin-secret-123; fi; ./gradlew :server:run"],
