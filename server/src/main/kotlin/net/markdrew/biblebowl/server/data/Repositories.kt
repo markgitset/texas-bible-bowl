@@ -21,6 +21,8 @@ interface UserRepository {
     fun create(email: String, displayName: String, grade: Int?, passwordHash: String, roles: List<RoleGrant>): UserRecord
     fun findByEmail(email: String): UserRecord?
     fun findById(id: String): UserRecord?
+    /** Adds a role grant to an existing user (no-op if the identical grant is already held). */
+    fun addRoleGrant(userId: String, grant: RoleGrant)
 }
 
 interface QuestionRepository {
@@ -52,6 +54,10 @@ class InMemoryUserRepository : UserRepository {
 
     override fun findByEmail(email: String): UserRecord? = idByEmail[email.lowercase()]?.let { byId[it] }
     override fun findById(id: String): UserRecord? = byId[id]
+
+    override fun addRoleGrant(userId: String, grant: RoleGrant) {
+        byId[userId]?.roles?.let { roles -> synchronized(roles) { if (grant !in roles) roles.add(grant) } }
+    }
 }
 
 class InMemoryQuestionRepository : QuestionRepository {

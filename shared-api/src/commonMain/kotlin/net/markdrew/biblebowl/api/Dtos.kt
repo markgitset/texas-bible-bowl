@@ -182,6 +182,77 @@ data class SeasonDto(
 )
 
 // ---------------------------------------------------------------------------
+// Registration (congregations, teams, rosters) — docs/gui-redesign.md §5E
+// ---------------------------------------------------------------------------
+
+/** T-shirt sizes collected per roster entry (youth S–L, adult S–2XL). */
+@Serializable
+enum class ShirtSize(val displayName: String) {
+    YS("Youth S"), YM("Youth M"), YL("Youth L"),
+    AS("Adult S"), AM("Adult M"), AL("Adult L"), AXL("Adult XL"), AXXL("Adult 2XL"),
+}
+
+@Serializable
+enum class RegistrationStatus { DRAFT, SUBMITTED }
+
+@Serializable
+data class CongregationDto(val id: String, val name: String, val city: String)
+
+@Serializable
+data class CreateCongregationRequest(val name: String, val city: String)
+
+/** One contestant on a team's roster. [claimCode] lets a contestant/parent account claim the entry later. */
+@Serializable
+data class RosterEntryDto(
+    val id: String,
+    val name: String,
+    /** School grade 3–12, or null for an adult-division contestant. */
+    val grade: Int? = null,
+    val shirtSize: ShirtSize,
+    val claimCode: String,
+    val claimed: Boolean = false,
+)
+
+@Serializable
+data class TeamDto(
+    val id: String,
+    val name: String,
+    val members: List<RosterEntryDto> = emptyList(),
+)
+
+@Serializable
+data class UpsertTeamRequest(val name: String)
+
+@Serializable
+data class UpsertRosterEntryRequest(
+    val name: String,
+    val grade: Int? = null,
+    val shirtSize: ShirtSize,
+)
+
+/** A congregation's registration for one season; unique per (congregation, seasonYear). */
+@Serializable
+data class RegistrationDto(
+    val id: String,
+    val congregation: CongregationDto,
+    val seasonYear: String,
+    val status: RegistrationStatus,
+    val teams: List<TeamDto> = emptyList(),
+    /** Computed contestant total in cents, or null while fees are TBD. */
+    val totalCents: Int? = null,
+    /** ISO-8601 instant of the last submit, or null while a draft. */
+    val submittedAt: String? = null,
+)
+
+/** Everything the register screen needs to resume: who I coach, my current-season registration, window state. */
+@Serializable
+data class MyRegistrationResponse(
+    val congregations: List<CongregationDto> = emptyList(),
+    val registration: RegistrationDto? = null,
+    val windowOpen: Boolean = false,
+)
+
+// ---------------------------------------------------------------------------
 // Generated-PDF cache administration
 // ---------------------------------------------------------------------------
 

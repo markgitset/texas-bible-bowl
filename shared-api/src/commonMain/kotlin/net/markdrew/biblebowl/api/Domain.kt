@@ -18,3 +18,25 @@ enum class Division(val displayName: String, val gradeRange: IntRange?, val hasP
         fun forGrade(grade: Int): Division? = entries.firstOrNull { it.gradeRange?.contains(grade) == true }
     }
 }
+
+/** A roster entry's own division: by grade, or [Division.ADULT] when no grade is given. */
+val RosterEntryDto.division: Division
+    get() = grade?.let { Division.forGrade(it) } ?: Division.ADULT
+
+/**
+ * The division a team competes in — that of its highest member (declaration order of [Division]
+ * ascends ELEMENTARY → ADULT). Null for an empty roster.
+ */
+fun TeamDto.division(): Division? = members.maxOfOrNull { it.division }
+
+/**
+ * The registration's contestant total in cents ([contestantCount] × the season's contestant fee,
+ * one t-shirt each included), or null while the fee is TBD. Volunteers, guests, and extra shirts
+ * are paid at the door/by mail and aren't collected in this flow.
+ */
+fun registrationTotalCents(season: SeasonDto, contestantCount: Int): Int? =
+    season.priceContestantCents?.let { it * contestantCount }
+
+/** Formats a claim code for display/sharing: "ABCD2345" → "ABCD-2345". */
+fun formatClaimCode(code: String): String =
+    if (code.length == 8) "${code.take(4)}-${code.drop(4)}" else code
