@@ -98,8 +98,9 @@ This renders the real pipeline without hitting Crossway.
 ## Deploy — what's automatic vs manual
 - **Web (GitHub Pages):** auto on push to `main` via `.github/workflows/pages.yml` — ONE artifact:
   the Hugo site (`/site`) at the root and the Kotlin/JS app (`:web`) under `/app/`. CI bakes
-  `GET /seasons/current` into `site/data/params.json` before `hugo build`; `static/js/params.js`
-  live-patches `[data-tbb-param]` spans on page view. Hugo binary: `/home/mark/bin/hugo`
+  `GET /seasons/current` into `site/data/params.json` before `hugo build`; `site/assets/js/params.js`
+  (inlined minified at the end of `<body>`) live-patches `[data-tbb-param]` spans — it applies a
+  localStorage-cached season synchronously before first paint, then refreshes from the backend. Hugo binary: `/home/mark/bin/hugo`
   (v0.164.0 extended); local build: `hugo -s site --gc --minify -d <out>`.
   Live: https://markgitset.github.io/texas-bible-bowl/ (app at `/app/#study`)
 - **Season params:** served by `GET /seasons/current` (public; PUT needs SEASON_MANAGE). Clients
