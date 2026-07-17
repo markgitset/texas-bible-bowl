@@ -28,7 +28,7 @@ and deploy, plus the non-obvious gotchas.
   `Session` holds the shared `TbbApi`/season/user with a localStorage JWT restored via
   `/auth/me` on boot. Downloads are plain `<a target="_blank">` links to the public
   `/generate/*` endpoints (server sends `Content-Disposition: attachment`). Bundle is
-  ~660 KB js (the wasm app was ~8.6 MB).
+  ~0.8 MB js (the wasm app was ~8.6 MB).
 
 ## Reuse strategy (locked in by Mark)
 **Copy bible-bowl JVM source into `core/jvmMain` when needed — do NOT depend on the
