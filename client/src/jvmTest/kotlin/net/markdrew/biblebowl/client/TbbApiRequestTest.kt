@@ -2,7 +2,10 @@ package net.markdrew.biblebowl.client
 
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
+import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.LoginRequest
+import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
 import java.net.InetSocketAddress
@@ -30,8 +33,24 @@ class TbbApiRequestTest {
                 "/auth/login" ->
                     """{"token":"tok123","user":{"id":"u1","email":"admin@tbb.org","displayName":"Admin"}}""" to
                         "application/json"
+                "/auth/me" ->
+                    """{"id":"u1","email":"admin@tbb.org","displayName":"Admin"}""" to "application/json"
                 "/generate/cache" -> """{"cleared":3}""" to "application/json"
-                else -> "%PDF-1.7 fake" to "application/pdf"
+                "/congregations" ->
+                    if (exchange.requestMethod == "POST") {
+                        """{"id":"c1","name":"First Church","city":"Austin"}""" to "application/json"
+                    } else {
+                        """[{"id":"c1","name":"First Church","city":"Austin"}]""" to "application/json"
+                    }
+                "/registration/mine" ->
+                    """{"congregations":[],"registration":null,"windowOpen":true}""" to "application/json"
+                else ->
+                    if (exchange.requestURI.path.startsWith("/registration/")) {
+                        """{"id":"r1","congregation":{"id":"c1","name":"First Church","city":"Austin"},
+                            "seasonYear":"2027","status":"DRAFT","teams":[]}""" to "application/json"
+                    } else {
+                        "%PDF-1.7 fake" to "application/pdf"
+                    }
             }
             val bytes = body.toByteArray()
             exchange.responseHeaders.add("Content-Type", contentType)
@@ -76,6 +95,49 @@ class TbbApiRequestTest {
         listOf("round=FIND_THE_VERSE", "chapter=7", "limit=20", "seed=1234").forEach { param ->
             assertTrue(param in uri, "expected $param in $uri")
         }
+    }
+
+    @Test
+    fun registrationEndpointsSendAuthorizedTypedRequests() = runBlocking {
+        api.login(LoginRequest("coach@tbb.org", "password123"))
+
+        api.createCongregation(CreateCongregationRequest("First Church", "Austin"))
+        assertEquals("POST" to "/congregations", methods.last() to requests.last())
+
+        api.searchCongregations("first")
+        assertEquals("GET", methods.last())
+        assertTrue(requests.last().startsWith("/congregations?query=first"), requests.last())
+
+        val mine = api.myRegistration()
+        assertTrue(mine.windowOpen)
+        assertEquals("/registration/mine", requests.last())
+
+        api.addTeam("c1", "Team Alpha")
+        assertEquals("POST" to "/registration/c1/teams", methods.last() to requests.last())
+
+        api.renameTeam("t1", "Team Beta")
+        assertEquals("PUT" to "/registration/teams/t1", methods.last() to requests.last())
+
+        api.deleteTeam("t1")
+        assertEquals("DELETE" to "/registration/teams/t1", methods.last() to requests.last())
+
+        api.addRosterEntry("t1", UpsertRosterEntryRequest("Timothy", 8, ShirtSize.YM))
+        assertEquals("POST" to "/registration/teams/t1/members", methods.last() to requests.last())
+
+        api.updateRosterEntry("m1", UpsertRosterEntryRequest("Tim", 9, ShirtSize.YL))
+        assertEquals("PUT" to "/registration/members/m1", methods.last() to requests.last())
+
+        api.deleteRosterEntry("m1")
+        assertEquals("DELETE" to "/registration/members/m1", methods.last() to requests.last())
+
+        api.submitRegistration("c1")
+        assertEquals("POST" to "/registration/c1/submit", methods.last() to requests.last())
+
+        api.refreshUser()
+        assertEquals("/auth/me", requests.last())
+
+        // Every registration call must carry the signed-in token.
+        assertTrue(authHeaders.drop(1).all { it == "Bearer tok123" }, "missing Bearer on some call: $authHeaders")
     }
 
     @Test
