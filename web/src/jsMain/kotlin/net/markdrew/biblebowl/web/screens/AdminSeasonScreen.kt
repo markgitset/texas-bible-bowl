@@ -7,6 +7,7 @@ import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.clear
+import net.markdrew.biblebowl.web.ui.optionSwitch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
@@ -44,12 +45,24 @@ object AdminSeasonScreen {
         form.field("Event dates (e.g. April 2–4)", draft.eventDateRange) { draft = draft.copy(eventDateRange = it) }
         form.field("Theme (TBD hides it)", draft.eventTheme) { draft = draft.copy(eventTheme = it) }
         form.studySetSelect()
-        form.field("Registration opens", draft.registrationOpens) { draft = draft.copy(registrationOpens = it) }
-        form.field("Registration deadline", draft.registrationDeadline) { draft = draft.copy(registrationDeadline = it) }
+        form.dateField("Registration opens (blank = not announced)", draft.registrationOpensOn) {
+            draft = draft.copy(registrationOpensOn = it)
+        }
+        form.dateField("Registration closes (last day to register)", draft.registrationClosesOn) {
+            draft = draft.copy(registrationClosesOn = it)
+        }
         form.field("Scholarship deadline", draft.scholarshipDeadline) { draft = draft.copy(scholarshipDeadline = it) }
-        form.field("Price — adult", draft.priceAdult) { draft = draft.copy(priceAdult = it) }
-        form.field("Price — child (ages 3–8)", draft.priceChild) { draft = draft.copy(priceChild = it) }
-        form.field("Price — extra t-shirt", draft.priceTshirt) { draft = draft.copy(priceTshirt = it) }
+        form.dollarField("Fee — contestant (t-shirt included)", draft.priceContestantCents) {
+            draft = draft.copy(priceContestantCents = it)
+        }
+        form.dollarField("Fee — volunteer/adult (t-shirt included)", draft.priceVolunteerCents) {
+            draft = draft.copy(priceVolunteerCents = it)
+        }
+        form.dollarField("Fee — child ages 3–8", draft.priceChildCents) { draft = draft.copy(priceChildCents = it) }
+        form.dollarField("Fee — extra t-shirt", draft.priceTshirtCents) { draft = draft.copy(priceTshirtCents = it) }
+        form.optionSwitch("Fees are tentative (shows a \"subject to change\" note)", draft.feesTentative) {
+            draft = draft.copy(feesTentative = it)
+        }
         form.field("Prior-year scholarship total", draft.scholarshipAmount) { draft = draft.copy(scholarshipAmount = it) }
         form.field("TBB scholarship", draft.tbbScholarshipAmount) { draft = draft.copy(tbbScholarshipAmount = it) }
         form.field("Mary Orbison scholarship", draft.maryOrbisonAmount) { draft = draft.copy(maryOrbisonAmount = it) }
@@ -94,6 +107,36 @@ object AdminSeasonScreen {
             val input = child("input", "form-control") as HTMLInputElement
             input.value = value
             input.addEventListener("input", { onChange(input.value) })
+        }
+    }
+
+    /** ISO-date field via the browser's date picker; blank ↔ null. */
+    private fun Element.dateField(label: String, value: String?, onChange: (String?) -> Unit) {
+        child("div", "mb-3") {
+            child("label", "form-label", label)
+            val input = child("input", "form-control") as HTMLInputElement
+            input.type = "date"
+            input.value = value ?: ""
+            input.addEventListener("input", { onChange(input.value.ifBlank { null }) })
+        }
+    }
+
+    /** Dollar-amount field stored as integer cents; blank ↔ null (TBD). */
+    private fun Element.dollarField(label: String, cents: Int?, onChange: (Int?) -> Unit) {
+        child("div", "mb-3") {
+            child("label", "form-label", label)
+            val group = child("div", "input-group")
+            group.child("span", "input-group-text", "$")
+            val input = group.child("input", "form-control") as HTMLInputElement
+            input.type = "number"
+            input.min = "0"
+            input.step = "0.01"
+            input.placeholder = "TBD"
+            input.value = cents?.let { c -> if (c % 100 == 0) "${c / 100}" else "${c / 100.0}" } ?: ""
+            input.addEventListener("input", {
+                val dollars = input.value.toDoubleOrNull()
+                onChange(if (dollars == null || dollars < 0) null else (dollars * 100 + 0.5).toInt())
+            })
         }
     }
 

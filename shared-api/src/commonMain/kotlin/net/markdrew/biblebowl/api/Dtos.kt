@@ -135,7 +135,10 @@ data class IndexRefDto(
  * The season parameters shared by the static site and the app (docs/gui-redesign.md §3): the exact
  * field set of the Hugo site's `[params]`, plus [bookCode]/[chapterCount] for the app's study
  * scoping. Served publicly at `GET /seasons/current`; edited in-app by SEASON_MANAGE holders.
- * Prices/dates are display strings on purpose — the site renders values like "TBD (Was $85 in 2026)".
+ *
+ * Fees are integer cents (`null` = TBD) and registration dates are ISO-8601 (`"2027-02-01"`,
+ * `null` = TBD) so registration can compute totals and enforce the window; clients format them
+ * for display via [formatCents]/[formatIsoDate]. Scholarship amounts stay display strings.
  */
 @Serializable
 data class SeasonDto(
@@ -158,12 +161,21 @@ data class SeasonDto(
     val chapterCount: Int,
     /** Total scholarships awarded in the prior year, e.g. "$25,000". */
     val scholarshipAmount: String,
-    val registrationOpens: String,
-    val registrationDeadline: String,
+    /** Day registration opens, ISO-8601 (e.g. "2027-02-01"); null = not yet announced. */
+    val registrationOpensOn: String? = null,
+    /** Last day to register, ISO-8601, inclusive through end of day America/Chicago; null = TBD. */
+    val registrationClosesOn: String? = null,
     val scholarshipDeadline: String,
-    val priceAdult: String,
-    val priceChild: String,
-    val priceTshirt: String,
+    /** Per-contestant fee in cents, one t-shirt included; null = TBD. */
+    val priceContestantCents: Int? = null,
+    /** Per-volunteer/adult-attendee fee in cents, t-shirt included; null = TBD. */
+    val priceVolunteerCents: Int? = null,
+    /** Fee in cents for children ages 3–8 (t-shirt currently included); null = TBD. */
+    val priceChildCents: Int? = null,
+    /** Extra t-shirt fee in cents; null = TBD. */
+    val priceTshirtCents: Int? = null,
+    /** True while the season's fees are still subject to change. */
+    val feesTentative: Boolean = true,
     val tbbScholarshipAmount: String,
     val maryOrbisonAmount: String,
     val paulHendricksonAmount: String,
