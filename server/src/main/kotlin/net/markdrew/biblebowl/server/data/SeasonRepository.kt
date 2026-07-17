@@ -26,12 +26,14 @@ val DEFAULT_SEASON = SeasonDto(
     bookCode = "ACT",
     chapterCount = 28,
     scholarshipAmount = "$25,000",
-    registrationOpens = "in February",
-    registrationDeadline = "TBD",
+    registrationOpensOn = null,
+    registrationClosesOn = null,
     scholarshipDeadline = "TBD",
-    priceAdult = "TBD (Was $85 in 2026)",
-    priceChild = "TBD (Was $65 in 2026)",
-    priceTshirt = "TBD (Was $10 in 2026)",
+    priceContestantCents = null,
+    priceVolunteerCents = null,
+    priceChildCents = null,
+    priceTshirtCents = null,
+    feesTentative = true,
     tbbScholarshipAmount = "$1,000",
     maryOrbisonAmount = "$1,500",
     paulHendricksonAmount = "TBD",
@@ -49,9 +51,9 @@ class InMemorySeasonRepository(initial: SeasonDto = DEFAULT_SEASON) : SeasonRepo
 }
 
 /**
- * Season rows keyed by event year; exactly one row is current. The payload is stored as JSON so
- * the (display-string-heavy) field set can evolve without migrations; prior seasons remain as
- * history rows for the future "start next season" admin flow.
+ * Season rows keyed by event year; exactly one row is current. The payload is stored as JSON
+ * (decoded with unknown keys ignored and defaults applied) so the field set can evolve without
+ * migrations; prior seasons remain as history rows for the future "start next season" admin flow.
  */
 object SeasonsTable : Table("seasons") {
     val eventYear = varchar("event_year", 8)

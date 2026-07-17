@@ -9,8 +9,9 @@ import org.jetbrains.exposed.v1.jdbc.SchemaUtils
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 
 /**
- * Exposed table definitions for the MVP: users, role grants, and the crowd-sourced question bank.
- * Registration/teams/scoring tables land with their phases.
+ * Exposed table definitions: users, role grants, the crowd-sourced question bank, server-side
+ * caches, and registration (congregations → registrations → teams → team_members). Scoring
+ * tables land with the event-ops phase.
  */
 object UsersTable : Table("users") {
     val id = varchar("id", 36)
@@ -52,6 +53,56 @@ object QuestionVotesTable : Table("question_votes") {
     init {
         uniqueIndex(questionId, userId)
     }
+}
+
+/** A congregation, created once by its first coach and reused season over season. */
+object CongregationsTable : Table("congregations") {
+    val id = varchar("id", 36)
+    val name = varchar("name", 160)
+    val city = varchar("city", 120)
+    val createdByUserId = varchar("created_by_user_id", 36).references(UsersTable.id)
+    val createdAtEpochMs = long("created_at_epoch_ms")
+    override val primaryKey = PrimaryKey(id)
+    init {
+        uniqueIndex(name, city)
+    }
+}
+
+/** One registration per (congregation, season year); teams/rosters hang off it, so they're per-season. */
+object RegistrationsTable : Table("registrations") {
+    val id = varchar("id", 36)
+    val congregationId = varchar("congregation_id", 36).references(CongregationsTable.id)
+    val seasonYear = varchar("season_year", 8)
+    val status = varchar("status", 16)
+    val submittedAtEpochMs = long("submitted_at_epoch_ms").nullable()
+    val updatedAtEpochMs = long("updated_at_epoch_ms")
+    override val primaryKey = PrimaryKey(id)
+    init {
+        uniqueIndex(congregationId, seasonYear)
+    }
+}
+
+object TeamsTable : Table("teams") {
+    val id = varchar("id", 36)
+    val registrationId = varchar("registration_id", 36).references(RegistrationsTable.id)
+    val name = varchar("name", 120)
+    val sortOrder = integer("sort_order")
+    override val primaryKey = PrimaryKey(id)
+    init {
+        uniqueIndex(registrationId, name)
+    }
+}
+
+/** Roster entries (≤4 per team, enforced in the repository). Division is always computed, never stored. */
+object TeamMembersTable : Table("team_members") {
+    val id = varchar("id", 36)
+    val teamId = varchar("team_id", 36).references(TeamsTable.id)
+    val name = varchar("name", 120)
+    val grade = integer("grade").nullable() // null = adult-division contestant
+    val shirtSize = varchar("shirt_size", 8)
+    val claimCode = varchar("claim_code", 12).uniqueIndex()
+    val ownerUserId = varchar("owner_user_id", 36).references(UsersTable.id).nullable()
+    override val primaryKey = PrimaryKey(id)
 }
 
 /** Cached ESV chapter text (licensed; server-side only). Key = (book code, chapter). */
@@ -149,6 +200,7 @@ object DatabaseFactory {
             SchemaUtils.create(
                 UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable, EsvChaptersTable,
                 TextAnnotationsTable, GeneratedPdfsTable, SeasonsTable,
+                CongregationsTable, RegistrationsTable, TeamsTable, TeamMembersTable,
             )
         }
         return db

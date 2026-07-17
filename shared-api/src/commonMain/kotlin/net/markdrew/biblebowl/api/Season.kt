@@ -13,12 +13,14 @@ val FALLBACK_SEASON = SeasonDto(
     bookCode = "ACT",
     chapterCount = 28,
     scholarshipAmount = "$25,000",
-    registrationOpens = "in February",
-    registrationDeadline = "TBD",
+    registrationOpensOn = null,
+    registrationClosesOn = null,
     scholarshipDeadline = "TBD",
-    priceAdult = "TBD (Was $85 in 2026)",
-    priceChild = "TBD (Was $65 in 2026)",
-    priceTshirt = "TBD (Was $10 in 2026)",
+    priceContestantCents = null,
+    priceVolunteerCents = null,
+    priceChildCents = null,
+    priceTshirtCents = null,
+    feesTentative = true,
     tbbScholarshipAmount = "$1,000",
     maryOrbisonAmount = "$1,500",
     paulHendricksonAmount = "TBD",
@@ -31,3 +33,30 @@ val SeasonDto.schoolYear: String
         val suffix = (year % 100).toString().padStart(2, '0')
         return "${year - 1}–$suffix"
     }
+
+/** Formats a fee in cents for display: "$85", "$12.50", or "TBD" when null. */
+fun formatCents(cents: Int?): String {
+    if (cents == null) return "TBD"
+    val dollars = cents / 100
+    val remainder = cents % 100
+    return if (remainder == 0) "$$dollars" else "$$dollars.${remainder.toString().padStart(2, '0')}"
+}
+
+private val MONTH_NAMES = listOf(
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+/** Formats an ISO-8601 date ("2027-02-01") for display: "February 1, 2027", or "TBD" when null. */
+fun formatIsoDate(iso: String?): String {
+    if (iso == null) return "TBD"
+    val parts = iso.split('-')
+    val month = parts.getOrNull(1)?.toIntOrNull()
+    val day = parts.getOrNull(2)?.toIntOrNull()
+    if (parts.size != 3 || month == null || month !in 1..12 || day == null) return iso
+    return "${MONTH_NAMES[month - 1]} $day, ${parts[0]}"
+}
+
+/** A note to show near prices while [SeasonDto.feesTentative] is set; empty otherwise. */
+val SeasonDto.feesNote: String
+    get() = if (feesTentative) "Prices are tentative and subject to change." else ""

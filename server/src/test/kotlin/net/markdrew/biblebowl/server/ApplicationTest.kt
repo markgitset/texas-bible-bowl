@@ -261,6 +261,58 @@ class ApplicationTest {
             setBody(updated.copy(studySet = "not-a-real-set"))
         }
         assertEquals(HttpStatusCode.BadRequest, badSet.status)
+
+        // Fees are cents (non-negative or null) and registration dates are ISO and ordered.
+        val badFee = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(updated.copy(priceContestantCents = -100))
+        }
+        assertEquals(HttpStatusCode.BadRequest, badFee.status)
+        val badDate = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(updated.copy(registrationOpensOn = "in February"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, badDate.status)
+        val backwardsWindow = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(updated.copy(registrationOpensOn = "2027-03-01", registrationClosesOn = "2027-02-01"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, backwardsWindow.status)
+        val priced = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(
+                updated.copy(
+                    priceContestantCents = 8500,
+                    feesTentative = false,
+                    registrationOpensOn = "2027-02-01",
+                    registrationClosesOn = "2027-03-15",
+                )
+            )
+        }
+        assertEquals(HttpStatusCode.OK, priced.status)
+        val pricedBack: SeasonDto = json.decodeFromString(api.get("/seasons/current").bodyAsText())
+        assertEquals(8500, pricedBack.priceContestantCents)
+        assertEquals("2027-03-15", pricedBack.registrationClosesOn)
+    }
+
+    @Test
+    fun legacySeasonPayloadDecodesIntoNewShape() {
+        // A pre-migration season row (display-string fees/dates) must decode: unknown keys are
+        // ignored and the new numeric fields fall back to their TBD defaults.
+        val legacy = """
+            {"eventYear":"2027","eventDateRange":"April 2–4","eventTheme":"TBD","eventScripture":"Acts",
+             "studySet":"acts","bookCode":"ACT","chapterCount":28,"scholarshipAmount":"$25,000",
+             "registrationOpens":"in February","registrationDeadline":"TBD","scholarshipDeadline":"TBD",
+             "priceAdult":"TBD (Was $85 in 2026)","priceChild":"TBD (Was $65 in 2026)",
+             "priceTshirt":"TBD (Was $10 in 2026)","tbbScholarshipAmount":"$1,000",
+             "maryOrbisonAmount":"$1,500","paulHendricksonAmount":"TBD"}
+        """.trimIndent()
+        val decoded = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            .decodeFromString<SeasonDto>(legacy)
+        assertEquals("2027", decoded.eventYear)
+        assertEquals(null, decoded.priceContestantCents)
+        assertEquals(null, decoded.registrationOpensOn)
+        assertTrue(decoded.feesTentative)
     }
 
     @Test

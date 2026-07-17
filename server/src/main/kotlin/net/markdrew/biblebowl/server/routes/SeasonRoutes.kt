@@ -13,6 +13,7 @@ import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.UserRepository
+import net.markdrew.biblebowl.server.parseIsoDateOrNull
 import net.markdrew.biblebowl.server.security.currentUser
 import net.markdrew.biblebowl.server.security.requirePermission
 
@@ -44,6 +45,32 @@ fun Route.seasonRoutes(users: UserRepository, seasons: SeasonRepository) {
                 return@put call.respond(
                     HttpStatusCode.BadRequest,
                     ApiError("invalid_study_set", "Unknown study set '${season.studySet}' — use a StandardStudySet slug"),
+                )
+            }
+            val fees = listOf(
+                season.priceContestantCents, season.priceVolunteerCents,
+                season.priceChildCents, season.priceTshirtCents,
+            )
+            if (fees.any { it != null && it < 0 }) {
+                return@put call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("invalid_fees", "Fees must be non-negative cents (or null for TBD)"),
+                )
+            }
+            val opens = season.registrationOpensOn?.let { parseIsoDateOrNull(it) }
+            val closes = season.registrationClosesOn?.let { parseIsoDateOrNull(it) }
+            if (season.registrationOpensOn != null && opens == null ||
+                season.registrationClosesOn != null && closes == null
+            ) {
+                return@put call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("invalid_dates", "Registration dates must be ISO-8601 (yyyy-MM-dd) or null"),
+                )
+            }
+            if (opens != null && closes != null && closes < opens) {
+                return@put call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("invalid_dates", "registrationClosesOn must not be before registrationOpensOn"),
                 )
             }
             call.respond(seasons.update(season))

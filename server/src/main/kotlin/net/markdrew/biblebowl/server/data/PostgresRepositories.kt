@@ -55,6 +55,17 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
         UsersTable.selectAll().where { UsersTable.id eq id }.singleOrNull()?.toUserRecord()
     }
 
+    override fun addRoleGrant(userId: String, grant: RoleGrant) {
+        transaction(db) {
+            RoleGrantsTable.insertIgnore {
+                it[RoleGrantsTable.userId] = userId
+                it[role] = grant.role.name
+                it[scopeType] = grant.scopeType.name
+                it[scopeId] = grant.scopeId
+            }
+        }
+    }
+
     private fun ResultRow.toUserRecord(): UserRecord {
         val userId = this[UsersTable.id]
         val grants = RoleGrantsTable.selectAll().where { RoleGrantsTable.userId eq userId }.map {

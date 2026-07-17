@@ -15,6 +15,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.app.ui.LocalSeason
+import net.markdrew.biblebowl.api.feesNote
+import net.markdrew.biblebowl.api.formatCents
+import net.markdrew.biblebowl.api.formatIsoDate
 import net.markdrew.biblebowl.api.schoolYear
 
 /**
@@ -64,11 +67,23 @@ fun EventScreen() {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Dates, fees & registration", style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold)
-                Text("Registration opens ${season.registrationOpens}; deadline: ${season.registrationDeadline}.",
+                Text(
+                    "Registration opens ${formatIsoDate(season.registrationOpensOn)}; " +
+                        "deadline: ${formatIsoDate(season.registrationClosesOn)}.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text("Contestants: ${formatCents(season.priceContestantCents)} (t-shirt included)",
                     style = MaterialTheme.typography.bodyMedium)
-                Text("Adults: ${season.priceAdult}", style = MaterialTheme.typography.bodyMedium)
-                Text("Children (3–8): ${season.priceChild}", style = MaterialTheme.typography.bodyMedium)
-                Text("Extra t-shirts: ${season.priceTshirt}", style = MaterialTheme.typography.bodyMedium)
+                Text("Volunteers/adults: ${formatCents(season.priceVolunteerCents)}",
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("Children (3–8): ${formatCents(season.priceChildCents)}",
+                    style = MaterialTheme.typography.bodyMedium)
+                Text("Extra t-shirts: ${formatCents(season.priceTshirtCents)}",
+                    style = MaterialTheme.typography.bodyMedium)
+                if (season.feesNote.isNotEmpty()) {
+                    Text(season.feesNote, style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
                 Text(
                     "Locations and team registration are on texasbiblebowl.org for now. " +
                         "Registration moves into the app in an upcoming season.",

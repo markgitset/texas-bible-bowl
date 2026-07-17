@@ -14,6 +14,7 @@ import net.markdrew.biblebowl.web.screens.HeadingsScreen
 import net.markdrew.biblebowl.web.screens.IndexScreen
 import net.markdrew.biblebowl.web.screens.QuestionsScreen
 import net.markdrew.biblebowl.web.screens.QuizScreen
+import net.markdrew.biblebowl.web.screens.RegisterScreen
 import net.markdrew.biblebowl.web.screens.StudyHubScreen
 import org.w3c.dom.HTMLElement
 
@@ -87,6 +88,10 @@ object Shell {
             Routes.DOWNLOADS -> DownloadsScreen.render(container)
             Routes.SIGN_IN -> AuthScreen.render(container)
             Routes.ACCOUNT -> AccountScreen.render(container)
+            // Sign-in only, no permission: step 1 is where a signed-in user *becomes* a coach
+            // (self-serve congregation creation); a TEAM_MANAGE gate would lock them out of it.
+            // The server scope-checks every mutation regardless.
+            Routes.REGISTER -> signedIn(container) { RegisterScreen.render(container) }
             Routes.QUESTIONS_NEW -> gated(container, Permission.QUESTION_SUBMIT) {
                 ContributeScreen.render(container)
             }
@@ -109,6 +114,11 @@ object Shell {
         val user = Session.user
         if (user != null && permission in user.permissions) render()
         else AuthScreen.render(container)
+    }
+
+    /** Like [gated] but requires only a signed-in user, any permissions. */
+    private fun signedIn(container: HTMLElement, render: () -> Unit) {
+        if (Session.user != null) render() else AuthScreen.render(container)
     }
 
 }

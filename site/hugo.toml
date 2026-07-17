@@ -20,13 +20,16 @@ canonifyURLs = true
   eventTheme    = "TBD"
   eventScripture = "Acts"
   scholarshipAmount = "$25,000"   # total awarded in the prior year (eventYear - 1)
-  registrationOpens = "in February"      # Month day; year derived from eventYear
-  registrationDeadline = "TBD"   # Month day; year derived from eventYear
+  registrationOpensOn = ""   # ISO date "2027-02-01"; "" = not announced (renders TBD)
+  registrationClosesOn = ""  # ISO date, last day to register; "" = TBD
   scholarshipDeadline = "TBD"       # Month day; year derived from eventYear
-  # Prices / amounts
-  priceAdult = "TBD (Was $85 in 2026)"     # adults (standard), per person
-  priceChild = "TBD (Was $65 in 2026)"     # children ages 3–8, per person
-  priceTshirt = "TBD (Was $10 in 2026)"    # extra t-shirts, each
+  # Fees in integer cents; omit/-1 for TBD. Display strings are derived in
+  # layouts/partials/season.html and static params.js — keep the three in sync.
+  priceContestantCents = -1  # per contestant, t-shirt included
+  priceVolunteerCents = -1   # per volunteer/adult attendee, t-shirt included
+  priceChildCents = -1       # children ages 3–8, per person
+  priceTshirtCents = -1      # extra t-shirts, each
+  feesTentative = true       # shows the "subject to change" note next to prices
   tbbScholarshipAmount = "$1,000"
   maryOrbisonAmount = "$1,500"
   paulHendricksonAmount = "TBD"

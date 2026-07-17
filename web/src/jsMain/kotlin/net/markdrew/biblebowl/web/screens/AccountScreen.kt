@@ -44,6 +44,9 @@ object AccountScreen {
         }
 
         container.child("div", "d-grid gap-2") {
+            child("a", "btn btn-outline-primary", "Register my teams") {
+                setAttribute("href", "#${Routes.REGISTER}")
+            }
             if (Permission.SEASON_MANAGE in user.permissions) {
                 child("a", "btn btn-outline-primary", "Season settings") {
                     setAttribute("href", "#${Routes.ADMIN_SEASON}")

@@ -7,7 +7,10 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.RoutingContext
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.Permission
+import net.markdrew.biblebowl.api.Role
+import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.UserDto
+import net.markdrew.biblebowl.api.hasScopedPermission
 import net.markdrew.biblebowl.api.permissionsFor
 import net.markdrew.biblebowl.server.data.UserRecord
 import net.markdrew.biblebowl.server.data.UserRepository
@@ -43,3 +46,27 @@ suspend fun RoutingContext.requirePermission(user: UserRecord, permission: Permi
     }
     return granted
 }
+
+/**
+ * Returns true if [user] holds [permission] via a grant scoped to [congregationId] (or a GLOBAL
+ * grant); otherwise responds 403 and returns false. This is what keeps coach A out of coach B's
+ * registration — holding TEAM_MANAGE at all isn't enough, the grant's scope must match.
+ */
+suspend fun RoutingContext.requireScopedPermission(
+    user: UserRecord,
+    permission: Permission,
+    congregationId: String,
+): Boolean {
+    val granted = hasScopedPermission(user.roles, permission, congregationId)
+    if (!granted) {
+        call.respond(
+            HttpStatusCode.Forbidden,
+            ApiError("forbidden_scope", "Missing permission $permission for this congregation"),
+        )
+    }
+    return granted
+}
+
+/** True for a globally-scoped ADMIN grant (used e.g. to exempt admins from the registration window). */
+val UserRecord.isAdmin: Boolean
+    get() = roles.any { it.role == Role.ADMIN && it.scopeType == ScopeType.GLOBAL }

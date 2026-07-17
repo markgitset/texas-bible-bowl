@@ -12,8 +12,9 @@ participate, the test format, and this year's study material before you register
 
 **Registration for {{< param eventYear >}} opens {{< registration-opens >}}.**
 
-Registration is done **by congregation**. Coaches submit their congregation's information
-and will receive a follow-up email with a Google Sheet link to manage participants and guests.
+Registration is done **by congregation**, right in the
+[Study App](/app/#event/register): sign in, add your congregation, build
+your teams and rosters, and submit — you can keep editing until the deadline.
 
 **Registration deadline for {{< param eventYear >}} is {{< registration-deadline >}}.**
 
@@ -24,10 +25,13 @@ available through Texas Bible Bowl and partnering Christian universities.
 
 | Participant | Cost |
 |---|---|
-| Adults (standard) | {{< param priceAdult >}} per person |
+| Contestants (t-shirt included) | {{< param priceContestant >}} per person |
+| Volunteers & adults (t-shirt included) | {{< param priceAdult >}} per person |
 | Children ages 3–8 | {{< param priceChild >}} per person |
 | Children under 2 | Free |
 | Extra t-shirts | {{< param priceTshirt >}} each |
+
+*{{< param feesTentativeNote >}}*
 
 ## Payment
 

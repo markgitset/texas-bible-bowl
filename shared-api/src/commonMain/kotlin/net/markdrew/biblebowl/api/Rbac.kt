@@ -115,3 +115,23 @@ data class RoleGrant(
     val scopeType: ScopeType = role.defaultScope,
     val scopeId: String? = null,
 )
+
+/**
+ * True if any of [roles] confers [permission] **for [congregationId]**: either a GLOBAL grant
+ * (admin) or a grant scoped to that congregation. This is the congregation-scoped counterpart of
+ * the unscoped [permissionsFor] check; the server enforces it on every registration mutation and
+ * the web UI mirrors it to decide what to render.
+ */
+fun hasScopedPermission(roles: List<RoleGrant>, permission: Permission, congregationId: String): Boolean =
+    roles.any { grant ->
+        permission in ROLE_PERMISSIONS[grant.role].orEmpty() && when (grant.scopeType) {
+            ScopeType.GLOBAL -> true
+            ScopeType.CONGREGATION -> grant.scopeId == congregationId
+            else -> false
+        }
+    }
+
+/** The congregation ids this user coaches (COACH grants scoped to a congregation). */
+fun coachedCongregationIds(roles: List<RoleGrant>): List<String> =
+    roles.filter { it.role == Role.COACH && it.scopeType == ScopeType.CONGREGATION }
+        .mapNotNull { it.scopeId }

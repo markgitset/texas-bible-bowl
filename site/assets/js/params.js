@@ -10,6 +10,16 @@
   var CACHE_KEY = "tbb-season";
 
   // Derived display keys — keep in sync with layouts/partials/season.html.
+  function fmtCents(c) {
+    if (c == null || c < 0) return "TBD";
+    return c % 100 === 0 ? "$" + c / 100 : "$" + (c / 100).toFixed(2);
+  }
+  function fmtIsoDate(iso) {
+    if (!iso) return "TBD";
+    var d = new Date(iso + "T00:00:00");
+    if (isNaN(d)) return "TBD";
+    return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  }
   function derive(s) {
     var year = parseInt(s.eventYear, 10);
     var d = Object.assign({}, s);
@@ -22,9 +32,15 @@
       s.eventTheme && s.eventTheme !== "TBD"
         ? s.eventTheme + " — " + s.eventScripture
         : s.eventScripture;
-    d.registrationOpensTitle = s.registrationOpens.replace(/\b\w/g, function (c) {
-      return c.toUpperCase();
-    });
+    d.priceContestant = fmtCents(s.priceContestantCents);
+    d.priceAdult = fmtCents(s.priceVolunteerCents);
+    d.priceChild = fmtCents(s.priceChildCents);
+    d.priceTshirt = fmtCents(s.priceTshirtCents);
+    d.registrationOpens = fmtIsoDate(s.registrationOpensOn);
+    d.registrationDeadline = fmtIsoDate(s.registrationClosesOn);
+    d.registrationOpensTitle = d.registrationOpens;
+    d.feesTentativeNote =
+      s.feesTentative === false ? "" : "Prices are tentative and subject to change.";
     return d;
   }
 

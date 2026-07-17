@@ -3,6 +3,10 @@
   overridden by data/params.json (which CI bakes from GET /seasons/current before the build),
   plus derived display keys. params.js recomputes the same keys client-side so an admin edit
   is live without a rebuild.
+
+  Fees arrive as integer cents (nil/negative = TBD) and registration dates as ISO strings
+  ("" = TBD); the dollar/date display strings are derived here under the stable key names the
+  content pages reference (priceAdult, registrationOpens, ...).
 */ -}}
 {{- $s := dict
   "eventYear" site.Params.eventYear
@@ -10,17 +14,46 @@
   "eventTheme" site.Params.eventTheme
   "eventScripture" site.Params.eventScripture
   "scholarshipAmount" site.Params.scholarshipAmount
-  "registrationOpens" site.Params.registrationOpens
-  "registrationDeadline" site.Params.registrationDeadline
+  "registrationOpensOn" site.Params.registrationOpensOn
+  "registrationClosesOn" site.Params.registrationClosesOn
   "scholarshipDeadline" site.Params.scholarshipDeadline
-  "priceAdult" site.Params.priceAdult
-  "priceChild" site.Params.priceChild
-  "priceTshirt" site.Params.priceTshirt
+  "priceContestantCents" site.Params.priceContestantCents
+  "priceVolunteerCents" site.Params.priceVolunteerCents
+  "priceChildCents" site.Params.priceChildCents
+  "priceTshirtCents" site.Params.priceTshirtCents
+  "feesTentative" site.Params.feesTentative
   "tbbScholarshipAmount" site.Params.tbbScholarshipAmount
   "maryOrbisonAmount" site.Params.maryOrbisonAmount
   "paulHendricksonAmount" site.Params.paulHendricksonAmount
 -}}
 {{- with site.Data.params }}{{ $s = merge $s . }}{{ end -}}
+{{- /* Dollar display strings from cents (nil or negative = TBD). */ -}}
+{{- range $src, $dst := (dict
+  "priceContestantCents" "priceContestant"
+  "priceVolunteerCents" "priceAdult"
+  "priceChildCents" "priceChild"
+  "priceTshirtCents" "priceTshirt") -}}
+  {{- $c := index $s $src -}}
+  {{- $display := "TBD" -}}
+  {{- if and (ne $c nil) (ge (int $c) 0) -}}
+    {{- $c = int $c -}}
+    {{- if eq (mod $c 100) 0 -}}
+      {{- $display = printf "$%d" (div $c 100) -}}
+    {{- else -}}
+      {{- $display = printf "$%.2f" (div (float $c) 100) -}}
+    {{- end -}}
+  {{- end -}}
+  {{- $s = merge $s (dict $dst $display) -}}
+{{- end -}}
+{{- /* Date display strings from the ISO fields ("" or missing = TBD). */ -}}
+{{- range $src, $dst := (dict
+  "registrationOpensOn" "registrationOpens"
+  "registrationClosesOn" "registrationDeadline") -}}
+  {{- $iso := index $s $src -}}
+  {{- $display := "TBD" -}}
+  {{- with $iso }}{{ $display = (time.AsTime .).Format "January 2, 2006" }}{{ end -}}
+  {{- $s = merge $s (dict $dst $display) -}}
+{{- end -}}
 {{- $year := int (index $s "eventYear") -}}
 {{- $theme := index $s "eventTheme" -}}
 {{- $scripture := index $s "eventScripture" -}}
@@ -31,6 +64,7 @@
   "eventDates" (printf "%s, %s" (index $s "eventDateRange") (index $s "eventYear"))
   "scholarshipDeadlineFull" (cond (eq $deadline "TBD") "TBD" (printf "%s, %d" $deadline $year))
   "seasonTitle" (cond (and $theme (ne $theme "TBD")) (printf "%s — %s" $theme $scripture) $scripture)
-  "registrationOpensTitle" (title (index $s "registrationOpens"))
+  "registrationOpensTitle" (index $s "registrationOpens")
+  "feesTentativeNote" (cond (eq (index $s "feesTentative") false) "" "Prices are tentative and subject to change.")
 ) -}}
 {{- return $s -}}

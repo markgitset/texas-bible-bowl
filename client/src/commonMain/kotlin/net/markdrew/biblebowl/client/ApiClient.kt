@@ -20,14 +20,20 @@ import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ClearPdfCacheResponse
+import net.markdrew.biblebowl.api.CongregationDto
+import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
+import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
+import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.SeasonDto
+import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
+import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.api.UserDto
@@ -106,6 +112,13 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
 
     /** Fetches the signed-in user's profile (requires a token). */
     suspend fun me(): UserDto = client.get("$baseUrl/auth/me") { authorize() }.bodyOrThrow()
+
+    /**
+     * Re-fetches the signed-in user's profile and updates [user] — needed after a server-side role
+     * change (e.g. creating a congregation grants a scoped COACH role) so [UserDto.permissions] and
+     * the scoped grants are fresh without a sign-out/in.
+     */
+    suspend fun refreshUser(): UserDto = me().also { user = it }
 
     /**
      * Adopts a previously issued [token] (e.g. restored from the browser's localStorage) and rehydrates
@@ -252,6 +265,54 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
             if (round != null) parameter("round", round.name)
             if (chapter != null) parameter("chapter", chapter)
         }.bodyOrThrow()
+
+    // --- Registration (coach flow; docs/gui-redesign.md §5E) ---
+
+    /** Creates a congregation; the server grants the caller COACH scoped to it. 409 if it exists. */
+    suspend fun createCongregation(req: CreateCongregationRequest): CongregationDto =
+        client.post("$baseUrl/congregations") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    /** Case-insensitive congregation search (step-1 typeahead). */
+    suspend fun searchCongregations(query: String): List<CongregationDto> =
+        client.get("$baseUrl/congregations") { authorize(); parameter("query", query) }.bodyOrThrow()
+
+    /** The register screen's resume fetch: coached congregations, current registration, window state. */
+    suspend fun myRegistration(): MyRegistrationResponse =
+        client.get("$baseUrl/registration/mine") { authorize() }.bodyOrThrow()
+
+    /** Adds a team to the congregation's current-season registration (created on first team). */
+    suspend fun addTeam(congregationId: String, name: String): RegistrationDto =
+        client.post("$baseUrl/registration/$congregationId/teams") {
+            authorize(); contentType(ContentType.Application.Json); setBody(UpsertTeamRequest(name))
+        }.bodyOrThrow()
+
+    suspend fun renameTeam(teamId: String, name: String): RegistrationDto =
+        client.put("$baseUrl/registration/teams/$teamId") {
+            authorize(); contentType(ContentType.Application.Json); setBody(UpsertTeamRequest(name))
+        }.bodyOrThrow()
+
+    suspend fun deleteTeam(teamId: String): RegistrationDto =
+        client.delete("$baseUrl/registration/teams/$teamId") { authorize() }.bodyOrThrow()
+
+    /** Adds a roster entry (server enforces the 4-contestant cap and generates the claim code). */
+    suspend fun addRosterEntry(teamId: String, req: UpsertRosterEntryRequest): RegistrationDto =
+        client.post("$baseUrl/registration/teams/$teamId/members") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    suspend fun updateRosterEntry(memberId: String, req: UpsertRosterEntryRequest): RegistrationDto =
+        client.put("$baseUrl/registration/members/$memberId") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    suspend fun deleteRosterEntry(memberId: String): RegistrationDto =
+        client.delete("$baseUrl/registration/members/$memberId") { authorize() }.bodyOrThrow()
+
+    /** Submits (or re-submits) the congregation's registration for the current season. */
+    suspend fun submitRegistration(congregationId: String): RegistrationDto =
+        client.post("$baseUrl/registration/$congregationId/submit") { authorize() }.bodyOrThrow()
 
     /**
      * Drops every server-cached generated PDF so the next download of each regenerates (for when the
