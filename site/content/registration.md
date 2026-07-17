@@ -24,10 +24,13 @@ available through Texas Bible Bowl and partnering Christian universities.
 
 | Participant | Cost |
 |---|---|
-| Adults (standard) | {{< param priceAdult >}} per person |
+| Contestants (t-shirt included) | {{< param priceContestant >}} per person |
+| Volunteers & adults (t-shirt included) | {{< param priceAdult >}} per person |
 | Children ages 3–8 | {{< param priceChild >}} per person |
 | Children under 2 | Free |
 | Extra t-shirts | {{< param priceTshirt >}} each |
+
+*{{< param feesTentativeNote >}}*
 
 ## Payment
 
