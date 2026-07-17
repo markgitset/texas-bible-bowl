@@ -53,6 +53,7 @@ import net.markdrew.biblebowl.server.routes.authRoutes
 import net.markdrew.biblebowl.server.routes.bibleRoutes
 import net.markdrew.biblebowl.server.routes.generateRoutes
 import net.markdrew.biblebowl.server.routes.questionRoutes
+import net.markdrew.biblebowl.server.routes.registrationRoutes
 import net.markdrew.biblebowl.server.routes.seasonRoutes
 import net.markdrew.biblebowl.server.routes.studyRoutes
 import net.markdrew.biblebowl.server.security.JwtService
@@ -175,6 +176,7 @@ fun Application.module(
         studyRoutes(study)
         generateRoutes(users, questions, seasons, study, pdfCache)
         seasonRoutes(users, seasons)
+        registrationRoutes(users, seasons, congregations, registrations)
     }
 
     warmStudyCache(study)
