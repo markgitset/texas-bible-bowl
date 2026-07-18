@@ -31,6 +31,7 @@ import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.api.UserDto
@@ -182,11 +183,25 @@ class RegistrationRoutesTest {
         }
         assertEquals(HttpStatusCode.BadRequest, badGrade.status)
 
+        // Adults can't be placed on a team — they register as individual contestants.
+        val withAdult: RegistrationDto = api.post("/registration/${congregation.id}/individuals") {
+            asCoach(); setBody(UpsertIndividualRequest("Pat Adult", ShirtSize.AXL))
+        }.body()
+        val adult = withAdult.individuals.single()
+        assertNull(adult.grade, "individuals never carry a grade")
+        assertEquals(8, adult.claimCode.length)
+        assertEquals(5 * 8500, withAdult.totalCents, "4 team members + 1 individual")
+
+        val editedAdult: RegistrationDto = api.put("/registration/individuals/${adult.id}") {
+            asCoach(); setBody(UpsertIndividualRequest("Pat A.", ShirtSize.AM))
+        }.body()
+        assertEquals("Pat A.", editedAdult.individuals.single().name)
+
         // Submit, then resume shows SUBMITTED with the full roster and total.
         val submitted: RegistrationDto = api.post("/registration/${congregation.id}/submit") { asCoach() }.body()
         assertEquals(RegistrationStatus.SUBMITTED, submitted.status)
         assertNotNull(submitted.submittedAt)
-        assertEquals(4 * 8500, submitted.totalCents)
+        assertEquals(5 * 8500, submitted.totalCents)
 
         val resumed: MyRegistrationResponse = api.get("/registration/mine") { asCoach() }.body()
         assertEquals(RegistrationStatus.SUBMITTED, resumed.registration?.status)
@@ -200,6 +215,10 @@ class RegistrationRoutesTest {
         val memberId = renamed.teams.single().members.first().id
         val afterDelete: RegistrationDto = api.delete("/registration/members/$memberId") { asCoach() }.body()
         assertEquals(3, afterDelete.teams.single().members.size)
+        val afterAdultDelete: RegistrationDto =
+            api.delete("/registration/individuals/${adult.id}") { asCoach() }.body()
+        assertEquals(0, afterAdultDelete.individuals.size)
+        assertEquals(3 * 8500, afterAdultDelete.totalCents)
         assertEquals(HttpStatusCode.OK, api.post("/registration/${congregation.id}/submit") { asCoach() }.status)
     }
 
@@ -240,6 +259,11 @@ class RegistrationRoutesTest {
             setBody(UpsertRosterEntryRequest("Mole", 7, ShirtSize.AM))
         }
         assertEquals(HttpStatusCode.Forbidden, addMember.status)
+        val addIndividual = api.post("/registration/${congA.id}/individuals") {
+            header(HttpHeaders.Authorization, "Bearer ${bob.token}")
+            setBody(UpsertIndividualRequest("Mole Adult", ShirtSize.AM))
+        }
+        assertEquals(HttpStatusCode.Forbidden, addIndividual.status)
         val submit = api.post("/registration/${congA.id}/submit") {
             header(HttpHeaders.Authorization, "Bearer ${bob.token}")
         }
