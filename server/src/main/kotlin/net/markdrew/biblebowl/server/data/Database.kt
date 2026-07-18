@@ -78,6 +78,7 @@ object RegistrationsTable : Table("registrations") {
     val seasonYear = varchar("season_year", 8)
     val status = varchar("status", 16)
     val submittedAtEpochMs = long("submitted_at_epoch_ms").nullable()
+    val paidAtEpochMs = long("paid_at_epoch_ms").nullable()
     val updatedAtEpochMs = long("updated_at_epoch_ms")
     override val primaryKey = PrimaryKey(id)
     init {
@@ -221,6 +222,7 @@ object DatabaseFactory {
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS state VARCHAR(2) NOT NULL DEFAULT ''")
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS mailing_address VARCHAR(200) NOT NULL DEFAULT ''")
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS zip VARCHAR(10) NOT NULL DEFAULT ''")
+            exec("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS paid_at_epoch_ms BIGINT")
         }
         return db
     }

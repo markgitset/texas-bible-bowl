@@ -2,7 +2,9 @@ package net.markdrew.biblebowl.server.data
 
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
+import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
+import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
@@ -23,6 +25,16 @@ interface UserRepository {
     fun findById(id: String): UserRecord?
     /** Adds a role grant to an existing user (no-op if the identical grant is already held). */
     fun addRoleGrant(userId: String, grant: RoleGrant)
+    /** Removes an exact grant (role + scopeType + scopeId). False if the user or grant wasn't found. */
+    fun removeRoleGrant(userId: String, grant: RoleGrant): Boolean
+    /** Case-insensitive substring search over email and display name. A blank query matches nothing. */
+    fun search(query: String, limit: Int = 20): List<UserRecord>
+    /**
+     * Users holding a CONGREGATION-scoped COACH grant for any of [congregationIds], keyed by
+     * congregation id. Returned records may carry only the matching grant in [UserRecord.roles]
+     * (callers want contact info, not the full grant list).
+     */
+    fun coachesByCongregation(congregationIds: Collection<String>): Map<String, List<UserRecord>>
 }
 
 interface QuestionRepository {
@@ -57,6 +69,32 @@ class InMemoryUserRepository : UserRepository {
 
     override fun addRoleGrant(userId: String, grant: RoleGrant) {
         byId[userId]?.roles?.let { roles -> synchronized(roles) { if (grant !in roles) roles.add(grant) } }
+    }
+
+    override fun removeRoleGrant(userId: String, grant: RoleGrant): Boolean {
+        val roles = byId[userId]?.roles ?: return false
+        return synchronized(roles) { roles.removeAll { it == grant } }
+    }
+
+    override fun search(query: String, limit: Int): List<UserRecord> {
+        if (query.isBlank()) return emptyList()
+        return byId.values
+            .filter { it.email.contains(query, ignoreCase = true) || it.displayName.contains(query, ignoreCase = true) }
+            .sortedBy { it.email }
+            .take(limit)
+    }
+
+    override fun coachesByCongregation(congregationIds: Collection<String>): Map<String, List<UserRecord>> {
+        val ids = congregationIds.toSet()
+        return byId.values
+            .flatMap { user ->
+                synchronized(user.roles) {
+                    user.roles.filter {
+                        it.role == Role.COACH && it.scopeType == ScopeType.CONGREGATION && it.scopeId in ids
+                    }.map { it.scopeId!! to user }
+                }
+            }
+            .groupBy({ it.first }, { it.second })
     }
 }
 
