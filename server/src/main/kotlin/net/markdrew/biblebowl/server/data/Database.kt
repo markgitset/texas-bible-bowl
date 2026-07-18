@@ -106,6 +106,8 @@ object TeamMembersTable : Table("team_members") {
     // nullable only for rows that pre-date birthdate collection
     val birthdate = varchar("birthdate", 10).nullable()
     val shirtSize = varchar("shirt_size", 8)
+    val gender = varchar("gender", 6).nullable() // null only on rows created before gender was collected
+    val firstSeasonYear = varchar("first_season_year", 4).nullable() // null = experienced, first year unknown
     val claimCode = varchar("claim_code", 12).uniqueIndex()
     val ownerUserId = varchar("owner_user_id", 36).references(UsersTable.id).nullable()
     override val primaryKey = PrimaryKey(id)
@@ -117,6 +119,7 @@ object IndividualsTable : Table("individual_contestants") {
     val registrationId = varchar("registration_id", 36).references(RegistrationsTable.id)
     val name = varchar("name", 120)
     val shirtSize = varchar("shirt_size", 8)
+    val gender = varchar("gender", 6).nullable() // null only on rows created before gender was collected
     val claimCode = varchar("claim_code", 12).uniqueIndex()
     val ownerUserId = varchar("owner_user_id", 36).references(UsersTable.id).nullable()
     override val primaryKey = PrimaryKey(id)
@@ -232,6 +235,9 @@ object DatabaseFactory {
             exec("ALTER TABLE users DROP COLUMN IF EXISTS grade")
             exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS birthdate VARCHAR(10)")
             exec("ALTER TABLE team_members DROP COLUMN IF EXISTS grade")
+            exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS gender VARCHAR(6)")
+            exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS first_season_year VARCHAR(4)")
+            exec("ALTER TABLE individual_contestants ADD COLUMN IF NOT EXISTS gender VARCHAR(6)")
         }
         return db
     }

@@ -23,6 +23,7 @@ import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.RegisterRequest
@@ -190,46 +191,50 @@ class RegistrationRoutesTest {
         val teamId = withTeam.teams.single().id
 
         val withMember: RegistrationDto = api.post("/registration/teams/$teamId/members") {
-            asCoach(); setBody(UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM))
+            asCoach(); setBody(UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE, inexperienced = true))
         }.body()
         val entry = withMember.teams.single().members.single()
         assertEquals("2013-05-01", entry.birthdate)
+        assertEquals(Gender.MALE, entry.gender)
+        assertEquals(DEFAULT_SEASON.eventYear, entry.firstSeasonYear, "inexperienced → first season is this one")
         assertEquals(8, entry.claimCode.length)
         assertEquals(8500, withMember.totalCents, "1 contestant × \$85")
 
         // Roster cap: 4 max.
         repeat(3) { i ->
             api.post("/registration/teams/$teamId/members") {
-                asCoach(); setBody(UpsertRosterEntryRequest("Kid $i", "2016-05-01", ShirtSize.YL))
+                asCoach(); setBody(UpsertRosterEntryRequest("Kid $i", "2016-05-01", ShirtSize.YL, Gender.FEMALE))
             }
         }
         val fifth = api.post("/registration/teams/$teamId/members") {
-            asCoach(); setBody(UpsertRosterEntryRequest("Fifth", "2015-05-01", ShirtSize.YL))
+            asCoach(); setBody(UpsertRosterEntryRequest("Fifth", "2015-05-01", ShirtSize.YL, Gender.MALE))
         }
         assertEquals(HttpStatusCode.Conflict, fifth.status)
         assertEquals("roster_full", fifth.body<ApiError>().code)
 
         // A birthdate below school age (no division) is rejected, as is a malformed one.
         val tooYoung = api.post("/registration/teams/$teamId/members") {
-            asCoach(); setBody(UpsertRosterEntryRequest("Toddler", "2023-01-01", ShirtSize.YS))
+            asCoach(); setBody(UpsertRosterEntryRequest("Toddler", "2023-01-01", ShirtSize.YS, Gender.MALE))
         }
         assertEquals(HttpStatusCode.BadRequest, tooYoung.status)
         val badDate = api.post("/registration/teams/$teamId/members") {
-            asCoach(); setBody(UpsertRosterEntryRequest("Mystery", "May 2013", ShirtSize.YS))
+            asCoach(); setBody(UpsertRosterEntryRequest("Mystery", "May 2013", ShirtSize.YS, Gender.MALE))
         }
         assertEquals(HttpStatusCode.BadRequest, badDate.status)
 
         // Adults can't be placed on a team — they register as individual contestants.
         val withAdult: RegistrationDto = api.post("/registration/${congregation.id}/individuals") {
-            asCoach(); setBody(UpsertIndividualRequest("Pat Adult", ShirtSize.AXL))
+            asCoach(); setBody(UpsertIndividualRequest("Pat Adult", ShirtSize.AXL, Gender.FEMALE))
         }.body()
         val adult = withAdult.individuals.single()
         assertNull(adult.birthdate, "individuals never carry a birthdate")
+        assertEquals(Gender.FEMALE, adult.gender)
+        assertNull(adult.firstSeasonYear, "no experience split in the Adult division")
         assertEquals(8, adult.claimCode.length)
         assertEquals(5 * 8500, withAdult.totalCents, "4 team members + 1 individual")
 
         val editedAdult: RegistrationDto = api.put("/registration/individuals/${adult.id}") {
-            asCoach(); setBody(UpsertIndividualRequest("Pat A.", ShirtSize.AM))
+            asCoach(); setBody(UpsertIndividualRequest("Pat A.", ShirtSize.AM, Gender.FEMALE))
         }.body()
         assertEquals("Pat A.", editedAdult.individuals.single().name)
 
@@ -292,12 +297,12 @@ class RegistrationRoutesTest {
         assertEquals("forbidden_scope", addTeam.body<ApiError>().code)
         val addMember = api.post("/registration/teams/${teamA.id}/members") {
             header(HttpHeaders.Authorization, "Bearer ${bob.token}")
-            setBody(UpsertRosterEntryRequest("Mole", "2014-05-01", ShirtSize.AM))
+            setBody(UpsertRosterEntryRequest("Mole", "2014-05-01", ShirtSize.AM, Gender.MALE))
         }
         assertEquals(HttpStatusCode.Forbidden, addMember.status)
         val addIndividual = api.post("/registration/${congA.id}/individuals") {
             header(HttpHeaders.Authorization, "Bearer ${bob.token}")
-            setBody(UpsertIndividualRequest("Mole Adult", ShirtSize.AM))
+            setBody(UpsertIndividualRequest("Mole Adult", ShirtSize.AM, Gender.MALE))
         }
         assertEquals(HttpStatusCode.Forbidden, addIndividual.status)
         val submit = api.post("/registration/${congA.id}/submit") {

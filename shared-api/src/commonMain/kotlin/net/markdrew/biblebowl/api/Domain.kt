@@ -102,6 +102,22 @@ fun RosterEntryDto.division(season: SeasonDto): Division? =
 fun TeamDto.division(season: SeasonDto): Division? =
     members.mapNotNull { it.division(season) }.maxOrNull()
 
+/** True when [seasonYear] is this contestant's first — their inexperienced season. */
+fun RosterEntryDto.isInexperienced(seasonYear: String): Boolean = firstSeasonYear == seasonYear
+
+/**
+ * Each non-adult division splits into experienced and inexperienced brackets, and a team never
+ * competes below any member's experience level — so a team is inexperienced only when every
+ * member is in their first year. An empty roster is not inexperienced.
+ */
+fun TeamDto.isInexperienced(seasonYear: String): Boolean =
+    members.isNotEmpty() && members.all { it.isInexperienced(seasonYear) }
+
+/** "Junior (Inexperienced)", "Junior", or "Adult" — the Adult division has no experience split. */
+fun divisionLabel(division: Division, inexperienced: Boolean): String =
+    if (inexperienced && division != Division.ADULT) "${division.displayName} (Inexperienced)"
+    else division.displayName
+
 /** All contestants in a registration: every team member plus every individual (adult) contestant. */
 val RegistrationDto.contestantCount: Int
     get() = teams.sumOf { it.members.size } + individuals.size
