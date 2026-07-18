@@ -135,3 +135,17 @@ fun hasScopedPermission(roles: List<RoleGrant>, permission: Permission, congrega
 fun coachedCongregationIds(roles: List<RoleGrant>): List<String> =
     roles.filter { it.role == Role.COACH && it.scopeType == ScopeType.CONGREGATION }
         .mapNotNull { it.scopeId }
+
+/**
+ * True if any of [roles] confers [permission] **event-wide**: a GLOBAL grant (admin) or an
+ * EVENT-scoped grant whose role carries the permission (e.g. REGISTRAR). A congregation-scoped
+ * COACH grant does NOT qualify even though COACH's permission union contains
+ * [Permission.REGISTRATION_MANAGE] — this is the gate for cross-congregation surfaces like the
+ * registration desk. An EVENT grant's scopeId is ignored until event entities exist; when they
+ * do, this check and the grant-validation rule in the user routes should loosen together.
+ */
+fun hasEventWidePermission(roles: List<RoleGrant>, permission: Permission): Boolean =
+    roles.any { grant ->
+        permission in ROLE_PERMISSIONS[grant.role].orEmpty() &&
+            (grant.scopeType == ScopeType.GLOBAL || grant.scopeType == ScopeType.EVENT)
+    }
