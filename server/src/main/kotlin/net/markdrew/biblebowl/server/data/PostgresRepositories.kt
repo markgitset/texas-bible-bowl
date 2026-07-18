@@ -11,8 +11,13 @@ import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import org.jetbrains.exposed.v1.core.ResultRow
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.isNull
 import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.lowerCase
+import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
 import org.jetbrains.exposed.v1.jdbc.selectAll
@@ -74,6 +79,60 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
                 it[scopeType] = grant.scopeType.name
                 it[scopeId] = grant.scopeId
             }
+        }
+    }
+
+    override fun removeRoleGrant(userId: String, grant: RoleGrant): Boolean = transaction(db) {
+        // Deletes all matching rows: the unique index treats NULL scopeIds as distinct, so
+        // null-scoped grants can exist duplicated; revoking cleans them all up.
+        RoleGrantsTable.deleteWhere {
+            (RoleGrantsTable.userId eq userId) and
+                (role eq grant.role.name) and
+                (scopeType eq grant.scopeType.name) and
+                (grant.scopeId?.let { scopeId eq it } ?: scopeId.isNull())
+        } > 0
+    }
+
+    override fun search(query: String, limit: Int): List<UserRecord> {
+        if (query.isBlank()) return emptyList()
+        val q = "%${query.trim().lowercase()}%"
+        return transaction(db) {
+            UsersTable.selectAll()
+                .where { (UsersTable.email.lowerCase() like q) or (UsersTable.displayName.lowerCase() like q) }
+                .orderBy(UsersTable.email)
+                .limit(limit)
+                .map { it.toUserRecord() }
+        }
+    }
+
+    override fun coachesByCongregation(congregationIds: Collection<String>): Map<String, List<UserRecord>> {
+        if (congregationIds.isEmpty()) return emptyMap()
+        return transaction(db) {
+            (RoleGrantsTable innerJoin UsersTable)
+                .selectAll()
+                .where {
+                    (RoleGrantsTable.role eq Role.COACH.name) and
+                        (RoleGrantsTable.scopeType eq ScopeType.CONGREGATION.name) and
+                        (RoleGrantsTable.scopeId inList congregationIds)
+                }
+                .orderBy(UsersTable.email)
+                .groupBy(
+                    keySelector = { it[RoleGrantsTable.scopeId]!! },
+                    valueTransform = {
+                        UserRecord(
+                            id = it[UsersTable.id],
+                            email = it[UsersTable.email],
+                            displayName = it[UsersTable.displayName],
+                            birthdate = it[UsersTable.birthdate],
+                            adult = it[UsersTable.isAdult],
+                            passwordHash = it[UsersTable.passwordHash],
+                            // Only the matching coach grant — see the interface KDoc.
+                            roles = mutableListOf(
+                                RoleGrant(Role.COACH, ScopeType.CONGREGATION, it[RoleGrantsTable.scopeId]),
+                            ),
+                        )
+                    },
+                )
         }
     }
 

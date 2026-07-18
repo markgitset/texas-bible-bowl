@@ -317,6 +317,8 @@ data class RegistrationDto(
     val totalCents: Int? = null,
     /** ISO-8601 instant of the last submit, or null while a draft. */
     val submittedAt: String? = null,
+    /** ISO-8601 instant when payment was marked received at the registration desk, or null. */
+    val paidAt: String? = null,
 )
 
 /** Everything the register screen needs to resume: who I coach, my current-season registration, window state. */
@@ -326,6 +328,32 @@ data class MyRegistrationResponse(
     val registration: RegistrationDto? = null,
     val windowOpen: Boolean = false,
 )
+
+/** Minimal coach contact for the registration desk — deliberately not a full [UserDto]. */
+@Serializable
+data class CoachContactDto(
+    val displayName: String,
+    val email: String,
+)
+
+/** One registration-desk row: every congregation appears; [registration] is null when none started this season. */
+@Serializable
+data class RegistrationDeskRowDto(
+    val congregation: CongregationDto,
+    val registration: RegistrationDto? = null,
+    val coaches: List<CoachContactDto> = emptyList(),
+)
+
+/** The full registration desk for the current season (`GET /admin/registrations`). */
+@Serializable
+data class RegistrationDeskResponse(
+    val seasonYear: String,
+    val rows: List<RegistrationDeskRowDto> = emptyList(),
+)
+
+/** Marks a registration's payment received (true) or clears it (false). */
+@Serializable
+data class SetPaidRequest(val paid: Boolean)
 
 // ---------------------------------------------------------------------------
 // Generated-PDF cache administration

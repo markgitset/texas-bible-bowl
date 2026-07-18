@@ -35,6 +35,8 @@ interface CongregationRepository {
     fun findByIds(ids: Collection<String>): List<CongregationDto>
     /** Case-insensitive substring search over name and city, for the step-1 typeahead. */
     fun search(query: String): List<CongregationDto>
+    /** Every congregation, sorted by name (registration desk). */
+    fun listAll(): List<CongregationDto>
 }
 
 /** Outcome of adding a roster entry — the roster cap is enforced inside the repository transaction. */
@@ -68,6 +70,10 @@ interface RegistrationRepository {
     fun congregationIdForTeam(teamId: String): String?
     fun congregationIdForMember(memberId: String): String?
     fun congregationIdForIndividual(individualId: String): String?
+    /** Every registration for [seasonYear], with full teams/rosters (registration desk). */
+    fun listForSeason(seasonYear: String): List<RegistrationDto>
+    /** Sets (non-null) or clears (null) payment received. Null return = no such registration. */
+    fun setPaid(registrationId: String, paidAtEpochMs: Long?): RegistrationDto?
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +113,8 @@ class InMemoryCongregationRepository : CongregationRepository {
             .filter { it.name.contains(q, ignoreCase = true) || it.city.contains(q, ignoreCase = true) }
             .sortedBy { it.name }
     }
+
+    override fun listAll(): List<CongregationDto> = byId.values.sortedBy { it.name.lowercase() }
 }
 
 class InMemoryRegistrationRepository(
@@ -119,6 +127,7 @@ class InMemoryRegistrationRepository(
         val seasonYear: String,
         var status: RegistrationStatus,
         var submittedAtMs: Long?,
+        var paidAtMs: Long? = null,
         val teamIds: MutableList<String> = mutableListOf(),
         val individualIds: MutableList<String> = mutableListOf(),
     )
@@ -291,6 +300,16 @@ class InMemoryRegistrationRepository(
         individualReg[individualId]?.let { regId -> regs.values.firstOrNull { it.id == regId }?.congregationId }
     }
 
+    override fun listForSeason(seasonYear: String): List<RegistrationDto> = synchronized(lock) {
+        regs.values.filter { it.seasonYear == seasonYear }.map { it.toDto() }
+    }
+
+    override fun setPaid(registrationId: String, paidAtEpochMs: Long?): RegistrationDto? = synchronized(lock) {
+        val reg = regs.values.firstOrNull { it.id == registrationId } ?: return null
+        reg.paidAtMs = paidAtEpochMs
+        reg.toDto()
+    }
+
     private fun Team.toDto() = TeamDto(id, name, memberIds.mapNotNull { members[it] })
 
     private fun Reg.toDto(): RegistrationDto = RegistrationDto(
@@ -302,6 +321,7 @@ class InMemoryRegistrationRepository(
         teams = teamIds.mapNotNull { teams[it]?.toDto() },
         individuals = individualIds.mapNotNull { individuals[it] },
         submittedAt = submittedAtMs?.let { Instant.ofEpochMilli(it).toString() },
+        paidAt = paidAtMs?.let { Instant.ofEpochMilli(it).toString() },
     )
 }
 
@@ -351,6 +371,10 @@ class PostgresCongregationRepository(private val db: Database) : CongregationRep
             .where { (CongregationsTable.name.lowerCase() like q) or (CongregationsTable.city.lowerCase() like q) }
             .orderBy(CongregationsTable.name)
             .map { it.toDto() }
+    }
+
+    override fun listAll(): List<CongregationDto> = transaction(db) {
+        CongregationsTable.selectAll().orderBy(CongregationsTable.name).map { it.toDto() }
     }
 
     private fun ResultRow.toDto() = CongregationDto(
@@ -557,6 +581,21 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             .singleOrNull()?.get(RegistrationsTable.congregationId)
     }
 
+    override fun listForSeason(seasonYear: String): List<RegistrationDto> = transaction(db) {
+        RegistrationsTable.selectAll()
+            .where { RegistrationsTable.seasonYear eq seasonYear }
+            .map { it.toDto() }
+    }
+
+    override fun setPaid(registrationId: String, paidAtEpochMs: Long?): RegistrationDto? = transaction(db) {
+        val updated = RegistrationsTable.update({ RegistrationsTable.id eq registrationId }) {
+            it[RegistrationsTable.paidAtEpochMs] = paidAtEpochMs
+            it[updatedAtEpochMs] = System.currentTimeMillis()
+        }
+        if (updated == 0) null
+        else RegistrationsTable.selectAll().where { RegistrationsTable.id eq registrationId }.single().toDto()
+    }
+
     private fun regRow(congregationId: String, seasonYear: String): ResultRow? =
         RegistrationsTable.selectAll()
             .where {
@@ -628,6 +667,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 .orderBy(IndividualsTable.name)
                 .map { it.toIndividual() },
             submittedAt = this[RegistrationsTable.submittedAtEpochMs]?.let { Instant.ofEpochMilli(it).toString() },
+            paidAt = this[RegistrationsTable.paidAtEpochMs]?.let { Instant.ofEpochMilli(it).toString() },
         )
     }
 }

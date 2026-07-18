@@ -34,6 +34,36 @@ class RbacTest {
         assertTrue(Permission.SCORE_ENTER in perms)
         assertTrue(Permission.SCORE_RELEASE in perms)
     }
+
+    @Test
+    fun globalAdminHasEventWideRegistrationManage() {
+        assertTrue(hasEventWidePermission(listOf(RoleGrant(Role.ADMIN)), Permission.REGISTRATION_MANAGE))
+    }
+
+    @Test
+    fun registrarHasEventWideRegistrationManage() {
+        assertTrue(hasEventWidePermission(listOf(RoleGrant(Role.REGISTRAR)), Permission.REGISTRATION_MANAGE))
+    }
+
+    @Test
+    fun congregationScopedCoachIsNotEventWide() {
+        // COACH's permission union contains REGISTRATION_MANAGE, but the grant is congregation-scoped.
+        val coach = RoleGrant(Role.COACH, ScopeType.CONGREGATION, "c1")
+        assertTrue(Permission.REGISTRATION_MANAGE in permissionsFor(listOf(Role.COACH)))
+        assertFalse(hasEventWidePermission(listOf(coach), Permission.REGISTRATION_MANAGE))
+    }
+
+    @Test
+    fun eventScopeWithoutThePermissionIsNotEnough() {
+        assertFalse(hasEventWidePermission(listOf(RoleGrant(Role.GRADER)), Permission.REGISTRATION_MANAGE))
+        assertFalse(hasEventWidePermission(listOf(RoleGrant(Role.CONTESTANT)), Permission.REGISTRATION_MANAGE))
+    }
+
+    @Test
+    fun mixedGrantsPassIfAnyIsEventWide() {
+        val roles = listOf(RoleGrant(Role.COACH, ScopeType.CONGREGATION, "c1"), RoleGrant(Role.REGISTRAR))
+        assertTrue(hasEventWidePermission(roles, Permission.REGISTRATION_MANAGE))
+    }
 }
 
 class DomainTest {

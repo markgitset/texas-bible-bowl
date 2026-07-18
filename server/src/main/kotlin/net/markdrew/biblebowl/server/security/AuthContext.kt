@@ -10,6 +10,7 @@ import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.UserDto
+import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.hasScopedPermission
 import net.markdrew.biblebowl.api.permissionsFor
 import net.markdrew.biblebowl.server.data.UserRecord
@@ -63,6 +64,23 @@ suspend fun RoutingContext.requireScopedPermission(
         call.respond(
             HttpStatusCode.Forbidden,
             ApiError("forbidden_scope", "Missing permission $permission for this congregation"),
+        )
+    }
+    return granted
+}
+
+/**
+ * Returns true if [user] holds [permission] event-wide (a GLOBAL or EVENT-scoped grant);
+ * otherwise responds 403 and returns false. This is what keeps coaches — whose
+ * congregation-scoped grant also carries REGISTRATION_MANAGE — off cross-congregation
+ * surfaces like the registration desk.
+ */
+suspend fun RoutingContext.requireEventWidePermission(user: UserRecord, permission: Permission): Boolean {
+    val granted = hasEventWidePermission(user.roles, permission)
+    if (!granted) {
+        call.respond(
+            HttpStatusCode.Forbidden,
+            ApiError("forbidden_scope", "Missing event-wide permission: $permission"),
         )
     }
     return granted

@@ -4,8 +4,11 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
 import net.markdrew.biblebowl.api.Permission
+import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.web.screens.AccountScreen
+import net.markdrew.biblebowl.web.screens.AdminRegistrationsScreen
 import net.markdrew.biblebowl.web.screens.AdminSeasonScreen
+import net.markdrew.biblebowl.web.screens.AdminUsersScreen
 import net.markdrew.biblebowl.web.screens.AuthScreen
 import net.markdrew.biblebowl.web.screens.ContributeScreen
 import net.markdrew.biblebowl.web.screens.DownloadsScreen
@@ -101,6 +104,12 @@ object Shell {
             Routes.ADMIN_SEASON -> gated(container, Permission.SEASON_MANAGE) {
                 AdminSeasonScreen.render(container)
             }
+            Routes.ADMIN_REGISTRATIONS -> gatedEventWide(container, Permission.REGISTRATION_MANAGE) {
+                AdminRegistrationsScreen.render(container)
+            }
+            Routes.ADMIN_USERS -> gated(container, Permission.USER_MANAGE) {
+                AdminUsersScreen.render(container)
+            }
             else -> StudyHubScreen.render(container) // unknown deep link → hub, same as the wasm app
         }
     }
@@ -119,6 +128,17 @@ object Shell {
     /** Like [gated] but requires only a signed-in user, any permissions. */
     private fun signedIn(container: HTMLElement, render: () -> Unit) {
         if (Session.user != null) render() else AuthScreen.render(container)
+    }
+
+    /**
+     * Like [gated], but requires [permission] via a GLOBAL or EVENT-scoped grant. A coach's
+     * congregation-scoped REGISTRATION_MANAGE (which IS in the permission union [gated] checks)
+     * deliberately does not qualify — mirrors the server's requireEventWidePermission.
+     */
+    private fun gatedEventWide(container: HTMLElement, permission: Permission, render: () -> Unit) {
+        val user = Session.user
+        if (user != null && hasEventWidePermission(user.roles, permission)) render()
+        else AuthScreen.render(container)
     }
 
 }

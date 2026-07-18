@@ -134,6 +134,35 @@ class RegistrationRepositoryTest {
     }
 
     @Test
+    fun listForSeasonReturnsOnlyThatSeasonsRegistrationsInFull() {
+        val a = newCongregation("List Church A", "Waco")!!
+        val b = newCongregation("List Church B", "Hutto")!!
+        val team = repo.addTeam(a.id, "2027", "Team A")!!
+        repo.addMember(team.id, entry("Kid"))
+        repo.addIndividual(a.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL, Gender.FEMALE))
+        repo.addTeam(b.id, "2026", "Old Team")
+
+        val listed = repo.listForSeason("2027")
+        assertEquals(listOf(a.id), listed.map { it.congregation.id })
+        assertEquals(1, listed.single().teams.single().members.size)
+        assertEquals(1, listed.single().individuals.size)
+        assertEquals(listOf(b.id), repo.listForSeason("2026").map { it.congregation.id })
+    }
+
+    @Test
+    fun setPaidSetsAndClearsThePaymentTimestamp() {
+        val cong = newCongregation("Paid Church", "Temple")!!
+        val regId = repo.addTeam(cong.id, "2027", "Team A")!!.let { repo.find(cong.id, "2027")!!.id }
+        assertNull(repo.find(cong.id, "2027")!!.paidAt)
+
+        val paid = repo.setPaid(regId, 1_700_000_000_000L)!!
+        assertNotNull(paid.paidAt)
+        val cleared = repo.setPaid(regId, null)!!
+        assertNull(cleared.paidAt)
+        assertNull(repo.setPaid("nope", 1L), "unknown registration id")
+    }
+
+    @Test
     fun firstSeasonYearComesFromTheCheckboxOnFirstSight() {
         val cong = newCongregation("Rookie Church", "Waco")!!
         val team = repo.addTeam(cong.id, "2027", "Team A")!!

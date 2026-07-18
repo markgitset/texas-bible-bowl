@@ -274,7 +274,7 @@ private fun CreateCongregationRequest.isValid(): Boolean =
         zip.trim().matches(ZIP_REGEX)
 
 /** Decorates a registration with the contestant total computed from the current season's fees. */
-private fun RegistrationDto.withTotal(seasons: SeasonRepository): RegistrationDto =
+internal fun RegistrationDto.withTotal(seasons: SeasonRepository): RegistrationDto =
     copy(totalCents = registrationTotalCents(seasons.current(), contestantCount))
 
 /**
