@@ -175,10 +175,12 @@ Typst compile.
 
 ### E. Registration
 - **`#/event/register` — coach flow** (TEAM_MANAGE). 4-step linear flow, progress rail, resumable,
-  editable until deadline: (1) **Congregation** claim/confirm → (2) **Teams** (division computed via
-  `Division.forGrade`, highest-member rule shown inline) → (3) **Roster** (≤4/team; name, grade,
-  shirt size; running price total from season params; each entry gets a **claim code** the coach can
-  share so a contestant/parent account can later claim it) → (4) **Review & submit** — payment
+  editable until deadline: (1) **Congregation** claim/confirm → (2) **Teams** (grades 3–12 only;
+  division computed via `Division.forGrade`, highest-member rule shown inline) → (3) **Roster**
+  (≤4/team; name, grade, shirt size; plus **individual adult contestants** — adults are never on a
+  team, each competes individually in the Adult division; running price total from season params;
+  each entry gets a **claim code** the coach can share so a contestant/parent account can later
+  claim it) → (4) **Review & submit** — payment
   instructions pre-filled (mail-a-check now; online payment drops into this step later).
 - **`#/event/registration-desk`** (REGISTRATION_MANAGE). Table of congregations/teams: status,
   payment-received toggle, contestant-code assignment, event-day check-in, CSV export.

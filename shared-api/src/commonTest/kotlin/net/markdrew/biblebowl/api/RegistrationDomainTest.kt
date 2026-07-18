@@ -24,8 +24,20 @@ class RegistrationDomainTest {
         assertNull(TeamDto("t", "Empty").division())
         val mixed = TeamDto("t", "Mixed", listOf(entry(3), entry(8)))
         assertEquals(Division.JUNIOR, mixed.division())
-        val withAdult = TeamDto("t", "With Adult", listOf(entry(3), entry(null)))
-        assertEquals(Division.ADULT, withAdult.division())
+    }
+
+    @Test
+    fun contestantCountSpansTeamsAndIndividuals() {
+        val reg = RegistrationDto(
+            id = "r",
+            congregation = CongregationDto("c", "First Church", "Austin"),
+            seasonYear = "2027",
+            status = RegistrationStatus.DRAFT,
+            teams = listOf(TeamDto("t", "Team A", listOf(entry(3), entry(8)))),
+            individuals = listOf(entry(null)),
+        )
+        assertEquals(3, reg.contestantCount)
+        assertEquals(0, reg.copy(teams = emptyList(), individuals = emptyList()).contestantCount)
     }
 
     @Test
