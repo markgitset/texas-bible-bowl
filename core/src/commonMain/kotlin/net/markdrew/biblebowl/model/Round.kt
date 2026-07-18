@@ -40,7 +40,7 @@ enum class Round(
         minutes = 25,
         openBible = true,
         multipleChoice = false,
-        maxPoints = 50,
+        maxPoints = 40,
     ),
     FACT_FINDER(
         number = 2,

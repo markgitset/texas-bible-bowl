@@ -355,6 +355,74 @@ data class RegistrationDeskResponse(
 @Serializable
 data class SetPaidRequest(val paid: Boolean)
 
+/**
+ * Claims a roster entry by its coach-shared code (`POST /roster/claim`); dashes and case are
+ * ignored, so "abcd-2345" matches "ABCD2345". Claiming links the entry to the signed-in account,
+ * which is what My Scores' owner scoping keys off.
+ */
+@Serializable
+data class ClaimEntryRequest(val code: String)
+
+// ---------------------------------------------------------------------------
+// Scoring (grading desk, release, my scores) — docs/gui-redesign.md §5F
+// ---------------------------------------------------------------------------
+
+/**
+ * One contestant's row of scores — a grading-grid row for graders, and the same shape a coach or
+ * owner sees on My Scores once released.
+ */
+@Serializable
+data class ScoreRowDto(
+    val rosterEntryId: String,
+    val contestantName: String,
+    val congregationName: String,
+    /** Team name, or null for an individual (adult) contestant. */
+    val teamName: String? = null,
+    /** The division this contestant competes in: their team's division, or ADULT for an individual. */
+    val division: Division? = null,
+    /** The team's experience bracket (a team competes at its most-experienced member's level). */
+    val inexperienced: Boolean = false,
+    /** Entered points keyed by round; rounds not yet graded are absent. */
+    val scores: Map<Round, Int> = emptyMap(),
+)
+
+/** The grading desk for the current season (`GET /admin/scores`): every contestant, every round. */
+@Serializable
+data class GradingSheetResponse(
+    val seasonYear: String,
+    /** ISO-8601 instant the season's scores were released, or null while unreleased. */
+    val releasedAt: String? = null,
+    val rows: List<ScoreRowDto> = emptyList(),
+)
+
+/** One score cell to save; null [points] clears a previously entered score. */
+@Serializable
+data class ScoreEntryDto(
+    val rosterEntryId: String,
+    val round: Round,
+    val points: Int? = null,
+)
+
+/** Batch save from the grading grid — each cell is validated (0..maxPoints, round eligibility). */
+@Serializable
+data class SaveScoresRequest(val scores: List<ScoreEntryDto>)
+
+/** Releases (true) or retracts (false) the current season's scores. */
+@Serializable
+data class SetScoresReleasedRequest(val released: Boolean)
+
+/**
+ * The signed-in user's visible scores (`GET /scores/mine`): rows for every contestant they own or
+ * coach. Empty — with [released] false — until a SCORE_RELEASE holder releases the season's
+ * scores; nothing is visible pre-release.
+ */
+@Serializable
+data class MyScoresResponse(
+    val seasonYear: String,
+    val released: Boolean = false,
+    val rows: List<ScoreRowDto> = emptyList(),
+)
+
 // ---------------------------------------------------------------------------
 // Generated-PDF cache administration
 // ---------------------------------------------------------------------------
