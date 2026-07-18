@@ -72,6 +72,10 @@ class RegistrationRoutesTest {
 
     private suspend inline fun <reified T> HttpResponse.body(): T = json.decodeFromString<T>(bodyAsText())
 
+    private fun congregationRequest(name: String, city: String) = CreateCongregationRequest(
+        name = name, city = city, state = "TX", mailingAddress = "123 Main St", zip = "78701",
+    )
+
     @Test
     fun creatingACongregationGrantsScopedCoach() = testApplication {
         val users = InMemoryUserRepository()
@@ -84,12 +88,23 @@ class RegistrationRoutesTest {
         val coach = api.signUp("coach@tbb.org", "Carol Coach")
         assertFalse(Permission.TEAM_MANAGE in coach.user.permissions, "not a coach yet")
 
-        val res = api.post("/congregations") {
+        // Missing address fields (state defaults to blank here) are a 400.
+        val invalid = api.post("/congregations") {
             header(HttpHeaders.Authorization, "Bearer ${coach.token}")
             setBody(CreateCongregationRequest("First Church", "Austin"))
         }
+        assertEquals(HttpStatusCode.BadRequest, invalid.status)
+        assertEquals("invalid_congregation", invalid.body<ApiError>().code)
+
+        val res = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+            setBody(congregationRequest("First Church", "Austin").copy(state = "tx"))
+        }
         assertEquals(HttpStatusCode.Created, res.status)
         val congregation: CongregationDto = res.body()
+        assertEquals("TX", congregation.state, "state is normalized to uppercase")
+        assertEquals("123 Main St", congregation.mailingAddress)
+        assertEquals("78701", congregation.zip)
 
         // The grant is scoped to the new congregation and visible via /auth/me.
         val me: UserDto = api.get("/auth/me") {
@@ -102,7 +117,7 @@ class RegistrationRoutesTest {
         val other = api.signUp("other@tbb.org", "Other Coach")
         val dupe = api.post("/congregations") {
             header(HttpHeaders.Authorization, "Bearer ${other.token}")
-            setBody(CreateCongregationRequest("FIRST CHURCH", "austin"))
+            setBody(congregationRequest("FIRST CHURCH", "austin"))
         }
         assertEquals(HttpStatusCode.Conflict, dupe.status)
         assertEquals("congregation_exists", dupe.body<ApiError>().code)
@@ -125,7 +140,7 @@ class RegistrationRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${coach.token}")
 
         val congregation: CongregationDto = api.post("/congregations") {
-            asCoach(); setBody(CreateCongregationRequest("Flow Church", "Waco"))
+            asCoach(); setBody(congregationRequest("Flow Church", "Waco"))
         }.body()
 
         // Resume fetch before any team: congregation listed, no registration yet, window open.
@@ -200,7 +215,7 @@ class RegistrationRoutesTest {
         val alice = api.signUp("alice@tbb.org", "Alice")
         val congA: CongregationDto = api.post("/congregations") {
             header(HttpHeaders.Authorization, "Bearer ${alice.token}")
-            setBody(CreateCongregationRequest("Alpha Church", "Austin"))
+            setBody(congregationRequest("Alpha Church", "Austin"))
         }.body()
         val teamA = api.post("/registration/${congA.id}/teams") {
             header(HttpHeaders.Authorization, "Bearer ${alice.token}")
@@ -210,7 +225,7 @@ class RegistrationRoutesTest {
         val bob = api.signUp("bob@tbb.org", "Bob")
         api.post("/congregations") {
             header(HttpHeaders.Authorization, "Bearer ${bob.token}")
-            setBody(CreateCongregationRequest("Beta Church", "Dallas"))
+            setBody(congregationRequest("Beta Church", "Dallas"))
         }
 
         // Bob holds TEAM_MANAGE (he's a coach) but not for Alice's congregation.
@@ -258,7 +273,7 @@ class RegistrationRoutesTest {
         val coach = api.signUp("late@tbb.org", "Late Coach")
         val congregation: CongregationDto = api.post("/congregations") {
             header(HttpHeaders.Authorization, "Bearer ${coach.token}")
-            setBody(CreateCongregationRequest("Late Church", "Waco"))
+            setBody(congregationRequest("Late Church", "Waco"))
         }.body()
 
         // ...but team mutations are.

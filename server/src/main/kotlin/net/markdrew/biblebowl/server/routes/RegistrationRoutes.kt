@@ -51,13 +51,16 @@ fun Route.registrationRoutes(
         post("/congregations") {
             val user = currentUser(users) ?: return@post
             val req = call.receive<CreateCongregationRequest>()
-            if (req.name.isBlank() || req.city.isBlank()) {
+            if (!req.isValid()) {
                 return@post call.respond(
                     HttpStatusCode.BadRequest,
-                    ApiError("invalid_congregation", "Name and city are required"),
+                    ApiError(
+                        "invalid_congregation",
+                        "Name, mailing address, city, two-letter state, and 5-digit ZIP are required",
+                    ),
                 )
             }
-            val created = congregations.create(req.name, req.city, user.id)
+            val created = congregations.create(req.copy(state = req.state.trim().uppercase()), user.id)
                 ?: return@post call.respond(
                     HttpStatusCode.Conflict,
                     ApiError(
@@ -203,6 +206,13 @@ fun Route.registrationRoutes(
 
 private fun UpsertRosterEntryRequest.isValid(): Boolean =
     name.isNotBlank() && (grade == null || grade in 3..12)
+
+private val ZIP_REGEX = Regex("""\d{5}(-\d{4})?""")
+
+private fun CreateCongregationRequest.isValid(): Boolean =
+    name.isNotBlank() && city.isNotBlank() && mailingAddress.isNotBlank() &&
+        state.trim().length == 2 && state.trim().all { it.isLetter() } &&
+        zip.trim().matches(ZIP_REGEX)
 
 /** Decorates a registration with the contestant total computed from the current season's fees. */
 private fun RegistrationDto.withTotal(seasons: SeasonRepository): RegistrationDto =

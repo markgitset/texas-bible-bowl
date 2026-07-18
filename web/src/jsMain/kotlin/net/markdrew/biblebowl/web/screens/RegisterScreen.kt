@@ -141,7 +141,10 @@ object RegisterScreen {
             parent.child("div", "card section-card mb-3") {
                 child("div", "card-body") {
                     child("h5", "card-title", "Your congregation")
-                    child("p", "mb-0", "${existing.name} — ${existing.city}")
+                    child("p", "mb-0", "${existing.name} — ${cityStateLine(existing)}")
+                    if (existing.mailingAddress.isNotBlank()) {
+                        child("p", "text-muted small mb-0", "${existing.mailingAddress}, ${cityStateLine(existing)} ${existing.zip}")
+                    }
                 }
             }
             parent.nextButton("Continue to teams", 2)
@@ -156,14 +159,37 @@ object RegisterScreen {
                 child("h5", "card-title", "Start a new congregation")
                 val form = child("form")
                 lateinit var name: HTMLInputElement
+                lateinit var address: HTMLInputElement
                 lateinit var city: HTMLInputElement
+                lateinit var state: HTMLInputElement
+                lateinit var zip: HTMLInputElement
                 form.child("div", "mb-2") {
                     child("label", "form-label", "Congregation name")
                     name = child("input", "form-control") as HTMLInputElement
                 }
-                form.child("div", "mb-3") {
-                    child("label", "form-label", "City")
-                    city = child("input", "form-control") as HTMLInputElement
+                form.child("div", "mb-2") {
+                    child("label", "form-label", "Mailing address")
+                    address = child("input", "form-control") as HTMLInputElement
+                    address.setAttribute("placeholder", "Street address or PO Box")
+                }
+                form.child("div", "d-flex flex-wrap gap-2 mb-3") {
+                    child("div", "flex-grow-1") {
+                        child("label", "form-label", "City")
+                        city = child("input", "form-control") as HTMLInputElement
+                    }
+                    child("div") {
+                        child("label", "form-label", "State")
+                        state = child("input", "form-control") as HTMLInputElement
+                        state.value = "TX"
+                        state.setAttribute("maxlength", "2")
+                        state.setAttribute("size", "3")
+                    }
+                    child("div") {
+                        child("label", "form-label", "ZIP")
+                        zip = child("input", "form-control") as HTMLInputElement
+                        zip.setAttribute("maxlength", "10")
+                        zip.setAttribute("size", "6")
+                    }
                 }
                 // Deliberately enabled even outside the window: creating a congregation is
                 // onboarding, not registration (the server draws the same line).
@@ -173,12 +199,21 @@ object RegisterScreen {
                 val slot = form.child("div")
                 form.addEventListener("submit", { event ->
                     event.preventDefault()
-                    if (name.value.isBlank() || city.value.isBlank()) return@addEventListener
+                    val fields = listOf(name, address, city, state, zip)
+                    if (fields.any { it.value.isBlank() }) return@addEventListener
                     create.disabled = true
                     slot.clear()
                     Shell.scope.launch {
                         try {
-                            Session.api.createCongregation(CreateCongregationRequest(name.value, city.value))
+                            Session.api.createCongregation(
+                                CreateCongregationRequest(
+                                    name = name.value,
+                                    city = city.value,
+                                    state = state.value,
+                                    mailingAddress = address.value,
+                                    zip = zip.value,
+                                )
+                            )
                             Session.api.refreshUser() // pick up the new scoped COACH grant
                             loaded = Session.api.myRegistration()
                             step = 2
@@ -224,6 +259,10 @@ object RegisterScreen {
             }
         }
     }
+
+    /** "Austin, TX" — or just "Austin" for congregations created before state was collected. */
+    private fun cityStateLine(cong: CongregationDto): String =
+        if (cong.state.isBlank()) cong.city else "${cong.city}, ${cong.state}"
 
     private fun contactUsMessage(serverMessage: String?): String =
         (serverMessage?.let { "$it. " } ?: "") +
@@ -421,7 +460,7 @@ object RegisterScreen {
 
         parent.child("div", "card section-card mb-3") {
             child("div", "card-body") {
-                child("h5", "card-title", "${cong.name} — ${cong.city} · ${reg.seasonYear} season")
+                child("h5", "card-title", "${cong.name} — ${cityStateLine(cong)} · ${reg.seasonYear} season")
                 child("table", "table mb-2") {
                     child("thead") {
                         child("tr") {

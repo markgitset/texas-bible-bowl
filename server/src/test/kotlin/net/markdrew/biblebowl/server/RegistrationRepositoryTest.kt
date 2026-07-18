@@ -1,5 +1,6 @@
 package net.markdrew.biblebowl.server
 
+import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
@@ -22,18 +23,24 @@ class RegistrationRepositoryTest {
 
     private fun entry(name: String) = UpsertRosterEntryRequest(name, grade = 7, shirtSize = ShirtSize.AM)
 
+    private fun newCongregation(name: String, city: String, userId: String = "u1") =
+        congregations.create(
+            CreateCongregationRequest(name, city, state = "TX", mailingAddress = "123 Main St", zip = "78701"),
+            userId,
+        )
+
     @Test
     fun congregationNamesAreUniquePerCity() {
-        assertNotNull(congregations.create("First Church", "Austin", "u1"))
-        assertNull(congregations.create("  first church ", "AUSTIN", "u2"), "case/space-insensitive dupe")
-        assertNotNull(congregations.create("First Church", "Dallas", "u2"), "same name, different city is fine")
+        assertNotNull(newCongregation("First Church", "Austin"))
+        assertNull(newCongregation("  first church ", "AUSTIN", "u2"), "case/space-insensitive dupe")
+        assertNotNull(newCongregation("First Church", "Dallas", "u2"), "same name, different city is fine")
         assertEquals(2, congregations.search("church").size)
         assertEquals(1, congregations.search("dallas").size)
     }
 
     @Test
     fun rosterIsCappedAtFourMembers() {
-        val cong = congregations.create("Cap Church", "Waco", "u1")!!
+        val cong = newCongregation("Cap Church", "Waco")!!
         val team = repo.addTeam(cong.id, "2027", "Team A")!!
         repeat(MAX_TEAM_SIZE) {
             assertIs<AddMemberResult.Added>(repo.addMember(team.id, entry("Kid $it")))
@@ -47,7 +54,7 @@ class RegistrationRepositoryTest {
 
     @Test
     fun teamNamesAreUniqueWithinARegistration() {
-        val cong = congregations.create("Dupe Church", "Tyler", "u1")!!
+        val cong = newCongregation("Dupe Church", "Tyler")!!
         assertNotNull(repo.addTeam(cong.id, "2027", "Alpha"))
         assertNull(repo.addTeam(cong.id, "2027", " alpha "))
         assertNotNull(repo.addTeam(cong.id, "2027", "Beta"))
@@ -55,7 +62,7 @@ class RegistrationRepositoryTest {
 
     @Test
     fun claimCodesAreUniqueAndWellFormed() {
-        val cong = congregations.create("Code Church", "Amarillo", "u1")!!
+        val cong = newCongregation("Code Church", "Amarillo")!!
         val codes = mutableSetOf<String>()
         repeat(50) { i ->
             val team = repo.addTeam(cong.id, "2027", "Team $i")!!
@@ -72,7 +79,7 @@ class RegistrationRepositoryTest {
 
     @Test
     fun submitIsIdempotentAndRegistrationResumes() {
-        val cong = congregations.create("Submit Church", "El Paso", "u1")!!
+        val cong = newCongregation("Submit Church", "El Paso")!!
         assertNull(repo.find(cong.id, "2027"), "no registration until a team is added")
         assertNull(repo.submit(cong.id, "2027"), "nothing to submit yet")
         val team = repo.addTeam(cong.id, "2027", "Team A")!!
@@ -91,7 +98,7 @@ class RegistrationRepositoryTest {
 
     @Test
     fun scopingLookupsResolveTheCongregation() {
-        val cong = congregations.create("Scope Church", "Abilene", "u1")!!
+        val cong = newCongregation("Scope Church", "Abilene")!!
         val team = repo.addTeam(cong.id, "2027", "Team A")!!
         val member = assertIs<AddMemberResult.Added>(repo.addMember(team.id, entry("Kid"))).entry
         assertEquals(cong.id, repo.congregationIdForTeam(team.id))
@@ -101,7 +108,7 @@ class RegistrationRepositoryTest {
 
     @Test
     fun deleteTeamCascadesToMembers() {
-        val cong = congregations.create("Cascade Church", "Lubbock", "u1")!!
+        val cong = newCongregation("Cascade Church", "Lubbock")!!
         val team = repo.addTeam(cong.id, "2027", "Team A")!!
         val member = assertIs<AddMemberResult.Added>(repo.addMember(team.id, entry("Kid"))).entry
         assertTrue(repo.deleteTeam(team.id))

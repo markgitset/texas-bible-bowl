@@ -60,6 +60,9 @@ object CongregationsTable : Table("congregations") {
     val id = varchar("id", 36)
     val name = varchar("name", 160)
     val city = varchar("city", 120)
+    val state = varchar("state", 2).default("")
+    val mailingAddress = varchar("mailing_address", 200).default("")
+    val zip = varchar("zip", 10).default("")
     val createdByUserId = varchar("created_by_user_id", 36).references(UsersTable.id)
     val createdAtEpochMs = long("created_at_epoch_ms")
     override val primaryKey = PrimaryKey(id)
@@ -202,6 +205,11 @@ object DatabaseFactory {
                 TextAnnotationsTable, GeneratedPdfsTable, SeasonsTable,
                 CongregationsTable, RegistrationsTable, TeamsTable, TeamMembersTable,
             )
+            // SchemaUtils.create only creates missing *tables* — columns added after a table
+            // first shipped need explicit (idempotent) ALTERs for existing databases.
+            exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS state VARCHAR(2) NOT NULL DEFAULT ''")
+            exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS mailing_address VARCHAR(200) NOT NULL DEFAULT ''")
+            exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS zip VARCHAR(10) NOT NULL DEFAULT ''")
         }
         return db
     }
