@@ -33,6 +33,7 @@ import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.UpdateProfileRequest
+import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.model.Round
@@ -316,6 +317,20 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
 
     suspend fun deleteRosterEntry(memberId: String): RegistrationDto =
         client.delete("$baseUrl/registration/members/$memberId") { authorize() }.bodyOrThrow()
+
+    /** Adds an individual (adult) contestant — adults compete individually, never on a team. */
+    suspend fun addIndividual(congregationId: String, req: UpsertIndividualRequest): RegistrationDto =
+        client.post("$baseUrl/registration/$congregationId/individuals") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    suspend fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RegistrationDto =
+        client.put("$baseUrl/registration/individuals/$individualId") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    suspend fun deleteIndividual(individualId: String): RegistrationDto =
+        client.delete("$baseUrl/registration/individuals/$individualId") { authorize() }.bodyOrThrow()
 
     /** Submits (or re-submits) the congregation's registration for the current season. */
     suspend fun submitRegistration(congregationId: String): RegistrationDto =

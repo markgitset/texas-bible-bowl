@@ -7,6 +7,7 @@ import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
+import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
@@ -56,11 +57,16 @@ interface RegistrationRepository {
     fun addMember(teamId: String, req: UpsertRosterEntryRequest): AddMemberResult
     fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto?
     fun deleteMember(memberId: String): Boolean
+    /** Adds an individual (adult) contestant, creating the draft registration if needed. */
+    fun addIndividual(congregationId: String, seasonYear: String, req: UpsertIndividualRequest): RosterEntryDto
+    fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RosterEntryDto?
+    fun deleteIndividual(individualId: String): Boolean
     /** Marks the registration SUBMITTED (idempotent; re-submit refreshes the timestamp). */
     fun submit(congregationId: String, seasonYear: String): RegistrationDto?
-    /** Scoping lookups: which congregation a team/member belongs to (for permission checks). */
+    /** Scoping lookups: which congregation a team/member/individual belongs to (for permission checks). */
     fun congregationIdForTeam(teamId: String): String?
     fun congregationIdForMember(memberId: String): String?
+    fun congregationIdForIndividual(individualId: String): String?
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +119,7 @@ class InMemoryRegistrationRepository(
         var status: RegistrationStatus,
         var submittedAtMs: Long?,
         val teamIds: MutableList<String> = mutableListOf(),
+        val individualIds: MutableList<String> = mutableListOf(),
     )
 
     private data class Team(val id: String, val regId: String, var name: String, val memberIds: MutableList<String> = mutableListOf())
@@ -121,6 +128,8 @@ class InMemoryRegistrationRepository(
     private val teams = mutableMapOf<String, Team>()
     private val members = mutableMapOf<String, RosterEntryDto>()
     private val memberTeam = mutableMapOf<String, String>()
+    private val individuals = mutableMapOf<String, RosterEntryDto>()
+    private val individualReg = mutableMapOf<String, String>()
     private val usedCodes = mutableSetOf<String>()
     private val lock = Any()
 
@@ -128,10 +137,13 @@ class InMemoryRegistrationRepository(
         regs["$congregationId|$seasonYear"]?.toDto()
     }
 
-    override fun addTeam(congregationId: String, seasonYear: String, name: String): TeamDto? = synchronized(lock) {
-        val reg = regs.getOrPut("$congregationId|$seasonYear") {
+    private fun regFor(congregationId: String, seasonYear: String): Reg =
+        regs.getOrPut("$congregationId|$seasonYear") {
             Reg(UUID.randomUUID().toString(), congregationId, seasonYear, RegistrationStatus.DRAFT, null)
         }
+
+    override fun addTeam(congregationId: String, seasonYear: String, name: String): TeamDto? = synchronized(lock) {
+        val reg = regFor(congregationId, seasonYear)
         val trimmed = name.trim()
         if (reg.teamIds.any { teams[it]?.name.equals(trimmed, ignoreCase = true) }) return null
         val team = Team(UUID.randomUUID().toString(), reg.id, trimmed)
@@ -185,6 +197,42 @@ class InMemoryRegistrationRepository(
         true
     }
 
+    override fun addIndividual(
+        congregationId: String,
+        seasonYear: String,
+        req: UpsertIndividualRequest,
+    ): RosterEntryDto = synchronized(lock) {
+        val reg = regFor(congregationId, seasonYear)
+        val code = generateSequence { ClaimCodes.generate() }.first { usedCodes.add(it) }
+        val entry = RosterEntryDto(
+            id = UUID.randomUUID().toString(),
+            name = req.name.trim(),
+            birthdate = null,
+            shirtSize = req.shirtSize,
+            claimCode = code,
+        )
+        individuals[entry.id] = entry
+        individualReg[entry.id] = reg.id
+        reg.individualIds += entry.id
+        entry
+    }
+
+    override fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RosterEntryDto? =
+        synchronized(lock) {
+            val entry = individuals[individualId] ?: return null
+            val updated = entry.copy(name = req.name.trim(), shirtSize = req.shirtSize)
+            individuals[individualId] = updated
+            updated
+        }
+
+    override fun deleteIndividual(individualId: String): Boolean = synchronized(lock) {
+        val entry = individuals.remove(individualId) ?: return false
+        usedCodes.remove(entry.claimCode)
+        individualReg.remove(individualId)
+        regs.values.forEach { it.individualIds.remove(individualId) }
+        true
+    }
+
     override fun submit(congregationId: String, seasonYear: String): RegistrationDto? = synchronized(lock) {
         val reg = regs["$congregationId|$seasonYear"] ?: return null
         reg.status = RegistrationStatus.SUBMITTED
@@ -200,6 +248,10 @@ class InMemoryRegistrationRepository(
         memberTeam[memberId]?.let { congregationIdForTeam(it) }
     }
 
+    override fun congregationIdForIndividual(individualId: String): String? = synchronized(lock) {
+        individualReg[individualId]?.let { regId -> regs.values.firstOrNull { it.id == regId }?.congregationId }
+    }
+
     private fun Team.toDto() = TeamDto(id, name, memberIds.mapNotNull { members[it] })
 
     private fun Reg.toDto(): RegistrationDto = RegistrationDto(
@@ -209,6 +261,7 @@ class InMemoryRegistrationRepository(
         seasonYear = seasonYear,
         status = status,
         teams = teamIds.mapNotNull { teams[it]?.toDto() },
+        individuals = individualIds.mapNotNull { individuals[it] },
         submittedAt = submittedAtMs?.let { Instant.ofEpochMilli(it).toString() },
     )
 }
@@ -277,8 +330,9 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         regRow(congregationId, seasonYear)?.toDto()
     }
 
-    override fun addTeam(congregationId: String, seasonYear: String, name: String): TeamDto? = transaction(db) {
-        val regId = regRow(congregationId, seasonYear)?.get(RegistrationsTable.id) ?: run {
+    /** The registration's row id, creating the draft registration on first use. */
+    private fun regIdFor(congregationId: String, seasonYear: String): String =
+        regRow(congregationId, seasonYear)?.get(RegistrationsTable.id) ?: run {
             val newId = UUID.randomUUID().toString()
             RegistrationsTable.insert {
                 it[id] = newId
@@ -289,6 +343,9 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             }
             newId
         }
+
+    override fun addTeam(congregationId: String, seasonYear: String, name: String): TeamDto? = transaction(db) {
+        val regId = regIdFor(congregationId, seasonYear)
         val trimmed = name.trim()
         val dupe = TeamsTable.selectAll()
             .where { (TeamsTable.registrationId eq regId) and (TeamsTable.name.lowerCase() eq trimmed.lowercase()) }
@@ -316,30 +373,33 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         TeamsTable.deleteWhere { TeamsTable.id eq teamId } > 0
     }
 
+    /** A claim code unused by both roster tables (their unique indexes backstop the collision race). */
+    private fun freshClaimCode(): String {
+        repeat(5) {
+            val code = ClaimCodes.generate()
+            val taken = TeamMembersTable.selectAll().where { TeamMembersTable.claimCode eq code }.any() ||
+                IndividualsTable.selectAll().where { IndividualsTable.claimCode eq code }.any()
+            if (!taken) return code
+        }
+        error("Could not allocate a unique claim code")
+    }
+
     override fun addMember(teamId: String, req: UpsertRosterEntryRequest): AddMemberResult = transaction(db) {
         val teamExists = TeamsTable.selectAll().where { TeamsTable.id eq teamId }.any()
         if (!teamExists) return@transaction AddMemberResult.TeamNotFound
         val size = TeamMembersTable.selectAll().where { TeamMembersTable.teamId eq teamId }.count()
         if (size >= MAX_TEAM_SIZE) return@transaction AddMemberResult.RosterFull
-        var entry: RosterEntryDto? = null
-        // The unique index backstops the (astronomically unlikely) code collision.
-        for (attempt in 1..5) {
-            val code = ClaimCodes.generate()
-            val taken = TeamMembersTable.selectAll().where { TeamMembersTable.claimCode eq code }.any()
-            if (taken) continue
-            val memberId = UUID.randomUUID().toString()
-            TeamMembersTable.insert {
-                it[id] = memberId
-                it[TeamMembersTable.teamId] = teamId
-                it[name] = req.name.trim()
-                it[birthdate] = req.birthdate
-                it[shirtSize] = req.shirtSize.name
-                it[claimCode] = code
-            }
-            entry = RosterEntryDto(memberId, req.name.trim(), req.birthdate, req.shirtSize, code)
-            break
+        val code = freshClaimCode()
+        val memberId = UUID.randomUUID().toString()
+        TeamMembersTable.insert {
+            it[id] = memberId
+            it[TeamMembersTable.teamId] = teamId
+            it[name] = req.name.trim()
+            it[birthdate] = req.birthdate
+            it[shirtSize] = req.shirtSize.name
+            it[claimCode] = code
         }
-        entry?.let { AddMemberResult.Added(it) } ?: error("Could not allocate a unique claim code")
+        AddMemberResult.Added(RosterEntryDto(memberId, req.name.trim(), req.birthdate, req.shirtSize, code))
     }
 
     override fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto? = transaction(db) {
@@ -354,6 +414,39 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
 
     override fun deleteMember(memberId: String): Boolean = transaction(db) {
         TeamMembersTable.deleteWhere { TeamMembersTable.id eq memberId } > 0
+    }
+
+    override fun addIndividual(
+        congregationId: String,
+        seasonYear: String,
+        req: UpsertIndividualRequest,
+    ): RosterEntryDto = transaction(db) {
+        val regId = regIdFor(congregationId, seasonYear)
+        val code = freshClaimCode()
+        val individualId = UUID.randomUUID().toString()
+        IndividualsTable.insert {
+            it[id] = individualId
+            it[registrationId] = regId
+            it[name] = req.name.trim()
+            it[shirtSize] = req.shirtSize.name
+            it[claimCode] = code
+        }
+        touch(regId)
+        RosterEntryDto(individualId, req.name.trim(), birthdate = null, shirtSize = req.shirtSize, claimCode = code)
+    }
+
+    override fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RosterEntryDto? =
+        transaction(db) {
+            val updated = IndividualsTable.update({ IndividualsTable.id eq individualId }) {
+                it[name] = req.name.trim()
+                it[shirtSize] = req.shirtSize.name
+            }
+            if (updated == 0) null
+            else IndividualsTable.selectAll().where { IndividualsTable.id eq individualId }.single().toIndividual()
+        }
+
+    override fun deleteIndividual(individualId: String): Boolean = transaction(db) {
+        IndividualsTable.deleteWhere { IndividualsTable.id eq individualId } > 0
     }
 
     override fun submit(congregationId: String, seasonYear: String): RegistrationDto? = transaction(db) {
@@ -377,6 +470,13 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         val teamId = TeamMembersTable.selectAll().where { TeamMembersTable.id eq memberId }
             .singleOrNull()?.get(TeamMembersTable.teamId) ?: return@transaction null
         congregationIdForTeam(teamId)
+    }
+
+    override fun congregationIdForIndividual(individualId: String): String? = transaction(db) {
+        val regId = IndividualsTable.selectAll().where { IndividualsTable.id eq individualId }
+            .singleOrNull()?.get(IndividualsTable.registrationId) ?: return@transaction null
+        RegistrationsTable.selectAll().where { RegistrationsTable.id eq regId }
+            .singleOrNull()?.get(RegistrationsTable.congregationId)
     }
 
     private fun regRow(congregationId: String, seasonYear: String): ResultRow? =
@@ -413,6 +513,15 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         claimed = this[TeamMembersTable.ownerUserId] != null,
     )
 
+    private fun ResultRow.toIndividual() = RosterEntryDto(
+        id = this[IndividualsTable.id],
+        name = this[IndividualsTable.name],
+        birthdate = null,
+        shirtSize = ShirtSize.valueOf(this[IndividualsTable.shirtSize]),
+        claimCode = this[IndividualsTable.claimCode],
+        claimed = this[IndividualsTable.ownerUserId] != null,
+    )
+
     private fun ResultRow.toDto(): RegistrationDto {
         val regId = this[RegistrationsTable.id]
         val congId = this[RegistrationsTable.congregationId]
@@ -433,6 +542,10 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 .where { TeamsTable.registrationId eq regId }
                 .orderBy(TeamsTable.sortOrder)
                 .map { row -> teamDto(row[TeamsTable.id])!! },
+            individuals = IndividualsTable.selectAll()
+                .where { IndividualsTable.registrationId eq regId }
+                .orderBy(IndividualsTable.name)
+                .map { it.toIndividual() },
             submittedAt = this[RegistrationsTable.submittedAtEpochMs]?.let { Instant.ofEpochMilli(it).toString() },
         )
     }

@@ -6,6 +6,7 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.UpdateProfileRequest
+import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
@@ -135,6 +136,15 @@ class TbbApiRequestTest {
 
         api.deleteRosterEntry("m1")
         assertEquals("DELETE" to "/registration/members/m1", methods.last() to requests.last())
+
+        api.addIndividual("c1", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL))
+        assertEquals("POST" to "/registration/c1/individuals", methods.last() to requests.last())
+
+        api.updateIndividual("i1", UpsertIndividualRequest("Pat A.", ShirtSize.AM))
+        assertEquals("PUT" to "/registration/individuals/i1", methods.last() to requests.last())
+
+        api.deleteIndividual("i1")
+        assertEquals("DELETE" to "/registration/individuals/i1", methods.last() to requests.last())
 
         api.submitRegistration("c1")
         assertEquals("POST" to "/registration/c1/submit", methods.last() to requests.last())

@@ -239,12 +239,15 @@ data class CreateCongregationRequest(
     val zip: String = "",
 )
 
-/** One contestant on a team's roster. [claimCode] lets a contestant/parent account claim the entry later. */
+/**
+ * One contestant — either on a team's roster or registered as an individual (adult).
+ * [claimCode] lets a contestant/parent account claim the entry later.
+ */
 @Serializable
 data class RosterEntryDto(
     val id: String,
     val name: String,
-    /** ISO-8601 birthdate (drives the division), or null for an adult-division contestant. */
+    /** ISO-8601 birthdate (drives the division); always null for an individual (adult) contestant. */
     val birthdate: String? = null,
     val shirtSize: ShirtSize,
     val claimCode: String,
@@ -261,11 +264,19 @@ data class TeamDto(
 @Serializable
 data class UpsertTeamRequest(val name: String)
 
+/** A team roster entry. Adults can't be placed on teams, so [birthdate] must land in grades 3–12. */
 @Serializable
 data class UpsertRosterEntryRequest(
     val name: String,
-    /** ISO-8601 birthdate, or null for an adult-division contestant. */
-    val birthdate: String? = null,
+    /** ISO-8601 birthdate; must imply a school grade of 3–12 for the season. */
+    val birthdate: String,
+    val shirtSize: ShirtSize,
+)
+
+/** An individual (adult) contestant — adults compete individually, so no birthdate is collected. */
+@Serializable
+data class UpsertIndividualRequest(
+    val name: String,
     val shirtSize: ShirtSize,
 )
 
@@ -277,6 +288,8 @@ data class RegistrationDto(
     val seasonYear: String,
     val status: RegistrationStatus,
     val teams: List<TeamDto> = emptyList(),
+    /** Individual (adult) contestants — never on a team, each competes in the Adult division. */
+    val individuals: List<RosterEntryDto> = emptyList(),
     /** Computed contestant total in cents, or null while fees are TBD. */
     val totalCents: Int? = null,
     /** ISO-8601 instant of the last submit, or null while a draft. */

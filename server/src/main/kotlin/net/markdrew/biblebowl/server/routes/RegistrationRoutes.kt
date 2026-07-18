@@ -19,10 +19,12 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.SeasonDto
+import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.api.coachedCongregationIds
-import net.markdrew.biblebowl.api.divisionForBirthdate
+import net.markdrew.biblebowl.api.contestantCount
+import net.markdrew.biblebowl.api.gradeForBirthdate
 import net.markdrew.biblebowl.api.registrationTotalCents
 import net.markdrew.biblebowl.server.RegistrationWindowState
 import net.markdrew.biblebowl.server.data.AddMemberResult
@@ -157,7 +159,10 @@ fun Route.registrationRoutes(
             if (!requireWindowOpen(user, seasons)) return@post
             val req = call.receive<UpsertRosterEntryRequest>()
             if (!req.isValid(seasons.current())) {
-                return@post call.respond(HttpStatusCode.BadRequest, invalidMemberError())
+                return@post call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("invalid_member", INVALID_MEMBER_MESSAGE),
+                )
             }
             when (registrations.addMember(teamId, req)) {
                 is AddMemberResult.Added ->
@@ -178,7 +183,10 @@ fun Route.registrationRoutes(
             if (!requireWindowOpen(user, seasons)) return@put
             val req = call.receive<UpsertRosterEntryRequest>()
             if (!req.isValid(seasons.current())) {
-                return@put call.respond(HttpStatusCode.BadRequest, invalidMemberError())
+                return@put call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("invalid_member", INVALID_MEMBER_MESSAGE),
+                )
             }
             registrations.updateMember(memberId, req)
             call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
@@ -195,6 +203,46 @@ fun Route.registrationRoutes(
             call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
         }
 
+        // Individual (adult) contestants — adults are never on a team; they compete individually.
+        post("/registration/{congregationId}/individuals") {
+            val user = currentUser(users) ?: return@post
+            val congregationId = call.parameters["congregationId"]!!
+            if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@post
+            if (!requireWindowOpen(user, seasons)) return@post
+            val req = call.receive<UpsertIndividualRequest>()
+            if (req.name.isBlank()) {
+                return@post call.respond(HttpStatusCode.BadRequest, ApiError("invalid_individual", "Name is required"))
+            }
+            registrations.addIndividual(congregationId, seasons.current().eventYear, req)
+            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+        }
+
+        put("/registration/individuals/{individualId}") {
+            val user = currentUser(users) ?: return@put
+            val individualId = call.parameters["individualId"]!!
+            val congregationId = registrations.congregationIdForIndividual(individualId)
+                ?: return@put call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such individual contestant"))
+            if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@put
+            if (!requireWindowOpen(user, seasons)) return@put
+            val req = call.receive<UpsertIndividualRequest>()
+            if (req.name.isBlank()) {
+                return@put call.respond(HttpStatusCode.BadRequest, ApiError("invalid_individual", "Name is required"))
+            }
+            registrations.updateIndividual(individualId, req)
+            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+        }
+
+        delete("/registration/individuals/{individualId}") {
+            val user = currentUser(users) ?: return@delete
+            val individualId = call.parameters["individualId"]!!
+            val congregationId = registrations.congregationIdForIndividual(individualId)
+                ?: return@delete call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such individual contestant"))
+            if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@delete
+            if (!requireWindowOpen(user, seasons)) return@delete
+            registrations.deleteIndividual(individualId)
+            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+        }
+
         post("/registration/{congregationId}/submit") {
             val user = currentUser(users) ?: return@post
             val congregationId = call.parameters["congregationId"]!!
@@ -203,22 +251,20 @@ fun Route.registrationRoutes(
             val submitted = registrations.submit(congregationId, seasons.current().eventYear)
                 ?: return@post call.respond(
                     HttpStatusCode.NotFound,
-                    ApiError("not_found", "No registration to submit — add a team first"),
+                    ApiError("not_found", "No registration to submit — add a team or an individual contestant first"),
                 )
             call.respond(submitted.withTotal(seasons))
         }
     }
 }
 
-/** A member needs a name and either no birthdate (adult) or one that lands in a competition division. */
-private fun UpsertRosterEntryRequest.isValid(season: SeasonDto): Boolean =
-    name.isNotBlank() && birthdate.let { it == null || season.divisionForBirthdate(it) != null }
+private const val INVALID_MEMBER_MESSAGE =
+    "Name is required and the birthdate (YYYY-MM-DD) must land in grades 3\u201312 \u2014 adults register as " +
+        "individual contestants, not on a team"
 
-private fun invalidMemberError() = ApiError(
-    "invalid_member",
-    "Name is required, and the birthdate must be a valid date (YYYY-MM-DD) for a school-age " +
-        "(grade 3+) contestant — leave it blank for an adult",
-)
+/** A team member needs a name and a birthdate implying school grade 3\u201312 this season. */
+private fun UpsertRosterEntryRequest.isValid(season: SeasonDto): Boolean =
+    name.isNotBlank() && (season.gradeForBirthdate(birthdate) ?: -1) in 3..12
 
 private val ZIP_REGEX = Regex("""\d{5}(-\d{4})?""")
 
@@ -229,7 +275,7 @@ private fun CreateCongregationRequest.isValid(): Boolean =
 
 /** Decorates a registration with the contestant total computed from the current season's fees. */
 private fun RegistrationDto.withTotal(seasons: SeasonRepository): RegistrationDto =
-    copy(totalCents = registrationTotalCents(seasons.current(), teams.sumOf { it.members.size }))
+    copy(totalCents = registrationTotalCents(seasons.current(), contestantCount))
 
 /**
  * Rejects the mutation with 409 while the registration window isn't open — except for admins,

@@ -65,8 +65,6 @@ class RegistrationDomainTest {
         assertNull(TeamDto("t", "Empty").division(season))
         val mixed = TeamDto("t", "Mixed", listOf(entry("2018-05-01"), entry("2013-05-01")))
         assertEquals(Division.JUNIOR, mixed.division(season))
-        val withAdult = TeamDto("t", "With Adult", listOf(entry("2018-05-01"), entry(null)))
-        assertEquals(Division.ADULT, withAdult.division(season))
     }
 
     @Test
@@ -75,6 +73,20 @@ class RegistrationDomainTest {
         assertFalse(isValidBirthdate("2012-13-01"), "no 13th month")
         assertFalse(isValidBirthdate("05/01/2012"))
         assertFalse(isValidBirthdate("1850-01-01"), "implausible year")
+    }
+
+    @Test
+    fun contestantCountSpansTeamsAndIndividuals() {
+        val reg = RegistrationDto(
+            id = "r",
+            congregation = CongregationDto("c", "First Church", "Austin"),
+            seasonYear = "2027",
+            status = RegistrationStatus.DRAFT,
+            teams = listOf(TeamDto("t", "Team A", listOf(entry("2018-05-01"), entry("2013-05-01")))),
+            individuals = listOf(entry(null)),
+        )
+        assertEquals(3, reg.contestantCount)
+        assertEquals(0, reg.copy(teams = emptyList(), individuals = emptyList()).contestantCount)
     }
 
     @Test

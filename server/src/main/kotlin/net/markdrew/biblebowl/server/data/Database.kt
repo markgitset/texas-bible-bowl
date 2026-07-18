@@ -102,7 +102,20 @@ object TeamMembersTable : Table("team_members") {
     val id = varchar("id", 36)
     val teamId = varchar("team_id", 36).references(TeamsTable.id)
     val name = varchar("name", 120)
-    val birthdate = varchar("birthdate", 10).nullable() // ISO-8601; null = adult-division contestant
+    // ISO-8601; required for team members (grades 3-12) since adults can't be on teams;
+    // nullable only for rows that pre-date birthdate collection
+    val birthdate = varchar("birthdate", 10).nullable()
+    val shirtSize = varchar("shirt_size", 8)
+    val claimCode = varchar("claim_code", 12).uniqueIndex()
+    val ownerUserId = varchar("owner_user_id", 36).references(UsersTable.id).nullable()
+    override val primaryKey = PrimaryKey(id)
+}
+
+/** Individual (adult) contestants — never on a team, attached straight to the registration. */
+object IndividualsTable : Table("individual_contestants") {
+    val id = varchar("id", 36)
+    val registrationId = varchar("registration_id", 36).references(RegistrationsTable.id)
+    val name = varchar("name", 120)
     val shirtSize = varchar("shirt_size", 8)
     val claimCode = varchar("claim_code", 12).uniqueIndex()
     val ownerUserId = varchar("owner_user_id", 36).references(UsersTable.id).nullable()
@@ -204,7 +217,7 @@ object DatabaseFactory {
             SchemaUtils.create(
                 UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable, EsvChaptersTable,
                 TextAnnotationsTable, GeneratedPdfsTable, SeasonsTable,
-                CongregationsTable, RegistrationsTable, TeamsTable, TeamMembersTable,
+                CongregationsTable, RegistrationsTable, TeamsTable, TeamMembersTable, IndividualsTable,
             )
             // SchemaUtils.create only creates missing *tables* — columns added after a table
             // first shipped need explicit (idempotent) ALTERs for existing databases.

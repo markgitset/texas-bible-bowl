@@ -5,8 +5,9 @@ import kotlinx.serialization.Serializable
 /**
  * Texas Bible Bowl competition divisions, by school grade. Grades are derived from birthdates
  * (see [SeasonDto.divisionForBirthdate]) rather than self-reported, so eligibility advances
- * automatically season over season. A contestant competes at the highest division of any team
- * member (never below their own grade/experience level).
+ * automatically season over season. A team contestant competes at the highest division of any
+ * team member (never below their own grade/experience level). Adults are never placed on a team —
+ * they compete only as individuals, in [ADULT].
  */
 @Serializable
 enum class Division(val displayName: String, val gradeRange: IntRange?, val hasPowerRound: Boolean) {
@@ -87,19 +88,23 @@ fun UserDto.division(season: SeasonDto): Division? = when {
 }
 
 /**
- * A roster entry's own division this [season]: by birthdate, or [Division.ADULT] when none is
- * given (the coach marked them an adult). Null only for legacy entries whose birthdate predates
- * collection — server validation keeps new youth entries in a real division.
+ * A roster entry's own division this [season]: by birthdate, or [Division.ADULT] for an
+ * individual (adult) entry, which carries none. Server validation keeps new team entries in a
+ * youth division; null is possible only for an unparseable legacy birthdate.
  */
 fun RosterEntryDto.division(season: SeasonDto): Division? =
     birthdate?.let { season.divisionForBirthdate(it) } ?: Division.ADULT
 
 /**
  * The division a team competes in — that of its highest member (declaration order of [Division]
- * ascends ELEMENTARY → ADULT). Null for an empty roster.
+ * ascends ELEMENTARY → SENIOR; adults can't be on teams). Null for an empty roster.
  */
 fun TeamDto.division(season: SeasonDto): Division? =
     members.mapNotNull { it.division(season) }.maxOrNull()
+
+/** All contestants in a registration: every team member plus every individual (adult) contestant. */
+val RegistrationDto.contestantCount: Int
+    get() = teams.sumOf { it.members.size } + individuals.size
 
 /**
  * The registration's contestant total in cents ([contestantCount] × the season's contestant fee,

@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.server
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
 import net.markdrew.biblebowl.server.data.ClaimCodes
@@ -104,6 +105,27 @@ class RegistrationRepositoryTest {
         assertEquals(cong.id, repo.congregationIdForTeam(team.id))
         assertEquals(cong.id, repo.congregationIdForMember(member.id))
         assertNull(repo.congregationIdForTeam("nope"))
+    }
+
+    @Test
+    fun individualsLiveOnTheRegistrationNotOnAnyTeam() {
+        val cong = newCongregation("Individual Church", "Odessa")!!
+        // Adding an individual creates the draft registration — no team required at all.
+        val adult = repo.addIndividual(cong.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL))
+        assertNull(adult.birthdate, "individuals never carry a birthdate")
+        assertEquals(ClaimCodes.LENGTH, adult.claimCode.length)
+
+        val reg = repo.find(cong.id, "2027")!!
+        assertEquals(0, reg.teams.size)
+        assertEquals(listOf("Pat Adult"), reg.individuals.map { it.name })
+        assertEquals(cong.id, repo.congregationIdForIndividual(adult.id))
+        assertNotNull(repo.submit(cong.id, "2027"), "an adults-only registration is submittable")
+
+        val updated = repo.updateIndividual(adult.id, UpsertIndividualRequest("Pat A.", ShirtSize.AM))!!
+        assertEquals("Pat A." to ShirtSize.AM, updated.name to updated.shirtSize)
+        assertTrue(repo.deleteIndividual(adult.id))
+        assertNull(repo.congregationIdForIndividual(adult.id))
+        assertEquals(0, repo.find(cong.id, "2027")!!.individuals.size)
     }
 
     @Test

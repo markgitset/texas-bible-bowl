@@ -11,7 +11,9 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
+import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
+import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.division
 import net.markdrew.biblebowl.api.feesNote
 import net.markdrew.biblebowl.api.formatCents
@@ -75,18 +77,24 @@ object RegisterScreen {
         }
     }
 
+    /** Team members plus individual (adult) contestants. */
+    private val contestants: Int get() = registration?.contestantCount ?: 0
+
     private fun firstIncompleteStep(): Int = when {
         congregation == null -> 1
-        registration?.teams.isNullOrEmpty() -> 2
-        registration!!.teams.all { it.members.isEmpty() } -> 3
+        registration?.teams.isNullOrEmpty() && registration?.individuals.isNullOrEmpty() -> 2
+        contestants == 0 -> 3
         else -> 4
     }
 
-    /** The furthest step the current data supports (completed steps stay clickable). */
+    /**
+     * The furthest step the current data supports (completed steps stay clickable). The roster step
+     * is reachable without any teams: adults are added there as individuals, so an adults-only
+     * congregation never touches the teams step.
+     */
     private fun maxReachableStep(): Int = when {
         congregation == null -> 1
-        registration?.teams.isNullOrEmpty() -> 2
-        registration!!.teams.all { it.members.isEmpty() } -> 3
+        contestants == 0 -> 3
         else -> STEPS
     }
 
@@ -280,8 +288,9 @@ object RegisterScreen {
     private fun renderTeamsStep(parent: Element) {
         val cong = congregation ?: return
         parent.child("p", "text-muted",
-            "A team has up to 4 contestants and competes in the division of its highest member " +
-                "(divisions come from birthdates).")
+            "A team has up to 4 contestants (grades 3–12, from birthdates) and competes in the " +
+                "division of its highest member. Adults aren't placed on a team — add them as " +
+                "individual contestants on the roster step.")
 
         registration?.teams?.forEach { team ->
             parent.child("div", "d-flex align-items-center gap-2 mb-2") {
@@ -323,7 +332,7 @@ object RegisterScreen {
             }
         }
 
-        if (registration?.teams?.isNotEmpty() == true) parent.nextButton("Continue to roster", 3)
+        parent.nextButton("Continue to roster", 3)
     }
 
     private fun divisionBadge(parent: Element, team: TeamDto) {
@@ -338,22 +347,83 @@ object RegisterScreen {
     // --- Step 3: roster ---------------------------------------------------------------------
 
     private fun renderRosterStep(parent: Element) {
-        val reg = registration ?: return
-        reg.teams.forEach { team -> renderTeamRoster(parent, team) }
+        registration?.teams?.forEach { team -> renderTeamRoster(parent, team) }
+        renderIndividualsCard(parent)
 
-        val contestants = reg.teams.sumOf { it.members.size }
-        parent.child("div", "card section-card mb-3") {
-            child("div", "card-body py-2") {
-                child(
-                    "p", "mb-0 fw-semibold",
-                    "Total: ${formatCents(reg.totalCents)}" +
-                        " ($contestants contestant${if (contestants == 1) "" else "s"} × " +
-                        "${formatCents(Session.season.priceContestantCents)}, t-shirts included)",
-                )
-                Session.season.feesNote.takeIf { it.isNotEmpty() }?.let { child("p", "text-muted small mb-0", it) }
+        registration?.let { reg ->
+            parent.child("div", "card section-card mb-3") {
+                child("div", "card-body py-2") {
+                    child(
+                        "p", "mb-0 fw-semibold",
+                        "Total: ${formatCents(reg.totalCents)}" +
+                            " ($contestants contestant${if (contestants == 1) "" else "s"} × " +
+                            "${formatCents(Session.season.priceContestantCents)}, t-shirts included)",
+                    )
+                    Session.season.feesNote.takeIf { it.isNotEmpty() }?.let { child("p", "text-muted small mb-0", it) }
+                }
             }
         }
         if (contestants > 0) parent.nextButton("Continue to review", 4)
+    }
+
+    /** Adult contestants aren't on any team — they're registered here, straight on the registration. */
+    private fun renderIndividualsCard(parent: Element) {
+        val cong = congregation ?: return
+        parent.child("div", "card section-card mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title") {
+                    append("Individual contestants ")
+                    child("span", "badge text-bg-primary", "Adult")
+                }
+                child("p", "text-muted small",
+                    "Adults aren't placed on a team — each competes individually in the Adult division.")
+                registration?.individuals?.forEach { member ->
+                    child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
+                        val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
+                        name.value = member.name
+                        name.disabled = !canEdit
+                        val shirt = shirtSelect(this, member.shirtSize)
+                        shirt.disabled = !canEdit
+                        val save = {
+                            if (name.value.isNotBlank()) {
+                                mutate {
+                                    Session.api.updateIndividual(
+                                        member.id,
+                                        UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value)),
+                                    )
+                                }
+                            }
+                        }
+                        listOf<HTMLElement>(name, shirt).forEach { it.addEventListener("change", { save() }) }
+                        claimCodeChip(this, member.claimCode)
+                        if (canEdit) {
+                            child("button", "btn btn-outline-danger btn-sm", "Remove") {
+                                setAttribute("type", "button")
+                                onClick { mutate { Session.api.deleteIndividual(member.id) } }
+                            }
+                        }
+                    }
+                }
+                if (canEdit) {
+                    child("form", "d-flex flex-wrap gap-2 mt-2") {
+                        val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
+                        name.setAttribute("placeholder", "Adult contestant name")
+                        val shirt = shirtSelect(this, ShirtSize.AM)
+                        child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
+                        addEventListener("submit", { event ->
+                            event.preventDefault()
+                            if (name.value.isBlank()) return@addEventListener
+                            mutate {
+                                Session.api.addIndividual(
+                                    cong.id,
+                                    UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value)),
+                                )
+                            }
+                        })
+                    }
+                }
+            }
+        }
     }
 
     private fun renderTeamRoster(parent: Element, team: TeamDto) {
@@ -368,23 +438,19 @@ object RegisterScreen {
                         val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
                         name.value = member.name
                         name.disabled = !canEdit
-                        val (adult, birthdate) = eligibilityControls(this, "member-${member.id}", member.birthdate)
+                        val birthdate = birthdateInput(this, member.birthdate)
                         val shirt = shirtSelect(this, member.shirtSize)
                         val save = {
-                            if (name.value.isNotBlank() && (adult.checked || isValidBirthdate(birthdate.value))) {
+                            if (name.value.isNotBlank() && isValidBirthdate(birthdate.value)) {
                                 mutate {
                                     Session.api.updateRosterEntry(
                                         member.id,
-                                        UpsertRosterEntryRequest(
-                                            name.value,
-                                            birthdate.value.takeIf { it.isNotBlank() }?.takeUnless { adult.checked },
-                                            ShirtSize.valueOf(shirt.value),
-                                        ),
+                                        UpsertRosterEntryRequest(name.value, birthdate.value, ShirtSize.valueOf(shirt.value)),
                                     )
                                 }
                             }
                         }
-                        listOf<HTMLElement>(name, adult, birthdate, shirt).forEach { el ->
+                        listOf<HTMLElement>(name, birthdate, shirt).forEach { el ->
                             el.addEventListener("change", { save() })
                             (el as? HTMLSelectElement)?.disabled = !canEdit
                             (el as? HTMLInputElement)?.disabled = !canEdit
@@ -412,60 +478,33 @@ object RegisterScreen {
         parent.child("form", "d-flex flex-wrap gap-2 mt-2") {
             val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
             name.setAttribute("placeholder", "Contestant name")
-            val (adult, birthdate) = eligibilityControls(this, "add-${team.id}", initialBirthdate = "")
-            val shirt = shirtSelect(this, ShirtSize.AM)
+            val birthdate = birthdateInput(this, initial = null)
+            val shirt = shirtSelect(this, ShirtSize.YM)
             child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
             addEventListener("submit", { event ->
                 event.preventDefault()
-                if (name.value.isBlank()) return@addEventListener
-                if (!adult.checked && !isValidBirthdate(birthdate.value)) return@addEventListener
+                if (name.value.isBlank() || !isValidBirthdate(birthdate.value)) return@addEventListener
                 mutate {
                     Session.api.addRosterEntry(
                         team.id,
-                        UpsertRosterEntryRequest(
-                            name.value,
-                            birthdate.value.takeIf { it.isNotBlank() }?.takeUnless { adult.checked },
-                            ShirtSize.valueOf(shirt.value),
-                        ),
+                        UpsertRosterEntryRequest(name.value, birthdate.value, ShirtSize.valueOf(shirt.value)),
                     )
                 }
             })
         }
         parent.child("p", "text-muted small mt-2 mb-0",
-            "The birthdate places each contestant in the right division; check Adult instead for " +
-                "adult-division contestants. Each contestant gets a claim code — share it so they " +
-                "(or a parent) can link their own account later.")
+            "The birthdate places each contestant in the right division (adults go under " +
+                "Individual contestants instead). Each contestant gets a claim code — share it so " +
+                "they (or a parent) can link their own account later.")
     }
 
-    /**
-     * The birthdate/adult pair used on roster rows: a date input plus an "Adult" checkbox that
-     * hides it (adults don't give a birthdate). Returns (adult, birthdate); null birthdates are
-     * represented as an empty date value.
-     */
-    private fun eligibilityControls(
-        parent: Element,
-        idSuffix: String,
-        initialBirthdate: String?,
-    ): Pair<HTMLInputElement, HTMLInputElement> {
-        lateinit var adult: HTMLInputElement
-        lateinit var birthdate: HTMLInputElement
-        birthdate = parent.child("input", "form-control w-auto") as HTMLInputElement
-        birthdate.type = "date"
-        birthdate.value = initialBirthdate ?: ""
-        birthdate.setAttribute("title", "Birthdate")
-        parent.child("div", "form-check align-self-center") {
-            adult = (child("input", "form-check-input") as HTMLInputElement).apply {
-                type = "checkbox"
-                id = "roster-adult-$idSuffix"
-                // An existing entry without a birthdate is an adult; the add form starts as youth.
-                checked = initialBirthdate == null
-            }
-            child("label", "form-check-label", "Adult") { setAttribute("for", "roster-adult-$idSuffix") }
-        }
-        fun toggle() = birthdate.classList.toggle("d-none", adult.checked)
-        toggle()
-        adult.addEventListener("change", { toggle() })
-        return adult to birthdate
+    /** A team member's birthdate (drives their division; adults can't be on teams). */
+    private fun birthdateInput(parent: Element, initial: String?): HTMLInputElement {
+        val input = parent.child("input", "form-control w-auto") as HTMLInputElement
+        input.type = "date"
+        input.value = initial ?: ""
+        input.setAttribute("title", "Birthdate")
+        return input
     }
 
     private fun shirtSelect(parent: Element, selected: ShirtSize): HTMLSelectElement {
@@ -513,9 +552,15 @@ object RegisterScreen {
                                 child("td", text = team.members.joinToString { it.name })
                             }
                         }
+                        if (reg.individuals.isNotEmpty()) {
+                            child("tr") {
+                                child("td", text = "Individuals")
+                                child("td", text = "Adult")
+                                child("td", text = reg.individuals.joinToString { it.name })
+                            }
+                        }
                     }
                 }
-                val contestants = reg.teams.sumOf { it.members.size }
                 child("p", "fw-semibold mb-1", "Total due: ${formatCents(reg.totalCents)} ($contestants contestants)")
                 Session.season.feesNote.takeIf { it.isNotEmpty() }?.let { child("p", "text-muted small mb-0", it) }
             }
