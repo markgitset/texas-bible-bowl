@@ -49,6 +49,7 @@ import net.markdrew.biblebowl.server.esv.EsvPassageService
 import net.markdrew.biblebowl.server.esv.FileEsvCache
 import net.markdrew.biblebowl.server.esv.PostgresEsvCache
 import net.markdrew.biblebowl.server.routes.GENERATE_RATE_LIMIT
+import net.markdrew.biblebowl.server.routes.adminRegistrationRoutes
 import net.markdrew.biblebowl.server.routes.authRoutes
 import net.markdrew.biblebowl.server.routes.bibleRoutes
 import net.markdrew.biblebowl.server.routes.generateRoutes
@@ -56,6 +57,7 @@ import net.markdrew.biblebowl.server.routes.questionRoutes
 import net.markdrew.biblebowl.server.routes.registrationRoutes
 import net.markdrew.biblebowl.server.routes.seasonRoutes
 import net.markdrew.biblebowl.server.routes.studyRoutes
+import net.markdrew.biblebowl.server.routes.userRoutes
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
 import net.markdrew.biblebowl.server.study.InMemoryPdfCache
@@ -177,6 +179,8 @@ fun Application.module(
         generateRoutes(users, questions, seasons, study, pdfCache)
         seasonRoutes(users, seasons)
         registrationRoutes(users, seasons, congregations, registrations)
+        adminRegistrationRoutes(users, seasons, congregations, registrations)
+        userRoutes(users, congregations)
     }
 
     warmStudyCache(study)
