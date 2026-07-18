@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.web.screens
 
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.Permission
+import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.web.Routes
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
@@ -46,6 +47,16 @@ object AccountScreen {
         container.child("div", "d-grid gap-2") {
             child("a", "btn btn-outline-primary", "Register my teams") {
                 setAttribute("href", "#${Routes.REGISTER}")
+            }
+            if (hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
+                child("a", "btn btn-outline-primary", "Registration desk") {
+                    setAttribute("href", "#${Routes.ADMIN_REGISTRATIONS}")
+                }
+            }
+            if (Permission.USER_MANAGE in user.permissions) {
+                child("a", "btn btn-outline-primary", "Manage users") {
+                    setAttribute("href", "#${Routes.ADMIN_USERS}")
+                }
             }
             if (Permission.SEASON_MANAGE in user.permissions) {
                 child("a", "btn btn-outline-primary", "Season settings") {

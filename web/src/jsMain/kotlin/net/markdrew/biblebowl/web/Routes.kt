@@ -17,6 +17,8 @@ object Routes {
     const val SIGN_IN = "signin"
     const val ACCOUNT = "account"
     const val ADMIN_SEASON = "admin/season"
+    const val ADMIN_REGISTRATIONS = "admin/registrations"
+    const val ADMIN_USERS = "admin/users"
 }
 
 /** The four top-level navbar destinations (matches the Compose app's TopDestination). */
