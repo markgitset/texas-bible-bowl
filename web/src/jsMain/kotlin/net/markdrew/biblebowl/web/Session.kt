@@ -55,4 +55,9 @@ object Session {
         season = updated
         onChange()
     }
+
+    /** Re-renders after a profile edit ([api] already holds the updated user). */
+    fun profileSaved() {
+        onChange()
+    }
 }

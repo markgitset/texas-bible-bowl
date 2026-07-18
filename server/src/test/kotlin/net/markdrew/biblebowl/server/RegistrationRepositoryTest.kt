@@ -22,7 +22,7 @@ class RegistrationRepositoryTest {
     private val congregations = InMemoryCongregationRepository()
     private val repo = InMemoryRegistrationRepository(congregations)
 
-    private fun entry(name: String) = UpsertRosterEntryRequest(name, grade = 7, shirtSize = ShirtSize.AM)
+    private fun entry(name: String) = UpsertRosterEntryRequest(name, birthdate = "2014-05-01", shirtSize = ShirtSize.AM)
 
     private fun newCongregation(name: String, city: String, userId: String = "u1") =
         congregations.create(
@@ -112,7 +112,7 @@ class RegistrationRepositoryTest {
         val cong = newCongregation("Individual Church", "Odessa")!!
         // Adding an individual creates the draft registration — no team required at all.
         val adult = repo.addIndividual(cong.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL))
-        assertNull(adult.grade, "individuals never carry a grade")
+        assertNull(adult.birthdate, "individuals never carry a birthdate")
         assertEquals(ClaimCodes.LENGTH, adult.claimCode.length)
 
         val reg = repo.find(cong.id, "2027")!!

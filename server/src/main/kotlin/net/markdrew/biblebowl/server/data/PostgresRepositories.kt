@@ -26,14 +26,15 @@ private val stringListSerializer = ListSerializer(String.serializer())
 class PostgresUserRepository(private val db: Database) : UserRepository {
 
     override fun create(
-        email: String, displayName: String, grade: Int?, passwordHash: String, roles: List<RoleGrant>,
+        email: String, displayName: String, birthdate: String?, adult: Boolean, passwordHash: String, roles: List<RoleGrant>,
     ): UserRecord = transaction(db) {
         val userId = UUID.randomUUID().toString()
         UsersTable.insert {
             it[id] = userId
             it[UsersTable.email] = email.lowercase()
             it[UsersTable.displayName] = displayName
-            it[UsersTable.grade] = grade
+            it[UsersTable.birthdate] = birthdate
+            it[isAdult] = adult
             it[UsersTable.passwordHash] = passwordHash
         }
         roles.forEach { grant ->
@@ -44,7 +45,7 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
                 it[scopeId] = grant.scopeId
             }
         }
-        UserRecord(userId, email.lowercase(), displayName, grade, passwordHash, roles.toMutableList())
+        UserRecord(userId, email.lowercase(), displayName, birthdate, adult, passwordHash, roles.toMutableList())
     }
 
     override fun findByEmail(email: String): UserRecord? = transaction(db) {
@@ -54,6 +55,16 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
     override fun findById(id: String): UserRecord? = transaction(db) {
         UsersTable.selectAll().where { UsersTable.id eq id }.singleOrNull()?.toUserRecord()
     }
+
+    override fun updateProfile(userId: String, displayName: String, birthdate: String?, adult: Boolean): UserRecord? =
+        transaction(db) {
+            val updated = UsersTable.update({ UsersTable.id eq userId }) {
+                it[UsersTable.displayName] = displayName
+                it[UsersTable.birthdate] = birthdate
+                it[isAdult] = adult
+            }
+            if (updated == 0) null else findById(userId)
+        }
 
     override fun addRoleGrant(userId: String, grant: RoleGrant) {
         transaction(db) {
@@ -79,7 +90,8 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
             id = userId,
             email = this[UsersTable.email],
             displayName = this[UsersTable.displayName],
-            grade = this[UsersTable.grade],
+            birthdate = this[UsersTable.birthdate],
+            adult = this[UsersTable.isAdult],
             passwordHash = this[UsersTable.passwordHash],
             roles = grants.toMutableList(),
         )

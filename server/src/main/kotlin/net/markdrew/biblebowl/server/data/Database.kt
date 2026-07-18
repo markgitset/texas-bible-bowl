@@ -17,7 +17,8 @@ object UsersTable : Table("users") {
     val id = varchar("id", 36)
     val email = varchar("email", 255).uniqueIndex()
     val displayName = varchar("display_name", 120)
-    val grade = integer("grade").nullable()
+    val birthdate = varchar("birthdate", 10).nullable() // ISO-8601; null for adults & legacy accounts
+    val isAdult = bool("is_adult").default(false)
     val passwordHash = varchar("password_hash", 512)
     override val primaryKey = PrimaryKey(id)
 }
@@ -101,7 +102,9 @@ object TeamMembersTable : Table("team_members") {
     val id = varchar("id", 36)
     val teamId = varchar("team_id", 36).references(TeamsTable.id)
     val name = varchar("name", 120)
-    val grade = integer("grade").nullable() // required (3–12) since adults can't be on teams; nullable pre-dates that rule
+    // ISO-8601; required for team members (grades 3-12) since adults can't be on teams;
+    // nullable only for rows that pre-date birthdate collection
+    val birthdate = varchar("birthdate", 10).nullable()
     val shirtSize = varchar("shirt_size", 8)
     val claimCode = varchar("claim_code", 12).uniqueIndex()
     val ownerUserId = varchar("owner_user_id", 36).references(UsersTable.id).nullable()
@@ -221,6 +224,14 @@ object DatabaseFactory {
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS state VARCHAR(2) NOT NULL DEFAULT ''")
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS mailing_address VARCHAR(200) NOT NULL DEFAULT ''")
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS zip VARCHAR(10) NOT NULL DEFAULT ''")
+            // Birthdates replaced self-reported grades (2026-07). Legacy grades are dropped, not
+            // converted: affected users/roster entries fall back to "no division" until a birthdate
+            // (or the adult flag) is set on the account/roster form.
+            exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS birthdate VARCHAR(10)")
+            exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_adult BOOLEAN NOT NULL DEFAULT FALSE")
+            exec("ALTER TABLE users DROP COLUMN IF EXISTS grade")
+            exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS birthdate VARCHAR(10)")
+            exec("ALTER TABLE team_members DROP COLUMN IF EXISTS grade")
         }
         return db
     }

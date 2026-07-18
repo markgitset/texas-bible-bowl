@@ -12,7 +12,18 @@ data class RegisterRequest(
     val email: String,
     val password: String,
     val displayName: String,
-    val grade: Int? = null,
+    /** ISO-8601 birthdate ("2013-05-04"); required unless [adult]. Drives division eligibility. */
+    val birthdate: String? = null,
+    /** Self-attested adult (no youth division): no birthdate collected. */
+    val adult: Boolean = false,
+)
+
+/** Edits the signed-in user's own profile (`PUT /auth/me`); same birthdate/adult rules as signup. */
+@Serializable
+data class UpdateProfileRequest(
+    val displayName: String,
+    val birthdate: String? = null,
+    val adult: Boolean = false,
 )
 
 @Serializable
@@ -22,17 +33,22 @@ data class LoginRequest(val email: String, val password: String)
 @Serializable
 data class AuthResponse(val token: String, val user: UserDto)
 
+/**
+ * [birthdate] and [adult] drive division eligibility (see [division]); accounts created before
+ * birthdates were collected may have neither — an incomplete profile with no division.
+ */
 @Serializable
 data class UserDto(
     val id: String,
     val email: String,
     val displayName: String,
-    val grade: Int? = null,
+    /** ISO-8601 birthdate for youth; null for adults and legacy accounts. */
+    val birthdate: String? = null,
+    /** True for self-attested adults (only adults may register a congregation). */
+    val adult: Boolean = false,
     val roles: List<RoleGrant> = emptyList(),
     val permissions: Set<Permission> = emptySet(),
-) {
-    val division: Division? get() = grade?.let { Division.forGrade(it) }
-}
+)
 
 // ---------------------------------------------------------------------------
 // Crowd-sourced questions (MVP focus)
@@ -165,6 +181,12 @@ data class SeasonDto(
     val registrationOpensOn: String? = null,
     /** Last day to register, ISO-8601, inclusive through end of day America/Chicago; null = TBD. */
     val registrationClosesOn: String? = null,
+    /**
+     * The date ages are mapped to school grades on, ISO-8601. Null defaults to September 1 before
+     * the event — the Texas school-entry cutoff, so a contestant's age on this date implies their
+     * grade (see [gradeCutoff]/[divisionForBirthdate] in Domain.kt).
+     */
+    val gradeCutoffDate: String? = null,
     val scholarshipDeadline: String,
     /** Per-contestant fee in cents, one t-shirt included; null = TBD. */
     val priceContestantCents: Int? = null,
@@ -225,8 +247,8 @@ data class CreateCongregationRequest(
 data class RosterEntryDto(
     val id: String,
     val name: String,
-    /** School grade 3–12 for a team member; always null for an individual (adult) contestant. */
-    val grade: Int? = null,
+    /** ISO-8601 birthdate (drives the division); always null for an individual (adult) contestant. */
+    val birthdate: String? = null,
     val shirtSize: ShirtSize,
     val claimCode: String,
     val claimed: Boolean = false,
@@ -242,15 +264,16 @@ data class TeamDto(
 @Serializable
 data class UpsertTeamRequest(val name: String)
 
-/** A team roster entry. Adults can't be placed on teams, so [grade] is required (3–12). */
+/** A team roster entry. Adults can't be placed on teams, so [birthdate] must land in grades 3–12. */
 @Serializable
 data class UpsertRosterEntryRequest(
     val name: String,
-    val grade: Int,
+    /** ISO-8601 birthdate; must imply a school grade of 3–12 for the season. */
+    val birthdate: String,
     val shirtSize: ShirtSize,
 )
 
-/** An individual (adult) contestant — adults compete individually, so there is no grade. */
+/** An individual (adult) contestant — adults compete individually, so no birthdate is collected. */
 @Serializable
 data class UpsertIndividualRequest(
     val name: String,
