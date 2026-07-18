@@ -4,6 +4,9 @@ import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.LoginRequest
+import net.markdrew.biblebowl.api.Role
+import net.markdrew.biblebowl.api.RoleGrant
+import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
@@ -45,6 +48,16 @@ class TbbApiRequestTest {
                     }
                 "/registration/mine" ->
                     """{"congregations":[],"registration":null,"windowOpen":true}""" to "application/json"
+                "/admin/registrations" ->
+                    """{"seasonYear":"2027","rows":[]}""" to "application/json"
+                "/admin/registrations/r1/paid" ->
+                    """{"id":"r1","congregation":{"id":"c1","name":"First Church","city":"Austin"},
+                        "seasonYear":"2027","status":"SUBMITTED","paidAt":"2027-01-15T00:00:00Z"}""" to
+                        "application/json"
+                "/users" ->
+                    """[{"id":"u2","email":"carol@tbb.org","displayName":"Carol"}]""" to "application/json"
+                "/users/u2/roles" ->
+                    """{"id":"u2","email":"carol@tbb.org","displayName":"Carol"}""" to "application/json"
                 else ->
                     if (exchange.requestURI.path.startsWith("/registration/")) {
                         """{"id":"r1","congregation":{"id":"c1","name":"First Church","city":"Austin"},
@@ -147,6 +160,38 @@ class TbbApiRequestTest {
         assertEquals("/auth/me", requests.last())
 
         // Every registration call must carry the signed-in token.
+        assertTrue(authHeaders.drop(1).all { it == "Bearer tok123" }, "missing Bearer on some call: $authHeaders")
+    }
+
+    @Test
+    fun adminEndpointsSendAuthorizedTypedRequests() = runBlocking {
+        api.login(LoginRequest("admin@tbb.org", "supersecret"))
+
+        val desk = api.registrationDesk()
+        assertEquals("2027", desk.seasonYear)
+        assertEquals("GET" to "/admin/registrations", methods.last() to requests.last())
+
+        val paid = api.setRegistrationPaid("r1", paid = true)
+        assertEquals("2027-01-15T00:00:00Z", paid.paidAt)
+        assertEquals("PUT" to "/admin/registrations/r1/paid", methods.last() to requests.last())
+
+        api.searchUsers("carol")
+        assertEquals("GET" to "/users?query=carol", methods.last() to requests.last())
+
+        api.grantRole("u2", RoleGrant(Role.COACH, ScopeType.CONGREGATION, "c1"))
+        assertEquals("POST" to "/users/u2/roles", methods.last() to requests.last())
+
+        api.revokeRole("u2", RoleGrant(Role.COACH, ScopeType.CONGREGATION, "c1"))
+        assertEquals("DELETE", methods.last())
+        val revokeUri = requests.last()
+        listOf("role=COACH", "scopeType=CONGREGATION", "scopeId=c1").forEach { param ->
+            assertTrue(param in revokeUri, "expected $param in $revokeUri")
+        }
+
+        // A null scopeId stays out of the query string entirely.
+        api.revokeRole("u2", RoleGrant(Role.ADMIN, ScopeType.GLOBAL, null))
+        assertTrue("scopeId" !in requests.last(), requests.last())
+
         assertTrue(authHeaders.drop(1).all { it == "Bearer tok123" }, "missing Bearer on some call: $authHeaders")
     }
 

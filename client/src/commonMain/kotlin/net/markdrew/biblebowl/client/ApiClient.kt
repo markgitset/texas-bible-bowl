@@ -30,8 +30,11 @@ import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
+import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDto
+import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.SeasonDto
+import net.markdrew.biblebowl.api.SetPaidRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
@@ -328,6 +331,37 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     /** Submits (or re-submits) the congregation's registration for the current season. */
     suspend fun submitRegistration(congregationId: String): RegistrationDto =
         client.post("$baseUrl/registration/$congregationId/submit") { authorize() }.bodyOrThrow()
+
+    // --- Admin: registration desk & user management (docs/gui-redesign.md §5G) ---
+
+    /** The full registration desk for the current season. Requires event-wide REGISTRATION_MANAGE. */
+    suspend fun registrationDesk(): RegistrationDeskResponse =
+        client.get("$baseUrl/admin/registrations") { authorize() }.bodyOrThrow()
+
+    /** Marks a registration's payment received, or clears it. Requires event-wide REGISTRATION_MANAGE. */
+    suspend fun setRegistrationPaid(registrationId: String, paid: Boolean): RegistrationDto =
+        client.put("$baseUrl/admin/registrations/$registrationId/paid") {
+            authorize(); contentType(ContentType.Application.Json); setBody(SetPaidRequest(paid))
+        }.bodyOrThrow()
+
+    /** Searches users by name/email fragment (USER_MANAGE). A blank query returns nothing. */
+    suspend fun searchUsers(query: String): List<UserDto> =
+        client.get("$baseUrl/users") { authorize(); parameter("query", query) }.bodyOrThrow()
+
+    /** Grants [grant] to [userId] (ROLE_GRANT); returns the updated user. Idempotent. */
+    suspend fun grantRole(userId: String, grant: RoleGrant): UserDto =
+        client.post("$baseUrl/users/$userId/roles") {
+            authorize(); contentType(ContentType.Application.Json); setBody(grant)
+        }.bodyOrThrow()
+
+    /** Revokes [grant] from [userId] (grant identity as query params — DELETE bodies are unreliable). */
+    suspend fun revokeRole(userId: String, grant: RoleGrant): UserDto =
+        client.delete("$baseUrl/users/$userId/roles") {
+            authorize()
+            parameter("role", grant.role.name)
+            parameter("scopeType", grant.scopeType.name)
+            grant.scopeId?.let { parameter("scopeId", it) }
+        }.bodyOrThrow()
 
     /**
      * Drops every server-cached generated PDF so the next download of each regenerates (for when the
