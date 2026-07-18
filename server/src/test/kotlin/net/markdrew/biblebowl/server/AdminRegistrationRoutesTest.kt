@@ -21,6 +21,7 @@ import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.RegistrationDeskResponse
@@ -59,13 +60,18 @@ class AdminRegistrationRoutesTest {
         defaultRequest { contentType(ContentType.Application.Json) }
     }
 
-    private suspend fun HttpClient.signUp(email: String, name: String): AuthResponse =
+    private suspend fun HttpClient.signUp(email: String, name: String, adult: Boolean = true): AuthResponse =
         json.decodeFromString(
-            post("/auth/register") { setBody(RegisterRequest(email, "password123", name)) }.bodyAsText()
+            post("/auth/register") {
+                setBody(RegisterRequest(email, "password123", name, birthdate = "2013-05-01".takeUnless { adult }, adult = adult))
+            }.bodyAsText()
         )
 
     private suspend fun HttpClient.loginSeededAdmin(users: UserRepository): AuthResponse {
-        users.create("admin@tbb.org", "Admin", null, Passwords.hash("supersecret"), listOf(RoleGrant(Role.ADMIN)))
+        users.create(
+            "admin@tbb.org", "Admin", null, adult = true,
+            passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)),
+        )
         return json.decodeFromString(
             post("/auth/login") { setBody(LoginRequest("admin@tbb.org", "supersecret")) }.bodyAsText()
         )
@@ -95,7 +101,9 @@ class AdminRegistrationRoutesTest {
             repeat(memberCount) { i ->
                 post("/registration/teams/${reg.teams.single().id}/members") {
                     header(HttpHeaders.Authorization, "Bearer ${coach.token}")
-                    setBody(UpsertRosterEntryRequest("Kid $i", grade = 7, shirtSize = ShirtSize.AM))
+                    setBody(
+                        UpsertRosterEntryRequest("Kid $i", birthdate = "2013-05-01", shirtSize = ShirtSize.AM, gender = Gender.MALE)
+                    )
                 }
             }
         }

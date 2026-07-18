@@ -213,6 +213,9 @@ private fun seedAdminFromEnv(users: UserRepository) {
     val email = System.getenv("ADMIN_EMAIL") ?: return
     val password = System.getenv("ADMIN_PASSWORD") ?: return
     if (users.findByEmail(email) == null) {
-        users.create(email, "Administrator", null, Passwords.hash(password), listOf(RoleGrant(Role.ADMIN)))
+        users.create(
+            email, "Administrator", birthdate = null, adult = true,
+            passwordHash = Passwords.hash(password), roles = listOf(RoleGrant(Role.ADMIN)),
+        )
     }
 }

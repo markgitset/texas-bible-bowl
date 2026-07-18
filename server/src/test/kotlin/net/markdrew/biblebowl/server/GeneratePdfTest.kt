@@ -41,7 +41,7 @@ class GeneratePdfTest {
         val users = InMemoryUserRepository()
         val questions = InMemoryQuestionRepository()
         val jwt = JwtService(secret = "test-secret")
-        users.create("admin@tbb.org", "Admin", null, Passwords.hash("supersecret"), listOf(RoleGrant(Role.ADMIN)))
+        users.create("admin@tbb.org", "Admin", null, adult = true, passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)))
         application { module(users, questions, jwt) }
 
         val json = Json { ignoreUnknownKeys = true }
@@ -53,7 +53,7 @@ class GeneratePdfTest {
         val kid: AuthResponse = json.decodeFromString(
             api.post("/auth/register") {
                 contentType(ContentType.Application.Json)
-                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", 8))
+                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
             }.bodyAsText()
         )
         val admin: AuthResponse = json.decodeFromString(

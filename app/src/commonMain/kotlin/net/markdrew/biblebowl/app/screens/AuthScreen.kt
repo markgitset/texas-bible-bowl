@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +39,8 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
+import net.markdrew.biblebowl.api.divisionForBirthdate
+import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.app.ui.LocalSeason
@@ -101,10 +104,12 @@ private fun AuthCard(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
-    var gradeText by remember { mutableStateOf("") }
+    var adult by remember { mutableStateOf(false) }
+    var birthdate by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val season = LocalSeason.current
 
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -128,15 +133,24 @@ private fun AuthCard(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
                     value = name, onValueChange = { name = it },
                     label = { Text("Display name") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 )
-                OutlinedTextField(
-                    value = gradeText, onValueChange = { gradeText = it.filter(Char::isDigit) },
-                    label = { Text("Grade (3–12, optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                )
-                gradeText.toIntOrNull()?.let { g ->
-                    Division.forGrade(g)?.let {
-                        Text("Division: ${it.displayName}", style = MaterialTheme.typography.bodySmall)
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = adult, onCheckedChange = { adult = it })
+                    Text("I'm an adult (18+ or finished high school)", style = MaterialTheme.typography.bodyMedium)
+                }
+                if (!adult) {
+                    OutlinedTextField(
+                        value = birthdate, onValueChange = { birthdate = it.trim() },
+                        label = { Text("Birthdate (yyyy-MM-dd)") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        supportingText = {
+                            Text("Used to place contestants in the right division each season.")
+                        },
+                    )
+                }
+                val division = if (adult) Division.ADULT
+                    else birthdate.takeIf { it.isNotBlank() }?.let { season.divisionForBirthdate(it) }
+                division?.let {
+                    Text("Division: ${it.displayName}", style = MaterialTheme.typography.bodySmall)
                 }
             }
 
@@ -146,7 +160,13 @@ private fun AuthCard(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
                     scope.launch {
                         try {
                             val resp = if (registering)
-                                api.register(RegisterRequest(email.trim(), password, name.trim(), gradeText.toIntOrNull()))
+                                api.register(
+                                    RegisterRequest(
+                                        email.trim(), password, name.trim(),
+                                        birthdate = birthdate.takeIf { it.isNotBlank() }?.takeUnless { adult },
+                                        adult = adult,
+                                    )
+                                )
                             else
                                 api.login(LoginRequest(email.trim(), password))
                             onSignedIn(resp.user)
@@ -158,7 +178,7 @@ private fun AuthCard(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
                     }
                 },
                 enabled = !busy && email.isNotBlank() && password.length >= 8 &&
-                    (!registering || name.isNotBlank()),
+                    (!registering || (name.isNotBlank() && (adult || isValidBirthdate(birthdate)))),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (busy) CircularProgressIndicator(Modifier.height(18.dp))

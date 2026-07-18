@@ -6,6 +6,7 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.UserDto
+import net.markdrew.biblebowl.api.division
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
@@ -89,7 +90,8 @@ object AdminUsersScreen {
         resultsSlot.child("div", "card section-card mb-3") {
             child("div", "card-body") {
                 child("h5", "card-title mb-0", user.displayName)
-                child("p", "text-muted mb-2", user.email + (user.grade?.let { " · grade $it" } ?: ""))
+                child("p", "text-muted mb-2",
+                    user.email + (user.division(Session.season)?.let { " · ${it.displayName}" } ?: ""))
 
                 if (user.roles.isEmpty()) {
                     child("p", "text-muted", "Contestant (default) — no explicit grants")

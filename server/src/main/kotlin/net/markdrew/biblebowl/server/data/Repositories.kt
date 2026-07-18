@@ -14,15 +14,27 @@ data class UserRecord(
     val id: String,
     val email: String,
     val displayName: String,
-    val grade: Int?,
+    /** ISO-8601 birthdate for youth; null for adults and pre-birthdate accounts. */
+    val birthdate: String?,
+    /** Self-attested adult; only adults may register a congregation. */
+    val adult: Boolean,
     val passwordHash: String,
     val roles: MutableList<RoleGrant>,
 )
 
 interface UserRepository {
-    fun create(email: String, displayName: String, grade: Int?, passwordHash: String, roles: List<RoleGrant>): UserRecord
+    fun create(
+        email: String,
+        displayName: String,
+        birthdate: String?,
+        adult: Boolean,
+        passwordHash: String,
+        roles: List<RoleGrant>,
+    ): UserRecord
     fun findByEmail(email: String): UserRecord?
     fun findById(id: String): UserRecord?
+    /** Replaces the user's self-editable profile fields; null when the user doesn't exist. */
+    fun updateProfile(userId: String, displayName: String, birthdate: String?, adult: Boolean): UserRecord?
     /** Adds a role grant to an existing user (no-op if the identical grant is already held). */
     fun addRoleGrant(userId: String, grant: RoleGrant)
     /** Removes an exact grant (role + scopeType + scopeId). False if the user or grant wasn't found. */
@@ -55,10 +67,10 @@ class InMemoryUserRepository : UserRepository {
     private val idByEmail = ConcurrentHashMap<String, String>()
 
     override fun create(
-        email: String, displayName: String, grade: Int?, passwordHash: String, roles: List<RoleGrant>,
+        email: String, displayName: String, birthdate: String?, adult: Boolean, passwordHash: String, roles: List<RoleGrant>,
     ): UserRecord {
         val id = UUID.randomUUID().toString()
-        val record = UserRecord(id, email.lowercase(), displayName, grade, passwordHash, roles.toMutableList())
+        val record = UserRecord(id, email.lowercase(), displayName, birthdate, adult, passwordHash, roles.toMutableList())
         byId[id] = record
         idByEmail[email.lowercase()] = id
         return record
@@ -66,6 +78,11 @@ class InMemoryUserRepository : UserRepository {
 
     override fun findByEmail(email: String): UserRecord? = idByEmail[email.lowercase()]?.let { byId[it] }
     override fun findById(id: String): UserRecord? = byId[id]
+
+    override fun updateProfile(userId: String, displayName: String, birthdate: String?, adult: Boolean): UserRecord? =
+        byId.computeIfPresent(userId) { _, record ->
+            record.copy(displayName = displayName, birthdate = birthdate, adult = adult)
+        }
 
     override fun addRoleGrant(userId: String, grant: RoleGrant) {
         byId[userId]?.roles?.let { roles -> synchronized(roles) { if (grant !in roles) roles.add(grant) } }

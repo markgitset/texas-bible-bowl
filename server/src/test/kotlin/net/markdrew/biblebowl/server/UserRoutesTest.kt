@@ -49,15 +49,20 @@ class UserRoutesTest {
         defaultRequest { contentType(ContentType.Application.Json) }
     }
 
-    private suspend fun HttpClient.signUp(email: String, name: String): AuthResponse =
+    private suspend fun HttpClient.signUp(email: String, name: String, adult: Boolean = true): AuthResponse =
         json.decodeFromString(
-            post("/auth/register") { setBody(RegisterRequest(email, "password123", name)) }.bodyAsText()
+            post("/auth/register") {
+                setBody(RegisterRequest(email, "password123", name, birthdate = "2013-05-01".takeUnless { adult }, adult = adult))
+            }.bodyAsText()
         )
 
     private suspend fun HttpClient.loginSeededAdmin(
         users: UserRepository, email: String = "admin@tbb.org",
     ): AuthResponse {
-        users.create(email, "Admin", null, Passwords.hash("supersecret"), listOf(RoleGrant(Role.ADMIN)))
+        users.create(
+            email, "Admin", null, adult = true,
+            passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)),
+        )
         return json.decodeFromString(
             post("/auth/login") { setBody(LoginRequest(email, "supersecret")) }.bodyAsText()
         )

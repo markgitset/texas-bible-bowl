@@ -2,9 +2,10 @@ package net.markdrew.biblebowl.web.screens
 
 import kotlinx.browser.window
 import kotlinx.coroutines.launch
-import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
+import net.markdrew.biblebowl.api.divisionForBirthdate
+import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.api.schoolYear
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.web.Routes
@@ -69,11 +70,29 @@ object AuthScreen {
         val email = field("Email", "email", "email")
         val password = field("Password", "password", if (registering) "new-password" else "current-password")
         var name: HTMLInputElement? = null
-        var grade: HTMLInputElement? = null
+        var adult: HTMLInputElement? = null
+        var birthdate: HTMLInputElement? = null
+        var birthdateRow: HTMLElement? = null
         var divisionHint: HTMLElement? = null
         if (registering) {
             name = field("Display name", "text", "name")
-            grade = field("Grade (3–12, optional)", "text").apply { setAttribute("inputmode", "numeric") }
+            form.child("div", "form-check mb-3") {
+                adult = (child("input", "form-check-input") as HTMLInputElement).apply {
+                    type = "checkbox"
+                    id = "auth-adult"
+                }
+                child("label", "form-check-label", "I'm an adult (18+ or finished high school)") {
+                    setAttribute("for", "auth-adult")
+                }
+            }
+            birthdateRow = form.child("div", "mb-3") {
+                child("label", "form-label", "Birthdate")
+                birthdate = (child("input", "form-control") as HTMLInputElement).apply {
+                    type = "date"
+                    setAttribute("autocomplete", "bday")
+                }
+                child("div", "form-text", "Used to place contestants in the right division each season.")
+            }
             divisionHint = form.child("p", "form-text mt-n2 mb-3", "")
         }
 
@@ -83,16 +102,21 @@ object AuthScreen {
         val errorSlot = form.child("div")
 
         fun refresh() {
-            grade?.let { g ->
-                g.value = g.value.filter(Char::isDigit)
-                val division = g.value.toIntOrNull()?.let { Division.forGrade(it) }
-                divisionHint?.textContent = division?.let { "Division: ${it.displayName}" } ?: ""
+            val isAdult = adult?.checked == true
+            birthdateRow?.classList?.toggle("d-none", isAdult)
+            divisionHint?.textContent = when {
+                isAdult -> "Division: Adult"
+                else -> birthdate?.value?.takeIf { it.isNotBlank() }
+                    ?.let { Session.season.divisionForBirthdate(it) }
+                    ?.let { "Division: ${it.displayName}" }
+                    ?: ""
             }
+            val birthdateOk = isAdult || birthdate?.value?.let { isValidBirthdate(it) } == true
             submit.disabled = email.value.isBlank() || password.value.length < 8 ||
-                (registering && name?.value.isNullOrBlank())
+                (registering && (name?.value.isNullOrBlank() || !birthdateOk))
         }
         refresh()
-        listOfNotNull(email, password, name, grade).forEach { it.addEventListener("input", { refresh() }) }
+        listOfNotNull(email, password, name, adult, birthdate).forEach { it.addEventListener("input", { refresh() }) }
 
         form.addEventListener("submit", { event ->
             event.preventDefault()
@@ -101,10 +125,12 @@ object AuthScreen {
             Shell.scope.launch {
                 try {
                     val resp = if (registering) {
+                        val isAdult = adult?.checked == true
                         Session.api.register(
                             RegisterRequest(
                                 email.value.trim(), password.value, name?.value?.trim().orEmpty(),
-                                grade?.value?.toIntOrNull(),
+                                birthdate = birthdate?.value?.takeIf { it.isNotBlank() }?.takeUnless { isAdult },
+                                adult = isAdult,
                             )
                         )
                     } else {

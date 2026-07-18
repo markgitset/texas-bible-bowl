@@ -23,6 +23,7 @@ import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.RegisterRequest
@@ -66,9 +67,12 @@ class RegistrationRoutesTest {
         defaultRequest { contentType(ContentType.Application.Json) }
     }
 
-    private suspend fun HttpClient.signUp(email: String, name: String): AuthResponse =
+    /** Coaches default to adult accounts — only adults may create congregations. */
+    private suspend fun HttpClient.signUp(email: String, name: String, adult: Boolean = true): AuthResponse =
         json.decodeFromString(
-            post("/auth/register") { setBody(RegisterRequest(email, "password123", name)) }.bodyAsText()
+            post("/auth/register") {
+                setBody(RegisterRequest(email, "password123", name, birthdate = "2013-05-01".takeUnless { adult }, adult = adult))
+            }.bodyAsText()
         )
 
     private suspend inline fun <reified T> HttpResponse.body(): T = json.decodeFromString<T>(bodyAsText())
@@ -129,6 +133,35 @@ class RegistrationRoutesTest {
     }
 
     @Test
+    fun onlyAdultsMayCreateCongregations() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+
+        val youth = api.signUp("kid@tbb.org", "Timothy", adult = false)
+        val refused = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${youth.token}")
+            setBody(congregationRequest("Kid Church", "Lystra"))
+        }
+        assertEquals(HttpStatusCode.Forbidden, refused.status)
+        assertEquals("adult_required", refused.body<ApiError>().code)
+
+        // After marking themselves an adult on the account page, creation succeeds.
+        api.put("/auth/me") {
+            header(HttpHeaders.Authorization, "Bearer ${youth.token}")
+            setBody(net.markdrew.biblebowl.api.UpdateProfileRequest("Timothy", adult = true))
+        }
+        val allowed = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${youth.token}")
+            setBody(congregationRequest("Kid Church", "Lystra"))
+        }
+        assertEquals(HttpStatusCode.Created, allowed.status)
+    }
+
+    @Test
     fun coachWalksTheFullFlowAndResumes() = testApplication {
         val users = InMemoryUserRepository()
         application {
@@ -158,42 +191,50 @@ class RegistrationRoutesTest {
         val teamId = withTeam.teams.single().id
 
         val withMember: RegistrationDto = api.post("/registration/teams/$teamId/members") {
-            asCoach(); setBody(UpsertRosterEntryRequest("Timothy", 8, ShirtSize.YM))
+            asCoach(); setBody(UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE, inexperienced = true))
         }.body()
         val entry = withMember.teams.single().members.single()
-        assertEquals(8, entry.grade)
+        assertEquals("2013-05-01", entry.birthdate)
+        assertEquals(Gender.MALE, entry.gender)
+        assertEquals(DEFAULT_SEASON.eventYear, entry.firstSeasonYear, "inexperienced → first season is this one")
         assertEquals(8, entry.claimCode.length)
         assertEquals(8500, withMember.totalCents, "1 contestant × \$85")
 
         // Roster cap: 4 max.
         repeat(3) { i ->
             api.post("/registration/teams/$teamId/members") {
-                asCoach(); setBody(UpsertRosterEntryRequest("Kid $i", 5, ShirtSize.YL))
+                asCoach(); setBody(UpsertRosterEntryRequest("Kid $i", "2016-05-01", ShirtSize.YL, Gender.FEMALE))
             }
         }
         val fifth = api.post("/registration/teams/$teamId/members") {
-            asCoach(); setBody(UpsertRosterEntryRequest("Fifth", 6, ShirtSize.YL))
+            asCoach(); setBody(UpsertRosterEntryRequest("Fifth", "2015-05-01", ShirtSize.YL, Gender.MALE))
         }
         assertEquals(HttpStatusCode.Conflict, fifth.status)
         assertEquals("roster_full", fifth.body<ApiError>().code)
 
-        // Bad grade is rejected.
-        val badGrade = api.post("/registration/teams/$teamId/members") {
-            asCoach(); setBody(UpsertRosterEntryRequest("Toddler", 1, ShirtSize.YS))
+        // A birthdate below school age (no division) is rejected, as is a malformed one.
+        val tooYoung = api.post("/registration/teams/$teamId/members") {
+            asCoach(); setBody(UpsertRosterEntryRequest("Toddler", "2023-01-01", ShirtSize.YS, Gender.MALE))
         }
-        assertEquals(HttpStatusCode.BadRequest, badGrade.status)
+        assertEquals(HttpStatusCode.BadRequest, tooYoung.status)
+        val badDate = api.post("/registration/teams/$teamId/members") {
+            asCoach(); setBody(UpsertRosterEntryRequest("Mystery", "May 2013", ShirtSize.YS, Gender.MALE))
+        }
+        assertEquals(HttpStatusCode.BadRequest, badDate.status)
 
         // Adults can't be placed on a team — they register as individual contestants.
         val withAdult: RegistrationDto = api.post("/registration/${congregation.id}/individuals") {
-            asCoach(); setBody(UpsertIndividualRequest("Pat Adult", ShirtSize.AXL))
+            asCoach(); setBody(UpsertIndividualRequest("Pat Adult", ShirtSize.AXL, Gender.FEMALE))
         }.body()
         val adult = withAdult.individuals.single()
-        assertNull(adult.grade, "individuals never carry a grade")
+        assertNull(adult.birthdate, "individuals never carry a birthdate")
+        assertEquals(Gender.FEMALE, adult.gender)
+        assertNull(adult.firstSeasonYear, "no experience split in the Adult division")
         assertEquals(8, adult.claimCode.length)
         assertEquals(5 * 8500, withAdult.totalCents, "4 team members + 1 individual")
 
         val editedAdult: RegistrationDto = api.put("/registration/individuals/${adult.id}") {
-            asCoach(); setBody(UpsertIndividualRequest("Pat A.", ShirtSize.AM))
+            asCoach(); setBody(UpsertIndividualRequest("Pat A.", ShirtSize.AM, Gender.FEMALE))
         }.body()
         assertEquals("Pat A.", editedAdult.individuals.single().name)
 
@@ -256,12 +297,12 @@ class RegistrationRoutesTest {
         assertEquals("forbidden_scope", addTeam.body<ApiError>().code)
         val addMember = api.post("/registration/teams/${teamA.id}/members") {
             header(HttpHeaders.Authorization, "Bearer ${bob.token}")
-            setBody(UpsertRosterEntryRequest("Mole", 7, ShirtSize.AM))
+            setBody(UpsertRosterEntryRequest("Mole", "2014-05-01", ShirtSize.AM, Gender.MALE))
         }
         assertEquals(HttpStatusCode.Forbidden, addMember.status)
         val addIndividual = api.post("/registration/${congA.id}/individuals") {
             header(HttpHeaders.Authorization, "Bearer ${bob.token}")
-            setBody(UpsertIndividualRequest("Mole Adult", ShirtSize.AM))
+            setBody(UpsertIndividualRequest("Mole Adult", ShirtSize.AM, Gender.MALE))
         }
         assertEquals(HttpStatusCode.Forbidden, addIndividual.status)
         val submit = api.post("/registration/${congA.id}/submit") {
@@ -270,7 +311,7 @@ class RegistrationRoutesTest {
         assertEquals(HttpStatusCode.Forbidden, submit.status)
 
         // An admin passes the scope check everywhere.
-        users.create("admin@tbb.org", "Admin", null, Passwords.hash("supersecret"), listOf(RoleGrant(Role.ADMIN)))
+        users.create("admin@tbb.org", "Admin", null, adult = true, passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)))
         val admin: AuthResponse = json.decodeFromString(
             api.post("/auth/login") {
                 setBody(net.markdrew.biblebowl.api.LoginRequest("admin@tbb.org", "supersecret"))
@@ -314,7 +355,7 @@ class RegistrationRoutesTest {
         assertFalse(mine.windowOpen)
 
         // Admins may still fix registrations after the deadline.
-        users.create("admin@tbb.org", "Admin", null, Passwords.hash("supersecret"), listOf(RoleGrant(Role.ADMIN)))
+        users.create("admin@tbb.org", "Admin", null, adult = true, passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)))
         val admin: AuthResponse = json.decodeFromString(
             api.post("/auth/login") {
                 setBody(net.markdrew.biblebowl.api.LoginRequest("admin@tbb.org", "supersecret"))

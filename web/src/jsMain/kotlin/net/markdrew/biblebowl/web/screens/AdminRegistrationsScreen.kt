@@ -195,7 +195,7 @@ object AdminRegistrationsScreen {
     private fun renderTeamDetail(parent: Element, team: TeamDto) {
         parent.child("h6", "mt-2") {
             append("${team.name} ")
-            val division = team.division()
+            val division = team.division(Session.season)
             child(
                 "span",
                 "badge " + (if (division == null) "text-bg-secondary" else "text-bg-primary"),
@@ -207,7 +207,8 @@ object AdminRegistrationsScreen {
             return
         }
         team.members.forEach { member ->
-            parent.child("div", "small", "${member.name} — grade ${member.grade}, shirt ${member.shirtSize.name}")
+            val division = member.division(Session.season)?.displayName ?: "division unknown"
+            parent.child("div", "small", "${member.name} — $division, shirt ${member.shirtSize.name}")
         }
     }
 

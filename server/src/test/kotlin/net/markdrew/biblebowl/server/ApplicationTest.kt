@@ -25,6 +25,8 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
+import net.markdrew.biblebowl.api.UpdateProfileRequest
+import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
@@ -77,7 +79,7 @@ class ApplicationTest {
         // A contestant registers and submits a question (it lands PENDING).
         val contestant: AuthResponse = json.decodeFromString(
             api.post("/auth/register") {
-                setBody(RegisterRequest("kid2@tbb.org", "password123", "Lydia", grade = 7))
+                setBody(RegisterRequest("kid2@tbb.org", "password123", "Lydia", birthdate = "2013-05-01"))
             }.bodyAsText()
         )
         api.post("/questions") {
@@ -127,7 +129,7 @@ class ApplicationTest {
         val users = InMemoryUserRepository()
         val questions = InMemoryQuestionRepository()
         val jwt = JwtService(secret = "test-secret")
-        users.create("admin@tbb.org", "Admin", null, Passwords.hash("supersecret"), listOf(RoleGrant(Role.ADMIN)))
+        users.create("admin@tbb.org", "Admin", null, adult = true, passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)))
         application { module(users, questions, jwt) }
 
         val api = createClient {
@@ -138,7 +140,7 @@ class ApplicationTest {
         // Seed one approved multiple-choice question.
         val contestant: AuthResponse = json.decodeFromString(
             api.post("/auth/register") {
-                setBody(RegisterRequest("kid3@tbb.org", "password123", "Rhoda", grade = 6))
+                setBody(RegisterRequest("kid3@tbb.org", "password123", "Rhoda", birthdate = "2015-05-01"))
             }.bodyAsText()
         )
         val q: QuestionDto = json.decodeFromString(
@@ -205,7 +207,7 @@ class ApplicationTest {
     fun seasonIsPubliclyReadableAndAdminEditable() = testApplication {
         val users = InMemoryUserRepository()
         val jwt = JwtService(secret = "test-secret")
-        users.create("admin@tbb.org", "Admin", null, Passwords.hash("supersecret"), listOf(RoleGrant(Role.ADMIN)))
+        users.create("admin@tbb.org", "Admin", null, adult = true, passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)))
         application { module(users, InMemoryQuestionRepository(), jwt) }
 
         val api = createClient {
@@ -224,7 +226,7 @@ class ApplicationTest {
         assertEquals(HttpStatusCode.Unauthorized, api.put("/seasons/current") { setBody(season) }.status)
         val kid: AuthResponse = json.decodeFromString(
             api.post("/auth/register") {
-                setBody(RegisterRequest("kid4@tbb.org", "password123", "Priscilla"))
+                setBody(RegisterRequest("kid4@tbb.org", "password123", "Priscilla", birthdate = "2012-05-01"))
             }.bodyAsText()
         )
         val forbidden = api.put("/seasons/current") {
@@ -316,12 +318,93 @@ class ApplicationTest {
     }
 
     @Test
+    fun registrationRequiresAdultFlagOrBirthdate() = testApplication {
+        application { module(InMemoryUserRepository(), InMemoryQuestionRepository(), JwtService(secret = "test-secret")) }
+        val api = createClient {
+            install(ContentNegotiation) { json(json) }
+            defaultRequest { contentType(ContentType.Application.Json) }
+        }
+
+        val neither = api.post("/auth/register") {
+            setBody(RegisterRequest("x@tbb.org", "password123", "Nameless"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, neither.status)
+        assertTrue(neither.bodyAsText().contains("invalid_birthdate"))
+
+        val badDate = api.post("/auth/register") {
+            setBody(RegisterRequest("x@tbb.org", "password123", "Nameless", birthdate = "05/01/2012"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, badDate.status)
+
+        val adult = api.post("/auth/register") {
+            setBody(RegisterRequest("adult@tbb.org", "password123", "Aquila", adult = true))
+        }
+        assertEquals(HttpStatusCode.Created, adult.status)
+        val adultUser: AuthResponse = json.decodeFromString(adult.bodyAsText())
+        assertTrue(adultUser.user.adult)
+        assertEquals(null, adultUser.user.birthdate)
+    }
+
+    @Test
+    fun profileEditUpdatesNameAndEligibility() = testApplication {
+        application { module(InMemoryUserRepository(), InMemoryQuestionRepository(), JwtService(secret = "test-secret")) }
+        val api = createClient {
+            install(ContentNegotiation) { json(json) }
+            defaultRequest { contentType(ContentType.Application.Json) }
+        }
+        val auth: AuthResponse = json.decodeFromString(
+            api.post("/auth/register") {
+                setBody(RegisterRequest("tim@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
+            }.bodyAsText()
+        )
+
+        // Anonymous edits are rejected; bad payloads are rejected.
+        assertEquals(
+            HttpStatusCode.Unauthorized,
+            api.put("/auth/me") { setBody(UpdateProfileRequest("Tim", adult = true)) }.status,
+        )
+        val blankName = api.put("/auth/me") {
+            header(HttpHeaders.Authorization, "Bearer ${auth.token}")
+            setBody(UpdateProfileRequest("", birthdate = "2013-05-01"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, blankName.status)
+        val noEligibility = api.put("/auth/me") {
+            header(HttpHeaders.Authorization, "Bearer ${auth.token}")
+            setBody(UpdateProfileRequest("Tim"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, noEligibility.status)
+
+        // A valid edit renames and updates the birthdate; /auth/me reflects it.
+        val edited = api.put("/auth/me") {
+            header(HttpHeaders.Authorization, "Bearer ${auth.token}")
+            setBody(UpdateProfileRequest("Tim of Lystra", birthdate = "2012-05-01"))
+        }
+        assertEquals(HttpStatusCode.OK, edited.status)
+        val me: UserDto = json.decodeFromString(
+            api.get("/auth/me") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }.bodyAsText()
+        )
+        assertEquals("Tim of Lystra", me.displayName)
+        assertEquals("2012-05-01", me.birthdate)
+
+        // Flipping to adult drops the stored birthdate.
+        api.put("/auth/me") {
+            header(HttpHeaders.Authorization, "Bearer ${auth.token}")
+            setBody(UpdateProfileRequest("Tim of Lystra", birthdate = "2012-05-01", adult = true))
+        }
+        val adultMe: UserDto = json.decodeFromString(
+            api.get("/auth/me") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }.bodyAsText()
+        )
+        assertTrue(adultMe.adult)
+        assertEquals(null, adultMe.birthdate)
+    }
+
+    @Test
     fun rbacGovernsQuestionModeration() = testApplication {
         val users = InMemoryUserRepository()
         val questions = InMemoryQuestionRepository()
         val jwt = JwtService(secret = "test-secret")
         // Pre-seed a global admin.
-        users.create("admin@tbb.org", "Admin", null, Passwords.hash("supersecret"), listOf(RoleGrant(Role.ADMIN)))
+        users.create("admin@tbb.org", "Admin", null, adult = true, passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)))
         application { module(users, questions, jwt) }
 
         val api = createClient {
@@ -331,7 +414,7 @@ class ApplicationTest {
 
         // A contestant registers.
         val reg = api.post("/auth/register") {
-            setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", grade = 8))
+            setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
         }
         assertEquals(HttpStatusCode.Created, reg.status)
         val contestant: AuthResponse = json.decodeFromString(reg.bodyAsText())

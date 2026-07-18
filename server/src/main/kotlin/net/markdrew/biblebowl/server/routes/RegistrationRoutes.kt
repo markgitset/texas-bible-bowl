@@ -18,11 +18,13 @@ import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
+import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.api.coachedCongregationIds
 import net.markdrew.biblebowl.api.contestantCount
+import net.markdrew.biblebowl.api.gradeForBirthdate
 import net.markdrew.biblebowl.api.registrationTotalCents
 import net.markdrew.biblebowl.server.RegistrationWindowState
 import net.markdrew.biblebowl.server.data.AddMemberResult
@@ -40,8 +42,9 @@ import net.markdrew.biblebowl.server.security.requireScopedPermission
  * Registration (docs/gui-redesign.md §5E): congregations, teams, rosters, and the coach flow's
  * resume/submit endpoints. Everything requires sign-in; mutations additionally require the
  * congregation-scoped grant and (except congregation creation, which is onboarding) an open
- * registration window. Creating a congregation self-serve grants the creator COACH scoped to it;
- * claiming an existing one goes through an admin (the client shows "contact us" on the 409).
+ * registration window. Creating a congregation self-serve grants the creator COACH scoped to it —
+ * but only adult accounts may do so; claiming an existing one goes through an admin (the client
+ * shows "contact us" on the 409).
  */
 fun Route.registrationRoutes(
     users: UserRepository,
@@ -52,6 +55,15 @@ fun Route.registrationRoutes(
     authenticate {
         post("/congregations") {
             val user = currentUser(users) ?: return@post
+            if (!user.adult && !user.isAdmin) {
+                return@post call.respond(
+                    HttpStatusCode.Forbidden,
+                    ApiError(
+                        "adult_required",
+                        "Congregations must be registered by an adult — if you are one, mark it on your Account page",
+                    ),
+                )
+            }
             val req = call.receive<CreateCongregationRequest>()
             if (!req.isValid()) {
                 return@post call.respond(
@@ -146,7 +158,7 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@post
             if (!requireWindowOpen(user, seasons)) return@post
             val req = call.receive<UpsertRosterEntryRequest>()
-            if (!req.isValid()) {
+            if (!req.isValid(seasons.current())) {
                 return@post call.respond(
                     HttpStatusCode.BadRequest,
                     ApiError("invalid_member", INVALID_MEMBER_MESSAGE),
@@ -170,7 +182,7 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@put
             if (!requireWindowOpen(user, seasons)) return@put
             val req = call.receive<UpsertRosterEntryRequest>()
-            if (!req.isValid()) {
+            if (!req.isValid(seasons.current())) {
                 return@put call.respond(
                     HttpStatusCode.BadRequest,
                     ApiError("invalid_member", INVALID_MEMBER_MESSAGE),
@@ -247,10 +259,12 @@ fun Route.registrationRoutes(
 }
 
 private const val INVALID_MEMBER_MESSAGE =
-    "Name is required and grade must be 3–12 — adults register as individual contestants, not on a team"
+    "Name is required and the birthdate (YYYY-MM-DD) must land in grades 3\u201312 \u2014 adults register as " +
+        "individual contestants, not on a team"
 
-private fun UpsertRosterEntryRequest.isValid(): Boolean =
-    name.isNotBlank() && grade in 3..12
+/** A team member needs a name and a birthdate implying school grade 3\u201312 this season. */
+private fun UpsertRosterEntryRequest.isValid(season: SeasonDto): Boolean =
+    name.isNotBlank() && (season.gradeForBirthdate(birthdate) ?: -1) in 3..12
 
 private val ZIP_REGEX = Regex("""\d{5}(-\d{4})?""")
 

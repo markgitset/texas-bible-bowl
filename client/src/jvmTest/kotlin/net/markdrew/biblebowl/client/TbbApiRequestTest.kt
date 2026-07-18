@@ -8,6 +8,8 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.Gender
+import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.model.Round
@@ -38,7 +40,12 @@ class TbbApiRequestTest {
                     """{"token":"tok123","user":{"id":"u1","email":"admin@tbb.org","displayName":"Admin"}}""" to
                         "application/json"
                 "/auth/me" ->
-                    """{"id":"u1","email":"admin@tbb.org","displayName":"Admin"}""" to "application/json"
+                    if (exchange.requestMethod == "PUT") {
+                        """{"id":"u1","email":"admin@tbb.org","displayName":"Coach Carol","adult":true}""" to
+                            "application/json"
+                    } else {
+                        """{"id":"u1","email":"admin@tbb.org","displayName":"Admin"}""" to "application/json"
+                    }
                 "/generate/cache" -> """{"cleared":3}""" to "application/json"
                 "/congregations" ->
                     if (exchange.requestMethod == "POST") {
@@ -135,19 +142,19 @@ class TbbApiRequestTest {
         api.deleteTeam("t1")
         assertEquals("DELETE" to "/registration/teams/t1", methods.last() to requests.last())
 
-        api.addRosterEntry("t1", UpsertRosterEntryRequest("Timothy", 8, ShirtSize.YM))
+        api.addRosterEntry("t1", UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE, inexperienced = true))
         assertEquals("POST" to "/registration/teams/t1/members", methods.last() to requests.last())
 
-        api.updateRosterEntry("m1", UpsertRosterEntryRequest("Tim", 9, ShirtSize.YL))
+        api.updateRosterEntry("m1", UpsertRosterEntryRequest("Tim", "2012-05-01", ShirtSize.YL, Gender.MALE))
         assertEquals("PUT" to "/registration/members/m1", methods.last() to requests.last())
 
         api.deleteRosterEntry("m1")
         assertEquals("DELETE" to "/registration/members/m1", methods.last() to requests.last())
 
-        api.addIndividual("c1", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL))
+        api.addIndividual("c1", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL, Gender.FEMALE))
         assertEquals("POST" to "/registration/c1/individuals", methods.last() to requests.last())
 
-        api.updateIndividual("i1", UpsertIndividualRequest("Pat A.", ShirtSize.AM))
+        api.updateIndividual("i1", UpsertIndividualRequest("Pat A.", ShirtSize.AM, Gender.FEMALE))
         assertEquals("PUT" to "/registration/individuals/i1", methods.last() to requests.last())
 
         api.deleteIndividual("i1")
@@ -158,6 +165,10 @@ class TbbApiRequestTest {
 
         api.refreshUser()
         assertEquals("/auth/me", requests.last())
+
+        api.updateProfile(UpdateProfileRequest("Coach Carol", adult = true))
+        assertEquals("PUT" to "/auth/me", methods.last() to requests.last())
+        assertEquals("Coach Carol", api.user?.displayName, "updateProfile refreshes the cached user")
 
         // Every registration call must carry the signed-in token.
         assertTrue(authHeaders.drop(1).all { it == "Bearer tok123" }, "missing Bearer on some call: $authHeaders")

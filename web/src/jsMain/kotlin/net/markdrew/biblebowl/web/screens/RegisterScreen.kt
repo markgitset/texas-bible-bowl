@@ -4,6 +4,7 @@ import kotlinx.browser.window
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
@@ -15,10 +16,13 @@ import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.division
+import net.markdrew.biblebowl.api.divisionLabel
 import net.markdrew.biblebowl.api.feesNote
+import net.markdrew.biblebowl.api.isInexperienced
 import net.markdrew.biblebowl.api.formatCents
 import net.markdrew.biblebowl.api.formatClaimCode
 import net.markdrew.biblebowl.api.formatIsoDate
+import net.markdrew.biblebowl.client.ApiException
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
@@ -26,6 +30,7 @@ import net.markdrew.biblebowl.web.clear
 import net.markdrew.biblebowl.web.errorLine
 import net.markdrew.biblebowl.web.onClick
 import net.markdrew.biblebowl.web.spinner
+import net.markdrew.biblebowl.api.isValidBirthdate
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
@@ -228,7 +233,11 @@ object RegisterScreen {
                             renderContent()
                         } catch (e: Throwable) {
                             create.disabled = false
-                            slot.child("div", "alert alert-warning mt-3", contactUsMessage(e.message))
+                            // Only the name+city dupe (409) gets the "contact us to claim it" flow;
+                            // other errors (e.g. the adult-only rule) show the server's message as-is.
+                            val message = if ((e as? ApiException)?.status == 409) contactUsMessage(e.message)
+                                else e.message ?: "Something went wrong"
+                            slot.child("div", "alert alert-warning mt-3", message)
                         }
                     }
                 })
@@ -282,9 +291,9 @@ object RegisterScreen {
     private fun renderTeamsStep(parent: Element) {
         val cong = congregation ?: return
         parent.child("p", "text-muted",
-            "A team has up to 4 contestants (grades 3–12) and competes in the division of its " +
-                "highest-grade member. Adults aren't placed on a team — add them as individual " +
-                "contestants on the roster step.")
+            "A team has up to 4 contestants (grades 3–12, from birthdates) and competes in the " +
+                "division of its highest member. Adults aren't placed on a team — add them as " +
+                "individual contestants on the roster step.")
 
         registration?.teams?.forEach { team ->
             parent.child("div", "d-flex align-items-center gap-2 mb-2") {
@@ -329,12 +338,15 @@ object RegisterScreen {
         parent.nextButton("Continue to roster", 3)
     }
 
+    /** The registration's season (falls back to the current season before the draft exists). */
+    private val seasonYear: String get() = registration?.seasonYear ?: Session.season.eventYear
+
     private fun divisionBadge(parent: Element, team: TeamDto) {
-        val division = team.division()
+        val division = team.division(Session.season)
         parent.child(
             "span",
             "badge " + (if (division == null) "text-bg-secondary" else "text-bg-primary"),
-            division?.displayName ?: "Empty",
+            division?.let { divisionLabel(it, team.isInexperienced(seasonYear)) } ?: "Empty",
         )
     }
 
@@ -378,17 +390,20 @@ object RegisterScreen {
                         name.disabled = !canEdit
                         val shirt = shirtSelect(this, member.shirtSize)
                         shirt.disabled = !canEdit
+                        val gender = genderSelect(this, member.gender)
+                        gender.disabled = !canEdit
                         val save = {
-                            if (name.value.isNotBlank()) {
+                            val chosenGender = genderOf(gender)
+                            if (name.value.isNotBlank() && chosenGender != null) {
                                 mutate {
                                     Session.api.updateIndividual(
                                         member.id,
-                                        UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value)),
+                                        UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value), chosenGender),
                                     )
                                 }
                             }
                         }
-                        listOf<HTMLElement>(name, shirt).forEach { it.addEventListener("change", { save() }) }
+                        listOf<HTMLElement>(name, shirt, gender).forEach { it.addEventListener("change", { save() }) }
                         claimCodeChip(this, member.claimCode)
                         if (canEdit) {
                             child("button", "btn btn-outline-danger btn-sm", "Remove") {
@@ -403,14 +418,16 @@ object RegisterScreen {
                         val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
                         name.setAttribute("placeholder", "Adult contestant name")
                         val shirt = shirtSelect(this, ShirtSize.AM)
+                        val gender = genderSelect(this, null)
                         child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
                         addEventListener("submit", { event ->
                             event.preventDefault()
-                            if (name.value.isBlank()) return@addEventListener
+                            val chosenGender = genderOf(gender)
+                            if (name.value.isBlank() || chosenGender == null) return@addEventListener
                             mutate {
                                 Session.api.addIndividual(
                                     cong.id,
-                                    UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value)),
+                                    UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value), chosenGender),
                                 )
                             }
                         })
@@ -432,21 +449,29 @@ object RegisterScreen {
                         val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
                         name.value = member.name
                         name.disabled = !canEdit
-                        val grade = gradeSelect(this, member.grade)
+                        val birthdate = birthdateInput(this, member.birthdate)
                         val shirt = shirtSelect(this, member.shirtSize)
+                        val gender = genderSelect(this, member.gender)
+                        val firstYear = firstYearCheck(this, member.isInexperienced(seasonYear))
+                        firstYear.disabled = !canEdit
                         val save = {
-                            if (name.value.isNotBlank()) {
+                            val chosenGender = genderOf(gender)
+                            if (name.value.isNotBlank() && isValidBirthdate(birthdate.value) && chosenGender != null) {
                                 mutate {
                                     Session.api.updateRosterEntry(
                                         member.id,
-                                        UpsertRosterEntryRequest(name.value, gradeOf(grade), ShirtSize.valueOf(shirt.value)),
+                                        UpsertRosterEntryRequest(
+                                            name.value, birthdate.value, ShirtSize.valueOf(shirt.value),
+                                            chosenGender, firstYear.checked,
+                                        ),
                                     )
                                 }
                             }
                         }
-                        listOf<HTMLElement>(name, grade, shirt).forEach { el ->
+                        listOf<HTMLElement>(name, birthdate, shirt, gender, firstYear).forEach { el ->
                             el.addEventListener("change", { save() })
                             (el as? HTMLSelectElement)?.disabled = !canEdit
+                            (el as? HTMLInputElement)?.disabled = !canEdit
                         }
                         claimCodeChip(this, member.claimCode)
                         if (canEdit) {
@@ -471,36 +496,41 @@ object RegisterScreen {
         parent.child("form", "d-flex flex-wrap gap-2 mt-2") {
             val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
             name.setAttribute("placeholder", "Contestant name")
-            val grade = gradeSelect(this, 7)
-            val shirt = shirtSelect(this, ShirtSize.AM)
+            val birthdate = birthdateInput(this, initial = null)
+            val shirt = shirtSelect(this, ShirtSize.YM)
+            val gender = genderSelect(this, null)
+            val firstYear = firstYearCheck(this, false)
             child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
             addEventListener("submit", { event ->
                 event.preventDefault()
-                if (name.value.isBlank()) return@addEventListener
+                val chosenGender = genderOf(gender)
+                if (name.value.isBlank() || !isValidBirthdate(birthdate.value) || chosenGender == null) return@addEventListener
                 mutate {
                     Session.api.addRosterEntry(
                         team.id,
-                        UpsertRosterEntryRequest(name.value, gradeOf(grade), ShirtSize.valueOf(shirt.value)),
+                        UpsertRosterEntryRequest(
+                            name.value, birthdate.value, ShirtSize.valueOf(shirt.value),
+                            chosenGender, firstYear.checked,
+                        ),
+
                     )
                 }
             })
         }
         parent.child("p", "text-muted small mt-2 mb-0",
-            "Each contestant gets a claim code — share it so they (or a parent) can link their own account later.")
+            "The birthdate places each contestant in the right division (adults go under " +
+                "Individual contestants instead). Each contestant gets a claim code — share it so " +
+                "they (or a parent) can link their own account later.")
     }
 
-    /** Team grades only (3–12): adults can't be on a team — they're added as individuals instead. */
-    private fun gradeSelect(parent: Element, selected: Int?): HTMLSelectElement {
-        val select = parent.child("select", "form-select w-auto") as HTMLSelectElement
-        (3..12).forEach { grade ->
-            val option = select.child("option", text = "Grade $grade") as HTMLOptionElement
-            option.value = "$grade"
-            if (grade == selected) option.selected = true
-        }
-        return select
+    /** A team member's birthdate (drives their division; adults can't be on teams). */
+    private fun birthdateInput(parent: Element, initial: String?): HTMLInputElement {
+        val input = parent.child("input", "form-control w-auto") as HTMLInputElement
+        input.type = "date"
+        input.value = initial ?: ""
+        input.setAttribute("title", "Birthdate")
+        return input
     }
-
-    private fun gradeOf(select: HTMLSelectElement): Int = select.value.toInt()
 
     private fun shirtSelect(parent: Element, selected: ShirtSize): HTMLSelectElement {
         val select = parent.child("select", "form-select w-auto") as HTMLSelectElement
@@ -510,6 +540,41 @@ object RegisterScreen {
             if (size == selected) option.selected = true
         }
         return select
+    }
+
+    /** Gender select with a blank placeholder — [genderOf] returns null until one is chosen. */
+    private fun genderSelect(parent: Element, selected: Gender?): HTMLSelectElement {
+        val select = parent.child("select", "form-select w-auto") as HTMLSelectElement
+        select.setAttribute("required", "")
+        val placeholder = select.child("option", text = "Gender…") as HTMLOptionElement
+        placeholder.value = ""
+        placeholder.disabled = true
+        placeholder.selected = selected == null
+        Gender.entries.forEach { gender ->
+            val option = select.child("option", text = gender.displayName) as HTMLOptionElement
+            option.value = gender.name
+            if (gender == selected) option.selected = true
+        }
+        return select
+    }
+
+    private fun genderOf(select: HTMLSelectElement): Gender? =
+        select.value.takeIf { it.isNotEmpty() }?.let { Gender.valueOf(it) }
+
+    private var firstYearSeq = 0
+
+    /** "1st year" checkbox — marks a contestant inexperienced (first year competing). */
+    private fun firstYearCheck(parent: Element, checked: Boolean): HTMLInputElement {
+        lateinit var box: HTMLInputElement
+        parent.child("div", "form-check align-self-center text-nowrap") {
+            setAttribute("title", "First year competing — counts toward the inexperienced division")
+            box = child("input", "form-check-input") as HTMLInputElement
+            box.type = "checkbox"
+            box.checked = checked
+            box.id = "first-year-${++firstYearSeq}"
+            child("label", "form-check-label", "1st year") { setAttribute("for", box.id) }
+        }
+        return box
     }
 
     private fun claimCodeChip(parent: Element, code: String) {
@@ -533,18 +598,25 @@ object RegisterScreen {
         parent.child("div", "card section-card mb-3") {
             child("div", "card-body") {
                 child("h5", "card-title", "${cong.name} — ${cityStateLine(cong)} · ${reg.seasonYear} season")
+                val price = Session.season.priceContestantCents
+                fun feeMath(count: Int): String =
+                    if (price == null) "TBD" else "$count × ${formatCents(price)} = ${formatCents(price * count)}"
                 child("table", "table mb-2") {
                     child("thead") {
                         child("tr") {
-                            listOf("Team", "Division", "Contestants").forEach { child("th", text = it) }
+                            listOf("Team", "Division", "Contestants", "Fees").forEach { child("th", text = it) }
                         }
                     }
                     child("tbody") {
                         reg.teams.forEach { team ->
                             child("tr") {
                                 child("td", text = team.name)
-                                child("td", text = team.division()?.displayName ?: "—")
-                                child("td", text = team.members.joinToString { it.name })
+                                child("td", text = team.division(Session.season)
+                                    ?.let { divisionLabel(it, team.isInexperienced(seasonYear)) } ?: "—")
+                                child("td", text = team.members.joinToString {
+                                    it.name + if (it.isInexperienced(seasonYear)) " (1st year)" else ""
+                                })
+                                child("td", "text-nowrap", feeMath(team.members.size))
                             }
                         }
                         if (reg.individuals.isNotEmpty()) {
@@ -552,11 +624,24 @@ object RegisterScreen {
                                 child("td", text = "Individuals")
                                 child("td", text = "Adult")
                                 child("td", text = reg.individuals.joinToString { it.name })
+                                child("td", "text-nowrap", feeMath(reg.individuals.size))
                             }
                         }
                     }
+                    child("tfoot") {
+                        child("tr", "fw-semibold") {
+                            child("td", text = "Total due ($contestants contestant${if (contestants == 1) "" else "s"})") {
+                                setAttribute("colspan", "3")
+                            }
+                            child("td", "text-nowrap", formatCents(reg.totalCents))
+                        }
+                    }
                 }
-                child("p", "fw-semibold mb-1", "Total due: ${formatCents(reg.totalCents)} ($contestants contestants)")
+                child(
+                    "p", "text-muted small mb-1",
+                    "Fee per contestant: ${formatCents(price)} (one t-shirt included). Volunteers, guests, " +
+                        "and extra shirts are paid at the door.",
+                )
                 Session.season.feesNote.takeIf { it.isNotEmpty() }?.let { child("p", "text-muted small mb-0", it) }
             }
         }
