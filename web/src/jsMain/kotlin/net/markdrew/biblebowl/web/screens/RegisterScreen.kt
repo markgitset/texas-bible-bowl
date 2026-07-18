@@ -598,10 +598,13 @@ object RegisterScreen {
         parent.child("div", "card section-card mb-3") {
             child("div", "card-body") {
                 child("h5", "card-title", "${cong.name} — ${cityStateLine(cong)} · ${reg.seasonYear} season")
+                val price = Session.season.priceContestantCents
+                fun feeMath(count: Int): String =
+                    if (price == null) "TBD" else "$count × ${formatCents(price)} = ${formatCents(price * count)}"
                 child("table", "table mb-2") {
                     child("thead") {
                         child("tr") {
-                            listOf("Team", "Division", "Contestants").forEach { child("th", text = it) }
+                            listOf("Team", "Division", "Contestants", "Fees").forEach { child("th", text = it) }
                         }
                     }
                     child("tbody") {
@@ -613,6 +616,7 @@ object RegisterScreen {
                                 child("td", text = team.members.joinToString {
                                     it.name + if (it.isInexperienced(seasonYear)) " (1st year)" else ""
                                 })
+                                child("td", "text-nowrap", feeMath(team.members.size))
                             }
                         }
                         if (reg.individuals.isNotEmpty()) {
@@ -620,11 +624,24 @@ object RegisterScreen {
                                 child("td", text = "Individuals")
                                 child("td", text = "Adult")
                                 child("td", text = reg.individuals.joinToString { it.name })
+                                child("td", "text-nowrap", feeMath(reg.individuals.size))
                             }
                         }
                     }
+                    child("tfoot") {
+                        child("tr", "fw-semibold") {
+                            child("td", text = "Total due ($contestants contestant${if (contestants == 1) "" else "s"})") {
+                                setAttribute("colspan", "3")
+                            }
+                            child("td", "text-nowrap", formatCents(reg.totalCents))
+                        }
+                    }
                 }
-                child("p", "fw-semibold mb-1", "Total due: ${formatCents(reg.totalCents)} ($contestants contestants)")
+                child(
+                    "p", "text-muted small mb-1",
+                    "Fee per contestant: ${formatCents(price)} (one t-shirt included). Volunteers, guests, " +
+                        "and extra shirts are paid at the door.",
+                )
                 Session.season.feesNote.takeIf { it.isNotEmpty() }?.let { child("p", "text-muted small mb-0", it) }
             }
         }
