@@ -8,6 +8,7 @@ import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
 import net.markdrew.biblebowl.server.data.ClaimCodes
+import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
 import net.markdrew.biblebowl.server.data.InMemoryRegistrationRepository
 import net.markdrew.biblebowl.server.data.MAX_TEAM_SIZE
@@ -198,6 +199,23 @@ class RegistrationRepositoryTest {
         val otherTeam = repo.addTeam(other.id, "2028", "Team B")!!
         val otherTimothy = assertIs<AddMemberResult.Added>(repo.addMember(otherTeam.id, entry("Timothy", inexperienced = true))).entry
         assertEquals("2028", otherTimothy.firstSeasonYear)
+    }
+
+    @Test
+    fun claimingLinksAnEntryAndIsIdempotentPerAccount() {
+        val cong = newCongregation("Claim Church", "Waco")!!
+        val team = repo.addTeam(cong.id, "2027", "Team A")!!
+        val added = assertIs<AddMemberResult.Added>(repo.addMember(team.id, entry("Kid"))).entry
+
+        assertIs<ClaimResult.NotFound>(repo.claimEntry("ZZZZ9999", "owner-user"))
+        val claimed = assertIs<ClaimResult.Claimed>(repo.claimEntry(added.claimCode, "owner-user"))
+        assertTrue(claimed.entry.claimed)
+        assertIs<ClaimResult.AlreadyClaimed>(repo.claimEntry(added.claimCode, "other-user"))
+        assertIs<ClaimResult.Claimed>(repo.claimEntry(added.claimCode, "owner-user")) // idempotent re-claim
+        assertEquals(setOf(added.id), repo.entryIdsOwnedBy("owner-user"))
+        assertTrue(repo.entryIdsOwnedBy("other-user").isEmpty())
+        // The claimed flag round-trips through the full registration read.
+        assertTrue(repo.find(cong.id, "2027")!!.teams.single().members.single().claimed)
     }
 
     @Test

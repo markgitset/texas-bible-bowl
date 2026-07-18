@@ -10,8 +10,8 @@ import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 
 /**
  * Exposed table definitions: users, role grants, the crowd-sourced question bank, server-side
- * caches, and registration (congregations → registrations → teams → team_members). Scoring
- * tables land with the event-ops phase.
+ * caches, registration (congregations → registrations → teams → team_members), and event-ops
+ * scoring (scores + score_releases).
  */
 object UsersTable : Table("users") {
     val id = varchar("id", 36)
@@ -126,6 +126,28 @@ object IndividualsTable : Table("individual_contestants") {
     override val primaryKey = PrimaryKey(id)
 }
 
+/**
+ * One entered score cell: a contestant's points in one round. [rosterEntryId] references either
+ * a team_members or an individual_contestants row (no FK — the id spaces are disjoint UUIDs),
+ * which also keys the score to a season, since rosters hang off a per-season registration.
+ */
+object ScoresTable : Table("scores") {
+    val rosterEntryId = varchar("roster_entry_id", 36)
+    val round = varchar("round", 20)
+    val points = integer("points")
+    val enteredByUserId = varchar("entered_by_user_id", 36).references(UsersTable.id)
+    val enteredAtEpochMs = long("entered_at_epoch_ms")
+    override val primaryKey = PrimaryKey(rosterEntryId, round)
+}
+
+/** A season's score release — present while released; retracting deletes the row. */
+object ScoreReleasesTable : Table("score_releases") {
+    val seasonYear = varchar("season_year", 8)
+    val releasedAtEpochMs = long("released_at_epoch_ms")
+    val releasedByUserId = varchar("released_by_user_id", 36).references(UsersTable.id)
+    override val primaryKey = PrimaryKey(seasonYear)
+}
+
 /** Cached ESV chapter text (licensed; server-side only). Key = (book code, chapter). */
 object EsvChaptersTable : Table("esv_chapters") {
     val bookCode = varchar("book_code", 3)
@@ -222,6 +244,7 @@ object DatabaseFactory {
                 UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable, EsvChaptersTable,
                 TextAnnotationsTable, GeneratedPdfsTable, SeasonsTable,
                 CongregationsTable, RegistrationsTable, TeamsTable, TeamMembersTable, IndividualsTable,
+                ScoresTable, ScoreReleasesTable,
             )
             // SchemaUtils.create only creates missing *tables* — columns added after a table
             // first shipped need explicit (idempotent) ALTERs for existing databases.
