@@ -21,8 +21,8 @@ import org.w3c.dom.HTMLInputElement
 
 /**
  * Account screen (docs/gui-redesign.md §5H): editable profile (display name + the birthdate/adult
- * fields that drive division eligibility), roles held, sign out. Claiming a roster entry by
- * coach-shared code arrives with registration (Phase 4).
+ * fields that drive division eligibility), claiming a roster entry by coach-shared code, roles
+ * held, role-gated links (My Scores, registration desk, grading, admin), sign out.
  */
 object AccountScreen {
 
@@ -46,6 +46,7 @@ object AccountScreen {
         }
 
         profileCard(container, user)
+        claimCard(container)
 
         container.child("div", "card section-card mb-3") {
             child("div", "card-body") {
@@ -61,12 +62,20 @@ object AccountScreen {
         }
 
         container.child("div", "d-grid gap-2") {
+            child("a", "btn btn-outline-primary", "My scores") {
+                setAttribute("href", "#${Routes.MY_SCORES}")
+            }
             child("a", "btn btn-outline-primary", "Register my teams") {
                 setAttribute("href", "#${Routes.REGISTER}")
             }
             if (hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
                 child("a", "btn btn-outline-primary", "Registration desk") {
                     setAttribute("href", "#${Routes.ADMIN_REGISTRATIONS}")
+                }
+            }
+            if (hasEventWidePermission(user.roles, Permission.SCORE_ENTER)) {
+                child("a", "btn btn-outline-primary", "Grading") {
+                    setAttribute("href", "#${Routes.GRADING}")
                 }
             }
             if (Permission.USER_MANAGE in user.permissions) {
@@ -169,6 +178,54 @@ object AccountScreen {
                         } catch (e: Throwable) {
                             messageSlot.child("p", "text-danger mt-3 mb-0", "Save failed: ${e.message}")
                             refresh()
+                        }
+                    }
+                })
+            }
+        }
+    }
+
+    /**
+     * Claim a roster entry by the coach-shared code, linking it to this account — that link is
+     * what My Scores' owner scoping keys off (dashes/case in the code are tolerated server-side).
+     */
+    private fun claimCard(container: Element) {
+        container.child("div", "card section-card mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title", "Claim your contestant entry")
+                child(
+                    "p", "text-muted",
+                    "On a roster this season? Enter the claim code your coach shared (like ABCD-2345) to " +
+                        "link that entry to this account and see your scores once they're released.",
+                )
+                val form = child("form", "d-flex flex-wrap gap-2 align-items-start")
+                val code = (form.child("input", "form-control") as HTMLInputElement).apply {
+                    setAttribute("placeholder", "ABCD-2345")
+                    setAttribute("autocomplete", "off")
+                    style.maxWidth = "12rem"
+                }
+                val claim = form.child("button", "btn btn-primary", "Claim") {
+                    setAttribute("type", "submit")
+                } as HTMLButtonElement
+                val messageSlot = child("div")
+                form.addEventListener("submit", { event ->
+                    event.preventDefault()
+                    if (code.value.isBlank()) return@addEventListener
+                    claim.disabled = true
+                    messageSlot.clear()
+                    Shell.scope.launch {
+                        try {
+                            val entry = Session.api.claimRosterEntry(code.value)
+                            code.value = ""
+                            messageSlot.child("p", "tbb-gold fw-semibold mt-2 mb-0") {
+                                append("Claimed ${entry.name}'s entry — see ")
+                                child("a", text = "My scores") { setAttribute("href", "#${Routes.MY_SCORES}") }
+                                append(" once they're released.")
+                            }
+                        } catch (e: Throwable) {
+                            messageSlot.child("p", "text-danger mt-2 mb-0", "Claim failed: ${e.message}")
+                        } finally {
+                            claim.disabled = false
                         }
                     }
                 })
