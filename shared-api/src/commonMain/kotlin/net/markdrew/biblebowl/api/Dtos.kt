@@ -214,6 +214,10 @@ enum class ShirtSize(val displayName: String) {
     AS("Adult S"), AM("Adult M"), AL("Adult L"), AXL("Adult XL"), AXXL("Adult 2XL"),
 }
 
+/** Contestant gender, collected per roster entry. */
+@Serializable
+enum class Gender(val displayName: String) { MALE("Male"), FEMALE("Female") }
+
 @Serializable
 enum class RegistrationStatus { DRAFT, SUBMITTED }
 
@@ -250,6 +254,14 @@ data class RosterEntryDto(
     /** ISO-8601 birthdate (drives the division); always null for an individual (adult) contestant. */
     val birthdate: String? = null,
     val shirtSize: ShirtSize,
+    /** Null only on entries created before gender was collected. */
+    val gender: Gender? = null,
+    /**
+     * The first event year this contestant competed, e.g. "2027" — equal to the current season for
+     * an inexperienced (first-year) contestant (see [isInexperienced]). Null = experienced with an
+     * unknown first year. Always null for individuals: the Adult division has no experience split.
+     */
+    val firstSeasonYear: String? = null,
     val claimCode: String,
     val claimed: Boolean = false,
 )
@@ -264,20 +276,31 @@ data class TeamDto(
 @Serializable
 data class UpsertTeamRequest(val name: String)
 
-/** A team roster entry. Adults can't be placed on teams, so [birthdate] must land in grades 3–12. */
+/**
+ * A team roster entry. Adults can't be placed on teams, so [birthdate] must land in grades 3–12.
+ * [inexperienced] = this is the contestant's first year competing; the server stores it as the
+ * first season year and overrides it from earlier seasons' rosters, so last year's first-year
+ * contestant is recognized as experienced this year no matter what the coach checks.
+ */
 @Serializable
 data class UpsertRosterEntryRequest(
     val name: String,
     /** ISO-8601 birthdate; must imply a school grade of 3–12 for the season. */
     val birthdate: String,
     val shirtSize: ShirtSize,
+    val gender: Gender,
+    val inexperienced: Boolean = false,
 )
 
-/** An individual (adult) contestant — adults compete individually, so no birthdate is collected. */
+/**
+ * An individual (adult) contestant — adults compete individually, so no birthdate is collected,
+ * and no inexperienced flag either (the Adult division has no experience split).
+ */
 @Serializable
 data class UpsertIndividualRequest(
     val name: String,
     val shirtSize: ShirtSize,
+    val gender: Gender,
 )
 
 /** A congregation's registration for one season; unique per (congregation, seasonYear). */

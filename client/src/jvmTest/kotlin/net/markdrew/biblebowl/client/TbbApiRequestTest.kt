@@ -5,6 +5,7 @@ import kotlinx.coroutines.runBlocking
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
@@ -128,19 +129,19 @@ class TbbApiRequestTest {
         api.deleteTeam("t1")
         assertEquals("DELETE" to "/registration/teams/t1", methods.last() to requests.last())
 
-        api.addRosterEntry("t1", UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM))
+        api.addRosterEntry("t1", UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE, inexperienced = true))
         assertEquals("POST" to "/registration/teams/t1/members", methods.last() to requests.last())
 
-        api.updateRosterEntry("m1", UpsertRosterEntryRequest("Tim", "2012-05-01", ShirtSize.YL))
+        api.updateRosterEntry("m1", UpsertRosterEntryRequest("Tim", "2012-05-01", ShirtSize.YL, Gender.MALE))
         assertEquals("PUT" to "/registration/members/m1", methods.last() to requests.last())
 
         api.deleteRosterEntry("m1")
         assertEquals("DELETE" to "/registration/members/m1", methods.last() to requests.last())
 
-        api.addIndividual("c1", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL))
+        api.addIndividual("c1", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL, Gender.FEMALE))
         assertEquals("POST" to "/registration/c1/individuals", methods.last() to requests.last())
 
-        api.updateIndividual("i1", UpsertIndividualRequest("Pat A.", ShirtSize.AM))
+        api.updateIndividual("i1", UpsertIndividualRequest("Pat A.", ShirtSize.AM, Gender.FEMALE))
         assertEquals("PUT" to "/registration/individuals/i1", methods.last() to requests.last())
 
         api.deleteIndividual("i1")

@@ -11,8 +11,14 @@ class RegistrationDomainTest {
     /** FALLBACK_SEASON is the 2027 event, so the default grade cutoff is 2026-09-01. */
     private val season = FALLBACK_SEASON
 
-    private fun entry(birthdate: String?) =
-        RosterEntryDto(id = "e$birthdate", name = "Kid", birthdate = birthdate, shirtSize = ShirtSize.AM, claimCode = "AAAA2222")
+    private fun entry(birthdate: String?, firstSeasonYear: String? = null) = RosterEntryDto(
+        id = "e$birthdate",
+        name = "Kid",
+        birthdate = birthdate,
+        shirtSize = ShirtSize.AM,
+        firstSeasonYear = firstSeasonYear,
+        claimCode = "AAAA2222",
+    )
 
     @Test
     fun agesCountFullYearsWithBirthdayBoundaries() {
@@ -73,6 +79,29 @@ class RegistrationDomainTest {
         assertFalse(isValidBirthdate("2012-13-01"), "no 13th month")
         assertFalse(isValidBirthdate("05/01/2012"))
         assertFalse(isValidBirthdate("1850-01-01"), "implausible year")
+    }
+
+    @Test
+    fun inexperiencedMeansFirstSeasonIsTheCurrentOne() {
+        assertTrue(entry("2018-05-01", firstSeasonYear = "2027").isInexperienced("2027"))
+        assertFalse(entry("2018-05-01", firstSeasonYear = "2027").isInexperienced("2028"), "experienced the next year")
+        assertFalse(entry("2018-05-01").isInexperienced("2027"), "null first season = experienced")
+    }
+
+    @Test
+    fun teamIsInexperiencedOnlyWhenEveryMemberIs() {
+        val rookie = entry("2018-05-01", firstSeasonYear = "2027")
+        val veteran = entry("2013-05-01", firstSeasonYear = "2026")
+        assertTrue(TeamDto("t", "Rookies", listOf(rookie, rookie)).isInexperienced("2027"))
+        assertFalse(TeamDto("t", "Mixed", listOf(rookie, veteran)).isInexperienced("2027"))
+        assertFalse(TeamDto("t", "Empty").isInexperienced("2027"))
+    }
+
+    @Test
+    fun divisionLabelsSplitByExperienceExceptAdult() {
+        assertEquals("Junior (Inexperienced)", divisionLabel(Division.JUNIOR, inexperienced = true))
+        assertEquals("Junior", divisionLabel(Division.JUNIOR, inexperienced = false))
+        assertEquals("Adult", divisionLabel(Division.ADULT, inexperienced = true), "no adult experience split")
     }
 
     @Test

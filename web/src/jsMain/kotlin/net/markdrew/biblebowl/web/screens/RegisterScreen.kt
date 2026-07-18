@@ -4,6 +4,7 @@ import kotlinx.browser.window
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
@@ -15,7 +16,9 @@ import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.division
+import net.markdrew.biblebowl.api.divisionLabel
 import net.markdrew.biblebowl.api.feesNote
+import net.markdrew.biblebowl.api.isInexperienced
 import net.markdrew.biblebowl.api.formatCents
 import net.markdrew.biblebowl.api.formatClaimCode
 import net.markdrew.biblebowl.api.formatIsoDate
@@ -335,12 +338,15 @@ object RegisterScreen {
         parent.nextButton("Continue to roster", 3)
     }
 
+    /** The registration's season (falls back to the current season before the draft exists). */
+    private val seasonYear: String get() = registration?.seasonYear ?: Session.season.eventYear
+
     private fun divisionBadge(parent: Element, team: TeamDto) {
         val division = team.division(Session.season)
         parent.child(
             "span",
             "badge " + (if (division == null) "text-bg-secondary" else "text-bg-primary"),
-            division?.displayName ?: "Empty",
+            division?.let { divisionLabel(it, team.isInexperienced(seasonYear)) } ?: "Empty",
         )
     }
 
@@ -384,17 +390,20 @@ object RegisterScreen {
                         name.disabled = !canEdit
                         val shirt = shirtSelect(this, member.shirtSize)
                         shirt.disabled = !canEdit
+                        val gender = genderSelect(this, member.gender)
+                        gender.disabled = !canEdit
                         val save = {
-                            if (name.value.isNotBlank()) {
+                            val chosenGender = genderOf(gender)
+                            if (name.value.isNotBlank() && chosenGender != null) {
                                 mutate {
                                     Session.api.updateIndividual(
                                         member.id,
-                                        UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value)),
+                                        UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value), chosenGender),
                                     )
                                 }
                             }
                         }
-                        listOf<HTMLElement>(name, shirt).forEach { it.addEventListener("change", { save() }) }
+                        listOf<HTMLElement>(name, shirt, gender).forEach { it.addEventListener("change", { save() }) }
                         claimCodeChip(this, member.claimCode)
                         if (canEdit) {
                             child("button", "btn btn-outline-danger btn-sm", "Remove") {
@@ -409,14 +418,16 @@ object RegisterScreen {
                         val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
                         name.setAttribute("placeholder", "Adult contestant name")
                         val shirt = shirtSelect(this, ShirtSize.AM)
+                        val gender = genderSelect(this, null)
                         child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
                         addEventListener("submit", { event ->
                             event.preventDefault()
-                            if (name.value.isBlank()) return@addEventListener
+                            val chosenGender = genderOf(gender)
+                            if (name.value.isBlank() || chosenGender == null) return@addEventListener
                             mutate {
                                 Session.api.addIndividual(
                                     cong.id,
-                                    UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value)),
+                                    UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value), chosenGender),
                                 )
                             }
                         })
@@ -440,17 +451,24 @@ object RegisterScreen {
                         name.disabled = !canEdit
                         val birthdate = birthdateInput(this, member.birthdate)
                         val shirt = shirtSelect(this, member.shirtSize)
+                        val gender = genderSelect(this, member.gender)
+                        val firstYear = firstYearCheck(this, member.isInexperienced(seasonYear))
+                        firstYear.disabled = !canEdit
                         val save = {
-                            if (name.value.isNotBlank() && isValidBirthdate(birthdate.value)) {
+                            val chosenGender = genderOf(gender)
+                            if (name.value.isNotBlank() && isValidBirthdate(birthdate.value) && chosenGender != null) {
                                 mutate {
                                     Session.api.updateRosterEntry(
                                         member.id,
-                                        UpsertRosterEntryRequest(name.value, birthdate.value, ShirtSize.valueOf(shirt.value)),
+                                        UpsertRosterEntryRequest(
+                                            name.value, birthdate.value, ShirtSize.valueOf(shirt.value),
+                                            chosenGender, firstYear.checked,
+                                        ),
                                     )
                                 }
                             }
                         }
-                        listOf<HTMLElement>(name, birthdate, shirt).forEach { el ->
+                        listOf<HTMLElement>(name, birthdate, shirt, gender, firstYear).forEach { el ->
                             el.addEventListener("change", { save() })
                             (el as? HTMLSelectElement)?.disabled = !canEdit
                             (el as? HTMLInputElement)?.disabled = !canEdit
@@ -480,14 +498,21 @@ object RegisterScreen {
             name.setAttribute("placeholder", "Contestant name")
             val birthdate = birthdateInput(this, initial = null)
             val shirt = shirtSelect(this, ShirtSize.YM)
+            val gender = genderSelect(this, null)
+            val firstYear = firstYearCheck(this, false)
             child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
             addEventListener("submit", { event ->
                 event.preventDefault()
-                if (name.value.isBlank() || !isValidBirthdate(birthdate.value)) return@addEventListener
+                val chosenGender = genderOf(gender)
+                if (name.value.isBlank() || !isValidBirthdate(birthdate.value) || chosenGender == null) return@addEventListener
                 mutate {
                     Session.api.addRosterEntry(
                         team.id,
-                        UpsertRosterEntryRequest(name.value, birthdate.value, ShirtSize.valueOf(shirt.value)),
+                        UpsertRosterEntryRequest(
+                            name.value, birthdate.value, ShirtSize.valueOf(shirt.value),
+                            chosenGender, firstYear.checked,
+                        ),
+
                     )
                 }
             })
@@ -515,6 +540,41 @@ object RegisterScreen {
             if (size == selected) option.selected = true
         }
         return select
+    }
+
+    /** Gender select with a blank placeholder — [genderOf] returns null until one is chosen. */
+    private fun genderSelect(parent: Element, selected: Gender?): HTMLSelectElement {
+        val select = parent.child("select", "form-select w-auto") as HTMLSelectElement
+        select.setAttribute("required", "")
+        val placeholder = select.child("option", text = "Gender…") as HTMLOptionElement
+        placeholder.value = ""
+        placeholder.disabled = true
+        placeholder.selected = selected == null
+        Gender.entries.forEach { gender ->
+            val option = select.child("option", text = gender.displayName) as HTMLOptionElement
+            option.value = gender.name
+            if (gender == selected) option.selected = true
+        }
+        return select
+    }
+
+    private fun genderOf(select: HTMLSelectElement): Gender? =
+        select.value.takeIf { it.isNotEmpty() }?.let { Gender.valueOf(it) }
+
+    private var firstYearSeq = 0
+
+    /** "1st year" checkbox — marks a contestant inexperienced (first year competing). */
+    private fun firstYearCheck(parent: Element, checked: Boolean): HTMLInputElement {
+        lateinit var box: HTMLInputElement
+        parent.child("div", "form-check align-self-center text-nowrap") {
+            setAttribute("title", "First year competing — counts toward the inexperienced division")
+            box = child("input", "form-check-input") as HTMLInputElement
+            box.type = "checkbox"
+            box.checked = checked
+            box.id = "first-year-${++firstYearSeq}"
+            child("label", "form-check-label", "1st year") { setAttribute("for", box.id) }
+        }
+        return box
     }
 
     private fun claimCodeChip(parent: Element, code: String) {
@@ -548,8 +608,11 @@ object RegisterScreen {
                         reg.teams.forEach { team ->
                             child("tr") {
                                 child("td", text = team.name)
-                                child("td", text = team.division(Session.season)?.displayName ?: "—")
-                                child("td", text = team.members.joinToString { it.name })
+                                child("td", text = team.division(Session.season)
+                                    ?.let { divisionLabel(it, team.isInexperienced(seasonYear)) } ?: "—")
+                                child("td", text = team.members.joinToString {
+                                    it.name + if (it.isInexperienced(seasonYear)) " (1st year)" else ""
+                                })
                             }
                         }
                         if (reg.individuals.isNotEmpty()) {

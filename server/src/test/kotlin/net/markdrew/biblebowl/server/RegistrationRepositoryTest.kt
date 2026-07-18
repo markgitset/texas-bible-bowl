@@ -1,6 +1,7 @@
 package net.markdrew.biblebowl.server
 
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
@@ -22,7 +23,9 @@ class RegistrationRepositoryTest {
     private val congregations = InMemoryCongregationRepository()
     private val repo = InMemoryRegistrationRepository(congregations)
 
-    private fun entry(name: String) = UpsertRosterEntryRequest(name, birthdate = "2014-05-01", shirtSize = ShirtSize.AM)
+    private fun entry(name: String, inexperienced: Boolean = false) = UpsertRosterEntryRequest(
+        name, birthdate = "2014-05-01", shirtSize = ShirtSize.AM, gender = Gender.MALE, inexperienced = inexperienced,
+    )
 
     private fun newCongregation(name: String, city: String, userId: String = "u1") =
         congregations.create(
@@ -111,8 +114,10 @@ class RegistrationRepositoryTest {
     fun individualsLiveOnTheRegistrationNotOnAnyTeam() {
         val cong = newCongregation("Individual Church", "Odessa")!!
         // Adding an individual creates the draft registration — no team required at all.
-        val adult = repo.addIndividual(cong.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL))
+        val adult = repo.addIndividual(cong.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL, Gender.FEMALE))
         assertNull(adult.birthdate, "individuals never carry a birthdate")
+        assertEquals(Gender.FEMALE, adult.gender)
+        assertNull(adult.firstSeasonYear, "the Adult division has no experience split")
         assertEquals(ClaimCodes.LENGTH, adult.claimCode.length)
 
         val reg = repo.find(cong.id, "2027")!!
@@ -121,11 +126,49 @@ class RegistrationRepositoryTest {
         assertEquals(cong.id, repo.congregationIdForIndividual(adult.id))
         assertNotNull(repo.submit(cong.id, "2027"), "an adults-only registration is submittable")
 
-        val updated = repo.updateIndividual(adult.id, UpsertIndividualRequest("Pat A.", ShirtSize.AM))!!
+        val updated = repo.updateIndividual(adult.id, UpsertIndividualRequest("Pat A.", ShirtSize.AM, Gender.FEMALE))!!
         assertEquals("Pat A." to ShirtSize.AM, updated.name to updated.shirtSize)
         assertTrue(repo.deleteIndividual(adult.id))
         assertNull(repo.congregationIdForIndividual(adult.id))
         assertEquals(0, repo.find(cong.id, "2027")!!.individuals.size)
+    }
+
+    @Test
+    fun firstSeasonYearComesFromTheCheckboxOnFirstSight() {
+        val cong = newCongregation("Rookie Church", "Waco")!!
+        val team = repo.addTeam(cong.id, "2027", "Team A")!!
+        val rookie = assertIs<AddMemberResult.Added>(repo.addMember(team.id, entry("Ruth Rookie", inexperienced = true))).entry
+        assertEquals("2027", rookie.firstSeasonYear)
+        assertEquals(Gender.MALE, rookie.gender)
+        val veteran = assertIs<AddMemberResult.Added>(repo.addMember(team.id, entry("Vera Veteran"))).entry
+        assertNull(veteran.firstSeasonYear, "experienced with unknown first year")
+
+        // Unchecking the box within the same season clears it again (no prior-season history).
+        val edited = repo.updateMember(rookie.id, entry("Ruth Rookie", inexperienced = false))!!
+        assertNull(edited.firstSeasonYear)
+    }
+
+    @Test
+    fun priorSeasonRosterMakesAContestantExperiencedAutomatically() {
+        val cong = newCongregation("History Church", "Waco")!!
+        val lastYear = repo.addTeam(cong.id, "2027", "Team A")!!
+        repo.addMember(lastYear.id, entry("Timothy", inexperienced = true))
+
+        // Next season the coach re-enters the same contestant (case/space-insensitively) and
+        // checks "first year" again — the 2027 roster wins and keeps their first year at 2027.
+        val thisYear = repo.addTeam(cong.id, "2028", "Team A")!!
+        val timothy = assertIs<AddMemberResult.Added>(repo.addMember(thisYear.id, entry("  TIMOTHY ", inexperienced = true))).entry
+        assertEquals("2027", timothy.firstSeasonYear)
+
+        // A genuinely new name is taken at the coach's word.
+        val newKid = assertIs<AddMemberResult.Added>(repo.addMember(thisYear.id, entry("New Kid", inexperienced = true))).entry
+        assertEquals("2028", newKid.firstSeasonYear)
+
+        // A different congregation's history doesn't leak over.
+        val other = newCongregation("Other Church", "Tyler", "u2")!!
+        val otherTeam = repo.addTeam(other.id, "2028", "Team B")!!
+        val otherTimothy = assertIs<AddMemberResult.Added>(repo.addMember(otherTeam.id, entry("Timothy", inexperienced = true))).entry
+        assertEquals("2028", otherTimothy.firstSeasonYear)
     }
 
     @Test
