@@ -1,6 +1,7 @@
 package net.markdrew.biblebowl.server.data
 
 import net.markdrew.biblebowl.api.CongregationDto
+import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.RosterEntryDto
@@ -27,7 +28,7 @@ const val MAX_TEAM_SIZE = 4
 
 interface CongregationRepository {
     /** Creates a congregation, or returns null when one with the same name+city already exists. */
-    fun create(name: String, city: String, createdByUserId: String): CongregationDto?
+    fun create(req: CreateCongregationRequest, createdByUserId: String): CongregationDto?
     fun findById(id: String): CongregationDto?
     fun findByIds(ids: Collection<String>): List<CongregationDto>
     /** Case-insensitive substring search over name and city, for the step-1 typeahead. */
@@ -69,14 +70,21 @@ interface RegistrationRepository {
 class InMemoryCongregationRepository : CongregationRepository {
     private val byId = ConcurrentHashMap<String, CongregationDto>()
 
-    override fun create(name: String, city: String, createdByUserId: String): CongregationDto? {
-        val n = name.trim()
-        val c = city.trim()
+    override fun create(req: CreateCongregationRequest, createdByUserId: String): CongregationDto? {
+        val n = req.name.trim()
+        val c = req.city.trim()
         synchronized(byId) {
             if (byId.values.any { it.name.equals(n, ignoreCase = true) && it.city.equals(c, ignoreCase = true) }) {
                 return null
             }
-            val dto = CongregationDto(UUID.randomUUID().toString(), n, c)
+            val dto = CongregationDto(
+                id = UUID.randomUUID().toString(),
+                name = n,
+                city = c,
+                state = req.state.trim(),
+                mailingAddress = req.mailingAddress.trim(),
+                zip = req.zip.trim(),
+            )
             byId[dto.id] = dto
             return dto
         }
@@ -211,9 +219,9 @@ class InMemoryRegistrationRepository(
 
 class PostgresCongregationRepository(private val db: Database) : CongregationRepository {
 
-    override fun create(name: String, city: String, createdByUserId: String): CongregationDto? = transaction(db) {
-        val n = name.trim()
-        val c = city.trim()
+    override fun create(req: CreateCongregationRequest, createdByUserId: String): CongregationDto? = transaction(db) {
+        val n = req.name.trim()
+        val c = req.city.trim()
         val dupe = CongregationsTable.selectAll()
             .where {
                 (CongregationsTable.name.lowerCase() eq n.lowercase()) and
@@ -226,10 +234,13 @@ class PostgresCongregationRepository(private val db: Database) : CongregationRep
             it[id] = newId
             it[CongregationsTable.name] = n
             it[CongregationsTable.city] = c
+            it[state] = req.state.trim()
+            it[mailingAddress] = req.mailingAddress.trim()
+            it[zip] = req.zip.trim()
             it[CongregationsTable.createdByUserId] = createdByUserId
             it[createdAtEpochMs] = System.currentTimeMillis()
         }
-        CongregationDto(newId, n, c)
+        CongregationDto(newId, n, c, req.state.trim(), req.mailingAddress.trim(), req.zip.trim())
     }
 
     override fun findById(id: String): CongregationDto? = transaction(db) {
@@ -250,8 +261,14 @@ class PostgresCongregationRepository(private val db: Database) : CongregationRep
             .map { it.toDto() }
     }
 
-    private fun ResultRow.toDto() =
-        CongregationDto(this[CongregationsTable.id], this[CongregationsTable.name], this[CongregationsTable.city])
+    private fun ResultRow.toDto() = CongregationDto(
+        id = this[CongregationsTable.id],
+        name = this[CongregationsTable.name],
+        city = this[CongregationsTable.city],
+        state = this[CongregationsTable.state],
+        mailingAddress = this[CongregationsTable.mailingAddress],
+        zip = this[CongregationsTable.zip],
+    )
 }
 
 class PostgresRegistrationRepository(private val db: Database) : RegistrationRepository {
@@ -406,6 +423,9 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 id = congId,
                 name = cong?.get(CongregationsTable.name) ?: "?",
                 city = cong?.get(CongregationsTable.city) ?: "?",
+                state = cong?.get(CongregationsTable.state) ?: "",
+                mailingAddress = cong?.get(CongregationsTable.mailingAddress) ?: "",
+                zip = cong?.get(CongregationsTable.zip) ?: "",
             ),
             seasonYear = this[RegistrationsTable.seasonYear],
             status = RegistrationStatus.valueOf(this[RegistrationsTable.status]),

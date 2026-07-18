@@ -195,11 +195,27 @@ enum class ShirtSize(val displayName: String) {
 @Serializable
 enum class RegistrationStatus { DRAFT, SUBMITTED }
 
+/** Address fields default to "" for congregations created before they were collected. */
 @Serializable
-data class CongregationDto(val id: String, val name: String, val city: String)
+data class CongregationDto(
+    val id: String,
+    val name: String,
+    val city: String,
+    /** Two-letter state code, e.g. "TX". */
+    val state: String = "",
+    /** Street address or PO Box (the city/state/zip complete the mailing label). */
+    val mailingAddress: String = "",
+    val zip: String = "",
+)
 
 @Serializable
-data class CreateCongregationRequest(val name: String, val city: String)
+data class CreateCongregationRequest(
+    val name: String,
+    val city: String,
+    val state: String = "",
+    val mailingAddress: String = "",
+    val zip: String = "",
+)
 
 /** One contestant on a team's roster. [claimCode] lets a contestant/parent account claim the entry later. */
 @Serializable
