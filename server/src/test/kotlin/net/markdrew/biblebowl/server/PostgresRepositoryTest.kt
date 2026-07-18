@@ -58,7 +58,8 @@ class PostgresRepositoryTest {
         val created = users.create(
             email = "Coach@TBB.org", // case-insensitivity check
             displayName = "Coach Paul",
-            grade = null,
+            birthdate = null,
+            adult = true,
             passwordHash = Passwords.hash("password123"),
             roles = listOf(RoleGrant(Role.COACH), RoleGrant(Role.CONTESTANT)),
         )
@@ -76,10 +77,10 @@ class PostgresRepositoryTest {
         val users = PostgresUserRepository(db)
         val questions = PostgresQuestionRepository(db)
 
-        val author = users.create("kid@tbb.org", "Timothy", 8, Passwords.hash("password123"),
-            listOf(RoleGrant(Role.CONTESTANT)))
-        val voter = users.create("friend@tbb.org", "Silas", 8, Passwords.hash("password123"),
-            listOf(RoleGrant(Role.CONTESTANT)))
+        val author = users.create("kid@tbb.org", "Timothy", "2013-05-01", adult = false,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
+        val voter = users.create("friend@tbb.org", "Silas", "2013-06-01", adult = false,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
 
         val q = questions.submit(author.id, author.displayName, SubmitQuestionRequest(
             roundType = Round.FIND_THE_VERSE,

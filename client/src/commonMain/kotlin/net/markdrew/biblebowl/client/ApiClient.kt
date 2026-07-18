@@ -32,6 +32,7 @@ import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.SeasonDto
+import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.model.Round
@@ -112,6 +113,12 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
 
     /** Fetches the signed-in user's profile (requires a token). */
     suspend fun me(): UserDto = client.get("$baseUrl/auth/me") { authorize() }.bodyOrThrow()
+
+    /** Updates the signed-in user's profile (display name, birthdate/adult) and refreshes [user]. */
+    suspend fun updateProfile(req: UpdateProfileRequest): UserDto =
+        client.put("$baseUrl/auth/me") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow<UserDto>().also { user = it }
 
     /**
      * Re-fetches the signed-in user's profile and updates [user] — needed after a server-side role

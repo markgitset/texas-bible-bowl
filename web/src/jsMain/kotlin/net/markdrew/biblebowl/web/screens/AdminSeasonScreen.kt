@@ -51,6 +51,9 @@ object AdminSeasonScreen {
         form.dateField("Registration closes (last day to register)", draft.registrationClosesOn) {
             draft = draft.copy(registrationClosesOn = it)
         }
+        form.dateField("Grade cutoff — ages on this date map to grades (blank = Sept 1 before the event)", draft.gradeCutoffDate) {
+            draft = draft.copy(gradeCutoffDate = it)
+        }
         form.field("Scholarship deadline", draft.scholarshipDeadline) { draft = draft.copy(scholarshipDeadline = it) }
         form.dollarField("Fee — contestant (t-shirt included)", draft.priceContestantCents) {
             draft = draft.copy(priceContestantCents = it)

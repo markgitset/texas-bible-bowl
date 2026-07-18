@@ -20,7 +20,8 @@ fun UserRecord.toDto(): UserDto = UserDto(
     id = id,
     email = email,
     displayName = displayName,
-    grade = grade,
+    birthdate = birthdate,
+    adult = adult,
     roles = roles,
     permissions = permissionsFor(roles.map { it.role }),
 )

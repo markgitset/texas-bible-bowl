@@ -17,6 +17,7 @@ import net.markdrew.biblebowl.api.feesNote
 import net.markdrew.biblebowl.api.formatCents
 import net.markdrew.biblebowl.api.formatClaimCode
 import net.markdrew.biblebowl.api.formatIsoDate
+import net.markdrew.biblebowl.client.ApiException
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
@@ -24,6 +25,7 @@ import net.markdrew.biblebowl.web.clear
 import net.markdrew.biblebowl.web.errorLine
 import net.markdrew.biblebowl.web.onClick
 import net.markdrew.biblebowl.web.spinner
+import net.markdrew.biblebowl.api.isValidBirthdate
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
@@ -220,7 +222,11 @@ object RegisterScreen {
                             renderContent()
                         } catch (e: Throwable) {
                             create.disabled = false
-                            slot.child("div", "alert alert-warning mt-3", contactUsMessage(e.message))
+                            // Only the name+city dupe (409) gets the "contact us to claim it" flow;
+                            // other errors (e.g. the adult-only rule) show the server's message as-is.
+                            val message = if ((e as? ApiException)?.status == 409) contactUsMessage(e.message)
+                                else e.message ?: "Something went wrong"
+                            slot.child("div", "alert alert-warning mt-3", message)
                         }
                     }
                 })
@@ -274,7 +280,8 @@ object RegisterScreen {
     private fun renderTeamsStep(parent: Element) {
         val cong = congregation ?: return
         parent.child("p", "text-muted",
-            "A team has up to 4 contestants and competes in the division of its highest-grade member.")
+            "A team has up to 4 contestants and competes in the division of its highest member " +
+                "(divisions come from birthdates).")
 
         registration?.teams?.forEach { team ->
             parent.child("div", "d-flex align-items-center gap-2 mb-2") {
@@ -320,7 +327,7 @@ object RegisterScreen {
     }
 
     private fun divisionBadge(parent: Element, team: TeamDto) {
-        val division = team.division()
+        val division = team.division(Session.season)
         parent.child(
             "span",
             "badge " + (if (division == null) "text-bg-secondary" else "text-bg-primary"),
@@ -361,21 +368,26 @@ object RegisterScreen {
                         val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
                         name.value = member.name
                         name.disabled = !canEdit
-                        val grade = gradeSelect(this, member.grade)
+                        val (adult, birthdate) = eligibilityControls(this, "member-${member.id}", member.birthdate)
                         val shirt = shirtSelect(this, member.shirtSize)
                         val save = {
-                            if (name.value.isNotBlank()) {
+                            if (name.value.isNotBlank() && (adult.checked || isValidBirthdate(birthdate.value))) {
                                 mutate {
                                     Session.api.updateRosterEntry(
                                         member.id,
-                                        UpsertRosterEntryRequest(name.value, gradeOf(grade), ShirtSize.valueOf(shirt.value)),
+                                        UpsertRosterEntryRequest(
+                                            name.value,
+                                            birthdate.value.takeIf { it.isNotBlank() }?.takeUnless { adult.checked },
+                                            ShirtSize.valueOf(shirt.value),
+                                        ),
                                     )
                                 }
                             }
                         }
-                        listOf<HTMLElement>(name, grade, shirt).forEach { el ->
+                        listOf<HTMLElement>(name, adult, birthdate, shirt).forEach { el ->
                             el.addEventListener("change", { save() })
                             (el as? HTMLSelectElement)?.disabled = !canEdit
+                            (el as? HTMLInputElement)?.disabled = !canEdit
                         }
                         claimCodeChip(this, member.claimCode)
                         if (canEdit) {
@@ -400,35 +412,61 @@ object RegisterScreen {
         parent.child("form", "d-flex flex-wrap gap-2 mt-2") {
             val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
             name.setAttribute("placeholder", "Contestant name")
-            val grade = gradeSelect(this, 7)
+            val (adult, birthdate) = eligibilityControls(this, "add-${team.id}", initialBirthdate = "")
             val shirt = shirtSelect(this, ShirtSize.AM)
             child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
             addEventListener("submit", { event ->
                 event.preventDefault()
                 if (name.value.isBlank()) return@addEventListener
+                if (!adult.checked && !isValidBirthdate(birthdate.value)) return@addEventListener
                 mutate {
                     Session.api.addRosterEntry(
                         team.id,
-                        UpsertRosterEntryRequest(name.value, gradeOf(grade), ShirtSize.valueOf(shirt.value)),
+                        UpsertRosterEntryRequest(
+                            name.value,
+                            birthdate.value.takeIf { it.isNotBlank() }?.takeUnless { adult.checked },
+                            ShirtSize.valueOf(shirt.value),
+                        ),
                     )
                 }
             })
         }
         parent.child("p", "text-muted small mt-2 mb-0",
-            "Each contestant gets a claim code — share it so they (or a parent) can link their own account later.")
+            "The birthdate places each contestant in the right division; check Adult instead for " +
+                "adult-division contestants. Each contestant gets a claim code — share it so they " +
+                "(or a parent) can link their own account later.")
     }
 
-    private fun gradeSelect(parent: Element, selected: Int?): HTMLSelectElement {
-        val select = parent.child("select", "form-select w-auto") as HTMLSelectElement
-        (listOf<Pair<String, String>>("Adult" to "") + (3..12).map { "Grade $it" to "$it" }).forEach { (label, value) ->
-            val option = select.child("option", text = label) as HTMLOptionElement
-            option.value = value
-            if (value == (selected?.toString() ?: "")) option.selected = true
+    /**
+     * The birthdate/adult pair used on roster rows: a date input plus an "Adult" checkbox that
+     * hides it (adults don't give a birthdate). Returns (adult, birthdate); null birthdates are
+     * represented as an empty date value.
+     */
+    private fun eligibilityControls(
+        parent: Element,
+        idSuffix: String,
+        initialBirthdate: String?,
+    ): Pair<HTMLInputElement, HTMLInputElement> {
+        lateinit var adult: HTMLInputElement
+        lateinit var birthdate: HTMLInputElement
+        birthdate = parent.child("input", "form-control w-auto") as HTMLInputElement
+        birthdate.type = "date"
+        birthdate.value = initialBirthdate ?: ""
+        birthdate.setAttribute("title", "Birthdate")
+        parent.child("div", "form-check align-self-center") {
+            adult = (child("input", "form-check-input") as HTMLInputElement).apply {
+                type = "checkbox"
+                id = "roster-adult-$idSuffix"
+                // An existing entry without a birthdate is an adult; the add form starts as youth.
+                checked = initialBirthdate == null
+            }
+            child("label", "form-check-label", "Adult") { setAttribute("for", "roster-adult-$idSuffix") }
         }
-        return select
+        fun toggle() = birthdate.classList.toggle("d-none", adult.checked)
+        toggle()
+        adult.addEventListener("change", { toggle() })
+        return adult to birthdate
     }
-
-    private fun gradeOf(select: HTMLSelectElement): Int? = select.value.toIntOrNull()
 
     private fun shirtSelect(parent: Element, selected: ShirtSize): HTMLSelectElement {
         val select = parent.child("select", "form-select w-auto") as HTMLSelectElement
@@ -471,7 +509,7 @@ object RegisterScreen {
                         reg.teams.forEach { team ->
                             child("tr") {
                                 child("td", text = team.name)
-                                child("td", text = team.division()?.displayName ?: "—")
+                                child("td", text = team.division(Session.season)?.displayName ?: "—")
                                 child("td", text = team.members.joinToString { it.name })
                             }
                         }

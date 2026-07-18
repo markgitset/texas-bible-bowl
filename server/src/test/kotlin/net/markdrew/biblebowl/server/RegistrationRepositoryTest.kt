@@ -21,7 +21,7 @@ class RegistrationRepositoryTest {
     private val congregations = InMemoryCongregationRepository()
     private val repo = InMemoryRegistrationRepository(congregations)
 
-    private fun entry(name: String) = UpsertRosterEntryRequest(name, grade = 7, shirtSize = ShirtSize.AM)
+    private fun entry(name: String) = UpsertRosterEntryRequest(name, birthdate = "2014-05-01", shirtSize = ShirtSize.AM)
 
     private fun newCongregation(name: String, city: String, userId: String = "u1") =
         congregations.create(

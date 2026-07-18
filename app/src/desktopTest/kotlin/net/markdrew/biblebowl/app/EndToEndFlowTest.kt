@@ -40,7 +40,7 @@ class EndToEndFlowTest {
             // 1. Contestant registers through the same client the AuthScreen uses.
             val contestantApi = TbbApi()
             val reg = contestantApi.register(
-                RegisterRequest("e2e-$suffix@tbb.org", "password123", "E2E Kid $suffix", grade = 8)
+                RegisterRequest("e2e-$suffix@tbb.org", "password123", "E2E Kid $suffix", birthdate = "2013-05-01")
             )
             assertTrue(Permission.QUESTION_SUBMIT in reg.user.permissions)
             assertTrue(contestantApi.isSignedIn)

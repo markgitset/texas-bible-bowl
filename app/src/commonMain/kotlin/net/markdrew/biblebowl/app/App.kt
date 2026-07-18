@@ -272,6 +272,7 @@ private fun AppNavHost(
             AccountScreen(
                 api = api,
                 user = user,
+                onUserChange = onUserChange,
                 onSignOut = {
                     api.signOut()
                     onUserChange(null)

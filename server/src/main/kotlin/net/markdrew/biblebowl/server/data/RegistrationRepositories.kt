@@ -160,7 +160,7 @@ class InMemoryRegistrationRepository(
         val entry = RosterEntryDto(
             id = UUID.randomUUID().toString(),
             name = req.name.trim(),
-            grade = req.grade,
+            birthdate = req.birthdate,
             shirtSize = req.shirtSize,
             claimCode = code,
         )
@@ -172,7 +172,7 @@ class InMemoryRegistrationRepository(
 
     override fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto? = synchronized(lock) {
         val entry = members[memberId] ?: return null
-        val updated = entry.copy(name = req.name.trim(), grade = req.grade, shirtSize = req.shirtSize)
+        val updated = entry.copy(name = req.name.trim(), birthdate = req.birthdate, shirtSize = req.shirtSize)
         members[memberId] = updated
         updated
     }
@@ -332,11 +332,11 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 it[id] = memberId
                 it[TeamMembersTable.teamId] = teamId
                 it[name] = req.name.trim()
-                it[grade] = req.grade
+                it[birthdate] = req.birthdate
                 it[shirtSize] = req.shirtSize.name
                 it[claimCode] = code
             }
-            entry = RosterEntryDto(memberId, req.name.trim(), req.grade, req.shirtSize, code)
+            entry = RosterEntryDto(memberId, req.name.trim(), req.birthdate, req.shirtSize, code)
             break
         }
         entry?.let { AddMemberResult.Added(it) } ?: error("Could not allocate a unique claim code")
@@ -345,7 +345,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
     override fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto? = transaction(db) {
         val updated = TeamMembersTable.update({ TeamMembersTable.id eq memberId }) {
             it[name] = req.name.trim()
-            it[grade] = req.grade
+            it[birthdate] = req.birthdate
             it[shirtSize] = req.shirtSize.name
         }
         if (updated == 0) null
@@ -407,7 +407,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
     private fun ResultRow.toEntry() = RosterEntryDto(
         id = this[TeamMembersTable.id],
         name = this[TeamMembersTable.name],
-        grade = this[TeamMembersTable.grade],
+        birthdate = this[TeamMembersTable.birthdate],
         shirtSize = ShirtSize.valueOf(this[TeamMembersTable.shirtSize]),
         claimCode = this[TeamMembersTable.claimCode],
         claimed = this[TeamMembersTable.ownerUserId] != null,

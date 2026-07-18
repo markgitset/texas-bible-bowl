@@ -178,7 +178,7 @@ class PdfCacheTest {
     @Test
     fun clearEndpointRequiresSeasonManage() = testApplication {
         val users = InMemoryUserRepository()
-        users.create("admin@tbb.org", "Admin", null, Passwords.hash("supersecret"), listOf(RoleGrant(Role.ADMIN)))
+        users.create("admin@tbb.org", "Admin", null, adult = true, passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)))
         val cache = InMemoryPdfCache()
         cache.put("acts-test", "names-index.pdf", 1, byteArrayOf(1, 2, 3))
         application {
@@ -198,7 +198,7 @@ class PdfCacheTest {
         val kid: AuthResponse = json.decodeFromString(
             api.post("/auth/register") {
                 contentType(ContentType.Application.Json)
-                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy"))
+                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
             }.bodyAsText()
         )
         val forbidden = api.delete("/generate/cache") {

@@ -90,6 +90,9 @@ fun AdminSeasonScreen(api: TbbApi, onSaved: (SeasonDto) -> Unit) {
             Field("Registration closes (yyyy-MM-dd, blank = TBD)", draft.registrationClosesOn ?: "") {
                 draft = draft.copy(registrationClosesOn = it.trim().ifBlank { null })
             }
+            Field("Grade cutoff (yyyy-MM-dd, blank = Sept 1 before the event)", draft.gradeCutoffDate ?: "") {
+                draft = draft.copy(gradeCutoffDate = it.trim().ifBlank { null })
+            }
             Field("Scholarship deadline", draft.scholarshipDeadline) { draft = draft.copy(scholarshipDeadline = it) }
             DollarField("Fee — contestant, dollars (blank = TBD)", draft.priceContestantCents) {
                 draft = draft.copy(priceContestantCents = it)

@@ -18,9 +18,11 @@ import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
+import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.api.coachedCongregationIds
+import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.registrationTotalCents
 import net.markdrew.biblebowl.server.RegistrationWindowState
 import net.markdrew.biblebowl.server.data.AddMemberResult
@@ -38,8 +40,9 @@ import net.markdrew.biblebowl.server.security.requireScopedPermission
  * Registration (docs/gui-redesign.md §5E): congregations, teams, rosters, and the coach flow's
  * resume/submit endpoints. Everything requires sign-in; mutations additionally require the
  * congregation-scoped grant and (except congregation creation, which is onboarding) an open
- * registration window. Creating a congregation self-serve grants the creator COACH scoped to it;
- * claiming an existing one goes through an admin (the client shows "contact us" on the 409).
+ * registration window. Creating a congregation self-serve grants the creator COACH scoped to it —
+ * but only adult accounts may do so; claiming an existing one goes through an admin (the client
+ * shows "contact us" on the 409).
  */
 fun Route.registrationRoutes(
     users: UserRepository,
@@ -50,6 +53,15 @@ fun Route.registrationRoutes(
     authenticate {
         post("/congregations") {
             val user = currentUser(users) ?: return@post
+            if (!user.adult && !user.isAdmin) {
+                return@post call.respond(
+                    HttpStatusCode.Forbidden,
+                    ApiError(
+                        "adult_required",
+                        "Congregations must be registered by an adult — if you are one, mark it on your Account page",
+                    ),
+                )
+            }
             val req = call.receive<CreateCongregationRequest>()
             if (!req.isValid()) {
                 return@post call.respond(
@@ -144,11 +156,8 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@post
             if (!requireWindowOpen(user, seasons)) return@post
             val req = call.receive<UpsertRosterEntryRequest>()
-            if (!req.isValid()) {
-                return@post call.respond(
-                    HttpStatusCode.BadRequest,
-                    ApiError("invalid_member", "Name is required and grade must be 3–12 (or blank for adult)"),
-                )
+            if (!req.isValid(seasons.current())) {
+                return@post call.respond(HttpStatusCode.BadRequest, invalidMemberError())
             }
             when (registrations.addMember(teamId, req)) {
                 is AddMemberResult.Added ->
@@ -168,11 +177,8 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@put
             if (!requireWindowOpen(user, seasons)) return@put
             val req = call.receive<UpsertRosterEntryRequest>()
-            if (!req.isValid()) {
-                return@put call.respond(
-                    HttpStatusCode.BadRequest,
-                    ApiError("invalid_member", "Name is required and grade must be 3–12 (or blank for adult)"),
-                )
+            if (!req.isValid(seasons.current())) {
+                return@put call.respond(HttpStatusCode.BadRequest, invalidMemberError())
             }
             registrations.updateMember(memberId, req)
             call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
@@ -204,8 +210,15 @@ fun Route.registrationRoutes(
     }
 }
 
-private fun UpsertRosterEntryRequest.isValid(): Boolean =
-    name.isNotBlank() && (grade == null || grade in 3..12)
+/** A member needs a name and either no birthdate (adult) or one that lands in a competition division. */
+private fun UpsertRosterEntryRequest.isValid(season: SeasonDto): Boolean =
+    name.isNotBlank() && birthdate.let { it == null || season.divisionForBirthdate(it) != null }
+
+private fun invalidMemberError() = ApiError(
+    "invalid_member",
+    "Name is required, and the birthdate must be a valid date (YYYY-MM-DD) for a school-age " +
+        "(grade 3+) contestant — leave it blank for an adult",
+)
 
 private val ZIP_REGEX = Regex("""\d{5}(-\d{4})?""")
 
