@@ -11,6 +11,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import net.markdrew.biblebowl.api.ApiError
+import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
@@ -25,10 +26,12 @@ import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.api.coachedCongregationIds
 import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.gradeForBirthdate
+import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.registrationTotalCents
 import net.markdrew.biblebowl.api.ClaimEntryRequest
 import net.markdrew.biblebowl.server.RegistrationWindowState
 import net.markdrew.biblebowl.server.data.AddMemberResult
+import net.markdrew.biblebowl.server.data.AssignResult
 import net.markdrew.biblebowl.server.data.ClaimCodes
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.CongregationRepository
@@ -113,8 +116,8 @@ fun Route.registrationRoutes(
         post("/registration/{congregationId}/teams") {
             val user = currentUser(users) ?: return@post
             val congregationId = call.parameters["congregationId"]!!
-            if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@post
-            if (!requireWindowOpen(user, seasons)) return@post
+            // Coaches (window-gated) create their own teams; a registrar can add one to place leftovers.
+            if (!requireCongregationEditor(user, congregationId, seasons)) return@post
             val req = call.receive<UpsertTeamRequest>()
             if (req.name.isBlank()) {
                 return@post call.respond(HttpStatusCode.BadRequest, ApiError("invalid_team", "Team name is required"))
@@ -204,6 +207,27 @@ fun Route.registrationRoutes(
             if (!requireWindowOpen(user, seasons)) return@delete
             registrations.deleteMember(memberId)
             call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+        }
+
+        // (Re)assign a youth contestant to a team, or free it to the unassigned pool (null teamId).
+        // Coaches move their own contestants; a registrar places any left unassigned at submit time.
+        put("/registration/members/{memberId}/team") {
+            val user = currentUser(users) ?: return@put
+            val memberId = call.parameters["memberId"]!!
+            val congregationId = registrations.congregationIdForMember(memberId)
+                ?: return@put call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such roster entry"))
+            if (!requireCongregationEditor(user, congregationId, seasons)) return@put
+            val req = call.receive<AssignMemberTeamRequest>()
+            when (registrations.assignMemberToTeam(memberId, req.teamId)) {
+                AssignResult.Assigned ->
+                    call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+                AssignResult.RosterFull ->
+                    call.respond(HttpStatusCode.Conflict, ApiError("roster_full", "A team may have at most 4 contestants"))
+                AssignResult.TeamNotFound ->
+                    call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such team for this registration"))
+                AssignResult.MemberNotFound ->
+                    call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such roster entry"))
+            }
         }
 
         // Individual (adult) contestants — adults are never on a team; they compete individually.
@@ -306,6 +330,22 @@ private fun CreateCongregationRequest.isValid(): Boolean =
 /** Decorates a registration with the contestant total computed from the current season's fees. */
 internal fun RegistrationDto.withTotal(seasons: SeasonRepository): RegistrationDto =
     copy(totalCents = registrationTotalCents(seasons.current(), contestantCount))
+
+/**
+ * Passes when the caller may edit [congregationId]'s teams/roster: an event-wide REGISTRATION_MANAGE
+ * holder (registrar or admin) any time — they place leftover unassigned contestants after coaches
+ * submit, so they aren't window-gated — or the congregation's own TEAM_MANAGE coach while the
+ * registration window is open. Responds 403/409 and returns false otherwise.
+ */
+private suspend fun RoutingContext.requireCongregationEditor(
+    user: UserRecord,
+    congregationId: String,
+    seasons: SeasonRepository,
+): Boolean {
+    if (hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) return true
+    if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return false
+    return requireWindowOpen(user, seasons)
+}
 
 /**
  * Rejects the mutation with 409 while the registration window isn't open — except for admins,

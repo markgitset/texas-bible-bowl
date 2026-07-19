@@ -161,6 +161,12 @@ class TbbApiRequestTest {
         api.deleteRosterEntry("m1")
         assertEquals("DELETE" to "/registration/members/m1", methods.last() to requests.last())
 
+        api.assignMemberTeam("m1", "t2")
+        assertEquals("PUT" to "/registration/members/m1/team", methods.last() to requests.last())
+
+        api.assignMemberTeam("m1", null) // unassign
+        assertEquals("PUT" to "/registration/members/m1/team", methods.last() to requests.last())
+
         api.addIndividual("c1", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL, Gender.FEMALE))
         assertEquals("POST" to "/registration/c1/individuals", methods.last() to requests.last())
 

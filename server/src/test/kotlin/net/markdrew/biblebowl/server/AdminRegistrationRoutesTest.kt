@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.server
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -18,6 +19,7 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
+import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
@@ -44,6 +46,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class AdminRegistrationRoutesTest {
 
@@ -191,6 +194,57 @@ class AdminRegistrationRoutesTest {
         val beta = desk.rows.single { it.congregation.id == congB.id }
         assertNull(beta.registration, "no registration started for Beta Church")
         assertEquals(listOf("b@tbb.org"), beta.coaches.map { it.email })
+    }
+
+    @Test
+    fun registrarPlacesUnassignedContestantsAndAPlainAccountCannot() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+
+        val (coach, cong) = api.coachWithCongregation("coach@tbb.org", "Placement Church", memberCount = 1)
+
+        // Look up the team + member, then the coach deletes the team → the member is unassigned.
+        val admin = api.loginSeededAdmin(users)
+        val reg0 = assertNotNull(
+            api.get("/admin/registrations") {
+                header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            }.body<RegistrationDeskResponse>().rows.single { it.congregation.id == cong.id }.registration,
+        )
+        val teamId = reg0.teams.single().id
+        val memberId = reg0.teams.single().members.single().id
+        val afterDelete: RegistrationDto = api.delete("/registration/teams/$teamId") {
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+        }.body()
+        assertEquals(1, afterDelete.unassigned.size)
+
+        // A registrar holds an event-wide grant only (no coach scope) — they add a team and assign.
+        val registrar = api.signUp("registrar@tbb.org", "Reg Istrar")
+        users.addRoleGrant(registrar.user.id, RoleGrant(Role.REGISTRAR))
+        fun io.ktor.client.request.HttpRequestBuilder.asRegistrar() =
+            header(HttpHeaders.Authorization, "Bearer ${registrar.token}")
+
+        val teamB = api.post("/registration/${cong.id}/teams") {
+            asRegistrar(); setBody(UpsertTeamRequest("Placed Team"))
+        }.body<RegistrationDto>().teams.single { it.name == "Placed Team" }.id
+        val placed: RegistrationDto = api.put("/registration/members/$memberId/team") {
+            asRegistrar(); setBody(AssignMemberTeamRequest(teamB))
+        }.body()
+        assertTrue(placed.unassigned.isEmpty())
+        assertEquals(listOf("Kid 0"), placed.teams.single { it.id == teamB }.members.map { it.name })
+
+        // A plain contestant (no grant) is forbidden from assigning.
+        val contestant = api.signUp("nobody@tbb.org", "Nobody")
+        assertEquals(
+            HttpStatusCode.Forbidden,
+            api.put("/registration/members/$memberId/team") {
+                header(HttpHeaders.Authorization, "Bearer ${contestant.token}")
+                setBody(AssignMemberTeamRequest(null))
+            }.status,
+        )
     }
 
     @Test
