@@ -69,7 +69,7 @@
       "eventStatus" "https://schema.org/EventScheduled"
       "eventAttendanceMode" "https://schema.org/OfflineEventAttendanceMode"
       "description" $desc
-      "image" (slice (printf "%simages/hero.jpg" .Site.BaseURL))
+      "image" (slice (printf "%simages/%s" .Site.BaseURL .Site.Params.shareImage))
       "url" (printf "%sregistration/" .Site.BaseURL)
       "organizer" (dict "@type" "Organization" "name" .Site.Title "url" .Site.BaseURL)
       "location" (slice
