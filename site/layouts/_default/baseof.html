@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   {{ $title := cond .IsHome .Site.Title (printf "%s | %s" .Title .Site.Title) }}
   {{ $desc := cond (ne (string .Description) "") (string .Description) .Site.Params.description }}
-  {{ $ogImage := printf "%simages/hero.jpg" .Site.BaseURL }}
+  {{ $ogImage := printf "%simages/%s" .Site.BaseURL .Site.Params.shareImage }}
   <title>{{ $title }}</title>
   <meta name="description" content="{{ $desc }}">
   <link rel="canonical" href="{{ .Permalink }}">
@@ -19,8 +19,8 @@
   <meta property="og:description" content="{{ $desc }}">
   <meta property="og:url" content="{{ .Permalink }}">
   <meta property="og:image" content="{{ $ogImage }}">
-  <meta property="og:image:width" content="2000">
-  <meta property="og:image:height" content="884">
+  <meta property="og:image:width" content="1100">
+  <meta property="og:image:height" content="576">
   <meta property="og:image:alt" content="{{ .Site.Title }} — {{ .Site.Params.tagline }}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="{{ $title }}">

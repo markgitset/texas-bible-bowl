@@ -125,10 +125,17 @@ h1, .display-5 { font-weight: 700; }
   background-color: #000;
   color: #fff;
 }
+.hero-banner-img {
+  overflow: hidden;
+}
+.hero-track {
+  display: flex;
+}
 .hero-banner-img img {
   display: block;
   width: 100%;
   height: auto;
+  flex: 0 0 100%;
 }
 /* CTA panel sits flush beneath the banner; a gold rule ties the two into one hero */
 .hero-cta {

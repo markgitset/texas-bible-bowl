@@ -8,7 +8,11 @@
 <!-- Hero -->
 <section class="hero-section">
   <div class="hero-banner-img">
-    <img src="{{ .Site.BaseURL }}images/hero.jpg" alt="A Texas Bible Bowl coach studying an open Bible with a group of smiling children at a ranch pavilion." class="w-100">
+    <div class="hero-track">
+      {{ range .Site.Params.heroSlides }}
+      <img src="{{ $.Site.BaseURL }}images/hero/{{ .image }}" alt="{{ .alt }}" class="w-100">
+      {{ end }}
+    </div>
   </div>
   <div class="hero-cta">
     <div class="container text-center">
@@ -101,5 +105,31 @@
     <p class="fs-3 fst-italic mb-0">Making God's Word Important</p>
   </div>
 </section>
+
+<!-- Hero slideshow: scrolls one slide at a time, looping via a clone of the first slide. -->
+<script>
+(function () {
+  var track = document.querySelector('.hero-track');
+  if (!track || track.children.length < 2) return;
+  var clone = track.children[0].cloneNode(true);
+  clone.setAttribute('aria-hidden', 'true');
+  track.appendChild(clone);
+  var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var slide = 0, count = track.children.length;
+  setInterval(function () {
+    if (slide === count - 1) {
+      // Currently showing the clone (identical to slide 1): snap back without
+      // animating, force a reflow so the snap paints, then advance normally.
+      track.style.transition = 'none';
+      track.style.transform = 'translateX(0)';
+      track.getBoundingClientRect();
+      slide = 0;
+    }
+    slide++;
+    track.style.transition = reduceMotion ? 'none' : 'transform .8s ease-in-out';
+    track.style.transform = 'translateX(-' + (slide * 100) + '%)';
+  }, 5000);
+})();
+</script>
 
 {{ end }}
