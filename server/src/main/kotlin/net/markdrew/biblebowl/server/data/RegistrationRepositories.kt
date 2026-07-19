@@ -29,15 +29,29 @@ import java.util.concurrent.ConcurrentHashMap
 /** The maximum contestants per team (competition rule; enforced at the repository layer). */
 const val MAX_TEAM_SIZE = 4
 
+/**
+ * Outcome of a congregation update: the two uniqueness constraints (name+city, and the two-letter
+ * code) are reported distinctly so the route can explain which one collided. The "code locked once
+ * set" rule is an authorization concern and lives in the route, not here.
+ */
+sealed interface UpdateCongregationResult {
+    data class Updated(val congregation: CongregationDto) : UpdateCongregationResult
+    data object NotFound : UpdateCongregationResult
+    /** The new name+city already belongs to a different congregation. */
+    data object NameCityTaken : UpdateCongregationResult
+    /** The chosen two-letter code is already used by a different congregation. */
+    data object CodeTaken : UpdateCongregationResult
+}
+
 interface CongregationRepository {
     /** Creates a congregation, or returns null when one with the same name+city already exists. */
     fun create(req: CreateCongregationRequest, createdByUserId: String): CongregationDto?
     /**
-     * Updates a congregation's editable details (never its two-letter [CongregationDto.state], which
-     * is fixed at creation). Returns the updated congregation, or null when the new name+city would
-     * collide with a *different* congregation (the caller has already checked [id] exists).
+     * Updates a congregation's editable fields (name, address, city, state, ZIP, and its two-letter
+     * [CongregationDto.code]). State and code are normalized to uppercase. Reports collisions on
+     * name+city or code distinctly; the route enforces who may change an already-set code.
      */
-    fun update(id: String, req: UpdateCongregationRequest): CongregationDto?
+    fun update(id: String, req: UpdateCongregationRequest): UpdateCongregationResult
     fun findById(id: String): CongregationDto?
     fun findByIds(ids: Collection<String>): List<CongregationDto>
     /** Case-insensitive substring search over name and city, for the step-1 typeahead. */
@@ -122,21 +136,27 @@ class InMemoryCongregationRepository : CongregationRepository {
         }
     }
 
-    override fun update(id: String, req: UpdateCongregationRequest): CongregationDto? = synchronized(byId) {
-        val existing = byId[id] ?: return null
+    override fun update(id: String, req: UpdateCongregationRequest): UpdateCongregationResult = synchronized(byId) {
+        val existing = byId[id] ?: return UpdateCongregationResult.NotFound
         val n = req.name.trim()
         val c = req.city.trim()
+        val code = req.code.trim().uppercase()
         if (byId.values.any { it.id != id && it.name.equals(n, ignoreCase = true) && it.city.equals(c, ignoreCase = true) }) {
-            return null
+            return UpdateCongregationResult.NameCityTaken
+        }
+        if (code.isNotBlank() && byId.values.any { it.id != id && it.code.equals(code, ignoreCase = true) }) {
+            return UpdateCongregationResult.CodeTaken
         }
         val updated = existing.copy(
             name = n,
             city = c,
+            state = req.state.trim().uppercase(),
             mailingAddress = req.mailingAddress.trim(),
             zip = req.zip.trim(),
+            code = code,
         )
         byId[id] = updated
-        return updated
+        return UpdateCongregationResult.Updated(updated)
     }
 
     override fun findById(id: String): CongregationDto? = byId[id]
@@ -407,24 +427,37 @@ class PostgresCongregationRepository(private val db: Database) : CongregationRep
         CongregationDto(newId, n, c, req.state.trim(), req.mailingAddress.trim(), req.zip.trim())
     }
 
-    override fun update(id: String, req: UpdateCongregationRequest): CongregationDto? = transaction(db) {
+    override fun update(id: String, req: UpdateCongregationRequest): UpdateCongregationResult = transaction(db) {
+        if (CongregationsTable.selectAll().where { CongregationsTable.id eq id }.none()) {
+            return@transaction UpdateCongregationResult.NotFound
+        }
         val n = req.name.trim()
         val c = req.city.trim()
-        val collides = CongregationsTable.selectAll()
+        val code = req.code.trim().uppercase()
+        val nameCityTaken = CongregationsTable.selectAll()
             .where {
                 (CongregationsTable.name.lowerCase() eq n.lowercase()) and
                     (CongregationsTable.city.lowerCase() eq c.lowercase())
             }
             .any { it[CongregationsTable.id] != id }
-        if (collides) return@transaction null
-        val updated = CongregationsTable.update({ CongregationsTable.id eq id }) {
+        if (nameCityTaken) return@transaction UpdateCongregationResult.NameCityTaken
+        if (code.isNotBlank()) {
+            val codeTaken = CongregationsTable.selectAll()
+                .where { CongregationsTable.code.lowerCase() eq code.lowercase() }
+                .any { it[CongregationsTable.id] != id }
+            if (codeTaken) return@transaction UpdateCongregationResult.CodeTaken
+        }
+        CongregationsTable.update({ CongregationsTable.id eq id }) {
             it[name] = n
             it[city] = c
+            it[state] = req.state.trim().uppercase()
             it[mailingAddress] = req.mailingAddress.trim()
             it[zip] = req.zip.trim()
+            it[CongregationsTable.code] = code
         }
-        if (updated == 0) null
-        else CongregationsTable.selectAll().where { CongregationsTable.id eq id }.singleOrNull()?.toDto()
+        UpdateCongregationResult.Updated(
+            CongregationsTable.selectAll().where { CongregationsTable.id eq id }.single().toDto(),
+        )
     }
 
     override fun findById(id: String): CongregationDto? = transaction(db) {
@@ -456,6 +489,7 @@ class PostgresCongregationRepository(private val db: Database) : CongregationRep
         state = this[CongregationsTable.state],
         mailingAddress = this[CongregationsTable.mailingAddress],
         zip = this[CongregationsTable.zip],
+        code = this[CongregationsTable.code],
     )
 }
 
@@ -757,6 +791,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 state = cong?.get(CongregationsTable.state) ?: "",
                 mailingAddress = cong?.get(CongregationsTable.mailingAddress) ?: "",
                 zip = cong?.get(CongregationsTable.zip) ?: "",
+                code = cong?.get(CongregationsTable.code) ?: "",
             ),
             seasonYear = this[RegistrationsTable.seasonYear],
             status = RegistrationStatus.valueOf(this[RegistrationsTable.status]),

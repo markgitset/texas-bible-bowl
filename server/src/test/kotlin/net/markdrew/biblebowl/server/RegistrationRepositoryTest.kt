@@ -13,6 +13,7 @@ import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
 import net.markdrew.biblebowl.server.data.InMemoryRegistrationRepository
 import net.markdrew.biblebowl.server.data.MAX_TEAM_SIZE
+import net.markdrew.biblebowl.server.data.UpdateCongregationResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -45,26 +46,43 @@ class RegistrationRepositoryTest {
     }
 
     @Test
-    fun updatingACongregationKeepsTheStateAndGuardsAgainstDupes() {
+    fun updatingACongregationEditsFieldsAndEnforcesUniqueness() {
         val cong = newCongregation("First Church", "Austin")!!
         val other = newCongregation("Second Church", "Dallas", "u2")!!
 
-        val updated = congregations.update(
-            cong.id,
-            UpdateCongregationRequest("First Christian Church", "Round Rock", "456 Oak Ave", "78664"),
-        )!!
+        // Name, city, and state are all freely editable; state and code are stored uppercased.
+        val updated = assertIs<UpdateCongregationResult.Updated>(
+            congregations.update(
+                cong.id,
+                UpdateCongregationRequest(
+                    "First Christian Church", "Round Rock", state = "ok",
+                    mailingAddress = "456 Oak Ave", zip = "78664", code = "fc",
+                ),
+            ),
+        ).congregation
         assertEquals("First Christian Church", updated.name)
         assertEquals("Round Rock", updated.city)
+        assertEquals("OK", updated.state, "state is editable and normalized to uppercase")
         assertEquals("456 Oak Ave", updated.mailingAddress)
         assertEquals("78664", updated.zip)
-        assertEquals("TX", updated.state, "the state is never part of an update")
+        assertEquals("FC", updated.code, "code is stored uppercased")
         assertEquals(updated, congregations.findById(cong.id))
 
-        // Renaming onto another congregation's name+city collides; a self-update to the same name is fine.
-        assertNull(congregations.update(cong.id, UpdateCongregationRequest("Second Church", "Dallas", "1 St", "75001")))
-        assertNotNull(congregations.update(cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", "456 Oak Ave", "78664")))
-        assertNull(congregations.update("nope", UpdateCongregationRequest("Ghost", "Nowhere", "0 St", "00000")))
-        assertEquals("Second Church", congregations.findById(other.id)!!.name, "the other congregation is untouched")
+        // The two uniqueness constraints are reported distinctly.
+        assertIs<UpdateCongregationResult.NameCityTaken>(
+            congregations.update(cong.id, UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "1 St", zip = "75001")),
+        )
+        congregations.update(other.id, UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "2 Elm St", zip = "75001", code = "SC"))
+        assertIs<UpdateCongregationResult.CodeTaken>(
+            congregations.update(cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", state = "OK", mailingAddress = "456 Oak Ave", zip = "78664", code = "sc")),
+        )
+        // Re-saving a congregation's own code is fine (self is excluded from the collision check).
+        assertIs<UpdateCongregationResult.Updated>(
+            congregations.update(cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", state = "OK", mailingAddress = "456 Oak Ave", zip = "78664", code = "FC")),
+        )
+        assertIs<UpdateCongregationResult.NotFound>(
+            congregations.update("nope", UpdateCongregationRequest("Ghost", "Nowhere", state = "TX", mailingAddress = "0 St", zip = "00000")),
+        )
     }
 
     @Test

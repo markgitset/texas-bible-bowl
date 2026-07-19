@@ -59,10 +59,13 @@ object RegisterScreen {
     private val congregation: CongregationDto? get() = loaded?.congregations?.firstOrNull()
     private val registration: RegistrationDto? get() = loaded?.registration
 
+    /** A globally-scoped admin (may edit outside the window, and may change a set congregation code). */
+    private val isAdmin: Boolean
+        get() = Session.user?.roles?.any { it.role == Role.ADMIN && it.scopeType == ScopeType.GLOBAL } == true
+
     /** Admins may keep editing outside the window (the server exempts them too). */
     private val canEdit: Boolean
-        get() = loaded?.windowOpen == true ||
-            Session.user?.roles?.any { it.role == Role.ADMIN && it.scopeType == ScopeType.GLOBAL } == true
+        get() = loaded?.windowOpen == true || isAdmin
 
     fun render(container: HTMLElement) {
         container.child("h1", "page-title", "Register my teams")
@@ -276,7 +279,10 @@ object RegisterScreen {
         parent.child("div", "card section-card mb-3") {
             child("div", "card-body") {
                 child("h5", "card-title", "Your congregation")
-                child("p", "mb-0", "${existing.name} — ${cityStateLine(existing)}")
+                child("p", "mb-0") {
+                    append("${existing.name} — ${cityStateLine(existing)}")
+                    if (existing.code.isNotBlank()) child("span", "badge text-bg-secondary ms-2", existing.code)
+                }
                 if (existing.mailingAddress.isNotBlank()) {
                     child("p", "text-muted small mb-0", "${existing.mailingAddress}, ${cityStateLine(existing)} ${existing.zip}")
                 }
@@ -285,25 +291,44 @@ object RegisterScreen {
     }
 
     /**
-     * Editable congregation card, shown while registration is open. Everything but the two-letter
-     * state is editable — the state is fixed at creation, so it renders disabled.
+     * Editable congregation card, shown while registration is open. Name, address, city, state, and
+     * ZIP are freely editable. The two-letter congregation code is set-once for a coach: editable
+     * while it's still blank, then locked (only an admin can change it) — the server enforces this.
      */
     private fun renderCongregationEditForm(parent: Element, existing: CongregationDto) {
         parent.child("div", "card section-card mb-3") {
             child("div", "card-body") {
                 child("h5", "card-title", "Your congregation")
-                child("p", "text-muted small",
-                    "Fix a typo in your congregation's details below. The two-letter state code is set " +
-                        "when the congregation is first registered — contact us if it needs to change.")
+                child("p", "text-muted small", "Fix a typo in your congregation's details below.")
                 val form = child("form")
                 lateinit var name: HTMLInputElement
                 lateinit var address: HTMLInputElement
                 lateinit var city: HTMLInputElement
+                lateinit var state: HTMLInputElement
                 lateinit var zip: HTMLInputElement
+                lateinit var code: HTMLInputElement
                 form.child("div", "mb-2") {
                     child("label", "form-label", "Congregation name")
                     name = child("input", "form-control") as HTMLInputElement
                     name.value = existing.name
+                }
+                // The two-letter code: a coach picks it once, then only an admin can change it.
+                val codeLocked = existing.code.isNotBlank() && !isAdmin
+                form.child("div", "mb-2") {
+                    child("label", "form-label", "Congregation code")
+                    code = child("input", "form-control w-auto") as HTMLInputElement
+                    code.value = existing.code
+                    code.setAttribute("maxlength", "2")
+                    code.setAttribute("size", "4")
+                    code.setAttribute("placeholder", "e.g. FB")
+                    code.style.textTransform = "uppercase"
+                    code.disabled = codeLocked
+                    val note = if (codeLocked)
+                        "Your two-letter code is set — contact us and an admin can change it."
+                    else
+                        "Pick a unique two-letter code for your congregation. Once you save it, only an " +
+                            "admin can change it."
+                    child("div", "form-text", note)
                 }
                 form.child("div", "mb-2") {
                     child("label", "form-label", "Mailing address")
@@ -319,11 +344,10 @@ object RegisterScreen {
                     }
                     child("div") {
                         child("label", "form-label", "State")
-                        val state = child("input", "form-control") as HTMLInputElement
+                        state = child("input", "form-control") as HTMLInputElement
                         state.value = existing.state
-                        state.disabled = true
+                        state.setAttribute("maxlength", "2")
                         state.setAttribute("size", "3")
-                        state.setAttribute("title", "The state is fixed when the congregation is first registered")
                     }
                     child("div") {
                         child("label", "form-label", "ZIP")
@@ -339,7 +363,7 @@ object RegisterScreen {
                 val slot = form.child("div")
                 form.addEventListener("submit", { event ->
                     event.preventDefault()
-                    if (listOf(name, address, city, zip).any { it.value.isBlank() }) return@addEventListener
+                    if (listOf(name, address, city, state, zip).any { it.value.isBlank() }) return@addEventListener
                     save.disabled = true
                     slot.clear()
                     Shell.scope.launch {
@@ -349,8 +373,10 @@ object RegisterScreen {
                                 UpdateCongregationRequest(
                                     name = name.value,
                                     city = city.value,
+                                    state = state.value,
                                     mailingAddress = address.value,
                                     zip = zip.value,
+                                    code = code.value,
                                 ),
                             )
                             // Refresh so the embedded registration.congregation (review step) matches too.

@@ -28,6 +28,7 @@ import net.markdrew.biblebowl.server.data.ScoreReleasesTable
 import net.markdrew.biblebowl.server.data.ScoresTable
 import net.markdrew.biblebowl.server.data.TeamMembersTable
 import net.markdrew.biblebowl.server.data.TeamsTable
+import net.markdrew.biblebowl.server.data.UpdateCongregationResult
 import net.markdrew.biblebowl.server.data.UsersTable
 import net.markdrew.biblebowl.server.security.Passwords
 import org.jetbrains.exposed.v1.jdbc.deleteAll
@@ -167,7 +168,7 @@ class PostgresRepositoryTest {
     }
 
     @Test
-    fun updatingACongregationPersistsAndKeepsTheState() {
+    fun updatingACongregationPersistsFieldsAndEnforcesCodeUniqueness() {
         if (!available) { println("Postgres not reachable — skipping"); return }
         val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
@@ -184,18 +185,23 @@ class PostgresRepositoryTest {
             coach.id,
         ))
 
-        val updated = assertNotNull(congregations.update(
-            cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", "456 Oak Ave", "78664"),
-        ))
+        val updated = assertIs<UpdateCongregationResult.Updated>(congregations.update(
+            cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", state = "ok", mailingAddress = "456 Oak Ave", zip = "78664", code = "fc"),
+        )).congregation
         assertEquals("First Christian Church", updated.name)
         assertEquals("Round Rock", updated.city)
         assertEquals("456 Oak Ave", updated.mailingAddress)
         assertEquals("78664", updated.zip)
-        assertEquals("TX", updated.state)
+        assertEquals("OK", updated.state, "state is editable and uppercased")
+        assertEquals("FC", updated.code, "code is uppercased")
         assertEquals(updated, congregations.findById(cong.id))
 
-        // Colliding with the other congregation's name+city is refused; the other stays as it was.
-        assertNull(congregations.update(cong.id, UpdateCongregationRequest("Second Church", "Dallas", "9 St", "75001")))
+        // Name+city and code collisions are reported distinctly; the other congregation is untouched.
+        assertIs<UpdateCongregationResult.NameCityTaken>(congregations.update(
+            cong.id, UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "9 St", zip = "75001")))
+        congregations.update(other.id, UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "2 Elm St", zip = "75001", code = "SC"))
+        assertIs<UpdateCongregationResult.CodeTaken>(congregations.update(
+            cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", state = "OK", mailingAddress = "456 Oak Ave", zip = "78664", code = "sc")))
         assertEquals("Second Church", congregations.findById(other.id)!!.name)
     }
 

@@ -163,7 +163,7 @@ class RegistrationRoutesTest {
     }
 
     @Test
-    fun coachEditsCongregationDetailsButNotState() = testApplication {
+    fun coachEditsCongregationAndPicksACodeOnlyAnAdminCanLaterChange() = testApplication {
         val users = InMemoryUserRepository()
         application {
             module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
@@ -177,50 +177,86 @@ class RegistrationRoutesTest {
         val congregation: CongregationDto = api.post("/congregations") {
             asCoach(); setBody(congregationRequest("First Church", "Austin"))
         }.body()
+        assertEquals("", congregation.code, "a new congregation has no code yet")
 
-        // The coach can correct name/address/city/ZIP; the two-letter state is left out of the request
-        // and stays as it was created.
+        // Name, city, and state are all editable; the coach also picks a two-letter code (uppercased).
         val edited: CongregationDto = api.put("/congregations/${congregation.id}") {
             asCoach()
-            setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", "456 Oak Ave", "78664"))
+            setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "ok", mailingAddress = "456 Oak Ave", zip = "78664", code = "fc"))
         }.body()
         assertEquals("First Christian Church", edited.name)
         assertEquals("Round Rock", edited.city)
-        assertEquals("456 Oak Ave", edited.mailingAddress)
-        assertEquals("78664", edited.zip)
-        assertEquals("TX", edited.state, "the two-letter state code is fixed at creation")
-        assertEquals(congregation.id, edited.id)
+        assertEquals("OK", edited.state, "state is editable now")
+        assertEquals("FC", edited.code, "code is stored uppercased")
 
         // The edit round-trips through the resume fetch.
         val mine: MyRegistrationResponse = api.get("/registration/mine") { asCoach() }.body()
-        assertEquals("First Christian Church", mine.congregations.single().name)
+        assertEquals("FC", mine.congregations.single().code)
 
-        // A blank required field is a 400.
-        val invalid = api.put("/congregations/${congregation.id}") {
-            asCoach(); setBody(UpdateCongregationRequest("", "Round Rock", "456 Oak Ave", "78664"))
+        // Re-saving other fields while keeping the same code is fine.
+        val keptCode: CongregationDto = api.put("/congregations/${congregation.id}") {
+            asCoach()
+            setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "TX", mailingAddress = "456 Oak Ave", zip = "78664", code = "FC"))
+        }.body()
+        assertEquals("TX", keptCode.state)
+        assertEquals("FC", keptCode.code)
+
+        // A coach cannot *change* the code once it's set.
+        val lockedChange = api.put("/congregations/${congregation.id}") {
+            asCoach()
+            setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "TX", mailingAddress = "456 Oak Ave", zip = "78664", code = "ZZ"))
         }
-        assertEquals(HttpStatusCode.BadRequest, invalid.status)
-        assertEquals("invalid_congregation", invalid.body<ApiError>().code)
+        assertEquals(HttpStatusCode.Forbidden, lockedChange.status)
+        assertEquals("forbidden_code_change", lockedChange.body<ApiError>().code)
 
-        // Renaming onto another congregation's name+city collides (409).
+        // A code that isn't two letters is a 400; a blank required field (state) is also a 400.
+        val badCode = api.put("/congregations/${congregation.id}") {
+            asCoach(); setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "TX", mailingAddress = "456 Oak Ave", zip = "78664", code = "F1"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, badCode.status)
+        assertEquals("invalid_code", badCode.body<ApiError>().code)
+        val blankState = api.put("/congregations/${congregation.id}") {
+            asCoach(); setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "", mailingAddress = "456 Oak Ave", zip = "78664", code = "FC"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, blankState.status)
+        assertEquals("invalid_congregation", blankState.body<ApiError>().code)
+
+        // A second congregation can't grab a taken code, and renaming onto another's name+city clashes.
         val other = api.signUp("other@tbb.org", "Other Coach")
-        api.post("/congregations") {
+        val cong2: CongregationDto = api.post("/congregations") {
             header(HttpHeaders.Authorization, "Bearer ${other.token}")
             setBody(congregationRequest("Second Church", "Dallas"))
+        }.body()
+        val codeClash = api.put("/congregations/${cong2.id}") {
+            header(HttpHeaders.Authorization, "Bearer ${other.token}")
+            setBody(UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "1 St", zip = "75001", code = "fc"))
         }
-        val collide = api.put("/congregations/${congregation.id}") {
-            asCoach(); setBody(UpdateCongregationRequest("Second Church", "Dallas", "456 Oak Ave", "78664"))
+        assertEquals(HttpStatusCode.Conflict, codeClash.status)
+        assertEquals("code_taken", codeClash.body<ApiError>().code)
+        val nameCityClash = api.put("/congregations/${congregation.id}") {
+            asCoach(); setBody(UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "456 Oak Ave", zip = "78664", code = "FC"))
         }
-        assertEquals(HttpStatusCode.Conflict, collide.status)
-        assertEquals("congregation_exists", collide.body<ApiError>().code)
+        assertEquals(HttpStatusCode.Conflict, nameCityClash.status)
+        assertEquals("congregation_exists", nameCityClash.body<ApiError>().code)
 
-        // A different coach can't edit someone else's congregation (scoped grant).
+        // A different coach can't edit the first congregation at all (scoped grant).
         val forbidden = api.put("/congregations/${congregation.id}") {
             header(HttpHeaders.Authorization, "Bearer ${other.token}")
-            setBody(UpdateCongregationRequest("Hostile Takeover", "Dallas", "1 St", "75001"))
+            setBody(UpdateCongregationRequest("Hostile Takeover", "Dallas", state = "TX", mailingAddress = "1 St", zip = "75001", code = "FC"))
         }
         assertEquals(HttpStatusCode.Forbidden, forbidden.status)
         assertEquals("forbidden_scope", forbidden.body<ApiError>().code)
+
+        // An admin *can* change a set code.
+        users.create("admin@tbb.org", "Admin", null, adult = true, passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)))
+        val admin: AuthResponse = json.decodeFromString(
+            api.post("/auth/login") { setBody(net.markdrew.biblebowl.api.LoginRequest("admin@tbb.org", "supersecret")) }.bodyAsText()
+        )
+        val adminChanged: CongregationDto = api.put("/congregations/${congregation.id}") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "TX", mailingAddress = "456 Oak Ave", zip = "78664", code = "FA"))
+        }.body()
+        assertEquals("FA", adminChanged.code)
     }
 
     @Test
@@ -241,7 +277,7 @@ class RegistrationRoutesTest {
         }.body()
         val closed = api.put("/congregations/${congregation.id}") {
             header(HttpHeaders.Authorization, "Bearer ${coach.token}")
-            setBody(UpdateCongregationRequest("Late Church Renamed", "Waco", "123 Main St", "78701"))
+            setBody(UpdateCongregationRequest("Late Church Renamed", "Waco", state = "TX", mailingAddress = "123 Main St", zip = "78701"))
         }
         assertEquals(HttpStatusCode.Conflict, closed.status)
         assertEquals("registration_closed", closed.body<ApiError>().code)
@@ -255,7 +291,7 @@ class RegistrationRoutesTest {
         )
         val adminEdit: CongregationDto = api.put("/congregations/${congregation.id}") {
             header(HttpHeaders.Authorization, "Bearer ${admin.token}")
-            setBody(UpdateCongregationRequest("Late Church Renamed", "Waco", "123 Main St", "78701"))
+            setBody(UpdateCongregationRequest("Late Church Renamed", "Waco", state = "TX", mailingAddress = "123 Main St", zip = "78701"))
         }.body()
         assertEquals("Late Church Renamed", adminEdit.name)
     }
