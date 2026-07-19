@@ -101,7 +101,11 @@ object TeamsTable : Table("teams") {
 /** Roster entries (≤4 per team, enforced in the repository). Division is always computed, never stored. */
 object TeamMembersTable : Table("team_members") {
     val id = varchar("id", 36)
-    val teamId = varchar("team_id", 36).references(TeamsTable.id)
+    // Nullable: a member with no team is "unassigned" — eligible but not yet placed (e.g. their
+    // team was deleted). Assigning sets this; deleting a team clears it rather than removing the row.
+    val teamId = varchar("team_id", 36).references(TeamsTable.id).nullable()
+    // Direct link to the registration so a teamless member is still scoped and queryable without a team.
+    val registrationId = varchar("registration_id", 36).references(RegistrationsTable.id)
     val name = varchar("name", 120)
     // ISO-8601; required for team members (grades 3-12) since adults can't be on teams;
     // nullable only for rows that pre-date birthdate collection
@@ -263,6 +267,14 @@ object DatabaseFactory {
             exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS gender VARCHAR(6)")
             exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS first_season_year VARCHAR(4)")
             exec("ALTER TABLE individual_contestants ADD COLUMN IF NOT EXISTS gender VARCHAR(6)")
+            // Deleting a team frees its members (they become unassigned) rather than deleting them
+            // (2026-07): give each member a direct registration link and let team_id go null.
+            exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS registration_id VARCHAR(36)")
+            exec(
+                "UPDATE team_members tm SET registration_id = t.registration_id " +
+                    "FROM teams t WHERE t.id = tm.team_id AND tm.registration_id IS NULL"
+            )
+            exec("ALTER TABLE team_members ALTER COLUMN team_id DROP NOT NULL")
         }
         return db
     }

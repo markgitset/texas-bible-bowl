@@ -7,6 +7,7 @@ import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
+import net.markdrew.biblebowl.server.data.AssignResult
 import net.markdrew.biblebowl.server.data.ClaimCodes
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
@@ -219,12 +220,60 @@ class RegistrationRepositoryTest {
     }
 
     @Test
-    fun deleteTeamCascadesToMembers() {
+    fun deleteTeamFreesMembersToTheUnassignedPool() {
         val cong = newCongregation("Cascade Church", "Lubbock")!!
         val team = repo.addTeam(cong.id, "2027", "Team A")!!
         val member = assertIs<AddMemberResult.Added>(repo.addMember(team.id, entry("Kid"))).entry
         assertTrue(repo.deleteTeam(team.id))
-        assertNull(repo.congregationIdForMember(member.id))
-        assertEquals(0, repo.find(cong.id, "2027")!!.teams.size)
+
+        val reg = repo.find(cong.id, "2027")!!
+        assertEquals(0, reg.teams.size, "the team is gone")
+        assertEquals(listOf("Kid"), reg.unassigned.map { it.name }, "but the contestant survives, unassigned")
+        assertEquals(member.claimCode, reg.unassigned.single().claimCode, "same entry — claim code preserved")
+        // Still scoped to its congregation even without a team, so permission checks resolve.
+        assertEquals(cong.id, repo.congregationIdForMember(member.id))
+    }
+
+    @Test
+    fun assignMovesContestantsBetweenTeamsAndOffToThePool() {
+        val cong = newCongregation("Assign Church", "Killeen")!!
+        val teamA = repo.addTeam(cong.id, "2027", "Team A")!!
+        val teamB = repo.addTeam(cong.id, "2027", "Team B")!!
+        val member = assertIs<AddMemberResult.Added>(repo.addMember(teamA.id, entry("Mover"))).entry
+
+        // Move A -> B.
+        assertIs<AssignResult.Assigned>(repo.assignMemberToTeam(member.id, teamB.id))
+        repo.find(cong.id, "2027")!!.let { reg ->
+            assertEquals(emptyList(), reg.teams.single { it.id == teamA.id }.members.map { it.name })
+            assertEquals(listOf("Mover"), reg.teams.single { it.id == teamB.id }.members.map { it.name })
+            assertTrue(reg.unassigned.isEmpty())
+        }
+
+        // Unassign (null team) -> pool.
+        assertIs<AssignResult.Assigned>(repo.assignMemberToTeam(member.id, null))
+        repo.find(cong.id, "2027")!!.let { reg ->
+            assertTrue(reg.teams.all { it.members.isEmpty() })
+            assertEquals(listOf("Mover"), reg.unassigned.map { it.name })
+        }
+
+        // Assign from the pool back onto a team.
+        assertIs<AssignResult.Assigned>(repo.assignMemberToTeam(member.id, teamA.id))
+        assertEquals(listOf("Mover"), repo.find(cong.id, "2027")!!.teams.single { it.id == teamA.id }.members.map { it.name })
+    }
+
+    @Test
+    fun assignRejectsFullTeamsForeignTeamsAndUnknownMembers() {
+        val cong = newCongregation("Full Church", "Bryan")!!
+        val full = repo.addTeam(cong.id, "2027", "Full Team")!!
+        repeat(MAX_TEAM_SIZE) { repo.addMember(full.id, entry("Starter $it")) }
+        val loose = repo.addTeam(cong.id, "2027", "Spare Team")!!
+        val member = assertIs<AddMemberResult.Added>(repo.addMember(loose.id, entry("Extra"))).entry
+        assertIs<AssignResult.RosterFull>(repo.assignMemberToTeam(member.id, full.id))
+
+        // A team in another congregation's registration is off-limits.
+        val other = newCongregation("Other Church", "Georgetown", "u2")!!
+        val otherTeam = repo.addTeam(other.id, "2027", "Their Team")!!
+        assertIs<AssignResult.TeamNotFound>(repo.assignMemberToTeam(member.id, otherTeam.id))
+        assertIs<AssignResult.MemberNotFound>(repo.assignMemberToTeam("nope", loose.id))
     }
 }

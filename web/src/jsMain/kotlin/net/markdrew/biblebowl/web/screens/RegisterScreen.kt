@@ -9,6 +9,7 @@ import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.Role
+import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
@@ -85,8 +86,10 @@ object RegisterScreen {
 
     private fun firstIncompleteStep(): Int = when {
         congregation == null -> 1
-        registration?.teams.isNullOrEmpty() && registration?.individuals.isNullOrEmpty() -> 2
+        registration?.teams.isNullOrEmpty() && registration?.individuals.isNullOrEmpty() &&
+            registration?.unassigned.isNullOrEmpty() -> 2
         contestants == 0 -> 3
+        registration?.unassigned.isNullOrEmpty() == false -> 3 // land on the roster to place them
         else -> 4
     }
 
@@ -312,7 +315,11 @@ object RegisterScreen {
                         setAttribute("type", "button")
                         onClick {
                             if (team.members.isEmpty() ||
-                                window.confirm("Delete ${team.name} and its ${team.members.size} roster entries?")
+                                window.confirm(
+                                    "Delete ${team.name}? Its ${team.members.size} contestant" +
+                                        "${if (team.members.size == 1) "" else "s"} won't be deleted — " +
+                                        "they'll move to Unassigned so you can place them on another team.",
+                                )
                             ) {
                                 mutate { Session.api.deleteTeam(team.id) }
                             }
@@ -354,6 +361,7 @@ object RegisterScreen {
 
     private fun renderRosterStep(parent: Element) {
         registration?.teams?.forEach { team -> renderTeamRoster(parent, team) }
+        renderUnassignedCard(parent)
         renderIndividualsCard(parent)
 
         registration?.let { reg ->
@@ -370,6 +378,29 @@ object RegisterScreen {
             }
         }
         if (contestants > 0) parent.nextButton("Continue to review", 4)
+    }
+
+    /** Eligible youth not on a team (e.g. their team was deleted) — assign each, or a registrar will. */
+    private fun renderUnassignedCard(parent: Element) {
+        val unassigned = registration?.unassigned.orEmpty()
+        if (unassigned.isEmpty()) return
+        parent.child("div", "card section-card border-warning mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title") {
+                    append("Unassigned contestants ")
+                    child("span", "badge text-bg-warning", unassigned.size.toString())
+                }
+                child("p", "text-muted small",
+                    "These contestants are eligible but not on a team yet (their team was deleted). " +
+                        "Pick a team for each below. You can still submit with some here — a registrar " +
+                        "will place them on a team for you.")
+                if (registration?.teams.isNullOrEmpty()) {
+                    child("p", "text-warning small mb-2",
+                        "Add a team on the Teams step first, then assign these contestants to it.")
+                }
+                unassigned.forEach { member -> renderContestantRow(this, member, currentTeamId = null) }
+            }
+        }
     }
 
     /** Adult contestants aren't on any team — they're registered here, straight on the registration. */
@@ -444,44 +475,7 @@ object RegisterScreen {
                     append("${team.name} ")
                     divisionBadge(this, team)
                 }
-                team.members.forEach { member ->
-                    child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
-                        val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
-                        name.value = member.name
-                        name.disabled = !canEdit
-                        val birthdate = birthdateInput(this, member.birthdate)
-                        val shirt = shirtSelect(this, member.shirtSize)
-                        val gender = genderSelect(this, member.gender)
-                        val firstYear = firstYearCheck(this, member.isInexperienced(seasonYear))
-                        firstYear.disabled = !canEdit
-                        val save = {
-                            val chosenGender = genderOf(gender)
-                            if (name.value.isNotBlank() && isValidBirthdate(birthdate.value) && chosenGender != null) {
-                                mutate {
-                                    Session.api.updateRosterEntry(
-                                        member.id,
-                                        UpsertRosterEntryRequest(
-                                            name.value, birthdate.value, ShirtSize.valueOf(shirt.value),
-                                            chosenGender, firstYear.checked,
-                                        ),
-                                    )
-                                }
-                            }
-                        }
-                        listOf<HTMLElement>(name, birthdate, shirt, gender, firstYear).forEach { el ->
-                            el.addEventListener("change", { save() })
-                            (el as? HTMLSelectElement)?.disabled = !canEdit
-                            (el as? HTMLInputElement)?.disabled = !canEdit
-                        }
-                        claimCodeChip(this, member.claimCode)
-                        if (canEdit) {
-                            child("button", "btn btn-outline-danger btn-sm", "Remove") {
-                                setAttribute("type", "button")
-                                onClick { mutate { Session.api.deleteRosterEntry(member.id) } }
-                            }
-                        }
-                    }
-                }
+                team.members.forEach { member -> renderContestantRow(this, member, currentTeamId = team.id) }
                 when {
                     !canEdit -> {}
                     team.members.size >= 4 ->
@@ -490,6 +484,73 @@ object RegisterScreen {
                 }
             }
         }
+    }
+
+    /**
+     * One editable youth contestant row (name/birthdate/shirt/gender/1st-year), used both under a
+     * team and in the Unassigned card. [currentTeamId] is the team the row belongs to (null when
+     * unassigned); the team dropdown moves the contestant between teams or off to the pool.
+     */
+    private fun renderContestantRow(parent: Element, member: RosterEntryDto, currentTeamId: String?) {
+        parent.child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
+            val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
+            name.value = member.name
+            name.disabled = !canEdit
+            val birthdate = birthdateInput(this, member.birthdate)
+            val shirt = shirtSelect(this, member.shirtSize)
+            val gender = genderSelect(this, member.gender)
+            val firstYear = firstYearCheck(this, member.isInexperienced(seasonYear))
+            firstYear.disabled = !canEdit
+            val save = {
+                val chosenGender = genderOf(gender)
+                if (name.value.isNotBlank() && isValidBirthdate(birthdate.value) && chosenGender != null) {
+                    mutate {
+                        Session.api.updateRosterEntry(
+                            member.id,
+                            UpsertRosterEntryRequest(
+                                name.value, birthdate.value, ShirtSize.valueOf(shirt.value),
+                                chosenGender, firstYear.checked,
+                            ),
+                        )
+                    }
+                }
+            }
+            listOf<HTMLElement>(name, birthdate, shirt, gender, firstYear).forEach { el ->
+                el.addEventListener("change", { save() })
+                (el as? HTMLSelectElement)?.disabled = !canEdit
+                (el as? HTMLInputElement)?.disabled = !canEdit
+            }
+            teamAssignSelect(this, member, currentTeamId)
+            claimCodeChip(this, member.claimCode)
+            if (canEdit) {
+                child("button", "btn btn-outline-danger btn-sm", "Remove") {
+                    setAttribute("type", "button")
+                    onClick { mutate { Session.api.deleteRosterEntry(member.id) } }
+                }
+            }
+        }
+    }
+
+    /**
+     * The per-contestant team picker: each team plus an "Unassigned" option. Changing it moves the
+     * contestant (server enforces the 4-cap). Rendered only when there's somewhere to move to — at
+     * least one team, or the contestant is currently on one.
+     */
+    private fun teamAssignSelect(parent: Element, member: RosterEntryDto, currentTeamId: String?) {
+        val teams = registration?.teams.orEmpty()
+        if (teams.isEmpty() && currentTeamId == null) return
+        val select = parent.child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
+        select.setAttribute("title", "Team")
+        select.disabled = !canEdit
+        (select.child("option", text = "— Unassigned —") as HTMLOptionElement).value = ""
+        teams.forEach { team ->
+            val option = select.child("option", text = team.name) as HTMLOptionElement
+            option.value = team.id
+            if (team.id == currentTeamId) option.selected = true
+        }
+        select.addEventListener("change", {
+            mutate { Session.api.assignMemberTeam(member.id, select.value.ifEmpty { null }) }
+        })
     }
 
     private fun renderAddMemberForm(parent: Element, team: TeamDto) {
@@ -619,6 +680,14 @@ object RegisterScreen {
                                 child("td", "text-nowrap", feeMath(team.members.size))
                             }
                         }
+                        if (reg.unassigned.isNotEmpty()) {
+                            child("tr", "table-warning") {
+                                child("td", text = "Unassigned")
+                                child("td", text = "—")
+                                child("td", text = reg.unassigned.joinToString { it.name })
+                                child("td", "text-nowrap", feeMath(reg.unassigned.size))
+                            }
+                        }
                         if (reg.individuals.isNotEmpty()) {
                             child("tr") {
                                 child("td", text = "Individuals")
@@ -663,11 +732,34 @@ object RegisterScreen {
                     "${formatIsoDate(Session.season.registrationClosesOn)}.",
             )
         }
+        if (canEdit && reg.unassigned.isNotEmpty()) {
+            val n = reg.unassigned.size
+            parent.child(
+                "div", "alert alert-warning",
+                "$n contestant${if (n == 1) "" else "s"} ${if (n == 1) "isn't" else "aren't"} on a team yet. " +
+                    "You can go back to the roster step to place ${if (n == 1) "them" else "them"}, or submit now " +
+                    "and a registrar will assign ${if (n == 1) "them" else "them"} to a team for you.",
+            )
+        }
         if (canEdit) {
             val label = if (reg.status == RegistrationStatus.SUBMITTED) "Update registration" else "Submit registration"
             parent.child("button", "btn btn-primary btn-lg", label) {
                 setAttribute("type", "button")
-                onClick { mutate { Session.api.submitRegistration(cong.id) } }
+                onClick {
+                    val n = reg.unassigned.size
+                    if (n > 0 && !window.confirm(
+                            "$n contestant${if (n == 1) "" else "s"} ${if (n == 1) "isn't" else "aren't"} on a team " +
+                                "yet. Submit anyway and let a registrar place them, or cancel to go back and assign " +
+                                "them to a team yourself?",
+                        )
+                    ) {
+                        step = 3
+                        error = null
+                        renderContent()
+                        return@onClick
+                    }
+                    mutate { Session.api.submitRegistration(cong.id) }
+                }
             }
         }
     }

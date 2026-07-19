@@ -105,7 +105,7 @@ class RegistrationDomainTest {
     }
 
     @Test
-    fun contestantCountSpansTeamsAndIndividuals() {
+    fun contestantCountSpansTeamsIndividualsAndUnassigned() {
         val reg = RegistrationDto(
             id = "r",
             congregation = CongregationDto("c", "First Church", "Austin"),
@@ -113,9 +113,13 @@ class RegistrationDomainTest {
             status = RegistrationStatus.DRAFT,
             teams = listOf(TeamDto("t", "Team A", listOf(entry("2018-05-01"), entry("2013-05-01")))),
             individuals = listOf(entry(null)),
+            unassigned = listOf(entry("2014-05-01")),
         )
-        assertEquals(3, reg.contestantCount)
-        assertEquals(0, reg.copy(teams = emptyList(), individuals = emptyList()).contestantCount)
+        assertEquals(4, reg.contestantCount, "team members + individual + unassigned all count")
+        assertEquals(
+            0,
+            reg.copy(teams = emptyList(), individuals = emptyList(), unassigned = emptyList()).contestantCount,
+        )
     }
 
     @Test
