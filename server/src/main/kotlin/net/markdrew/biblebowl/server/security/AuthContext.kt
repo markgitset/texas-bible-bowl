@@ -89,3 +89,15 @@ suspend fun RoutingContext.requireEventWidePermission(user: UserRecord, permissi
 /** True for a globally-scoped ADMIN grant (used e.g. to exempt admins from the registration window). */
 val UserRecord.isAdmin: Boolean
     get() = roles.any { it.role == Role.ADMIN && it.scopeType == ScopeType.GLOBAL }
+
+/**
+ * Season feature-toggle gate: passes while [enabled] — and always for global admins, so a feature
+ * can be deployed dark and exercised in production before launch. Otherwise responds 403
+ * `feature_disabled` and returns false. Checked before any permission/window rule so a dark
+ * feature answers uniformly regardless of the caller's grants.
+ */
+suspend fun RoutingContext.requireFeatureEnabled(user: UserRecord, enabled: Boolean, feature: String): Boolean {
+    if (enabled || user.isAdmin) return true
+    call.respond(HttpStatusCode.Forbidden, ApiError("feature_disabled", "$feature is not open yet"))
+    return false
+}

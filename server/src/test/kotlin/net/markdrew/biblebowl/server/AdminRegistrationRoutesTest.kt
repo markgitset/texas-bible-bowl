@@ -56,6 +56,7 @@ class AdminRegistrationRoutesTest {
         priceContestantCents = 8500,
         registrationOpensOn = "2000-01-01",
         registrationClosesOn = "2999-12-31",
+        registrationEnabled = true,
     )
 
     private fun ApplicationTestBuilder.jsonClient(): HttpClient = createClient {

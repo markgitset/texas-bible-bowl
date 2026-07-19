@@ -97,14 +97,18 @@ object Shell {
             // Sign-in only, no permission: step 1 is where a signed-in user *becomes* a coach
             // (self-serve congregation creation); a TEAM_MANAGE gate would lock them out of it.
             // The server scope-checks every mutation regardless.
-            Routes.REGISTER -> signedIn(container) { RegisterScreen.render(container) }
-            // Sign-in only: the server scopes the response (owned entries + coached congregations).
-            Routes.MY_SCORES -> signedIn(container) { MyScoresScreen.render(container) }
-            Routes.GRADING -> gatedEventWide(container, Permission.SCORE_ENTER) {
-                GradingScreen.render(container)
+            Routes.REGISTER -> feature(container, Session.registrationVisible) {
+                signedIn(container) { RegisterScreen.render(container) }
             }
-            Routes.STANDINGS -> gatedEventWide(container, Permission.SCORE_VIEW_ALL) {
-                StandingsScreen.render(container)
+            // Sign-in only: the server scopes the response (owned entries + coached congregations).
+            Routes.MY_SCORES -> feature(container, Session.gradingVisible) {
+                signedIn(container) { MyScoresScreen.render(container) }
+            }
+            Routes.GRADING -> feature(container, Session.gradingVisible) {
+                gatedEventWide(container, Permission.SCORE_ENTER) { GradingScreen.render(container) }
+            }
+            Routes.STANDINGS -> feature(container, Session.gradingVisible) {
+                gatedEventWide(container, Permission.SCORE_VIEW_ALL) { StandingsScreen.render(container) }
             }
             Routes.QUESTIONS_NEW -> gated(container, Permission.QUESTION_SUBMIT) {
                 ContributeScreen.render(container)
@@ -115,8 +119,10 @@ object Shell {
             Routes.ADMIN_SEASON -> gated(container, Permission.SEASON_MANAGE) {
                 AdminSeasonScreen.render(container)
             }
-            Routes.ADMIN_REGISTRATIONS -> gatedEventWide(container, Permission.REGISTRATION_MANAGE) {
-                AdminRegistrationsScreen.render(container)
+            Routes.ADMIN_REGISTRATIONS -> feature(container, Session.registrationVisible) {
+                gatedEventWide(container, Permission.REGISTRATION_MANAGE) {
+                    AdminRegistrationsScreen.render(container)
+                }
             }
             Routes.ADMIN_USERS -> gated(container, Permission.USER_MANAGE) {
                 AdminUsersScreen.render(container)
@@ -139,6 +145,23 @@ object Shell {
     /** Like [gated] but requires only a signed-in user, any permissions. */
     private fun signedIn(container: HTMLElement, render: () -> Unit) {
         if (Session.user != null) render() else AuthScreen.render(container)
+    }
+
+    /**
+     * Renders [render] only while [visible] — a season feature toggle (or the admin preview
+     * bypass; see Session). A dark feature shows a launch notice instead, so deep links from the
+     * Hugo site land somewhere sensible before the feature goes live.
+     */
+    private fun feature(container: HTMLElement, visible: Boolean, render: () -> Unit) {
+        if (visible) {
+            render()
+        } else {
+            container.child("h1", "page-title", "Not open yet")
+            container.child(
+                "p", "text-muted",
+                "This part of the app hasn't opened for the season — check back soon.",
+            )
+        }
     }
 
     /**

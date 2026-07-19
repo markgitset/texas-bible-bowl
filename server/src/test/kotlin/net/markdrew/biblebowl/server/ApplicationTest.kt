@@ -241,7 +241,10 @@ class ApplicationTest {
                 setBody(net.markdrew.biblebowl.api.LoginRequest("admin@tbb.org", "supersecret"))
             }.bodyAsText()
         )
-        val updated = season.copy(eventScripture = "Luke", studySet = "luke", bookCode = "LUK", chapterCount = 24, eventTheme = "Certainty")
+        val updated = season.copy(
+            eventScripture = "Luke", studySet = "luke", bookCode = "LUK", chapterCount = 24,
+            eventTheme = "Certainty", registrationEnabled = true,
+        )
         val put = api.put("/seasons/current") {
             header(HttpHeaders.Authorization, "Bearer ${admin.token}")
             setBody(updated)
@@ -250,6 +253,9 @@ class ApplicationTest {
         val after: SeasonDto = json.decodeFromString(api.get("/seasons/current").bodyAsText())
         assertEquals("Luke", after.eventScripture)
         assertEquals(24, after.chapterCount)
+        // The feature toggles ride along on the season; both default off (deploy-dark) until flipped.
+        assertEquals(true, after.registrationEnabled)
+        assertEquals(false, after.gradingEnabled)
         assertTrue(api.get("/health").bodyAsText().contains("Luke"))
 
         // Nonsense payloads are rejected.

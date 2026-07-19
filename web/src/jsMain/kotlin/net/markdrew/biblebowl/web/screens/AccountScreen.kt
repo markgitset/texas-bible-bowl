@@ -46,7 +46,7 @@ object AccountScreen {
         }
 
         profileCard(container, user)
-        claimCard(container)
+        if (Session.registrationVisible) claimCard(container)
 
         container.child("div", "card section-card mb-3") {
             child("div", "card-body") {
@@ -62,26 +62,20 @@ object AccountScreen {
         }
 
         container.child("div", "d-grid gap-2") {
-            child("a", "btn btn-outline-primary", "My scores") {
-                setAttribute("href", "#${Routes.MY_SCORES}")
+            if (Session.gradingVisible) {
+                featureLink(this, "My scores", Routes.MY_SCORES, live = Session.season.gradingEnabled)
             }
-            child("a", "btn btn-outline-primary", "Register my teams") {
-                setAttribute("href", "#${Routes.REGISTER}")
+            if (Session.registrationVisible) {
+                featureLink(this, "Register my teams", Routes.REGISTER, live = Session.season.registrationEnabled)
             }
-            if (hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
-                child("a", "btn btn-outline-primary", "Registration desk") {
-                    setAttribute("href", "#${Routes.ADMIN_REGISTRATIONS}")
-                }
+            if (Session.registrationVisible && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
+                featureLink(this, "Registration desk", Routes.ADMIN_REGISTRATIONS, live = Session.season.registrationEnabled)
             }
-            if (hasEventWidePermission(user.roles, Permission.SCORE_ENTER)) {
-                child("a", "btn btn-outline-primary", "Grading") {
-                    setAttribute("href", "#${Routes.GRADING}")
-                }
+            if (Session.gradingVisible && hasEventWidePermission(user.roles, Permission.SCORE_ENTER)) {
+                featureLink(this, "Grading", Routes.GRADING, live = Session.season.gradingEnabled)
             }
-            if (hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
-                child("a", "btn btn-outline-primary", "Standings") {
-                    setAttribute("href", "#${Routes.STANDINGS}")
-                }
+            if (Session.gradingVisible && hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
+                featureLink(this, "Standings", Routes.STANDINGS, live = Session.season.gradingEnabled)
             }
             if (Permission.USER_MANAGE in user.permissions) {
                 child("a", "btn btn-outline-primary", "Manage users") {
@@ -235,6 +229,17 @@ object AccountScreen {
                     }
                 })
             }
+        }
+    }
+
+    /**
+     * A feature-area link. When the feature toggle is off the link only renders for admins (the
+     * preview bypass), with a badge reminding them the public can't see it yet.
+     */
+    private fun featureLink(container: Element, label: String, route: String, live: Boolean) {
+        container.child("a", "btn btn-outline-primary", label) {
+            setAttribute("href", "#$route")
+            if (!live) child("span", "badge text-bg-warning ms-2", "hidden until launch")
         }
     }
 

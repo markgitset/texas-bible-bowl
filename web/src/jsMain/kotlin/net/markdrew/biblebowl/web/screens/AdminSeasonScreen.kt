@@ -66,6 +66,21 @@ object AdminSeasonScreen {
         form.optionSwitch("Fees are tentative (shows a \"subject to change\" note)", draft.feesTentative) {
             draft = draft.copy(feesTentative = it)
         }
+        // Feature launch switches: both areas deploy dark and stay hidden (UI) + blocked (API)
+        // until flipped here. Global admins always see them, marked "hidden until launch".
+        form.child("h5", "mt-4", "Feature launch")
+        form.child(
+            "p", "text-muted",
+            "Off = the area is invisible and its API is disabled for everyone but admins, " +
+                "who can still open it to test before launch.",
+        )
+        form.optionSwitch("Registration is live (coach registration, claim codes, registration desk)", draft.registrationEnabled) {
+            draft = draft.copy(registrationEnabled = it)
+        }
+        form.optionSwitch("Scoring is live (grading desk, standings, My Scores)", draft.gradingEnabled) {
+            draft = draft.copy(gradingEnabled = it)
+        }
+
         form.field("Prior-year scholarship total", draft.scholarshipAmount) { draft = draft.copy(scholarshipAmount = it) }
         form.field("TBB scholarship", draft.tbbScholarshipAmount) { draft = draft.copy(tbbScholarshipAmount = it) }
         form.field("Mary Orbison scholarship", draft.maryOrbisonAmount) { draft = draft.copy(maryOrbisonAmount = it) }

@@ -7,6 +7,7 @@ import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.FALLBACK_SEASON
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.UserDto
+import net.markdrew.biblebowl.api.isGlobalAdmin
 import net.markdrew.biblebowl.client.TbbApi
 
 /** App-wide client state: the shared [TbbApi], the current season, and the signed-in user. */
@@ -19,6 +20,18 @@ object Session {
         private set
 
     val user: UserDto? get() = api.user
+
+    /**
+     * Whether registration features (coach registration, claim codes, registration desk) should
+     * render for this user: the season's feature toggle is on, or the user is a global admin
+     * previewing the dark-deployed feature. Mirrors the server's `feature_disabled` gate.
+     */
+    val registrationVisible: Boolean get() = season.registrationEnabled || isAdminPreview
+
+    /** Like [registrationVisible] for scoring: grading desk, standings, My Scores. */
+    val gradingVisible: Boolean get() = season.gradingEnabled || isAdminPreview
+
+    private val isAdminPreview: Boolean get() = user?.let { isGlobalAdmin(it.roles) } == true
 
     /** Re-render hook, set once by the shell; fired whenever session state changes. */
     var onChange: () -> Unit = {}
