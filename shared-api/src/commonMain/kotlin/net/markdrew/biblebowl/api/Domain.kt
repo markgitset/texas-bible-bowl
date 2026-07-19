@@ -165,9 +165,13 @@ fun ordinal(n: Int): String {
     return "$n$suffix"
 }
 
-/** All contestants in a registration: every team member plus every individual (adult) contestant. */
+/**
+ * All contestants in a registration: every team member, every individual (adult) contestant, and
+ * every unassigned (teamless-but-eligible) youth contestant — all three are being registered and
+ * paid for.
+ */
 val RegistrationDto.contestantCount: Int
-    get() = teams.sumOf { it.members.size } + individuals.size
+    get() = teams.sumOf { it.members.size } + individuals.size + unassigned.size
 
 /**
  * The registration's contestant total in cents ([contestantCount] × the season's contestant fee,

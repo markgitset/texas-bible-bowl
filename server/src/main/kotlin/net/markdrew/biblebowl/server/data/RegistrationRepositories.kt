@@ -14,6 +14,7 @@ import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.isNull
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.core.or
@@ -85,6 +86,15 @@ sealed interface AddMemberResult {
     data object TeamNotFound : AddMemberResult
 }
 
+/** Outcome of (re)assigning a roster entry to a team (or unassigning it), cap enforced in-transaction. */
+sealed interface AssignResult {
+    data object Assigned : AssignResult
+    data object RosterFull : AssignResult
+    /** No such team, or the team belongs to a different registration than the member. */
+    data object TeamNotFound : AssignResult
+    data object MemberNotFound : AssignResult
+}
+
 /** Outcome of claiming a roster entry by its coach-shared code. */
 sealed interface ClaimResult {
     data class Claimed(val entry: RosterEntryDto) : ClaimResult
@@ -103,10 +113,13 @@ interface RegistrationRepository {
     /** Adds a team (creating the draft registration if needed); null on a duplicate team name. */
     fun addTeam(congregationId: String, seasonYear: String, name: String): TeamDto?
     fun renameTeam(teamId: String, name: String): TeamDto?
+    /** Deletes a team, freeing its members to the unassigned pool (they are kept, not deleted). */
     fun deleteTeam(teamId: String): Boolean
     fun addMember(teamId: String, req: UpsertRosterEntryRequest): AddMemberResult
     fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto?
     fun deleteMember(memberId: String): Boolean
+    /** Moves a member to [teamId] (same registration, ≤4), or frees it to the pool when null. */
+    fun assignMemberToTeam(memberId: String, teamId: String?): AssignResult
     /** Adds an individual (adult) contestant, creating the draft registration if needed. */
     fun addIndividual(congregationId: String, seasonYear: String, req: UpsertIndividualRequest): RosterEntryDto
     fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RosterEntryDto?
@@ -221,7 +234,8 @@ class InMemoryRegistrationRepository(
     private val regs = mutableMapOf<String, Reg>() // key = "$congregationId|$seasonYear"
     private val teams = mutableMapOf<String, Team>()
     private val members = mutableMapOf<String, RosterEntryDto>()
-    private val memberTeam = mutableMapOf<String, String>()
+    private val memberTeam = mutableMapOf<String, String>() // member id -> team id (absent = unassigned)
+    private val memberReg = mutableMapOf<String, String>() // member id -> registration id (always set)
     private val individuals = mutableMapOf<String, RosterEntryDto>()
     private val individualReg = mutableMapOf<String, String>()
     private val usedCodes = mutableSetOf<String>()
@@ -255,7 +269,8 @@ class InMemoryRegistrationRepository(
 
     override fun deleteTeam(teamId: String): Boolean = synchronized(lock) {
         val team = teams.remove(teamId) ?: return false
-        team.memberIds.forEach { members.remove(it); memberTeam.remove(it) }
+        // Keep the members: drop their team link so they land in the unassigned pool.
+        team.memberIds.forEach { memberTeam.remove(it) }
         regs.values.forEach { it.teamIds.remove(teamId) }
         true
     }
@@ -276,13 +291,32 @@ class InMemoryRegistrationRepository(
         )
         members[entry.id] = entry
         memberTeam[entry.id] = teamId
+        memberReg[entry.id] = reg.id
         team.memberIds += entry.id
         AddMemberResult.Added(entry)
     }
 
+    override fun assignMemberToTeam(memberId: String, teamId: String?): AssignResult = synchronized(lock) {
+        members[memberId] ?: return AssignResult.MemberNotFound
+        val regId = memberReg[memberId] ?: return AssignResult.MemberNotFound
+        val current = memberTeam[memberId]
+        if (teamId == null) {
+            current?.let { teams[it]?.memberIds?.remove(memberId) }
+            memberTeam.remove(memberId)
+            return AssignResult.Assigned
+        }
+        val team = teams[teamId]?.takeIf { it.regId == regId } ?: return AssignResult.TeamNotFound
+        if (current == teamId) return AssignResult.Assigned // already there
+        if (team.memberIds.size >= MAX_TEAM_SIZE) return AssignResult.RosterFull
+        current?.let { teams[it]?.memberIds?.remove(memberId) }
+        team.memberIds += memberId
+        memberTeam[memberId] = teamId
+        AssignResult.Assigned
+    }
+
     override fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto? = synchronized(lock) {
         val entry = members[memberId] ?: return null
-        val reg = memberTeam[memberId]?.let { teams[it] }?.let { team -> regs.values.first { it.id == team.regId } }
+        val reg = memberReg[memberId]?.let { regId -> regs.values.firstOrNull { it.id == regId } }
         val updated = entry.copy(
             name = req.name.trim(),
             birthdate = req.birthdate,
@@ -325,6 +359,7 @@ class InMemoryRegistrationRepository(
         val entry = members.remove(memberId) ?: return false
         usedCodes.remove(entry.claimCode)
         memberTeam.remove(memberId)
+        memberReg.remove(memberId)
         teams.values.forEach { it.memberIds.remove(memberId) }
         true
     }
@@ -378,7 +413,8 @@ class InMemoryRegistrationRepository(
     }
 
     override fun congregationIdForMember(memberId: String): String? = synchronized(lock) {
-        memberTeam[memberId]?.let { congregationIdForTeam(it) }
+        // Via the registration link, so it resolves even for an unassigned (teamless) member.
+        memberReg[memberId]?.let { regId -> regs.values.firstOrNull { it.id == regId }?.congregationId }
     }
 
     override fun congregationIdForIndividual(individualId: String): String? = synchronized(lock) {
@@ -420,6 +456,10 @@ class InMemoryRegistrationRepository(
         status = status,
         teams = teamIds.mapNotNull { teams[it]?.toDto() },
         individuals = individualIds.mapNotNull { individuals[it] },
+        unassigned = members.keys
+            .filter { memberReg[it] == id && it !in memberTeam }
+            .mapNotNull { members[it] }
+            .sortedBy { it.name.lowercase() },
         submittedAt = submittedAtMs?.let { Instant.ofEpochMilli(it).toString() },
         paidAt = paidAtMs?.let { Instant.ofEpochMilli(it).toString() },
     )
@@ -581,7 +621,8 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
     }
 
     override fun deleteTeam(teamId: String): Boolean = transaction(db) {
-        TeamMembersTable.deleteWhere { TeamMembersTable.teamId eq teamId }
+        // Keep the members: null out their team link so they land in the unassigned pool.
+        TeamMembersTable.update({ TeamMembersTable.teamId eq teamId }) { it[TeamMembersTable.teamId] = null }
         TeamsTable.deleteWhere { TeamsTable.id eq teamId } > 0
     }
 
@@ -607,6 +648,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         TeamMembersTable.insert {
             it[id] = memberId
             it[TeamMembersTable.teamId] = teamId
+            it[registrationId] = team[TeamsTable.registrationId]
             it[name] = req.name.trim()
             it[birthdate] = req.birthdate
             it[shirtSize] = req.shirtSize.name
@@ -620,11 +662,8 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
     }
 
     override fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto? = transaction(db) {
-        val regId = TeamMembersTable.selectAll().where { TeamMembersTable.id eq memberId }.singleOrNull()
-            ?.let { row ->
-                TeamsTable.selectAll().where { TeamsTable.id eq row[TeamMembersTable.teamId] }
-                    .single()[TeamsTable.registrationId]
-            } ?: return@transaction null
+        val regId = TeamMembersTable.selectAll().where { TeamMembersTable.id eq memberId }
+            .singleOrNull()?.get(TeamMembersTable.registrationId) ?: return@transaction null
         val firstYear = resolveFirstSeasonYear(regId, req)
         TeamMembersTable.update({ TeamMembersTable.id eq memberId }) {
             it[name] = req.name.trim()
@@ -647,7 +686,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         val reg = RegistrationsTable.selectAll().where { RegistrationsTable.id eq regId }.single()
         val congregationId = reg[RegistrationsTable.congregationId]
         val seasonYear = reg[RegistrationsTable.seasonYear]
-        val prior = (TeamMembersTable innerJoin TeamsTable innerJoin RegistrationsTable)
+        val prior = (TeamMembersTable innerJoin RegistrationsTable)
             .selectAll()
             .where {
                 (RegistrationsTable.congregationId eq congregationId) and
@@ -660,6 +699,29 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
 
     override fun deleteMember(memberId: String): Boolean = transaction(db) {
         TeamMembersTable.deleteWhere { TeamMembersTable.id eq memberId } > 0
+    }
+
+    override fun assignMemberToTeam(memberId: String, teamId: String?): AssignResult = transaction(db) {
+        val member = TeamMembersTable.selectAll().where { TeamMembersTable.id eq memberId }.singleOrNull()
+            ?: return@transaction AssignResult.MemberNotFound
+        val current = member[TeamMembersTable.teamId]
+        if (teamId == null) {
+            if (current != null) {
+                TeamMembersTable.update({ TeamMembersTable.id eq memberId }) { it[TeamMembersTable.teamId] = null }
+            }
+            return@transaction AssignResult.Assigned
+        }
+        if (current == teamId) return@transaction AssignResult.Assigned // already there
+        val team = TeamsTable.selectAll().where { TeamsTable.id eq teamId }.singleOrNull()
+            ?: return@transaction AssignResult.TeamNotFound
+        // The team must belong to the member's own registration.
+        if (team[TeamsTable.registrationId] != member[TeamMembersTable.registrationId]) {
+            return@transaction AssignResult.TeamNotFound
+        }
+        val size = TeamMembersTable.selectAll().where { TeamMembersTable.teamId eq teamId }.count()
+        if (size >= MAX_TEAM_SIZE) return@transaction AssignResult.RosterFull
+        TeamMembersTable.update({ TeamMembersTable.id eq memberId }) { it[TeamMembersTable.teamId] = teamId }
+        AssignResult.Assigned
     }
 
     override fun addIndividual(
@@ -718,9 +780,11 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
     }
 
     override fun congregationIdForMember(memberId: String): String? = transaction(db) {
-        val teamId = TeamMembersTable.selectAll().where { TeamMembersTable.id eq memberId }
-            .singleOrNull()?.get(TeamMembersTable.teamId) ?: return@transaction null
-        congregationIdForTeam(teamId)
+        // Via the registration link, so it resolves even for an unassigned (teamless) member.
+        val regId = TeamMembersTable.selectAll().where { TeamMembersTable.id eq memberId }
+            .singleOrNull()?.get(TeamMembersTable.registrationId) ?: return@transaction null
+        RegistrationsTable.selectAll().where { RegistrationsTable.id eq regId }
+            .singleOrNull()?.get(RegistrationsTable.congregationId)
     }
 
     override fun congregationIdForIndividual(individualId: String): String? = transaction(db) {
@@ -846,6 +910,10 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 .where { IndividualsTable.registrationId eq regId }
                 .orderBy(IndividualsTable.name)
                 .map { it.toIndividual() },
+            unassigned = TeamMembersTable.selectAll()
+                .where { (TeamMembersTable.registrationId eq regId) and TeamMembersTable.teamId.isNull() }
+                .orderBy(TeamMembersTable.name)
+                .map { it.toEntry() },
             submittedAt = this[RegistrationsTable.submittedAtEpochMs]?.let { Instant.ofEpochMilli(it).toString() },
             paidAt = this[RegistrationsTable.paidAtEpochMs]?.let { Instant.ofEpochMilli(it).toString() },
         )

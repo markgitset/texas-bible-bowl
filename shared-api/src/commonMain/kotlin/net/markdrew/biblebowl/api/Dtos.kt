@@ -309,6 +309,14 @@ data class TeamDto(
 data class UpsertTeamRequest(val name: String)
 
 /**
+ * (Re)assigns a youth roster entry to [teamId], or frees it to the unassigned pool when null. The
+ * target team must belong to the same registration and have room (≤4). Used both by a coach moving
+ * contestants between teams / off a team, and by a registrar placing leftover unassigned entries.
+ */
+@Serializable
+data class AssignMemberTeamRequest(val teamId: String? = null)
+
+/**
  * A team roster entry. Adults can't be placed on teams, so [birthdate] must land in grades 3–12.
  * [inexperienced] = this is the contestant's first year competing; the server stores it as the
  * first season year and overrides it from earlier seasons' rosters, so last year's first-year
@@ -345,6 +353,13 @@ data class RegistrationDto(
     val teams: List<TeamDto> = emptyList(),
     /** Individual (adult) contestants — never on a team, each competes in the Adult division. */
     val individuals: List<RosterEntryDto> = emptyList(),
+    /**
+     * Eligible youth contestants (grades 3–12) not currently on any team — e.g. left behind when
+     * their team was deleted, since deleting a team frees its members rather than removing them.
+     * A coach can assign these to a team, a registration may still be submitted with some here, and
+     * a registrar places any leftovers before the event. Counted as contestants for fees.
+     */
+    val unassigned: List<RosterEntryDto> = emptyList(),
     /** Computed contestant total in cents, or null while fees are TBD. */
     val totalCents: Int? = null,
     /** ISO-8601 instant of the last submit, or null while a draft. */

@@ -4,6 +4,7 @@ import kotlinx.browser.document
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDeskRowDto
+import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.ScopeType
@@ -23,6 +24,8 @@ import org.w3c.dom.Element
 import org.w3c.dom.HTMLAnchorElement
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.HTMLOptionElement
+import org.w3c.dom.HTMLSelectElement
 import org.w3c.dom.url.URL
 import org.w3c.files.Blob
 import org.w3c.files.BlobPropertyBag
@@ -109,7 +112,11 @@ object AdminRegistrationsScreen {
                 child("div", "text-muted small", cityState)
             }
             child("td") { renderCodeCell(this, row) }
-            child("td") { statusBadge(this, reg?.status) }
+            child("td") {
+                statusBadge(this, reg?.status)
+                val unassigned = reg?.unassigned?.size ?: 0
+                if (unassigned > 0) child("span", "badge text-bg-warning ms-1", "$unassigned unassigned")
+            }
             child("td", text = reg?.teams?.size?.toString() ?: "—")
             child("td", text = reg?.contestantCount?.toString() ?: "—")
             child("td", text = reg?.individuals?.size?.toString() ?: "—")
@@ -236,14 +243,82 @@ object AdminRegistrationsScreen {
             return
         }
         reg.teams.forEach { team -> renderTeamDetail(parent, team) }
+        renderUnassignedAdmin(parent, row.congregation.id, reg)
         if (reg.individuals.isNotEmpty()) {
             parent.child("h6", "mt-2", "Individual contestants (adults)")
             reg.individuals.forEach { entry ->
                 parent.child("div", "small", "${entry.name} — shirt ${entry.shirtSize.name}")
             }
         }
-        if (reg.teams.isEmpty() && reg.individuals.isEmpty()) {
+        if (reg.teams.isEmpty() && reg.individuals.isEmpty() && reg.unassigned.isEmpty()) {
             parent.child("p", "text-muted mb-0", "Nothing on the roster yet.")
+        }
+    }
+
+    /**
+     * Contestants a coach left unassigned — the registrar places each on a team here (or adds a team
+     * first when none exist). Uses the same endpoints as the coach flow; an event-wide grant is
+     * accepted server-side and isn't window-gated.
+     */
+    private fun renderUnassignedAdmin(parent: Element, congregationId: String, reg: RegistrationDto) {
+        if (reg.unassigned.isEmpty()) return
+        parent.child("h6", "mt-3") {
+            append("Unassigned contestants ")
+            child("span", "badge text-bg-warning", reg.unassigned.size.toString())
+        }
+        reg.unassigned.forEach { member ->
+            parent.child("div", "d-flex flex-wrap align-items-center gap-2 small mb-1") {
+                val div = member.division(Session.season)?.displayName ?: "division unknown"
+                child("span", text = "${member.name} — $div, shirt ${member.shirtSize.name}")
+                if (reg.teams.isEmpty()) {
+                    child("span", "text-muted", "add a team below to place them")
+                } else {
+                    val select = child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
+                    val placeholder = select.child("option", text = "Assign to team…") as HTMLOptionElement
+                    placeholder.value = ""
+                    placeholder.disabled = true
+                    placeholder.selected = true
+                    reg.teams.forEach { team ->
+                        (select.child("option", text = team.name) as HTMLOptionElement).value = team.id
+                    }
+                    select.addEventListener("change", {
+                        val teamId = select.value
+                        if (teamId.isNotEmpty()) {
+                            deskMutate(congregationId) { Session.api.assignMemberTeam(member.id, teamId) }
+                        }
+                    })
+                }
+            }
+        }
+        // A registrar can create a team to place these on (e.g. the coach deleted all their teams).
+        parent.child("form", "d-flex gap-2 mt-2 mb-1") {
+            val name = child("input", "form-control form-control-sm w-auto") as HTMLInputElement
+            name.setAttribute("placeholder", "New team name")
+            child("button", "btn btn-sm btn-outline-primary", "Add team") { setAttribute("type", "submit") }
+            addEventListener("submit", { event ->
+                event.preventDefault()
+                if (name.value.isNotBlank()) {
+                    deskMutate(congregationId) { Session.api.addTeam(congregationId, name.value) }
+                }
+            })
+        }
+    }
+
+    /** Runs a desk-side registration mutation and swaps the refreshed registration into its row. */
+    private fun deskMutate(congregationId: String, call: suspend () -> RegistrationDto) {
+        message = null
+        Shell.scope.launch {
+            try {
+                val updated = call()
+                data = data?.let { desk ->
+                    desk.copy(rows = desk.rows.map { row ->
+                        if (row.congregation.id == congregationId) row.copy(registration = updated) else row
+                    })
+                }
+            } catch (e: Throwable) {
+                message = "Could not update the roster: ${e.message}"
+            }
+            renderContent()
         }
     }
 

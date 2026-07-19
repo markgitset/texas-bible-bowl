@@ -20,6 +20,7 @@ import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
+import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CongregationDto
@@ -441,6 +442,56 @@ class RegistrationRoutesTest {
         assertEquals(0, afterAdultDelete.individuals.size)
         assertEquals(3 * 8500, afterAdultDelete.totalCents)
         assertEquals(HttpStatusCode.OK, api.post("/registration/${congregation.id}/submit") { asCoach() }.status)
+    }
+
+    @Test
+    fun deletingATeamUnassignsMembersWhoCanBeReassignedThenSubmitted() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+        val coach = api.signUp("coach@tbb.org", "Carol Coach")
+        fun io.ktor.client.request.HttpRequestBuilder.asCoach() =
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+
+        val cong: CongregationDto = api.post("/congregations") {
+            asCoach(); setBody(congregationRequest("Free Church", "Waco"))
+        }.body()
+        val teamA = api.post("/registration/${cong.id}/teams") {
+            asCoach(); setBody(UpsertTeamRequest("Team A"))
+        }.body<RegistrationDto>().teams.single().id
+        val memberId = api.post("/registration/teams/$teamA/members") {
+            asCoach(); setBody(UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE))
+        }.body<RegistrationDto>().teams.single().members.single().id
+
+        // Deleting the team frees the member to the unassigned pool — not deleted, still billed.
+        val afterDelete: RegistrationDto = api.delete("/registration/teams/$teamA") { asCoach() }.body()
+        assertTrue(afterDelete.teams.isEmpty())
+        assertEquals(listOf("Timothy"), afterDelete.unassigned.map { it.name })
+        assertEquals(8500, afterDelete.totalCents, "the unassigned contestant is still one paid contestant")
+
+        // A registration may be submitted with unassigned contestants (a registrar places them).
+        val submitted: RegistrationDto = api.post("/registration/${cong.id}/submit") { asCoach() }.body()
+        assertEquals(RegistrationStatus.SUBMITTED, submitted.status)
+        assertEquals(1, submitted.unassigned.size)
+
+        // Assigning the unassigned contestant onto a fresh team empties the pool.
+        val teamB = api.post("/registration/${cong.id}/teams") {
+            asCoach(); setBody(UpsertTeamRequest("Team B"))
+        }.body<RegistrationDto>().teams.single { it.name == "Team B" }.id
+        val assigned: RegistrationDto = api.put("/registration/members/$memberId/team") {
+            asCoach(); setBody(AssignMemberTeamRequest(teamB))
+        }.body()
+        assertTrue(assigned.unassigned.isEmpty())
+        assertEquals(listOf("Timothy"), assigned.teams.single { it.id == teamB }.members.map { it.name })
+
+        // Unassigning again (null team) puts them back in the pool.
+        val backInPool: RegistrationDto = api.put("/registration/members/$memberId/team") {
+            asCoach(); setBody(AssignMemberTeamRequest(null))
+        }.body()
+        assertEquals(listOf("Timothy"), backInPool.unassigned.map { it.name })
     }
 
     @Test

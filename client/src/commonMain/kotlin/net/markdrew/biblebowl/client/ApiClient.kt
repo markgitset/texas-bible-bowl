@@ -18,6 +18,7 @@ import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
+import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ClaimEntryRequest
 import net.markdrew.biblebowl.api.ClearPdfCacheResponse
@@ -344,6 +345,15 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
 
     suspend fun deleteRosterEntry(memberId: String): RegistrationDto =
         client.delete("$baseUrl/registration/members/$memberId") { authorize() }.bodyOrThrow()
+
+    /**
+     * Moves a youth contestant to [teamId] (same registration, ≤4), or frees it to the unassigned
+     * pool when [teamId] is null. 409 when the target team is full. Also usable by a registrar.
+     */
+    suspend fun assignMemberTeam(memberId: String, teamId: String?): RegistrationDto =
+        client.put("$baseUrl/registration/members/$memberId/team") {
+            authorize(); contentType(ContentType.Application.Json); setBody(AssignMemberTeamRequest(teamId))
+        }.bodyOrThrow()
 
     /** Adds an individual (adult) contestant — adults compete individually, never on a team. */
     suspend fun addIndividual(congregationId: String, req: UpsertIndividualRequest): RegistrationDto =
