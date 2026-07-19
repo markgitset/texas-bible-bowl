@@ -369,7 +369,8 @@ data class ClaimEntryRequest(val code: String)
 
 /**
  * One contestant's row of scores — a grading-grid row for graders, and the same shape a coach or
- * owner sees on My Scores once released.
+ * owner sees on My Scores once released. The placement fields are only populated on My Scores
+ * (post-release); the grading desk reads full standings from `GET /admin/scores/standings`.
  */
 @Serializable
 data class ScoreRowDto(
@@ -384,6 +385,53 @@ data class ScoreRowDto(
     val inexperienced: Boolean = false,
     /** Entered points keyed by round; rounds not yet graded are absent. */
     val scores: Map<Round, Int> = emptyMap(),
+    /** Individual placement in the division bracket (competition ranking: ties share a rank). */
+    val rank: Int? = null,
+    /** How many individuals compete in the same division bracket. */
+    val rankOf: Int? = null,
+    /** The team's placement in the division bracket, or null for an individual contestant. */
+    val teamRank: Int? = null,
+    /** How many teams compete in the same division bracket. */
+    val teamRankOf: Int? = null,
+    /** The team's total (members' rounds 1–5; the Power Round never counts toward team scores). */
+    val teamPoints: Int? = null,
+)
+
+/** One line of a division-bracket standings table — an individual contestant or a whole team. */
+@Serializable
+data class StandingRowDto(
+    val rank: Int,
+    /** Contestant name, or the team name on a team row. */
+    val name: String,
+    val congregationName: String,
+    /** The contestant's team on an individual row (null = adult individual); null on team rows. */
+    val teamName: String? = null,
+    /** The roster entry on an individual row; null on team rows. */
+    val rosterEntryId: String? = null,
+    val points: Int,
+    /** The best possible score: the division max for individuals, 200 × member count for teams. */
+    val maxPoints: Int,
+)
+
+/** Standings for one division bracket, e.g. "Junior (Inexperienced)". */
+@Serializable
+data class DivisionStandingsDto(
+    val division: Division,
+    val inexperienced: Boolean = false,
+    val individuals: List<StandingRowDto> = emptyList(),
+    val teams: List<StandingRowDto> = emptyList(),
+)
+
+/**
+ * The division tally (`GET /admin/scores/standings`, event-wide SCORE_VIEW_ALL): every division
+ * bracket with registered contestants, ranked as grading progresses (ungraded rounds count 0).
+ */
+@Serializable
+data class StandingsResponse(
+    val seasonYear: String,
+    /** ISO-8601 instant the season's scores were released, or null while unreleased. */
+    val releasedAt: String? = null,
+    val divisions: List<DivisionStandingsDto> = emptyList(),
 )
 
 /** The grading desk for the current season (`GET /admin/scores`): every contestant, every round. */

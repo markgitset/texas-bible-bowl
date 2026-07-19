@@ -6,6 +6,7 @@ import net.markdrew.biblebowl.api.MyScoresResponse
 import net.markdrew.biblebowl.api.ScoreRowDto
 import net.markdrew.biblebowl.api.divisionLabel
 import net.markdrew.biblebowl.api.maxScore
+import net.markdrew.biblebowl.api.ordinal
 import net.markdrew.biblebowl.api.rounds
 import net.markdrew.biblebowl.api.totalPoints
 import net.markdrew.biblebowl.model.Round
@@ -76,6 +77,7 @@ object MyScoresScreen {
                             child("th", "text-end", roundLabel(r)) { setAttribute("title", r.displayName) }
                         }
                         child("th", "text-end", "Total")
+                        child("th", text = "Placement")
                     }
                 }
                 val tbody = child("tbody")
@@ -108,6 +110,21 @@ object MyScoresScreen {
             child("td", "text-end fw-semibold") {
                 append(row.totalPoints.toString())
                 row.division?.let { child("span", "text-muted small", " / ${it.maxScore}") }
+            }
+            child("td") {
+                val rank = row.rank
+                if (rank == null) {
+                    child("span", "text-muted", "—")
+                } else {
+                    child("div", "fw-semibold", "${ordinal(rank)} of ${row.rankOf}")
+                    val teamRank = row.teamRank
+                    if (teamRank != null) {
+                        child(
+                            "div", "text-muted small",
+                            "Team: ${ordinal(teamRank)} of ${row.teamRankOf} · ${row.teamPoints} pts",
+                        )
+                    }
+                }
             }
         }
     }

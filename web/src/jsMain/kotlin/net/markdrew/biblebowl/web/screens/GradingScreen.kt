@@ -11,6 +11,7 @@ import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.rounds
 import net.markdrew.biblebowl.api.totalPoints
 import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.web.Routes
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
@@ -205,6 +206,11 @@ object GradingScreen {
                 child("span", "text-muted small", "Nothing is visible outside this desk until release.")
             }
             val user = Session.user
+            if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
+                child("a", "btn btn-outline-primary btn-sm", "Standings") {
+                    setAttribute("href", "#${Routes.STANDINGS}")
+                }
+            }
             if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_RELEASE)) {
                 val releasing = data.releasedAt == null
                 val button = child(

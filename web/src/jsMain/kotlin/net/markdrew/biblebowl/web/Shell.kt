@@ -20,6 +20,7 @@ import net.markdrew.biblebowl.web.screens.MyScoresScreen
 import net.markdrew.biblebowl.web.screens.QuestionsScreen
 import net.markdrew.biblebowl.web.screens.QuizScreen
 import net.markdrew.biblebowl.web.screens.RegisterScreen
+import net.markdrew.biblebowl.web.screens.StandingsScreen
 import net.markdrew.biblebowl.web.screens.StudyHubScreen
 import org.w3c.dom.HTMLElement
 
@@ -101,6 +102,9 @@ object Shell {
             Routes.MY_SCORES -> signedIn(container) { MyScoresScreen.render(container) }
             Routes.GRADING -> gatedEventWide(container, Permission.SCORE_ENTER) {
                 GradingScreen.render(container)
+            }
+            Routes.STANDINGS -> gatedEventWide(container, Permission.SCORE_VIEW_ALL) {
+                StandingsScreen.render(container)
             }
             Routes.QUESTIONS_NEW -> gated(container, Permission.QUESTION_SUBMIT) {
                 ContributeScreen.render(container)

@@ -78,6 +78,11 @@ object AccountScreen {
                     setAttribute("href", "#${Routes.GRADING}")
                 }
             }
+            if (hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
+                child("a", "btn btn-outline-primary", "Standings") {
+                    setAttribute("href", "#${Routes.STANDINGS}")
+                }
+            }
             if (Permission.USER_MANAGE in user.permissions) {
                 child("a", "btn btn-outline-primary", "Manage users") {
                     setAttribute("href", "#${Routes.ADMIN_USERS}")
