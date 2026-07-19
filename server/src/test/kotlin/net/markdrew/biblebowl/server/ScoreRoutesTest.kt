@@ -18,6 +18,7 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
+import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ClaimEntryRequest
 import net.markdrew.biblebowl.api.CongregationDto
@@ -61,6 +62,8 @@ class ScoreRoutesTest {
     private val openSeason = DEFAULT_SEASON.copy(
         registrationOpensOn = "2000-01-01",
         registrationClosesOn = "2999-12-31",
+        registrationEnabled = true,
+        gradingEnabled = true,
     )
 
     // Season 2027 → grade cutoff 2026-09-01: born 2013 = grade 8 (Junior), born 2017 = grade 4 (Elementary).
@@ -485,5 +488,33 @@ class ScoreRoutesTest {
         }.body()
         assertEquals(false, retracted.released)
         assertTrue(retracted.rows.isEmpty())
+    }
+
+    @Test
+    fun scoringIsDarkUntilTheFeatureToggleIsOn() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            // Registration launched, scoring not yet (the deploy-dark default).
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason.copy(gradingEnabled = false)))
+        }
+        val api = jsonClient()
+
+        // Even a GRADER's grading sheet and a contestant's My Scores answer 403 feature_disabled.
+        val grader = api.grader(users)
+        val sheet = api.get("/admin/scores") { header(HttpHeaders.Authorization, "Bearer ${grader.token}") }
+        assertEquals(HttpStatusCode.Forbidden, sheet.status)
+        assertEquals("feature_disabled", sheet.body<ApiError>().code)
+        val kid = api.signUp("kid@tbb.org", "Priscilla", adult = false)
+        val mine = api.get("/scores/mine") { header(HttpHeaders.Authorization, "Bearer ${kid.token}") }
+        assertEquals(HttpStatusCode.Forbidden, mine.status)
+        assertEquals("feature_disabled", mine.body<ApiError>().code)
+
+        // Global admins bypass the toggle so the dark-deployed feature can be tested in prod.
+        val admin = api.loginSeededAdmin(users)
+        assertEquals(
+            HttpStatusCode.OK,
+            api.get("/admin/scores") { header(HttpHeaders.Authorization, "Bearer ${admin.token}") }.status,
+        )
     }
 }

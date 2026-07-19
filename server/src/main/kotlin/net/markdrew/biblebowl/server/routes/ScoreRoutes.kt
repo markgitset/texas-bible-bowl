@@ -5,6 +5,7 @@ import io.ktor.server.auth.authenticate
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
+import io.ktor.server.routing.RoutingContext
 import io.ktor.server.routing.get
 import io.ktor.server.routing.put
 import net.markdrew.biblebowl.api.ApiError
@@ -31,9 +32,11 @@ import net.markdrew.biblebowl.api.totalPoints
 import net.markdrew.biblebowl.server.data.RegistrationRepository
 import net.markdrew.biblebowl.server.data.ScoreRepository
 import net.markdrew.biblebowl.server.data.SeasonRepository
+import net.markdrew.biblebowl.server.data.UserRecord
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.currentUser
 import net.markdrew.biblebowl.server.security.requireEventWidePermission
+import net.markdrew.biblebowl.server.security.requireFeatureEnabled
 
 /**
  * Event-ops scoring (docs/gui-redesign.md §5F): the grading desk (enter round scores for every
@@ -50,12 +53,14 @@ fun Route.scoreRoutes(
     authenticate {
         get("/admin/scores") {
             val user = currentUser(users) ?: return@get
+            if (!requireGradingFeature(user, seasons)) return@get
             if (!requireEventWidePermission(user, Permission.SCORE_ENTER)) return@get
             call.respond(gradingSheet(seasons.current(), registrations, scores))
         }
 
         put("/admin/scores") {
             val user = currentUser(users) ?: return@put
+            if (!requireGradingFeature(user, seasons)) return@put
             if (!requireEventWidePermission(user, Permission.SCORE_ENTER)) return@put
             val season = seasons.current()
             val req = call.receive<SaveScoresRequest>()
@@ -96,6 +101,7 @@ fun Route.scoreRoutes(
 
         put("/admin/scores/release") {
             val user = currentUser(users) ?: return@put
+            if (!requireGradingFeature(user, seasons)) return@put
             if (!requireEventWidePermission(user, Permission.SCORE_RELEASE)) return@put
             val season = seasons.current()
             val req = call.receive<SetScoresReleasedRequest>()
@@ -105,6 +111,7 @@ fun Route.scoreRoutes(
 
         get("/admin/scores/standings") {
             val user = currentUser(users) ?: return@get
+            if (!requireGradingFeature(user, seasons)) return@get
             if (!requireEventWidePermission(user, Permission.SCORE_VIEW_ALL)) return@get
             val season = seasons.current()
             call.respond(
@@ -118,6 +125,7 @@ fun Route.scoreRoutes(
 
         get("/scores/mine") {
             val user = currentUser(users) ?: return@get
+            if (!requireGradingFeature(user, seasons)) return@get
             val season = seasons.current()
             val released = scores.releasedAt(season.eventYear) != null
             if (!released) {
@@ -149,6 +157,14 @@ fun Route.scoreRoutes(
         }
     }
 }
+
+/**
+ * Every scoring endpoint (grading sheet, release, standings, My Scores) stays dark until the
+ * season's `gradingEnabled` feature toggle is switched on — global admins are exempt so the
+ * feature can be tested in production before launch.
+ */
+private suspend fun RoutingContext.requireGradingFeature(user: UserRecord, seasons: SeasonRepository): Boolean =
+    requireFeatureEnabled(user, seasons.current().gradingEnabled, "Scoring")
 
 /**
  * A grading/My-Scores row plus the ids scoping needs: the congregation (coach scoping) and the

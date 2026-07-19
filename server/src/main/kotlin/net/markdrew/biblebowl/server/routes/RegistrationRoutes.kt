@@ -46,6 +46,7 @@ import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.registrationWindowState
 import net.markdrew.biblebowl.server.security.currentUser
 import net.markdrew.biblebowl.server.security.isAdmin
+import net.markdrew.biblebowl.server.security.requireFeatureEnabled
 import net.markdrew.biblebowl.server.security.requireScopedPermission
 
 /**
@@ -65,6 +66,7 @@ fun Route.registrationRoutes(
     authenticate {
         post("/congregations") {
             val user = currentUser(users) ?: return@post
+            if (!requireRegistrationFeature(user, seasons)) return@post
             if (!user.adult && !user.isAdmin) {
                 return@post call.respond(
                     HttpStatusCode.Forbidden,
@@ -106,14 +108,16 @@ fun Route.registrationRoutes(
         }
 
         get("/congregations") {
-            if (currentUser(users) == null) return@get
+            val user = currentUser(users) ?: return@get
+            if (!requireRegistrationFeature(user, seasons)) return@get
             call.respond(congregations.search(call.request.queryParameters["query"] ?: ""))
         }
 
         // Suggests an available two-letter code derived from a congregation name (see
         // congregationCodeCandidates) — the register form prefills it as the coach types the name.
         get("/congregations/code-suggestion") {
-            if (currentUser(users) == null) return@get
+            val user = currentUser(users) ?: return@get
+            if (!requireRegistrationFeature(user, seasons)) return@get
             call.respond(CodeSuggestionResponse(congregations.suggestCode(call.request.queryParameters["name"] ?: "")))
         }
 
@@ -123,6 +127,7 @@ fun Route.registrationRoutes(
         // may change it.
         put("/congregations/{congregationId}") {
             val user = currentUser(users) ?: return@put
+            if (!requireRegistrationFeature(user, seasons)) return@put
             val congregationId = call.parameters["congregationId"]!!
             if (!requireScopedPermission(user, Permission.REGISTRATION_MANAGE, congregationId)) return@put
             if (!requireWindowOpen(user, seasons)) return@put
@@ -168,6 +173,7 @@ fun Route.registrationRoutes(
 
         get("/registration/mine") {
             val user = currentUser(users) ?: return@get
+            if (!requireRegistrationFeature(user, seasons)) return@get
             val season = seasons.current()
             val coached = congregations.findByIds(coachedCongregationIds(user.roles))
             val registration = coached.firstOrNull()
@@ -184,6 +190,7 @@ fun Route.registrationRoutes(
 
         post("/registration/{congregationId}/teams") {
             val user = currentUser(users) ?: return@post
+            if (!requireRegistrationFeature(user, seasons)) return@post
             val congregationId = call.parameters["congregationId"]!!
             // Coaches (window-gated) create their own teams; a registrar can add one to place leftovers.
             if (!requireCongregationEditor(user, congregationId, seasons)) return@post
@@ -201,6 +208,7 @@ fun Route.registrationRoutes(
 
         put("/registration/teams/{teamId}") {
             val user = currentUser(users) ?: return@put
+            if (!requireRegistrationFeature(user, seasons)) return@put
             val teamId = call.parameters["teamId"]!!
             val congregationId = registrations.congregationIdForTeam(teamId)
                 ?: return@put call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such team"))
@@ -216,6 +224,7 @@ fun Route.registrationRoutes(
 
         delete("/registration/teams/{teamId}") {
             val user = currentUser(users) ?: return@delete
+            if (!requireRegistrationFeature(user, seasons)) return@delete
             val teamId = call.parameters["teamId"]!!
             val congregationId = registrations.congregationIdForTeam(teamId)
                 ?: return@delete call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such team"))
@@ -227,6 +236,7 @@ fun Route.registrationRoutes(
 
         post("/registration/teams/{teamId}/members") {
             val user = currentUser(users) ?: return@post
+            if (!requireRegistrationFeature(user, seasons)) return@post
             val teamId = call.parameters["teamId"]!!
             val congregationId = registrations.congregationIdForTeam(teamId)
                 ?: return@post call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such team"))
@@ -251,6 +261,7 @@ fun Route.registrationRoutes(
 
         put("/registration/members/{memberId}") {
             val user = currentUser(users) ?: return@put
+            if (!requireRegistrationFeature(user, seasons)) return@put
             val memberId = call.parameters["memberId"]!!
             val congregationId = registrations.congregationIdForMember(memberId)
                 ?: return@put call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such roster entry"))
@@ -269,6 +280,7 @@ fun Route.registrationRoutes(
 
         delete("/registration/members/{memberId}") {
             val user = currentUser(users) ?: return@delete
+            if (!requireRegistrationFeature(user, seasons)) return@delete
             val memberId = call.parameters["memberId"]!!
             val congregationId = registrations.congregationIdForMember(memberId)
                 ?: return@delete call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such roster entry"))
@@ -282,6 +294,7 @@ fun Route.registrationRoutes(
         // Coaches move their own contestants; a registrar places any left unassigned at submit time.
         put("/registration/members/{memberId}/team") {
             val user = currentUser(users) ?: return@put
+            if (!requireRegistrationFeature(user, seasons)) return@put
             val memberId = call.parameters["memberId"]!!
             val congregationId = registrations.congregationIdForMember(memberId)
                 ?: return@put call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such roster entry"))
@@ -302,6 +315,7 @@ fun Route.registrationRoutes(
         // Individual (adult) contestants — adults are never on a team; they compete individually.
         post("/registration/{congregationId}/individuals") {
             val user = currentUser(users) ?: return@post
+            if (!requireRegistrationFeature(user, seasons)) return@post
             val congregationId = call.parameters["congregationId"]!!
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@post
             if (!requireWindowOpen(user, seasons)) return@post
@@ -315,6 +329,7 @@ fun Route.registrationRoutes(
 
         put("/registration/individuals/{individualId}") {
             val user = currentUser(users) ?: return@put
+            if (!requireRegistrationFeature(user, seasons)) return@put
             val individualId = call.parameters["individualId"]!!
             val congregationId = registrations.congregationIdForIndividual(individualId)
                 ?: return@put call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such individual contestant"))
@@ -330,6 +345,7 @@ fun Route.registrationRoutes(
 
         delete("/registration/individuals/{individualId}") {
             val user = currentUser(users) ?: return@delete
+            if (!requireRegistrationFeature(user, seasons)) return@delete
             val individualId = call.parameters["individualId"]!!
             val congregationId = registrations.congregationIdForIndividual(individualId)
                 ?: return@delete call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such individual contestant"))
@@ -345,6 +361,7 @@ fun Route.registrationRoutes(
         // including after registration closes.
         post("/roster/claim") {
             val user = currentUser(users) ?: return@post
+            if (!requireRegistrationFeature(user, seasons)) return@post
             val req = call.receive<ClaimEntryRequest>()
             val code = req.code.uppercase().filter { it.isLetterOrDigit() }
             if (code.length != ClaimCodes.LENGTH) {
@@ -368,6 +385,7 @@ fun Route.registrationRoutes(
 
         post("/registration/{congregationId}/submit") {
             val user = currentUser(users) ?: return@post
+            if (!requireRegistrationFeature(user, seasons)) return@post
             val congregationId = call.parameters["congregationId"]!!
             if (!requireScopedPermission(user, Permission.REGISTRATION_MANAGE, congregationId)) return@post
             if (!requireWindowOpen(user, seasons)) return@post
@@ -430,6 +448,16 @@ private suspend fun RoutingContext.requireCongregationEditor(
     if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return false
     return requireWindowOpen(user, seasons)
 }
+
+/**
+ * Every registration endpoint (here and in AdminRegistrationRoutes) stays dark until the season's
+ * `registrationEnabled` feature toggle is switched on — global admins are exempt so the feature
+ * can be tested in production before launch.
+ */
+internal suspend fun RoutingContext.requireRegistrationFeature(
+    user: UserRecord,
+    seasons: SeasonRepository,
+): Boolean = requireFeatureEnabled(user, seasons.current().registrationEnabled, "Registration")
 
 /**
  * Rejects the mutation with 409 while the registration window isn't open — except for admins,

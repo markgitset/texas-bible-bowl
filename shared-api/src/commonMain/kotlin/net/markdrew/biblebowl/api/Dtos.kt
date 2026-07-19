@@ -198,6 +198,16 @@ data class SeasonDto(
     val priceTshirtCents: Int? = null,
     /** True while the season's fees are still subject to change. */
     val feesTentative: Boolean = true,
+    /**
+     * Feature toggle: registration features (coach registration, congregations/teams/rosters,
+     * claim codes, the registration desk) are live. Off = deployed dark — hidden in the UI and
+     * 403 `feature_disabled` on the API for everyone except global admins, who can exercise the
+     * feature before launch. Distinct from the registration *window* dates above, which only
+     * gate coach mutations once the feature itself is live.
+     */
+    val registrationEnabled: Boolean = false,
+    /** Feature toggle like [registrationEnabled] for scoring: grading desk, standings, score release, My Scores. */
+    val gradingEnabled: Boolean = false,
     val tbbScholarshipAmount: String,
     val maryOrbisonAmount: String,
     val paulHendricksonAmount: String,

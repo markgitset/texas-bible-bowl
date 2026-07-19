@@ -149,3 +149,11 @@ fun hasEventWidePermission(roles: List<RoleGrant>, permission: Permission): Bool
         permission in ROLE_PERMISSIONS[grant.role].orEmpty() &&
             (grant.scopeType == ScopeType.GLOBAL || grant.scopeType == ScopeType.EVENT)
     }
+
+/**
+ * True for a globally-scoped ADMIN grant — the client-side mirror of the server's
+ * `UserRecord.isAdmin`. Admins bypass the season feature toggles ([SeasonDto.registrationEnabled],
+ * [SeasonDto.gradingEnabled]) so dark-deployed features can be exercised before launch.
+ */
+fun isGlobalAdmin(roles: List<RoleGrant>): Boolean =
+    roles.any { it.role == Role.ADMIN && it.scopeType == ScopeType.GLOBAL }

@@ -35,6 +35,7 @@ fun Route.adminRegistrationRoutes(
     authenticate {
         get("/admin/registrations") {
             val user = currentUser(users) ?: return@get
+            if (!requireRegistrationFeature(user, seasons)) return@get
             if (!requireEventWidePermission(user, Permission.REGISTRATION_MANAGE)) return@get
             val season = seasons.current()
             val regsByCongregation = registrations.listForSeason(season.eventYear)
@@ -58,6 +59,7 @@ fun Route.adminRegistrationRoutes(
 
         put("/admin/registrations/{registrationId}/paid") {
             val user = currentUser(users) ?: return@put
+            if (!requireRegistrationFeature(user, seasons)) return@put
             if (!requireEventWidePermission(user, Permission.REGISTRATION_MANAGE)) return@put
             val registrationId = call.parameters["registrationId"]!!
             val req = call.receive<SetPaidRequest>()

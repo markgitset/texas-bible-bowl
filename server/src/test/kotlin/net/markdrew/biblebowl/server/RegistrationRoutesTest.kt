@@ -63,6 +63,7 @@ class RegistrationRoutesTest {
         priceContestantCents = 8500,
         registrationOpensOn = "2000-01-01",
         registrationClosesOn = "2999-12-31",
+        registrationEnabled = true,
     )
 
     private fun ApplicationTestBuilder.jsonClient(): HttpClient = createClient {
@@ -602,5 +603,47 @@ class RegistrationRoutesTest {
         val unannounced = InMemorySeasonRepository(DEFAULT_SEASON)
         // (covered unit-side in RegistrationWindowTest; route-level state is exercised above)
         assertEquals(DEFAULT_SEASON, unannounced.current())
+    }
+
+    @Test
+    fun registrationIsDarkUntilTheFeatureToggleIsOn() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            // Window wide open, but the feature itself hasn't launched (the deploy-dark default).
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason.copy(registrationEnabled = false)))
+        }
+        val api = jsonClient()
+
+        // Every registration endpoint answers 403 feature_disabled, even reads.
+        val coach = api.signUp("coach@tbb.org", "Carol Coach")
+        val create = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+            setBody(congregationRequest("First Church", "Austin"))
+        }
+        assertEquals(HttpStatusCode.Forbidden, create.status)
+        assertEquals("feature_disabled", create.body<ApiError>().code)
+        val mine = api.get("/registration/mine") {
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+        }
+        assertEquals(HttpStatusCode.Forbidden, mine.status)
+        assertEquals("feature_disabled", mine.body<ApiError>().code)
+
+        // Global admins bypass the toggle so the dark-deployed feature can be tested in prod.
+        users.create("admin@tbb.org", "Admin", null, adult = true, passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)))
+        val admin: AuthResponse = json.decodeFromString(
+            api.post("/auth/login") {
+                setBody(net.markdrew.biblebowl.api.LoginRequest("admin@tbb.org", "supersecret"))
+            }.bodyAsText()
+        )
+        val adminCreate = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(congregationRequest("First Church", "Austin"))
+        }
+        assertEquals(HttpStatusCode.Created, adminCreate.status)
+        assertEquals(
+            HttpStatusCode.OK,
+            api.get("/registration/mine") { header(HttpHeaders.Authorization, "Bearer ${admin.token}") }.status,
+        )
     }
 }

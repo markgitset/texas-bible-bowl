@@ -109,7 +109,11 @@ This renders the real pipeline without hitting Crossway.
 - **Season params:** served by `GET /seasons/current` (public; PUT needs SEASON_MANAGE). Clients
   read them at launch (Compose: `LocalSeason`; web: `Session.season`) over the shared
   `FALLBACK_SEASON` baked into `:shared-api` — chapter counts and the season book are no longer
-  hardcoded anywhere. Admin edits via #account → Season settings.
+  hardcoded anywhere. Admin edits via #account → Season settings. The season also carries the
+  feature-launch toggles `registrationEnabled`/`gradingEnabled` (default **off**): the
+  registration and scoring areas deploy dark — hidden in the web UI and 403 `feature_disabled`
+  on every server endpoint — until an admin flips them in Season settings. Global admins bypass
+  both gates (links badged "hidden until launch") so dark features can be tested in prod.
 - **CI (`ci.yml`):** runs tests + builds APK/web on push. **Does NOT deploy the backend.**
 - **Backend (Fly.io):** NOT deployed by CI — a pushed backend change is not live until
   someone runs `fly deploy`. Claude MAY run it (Mark OK'd this 2026-07-13) using

@@ -30,7 +30,9 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.UserDto
+import net.markdrew.biblebowl.server.data.DEFAULT_SEASON
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
+import net.markdrew.biblebowl.server.data.InMemorySeasonRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.JwtService
@@ -108,7 +110,9 @@ class UserRoutesTest {
     fun grantValidatesScopeAndIsIdempotent() = testApplication {
         val users = InMemoryUserRepository()
         application {
-            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"))
+            // Registration must be live for the coach's self-serve congregation creation below.
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(DEFAULT_SEASON.copy(registrationEnabled = true)))
         }
         val api = jsonClient()
 
