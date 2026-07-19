@@ -46,6 +46,14 @@ sealed interface AddMemberResult {
     data object TeamNotFound : AddMemberResult
 }
 
+/** Outcome of claiming a roster entry by its coach-shared code. */
+sealed interface ClaimResult {
+    data class Claimed(val entry: RosterEntryDto) : ClaimResult
+    data object NotFound : ClaimResult
+    /** The code matches an entry already claimed by a different account. */
+    data object AlreadyClaimed : ClaimResult
+}
+
 /**
  * A congregation's registration for one season (unique per congregation+seasonYear), with its
  * teams and rosters. [RegistrationDto.totalCents] is left null here — routes compute it from the
@@ -74,6 +82,10 @@ interface RegistrationRepository {
     fun listForSeason(seasonYear: String): List<RegistrationDto>
     /** Sets (non-null) or clears (null) payment received. Null return = no such registration. */
     fun setPaid(registrationId: String, paidAtEpochMs: Long?): RegistrationDto?
+    /** Links the entry with claim code [code] to [userId]. Idempotent for the same account. */
+    fun claimEntry(code: String, userId: String): ClaimResult
+    /** Ids of every roster entry (team member or individual) claimed by [userId]. */
+    fun entryIdsOwnedBy(userId: String): Set<String>
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +153,7 @@ class InMemoryRegistrationRepository(
     private val individuals = mutableMapOf<String, RosterEntryDto>()
     private val individualReg = mutableMapOf<String, String>()
     private val usedCodes = mutableSetOf<String>()
+    private val entryOwner = mutableMapOf<String, String>()
     private val lock = Any()
 
     override fun find(congregationId: String, seasonYear: String): RegistrationDto? = synchronized(lock) {
@@ -308,6 +321,21 @@ class InMemoryRegistrationRepository(
         val reg = regs.values.firstOrNull { it.id == registrationId } ?: return null
         reg.paidAtMs = paidAtEpochMs
         reg.toDto()
+    }
+
+    override fun claimEntry(code: String, userId: String): ClaimResult = synchronized(lock) {
+        val entry = (members.values + individuals.values).firstOrNull { it.claimCode == code }
+            ?: return ClaimResult.NotFound
+        val owner = entryOwner[entry.id]
+        if (owner != null && owner != userId) return ClaimResult.AlreadyClaimed
+        entryOwner[entry.id] = userId
+        val claimed = entry.copy(claimed = true)
+        if (entry.id in members) members[entry.id] = claimed else individuals[entry.id] = claimed
+        ClaimResult.Claimed(claimed)
+    }
+
+    override fun entryIdsOwnedBy(userId: String): Set<String> = synchronized(lock) {
+        entryOwner.filterValues { it == userId }.keys.toSet()
     }
 
     private fun Team.toDto() = TeamDto(id, name, memberIds.mapNotNull { members[it] })
@@ -594,6 +622,36 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         }
         if (updated == 0) null
         else RegistrationsTable.selectAll().where { RegistrationsTable.id eq registrationId }.single().toDto()
+    }
+
+    override fun claimEntry(code: String, userId: String): ClaimResult = transaction(db) {
+        TeamMembersTable.selectAll().where { TeamMembersTable.claimCode eq code }.singleOrNull()?.let { row ->
+            val owner = row[TeamMembersTable.ownerUserId]
+            if (owner != null && owner != userId) return@transaction ClaimResult.AlreadyClaimed
+            TeamMembersTable.update({ TeamMembersTable.id eq row[TeamMembersTable.id] }) {
+                it[ownerUserId] = userId
+            }
+            return@transaction ClaimResult.Claimed(row.toEntry().copy(claimed = true))
+        }
+        IndividualsTable.selectAll().where { IndividualsTable.claimCode eq code }.singleOrNull()?.let { row ->
+            val owner = row[IndividualsTable.ownerUserId]
+            if (owner != null && owner != userId) return@transaction ClaimResult.AlreadyClaimed
+            IndividualsTable.update({ IndividualsTable.id eq row[IndividualsTable.id] }) {
+                it[ownerUserId] = userId
+            }
+            return@transaction ClaimResult.Claimed(row.toIndividual().copy(claimed = true))
+        }
+        ClaimResult.NotFound
+    }
+
+    override fun entryIdsOwnedBy(userId: String): Set<String> = transaction(db) {
+        val memberIds = TeamMembersTable.selectAll()
+            .where { TeamMembersTable.ownerUserId eq userId }
+            .map { it[TeamMembersTable.id] }
+        val individualIds = IndividualsTable.selectAll()
+            .where { IndividualsTable.ownerUserId eq userId }
+            .map { it[IndividualsTable.id] }
+        (memberIds + individualIds).toSet()
     }
 
     private fun regRow(congregationId: String, seasonYear: String): ResultRow? =

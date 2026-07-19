@@ -132,5 +132,10 @@ export, licensed ESV proxy with Postgres (prod) / on-disk (dev) chapter cache,
 backend-served season params editable in-app, an interactive quiz engine, study
 screens (headings, names, numbers), and Typst PDF generation: practice tests,
 verse and heading flashcards, names/numbers indices, and the full study text
-with category highlighting and unique-word underlining. Next: team/registration
-flows, on-test-day grading, and the iOS target.
+with category highlighting and unique-word underlining. Registration is in:
+coach flow (congregation → teams → rosters → submit), birthdate-driven
+divisions, itemized fees, a registration desk with payment tracking, claim
+codes, and admin user management. Event-ops scoring is in too: a grading desk
+(per-round score entry for every contestant), a season release switch, and
+scoped My Scores for owners and coaches. Next: event-day check-in, division
+standings/tally, the curated champions page, and the iOS target.

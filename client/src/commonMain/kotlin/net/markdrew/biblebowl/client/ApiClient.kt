@@ -19,22 +19,29 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
+import net.markdrew.biblebowl.api.ClaimEntryRequest
 import net.markdrew.biblebowl.api.ClearPdfCacheResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.GradingSheetResponse
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.MyRegistrationResponse
+import net.markdrew.biblebowl.api.MyScoresResponse
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RoleGrant
+import net.markdrew.biblebowl.api.RosterEntryDto
+import net.markdrew.biblebowl.api.SaveScoresRequest
+import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.SetPaidRequest
+import net.markdrew.biblebowl.api.SetScoresReleasedRequest
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
@@ -338,6 +345,34 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     /** Submits (or re-submits) the congregation's registration for the current season. */
     suspend fun submitRegistration(congregationId: String): RegistrationDto =
         client.post("$baseUrl/registration/$congregationId/submit") { authorize() }.bodyOrThrow()
+
+    /** Claims a roster entry by its coach-shared code (dashes/case ignored). 404/409 on bad codes. */
+    suspend fun claimRosterEntry(code: String): RosterEntryDto =
+        client.post("$baseUrl/roster/claim") {
+            authorize(); contentType(ContentType.Application.Json); setBody(ClaimEntryRequest(code))
+        }.bodyOrThrow()
+
+    // --- Scoring (grading desk, release, my scores; docs/gui-redesign.md §5F) ---
+
+    /** The grading desk: every contestant this season with their entered scores (event-wide SCORE_ENTER). */
+    suspend fun gradingSheet(): GradingSheetResponse =
+        client.get("$baseUrl/admin/scores") { authorize() }.bodyOrThrow()
+
+    /** Batch-saves grading grid cells (null points clears one); returns the refreshed sheet. */
+    suspend fun saveScores(scores: List<ScoreEntryDto>): GradingSheetResponse =
+        client.put("$baseUrl/admin/scores") {
+            authorize(); contentType(ContentType.Application.Json); setBody(SaveScoresRequest(scores))
+        }.bodyOrThrow()
+
+    /** Releases or retracts the current season's scores (event-wide SCORE_RELEASE). */
+    suspend fun setScoresReleased(released: Boolean): GradingSheetResponse =
+        client.put("$baseUrl/admin/scores/release") {
+            authorize(); contentType(ContentType.Application.Json); setBody(SetScoresReleasedRequest(released))
+        }.bodyOrThrow()
+
+    /** The signed-in user's visible released scores (owned entries + coached congregations). */
+    suspend fun myScores(): MyScoresResponse =
+        client.get("$baseUrl/scores/mine") { authorize() }.bodyOrThrow()
 
     // --- Admin: registration desk & user management (docs/gui-redesign.md §5G) ---
 

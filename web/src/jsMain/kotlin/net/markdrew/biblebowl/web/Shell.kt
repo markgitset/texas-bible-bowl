@@ -12,9 +12,11 @@ import net.markdrew.biblebowl.web.screens.AdminUsersScreen
 import net.markdrew.biblebowl.web.screens.AuthScreen
 import net.markdrew.biblebowl.web.screens.ContributeScreen
 import net.markdrew.biblebowl.web.screens.DownloadsScreen
+import net.markdrew.biblebowl.web.screens.GradingScreen
 import net.markdrew.biblebowl.web.screens.ModerateScreen
 import net.markdrew.biblebowl.web.screens.HeadingsScreen
 import net.markdrew.biblebowl.web.screens.IndexScreen
+import net.markdrew.biblebowl.web.screens.MyScoresScreen
 import net.markdrew.biblebowl.web.screens.QuestionsScreen
 import net.markdrew.biblebowl.web.screens.QuizScreen
 import net.markdrew.biblebowl.web.screens.RegisterScreen
@@ -95,6 +97,11 @@ object Shell {
             // (self-serve congregation creation); a TEAM_MANAGE gate would lock them out of it.
             // The server scope-checks every mutation regardless.
             Routes.REGISTER -> signedIn(container) { RegisterScreen.render(container) }
+            // Sign-in only: the server scopes the response (owned entries + coached congregations).
+            Routes.MY_SCORES -> signedIn(container) { MyScoresScreen.render(container) }
+            Routes.GRADING -> gatedEventWide(container, Permission.SCORE_ENTER) {
+                GradingScreen.render(container)
+            }
             Routes.QUESTIONS_NEW -> gated(container, Permission.QUESTION_SUBMIT) {
                 ContributeScreen.render(container)
             }

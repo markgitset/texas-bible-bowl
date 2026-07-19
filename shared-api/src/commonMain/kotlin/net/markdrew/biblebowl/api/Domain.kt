@@ -1,6 +1,7 @@
 package net.markdrew.biblebowl.api
 
 import kotlinx.serialization.Serializable
+import net.markdrew.biblebowl.model.Round
 
 /**
  * Texas Bible Bowl competition divisions, by school grade. Grades are derived from birthdates
@@ -117,6 +118,28 @@ fun TeamDto.isInexperienced(seasonYear: String): Boolean =
 fun divisionLabel(division: Division, inexperienced: Boolean): String =
     if (inexperienced && division != Division.ADULT) "${division.displayName} (Inexperienced)"
     else division.displayName
+
+// ---------------------------------------------------------------------------
+// Rounds and scoring by division
+// ---------------------------------------------------------------------------
+
+/**
+ * The rounds contestants in this division take, in test-day order (rounds 1–5, then the Power
+ * Round — [Round]'s declaration order). Elementary is exempt from the Power Round.
+ */
+val Division.rounds: List<Round>
+    get() = Round.entries.filter { it != Round.POWER || hasPowerRound }
+
+/**
+ * The division's maximum individual score: the sum of its rounds' points — 200 for Elementary
+ * (five 40-point rounds), 250 for Junior/Senior/Adult (plus the 50-point Power Round).
+ */
+val Division.maxScore: Int
+    get() = rounds.sumOf { it.maxPoints }
+
+/** The contestant's total across every graded round so far. */
+val ScoreRowDto.totalPoints: Int
+    get() = scores.values.sum()
 
 /** All contestants in a registration: every team member plus every individual (adult) contestant. */
 val RegistrationDto.contestantCount: Int

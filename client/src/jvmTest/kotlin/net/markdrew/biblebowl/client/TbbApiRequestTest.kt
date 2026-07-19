@@ -7,6 +7,7 @@ import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
+import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.UpdateProfileRequest
@@ -65,6 +66,13 @@ class TbbApiRequestTest {
                     """[{"id":"u2","email":"carol@tbb.org","displayName":"Carol"}]""" to "application/json"
                 "/users/u2/roles" ->
                     """{"id":"u2","email":"carol@tbb.org","displayName":"Carol"}""" to "application/json"
+                "/roster/claim" ->
+                    """{"id":"m1","name":"Timothy","shirtSize":"YM","claimCode":"ABCD2345","claimed":true}""" to
+                        "application/json"
+                "/admin/scores", "/admin/scores/release" ->
+                    """{"seasonYear":"2027","rows":[]}""" to "application/json"
+                "/scores/mine" ->
+                    """{"seasonYear":"2027","released":false,"rows":[]}""" to "application/json"
                 else ->
                     if (exchange.requestURI.path.startsWith("/registration/")) {
                         """{"id":"r1","congregation":{"id":"c1","name":"First Church","city":"Austin"},
@@ -202,6 +210,37 @@ class TbbApiRequestTest {
         // A null scopeId stays out of the query string entirely.
         api.revokeRole("u2", RoleGrant(Role.ADMIN, ScopeType.GLOBAL, null))
         assertTrue("scopeId" !in requests.last(), requests.last())
+
+        assertTrue(authHeaders.drop(1).all { it == "Bearer tok123" }, "missing Bearer on some call: $authHeaders")
+    }
+
+    @Test
+    fun scoringEndpointsSendAuthorizedTypedRequests() = runBlocking {
+        api.login(LoginRequest("grader@tbb.org", "password123"))
+
+        val claimed = api.claimRosterEntry("abcd-2345")
+        assertEquals("Timothy", claimed.name)
+        assertTrue(claimed.claimed)
+        assertEquals("POST" to "/roster/claim", methods.last() to requests.last())
+
+        val sheet = api.gradingSheet()
+        assertEquals("2027", sheet.seasonYear)
+        assertEquals("GET" to "/admin/scores", methods.last() to requests.last())
+
+        api.saveScores(
+            listOf(
+                ScoreEntryDto("m1", Round.FIND_THE_VERSE, 38),
+                ScoreEntryDto("m1", Round.POWER, null), // a cleared cell rides in the same batch
+            )
+        )
+        assertEquals("PUT" to "/admin/scores", methods.last() to requests.last())
+
+        api.setScoresReleased(true)
+        assertEquals("PUT" to "/admin/scores/release", methods.last() to requests.last())
+
+        val mine = api.myScores()
+        assertEquals(false, mine.released)
+        assertEquals("GET" to "/scores/mine", methods.last() to requests.last())
 
         assertTrue(authHeaders.drop(1).all { it == "Bearer tok123" }, "missing Bearer on some call: $authHeaders")
     }
