@@ -4,6 +4,7 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
@@ -41,6 +42,29 @@ class RegistrationRepositoryTest {
         assertNotNull(newCongregation("First Church", "Dallas", "u2"), "same name, different city is fine")
         assertEquals(2, congregations.search("church").size)
         assertEquals(1, congregations.search("dallas").size)
+    }
+
+    @Test
+    fun updatingACongregationKeepsTheStateAndGuardsAgainstDupes() {
+        val cong = newCongregation("First Church", "Austin")!!
+        val other = newCongregation("Second Church", "Dallas", "u2")!!
+
+        val updated = congregations.update(
+            cong.id,
+            UpdateCongregationRequest("First Christian Church", "Round Rock", "456 Oak Ave", "78664"),
+        )!!
+        assertEquals("First Christian Church", updated.name)
+        assertEquals("Round Rock", updated.city)
+        assertEquals("456 Oak Ave", updated.mailingAddress)
+        assertEquals("78664", updated.zip)
+        assertEquals("TX", updated.state, "the state is never part of an update")
+        assertEquals(updated, congregations.findById(cong.id))
+
+        // Renaming onto another congregation's name+city collides; a self-update to the same name is fine.
+        assertNull(congregations.update(cong.id, UpdateCongregationRequest("Second Church", "Dallas", "1 St", "75001")))
+        assertNotNull(congregations.update(cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", "456 Oak Ave", "78664")))
+        assertNull(congregations.update("nope", UpdateCongregationRequest("Ghost", "Nowhere", "0 St", "00000")))
+        assertEquals("Second Church", congregations.findById(other.id)!!.name, "the other congregation is untouched")
     }
 
     @Test

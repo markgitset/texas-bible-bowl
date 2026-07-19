@@ -8,6 +8,7 @@ import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import org.jetbrains.exposed.v1.core.ResultRow
@@ -31,6 +32,12 @@ const val MAX_TEAM_SIZE = 4
 interface CongregationRepository {
     /** Creates a congregation, or returns null when one with the same name+city already exists. */
     fun create(req: CreateCongregationRequest, createdByUserId: String): CongregationDto?
+    /**
+     * Updates a congregation's editable details (never its two-letter [CongregationDto.state], which
+     * is fixed at creation). Returns the updated congregation, or null when the new name+city would
+     * collide with a *different* congregation (the caller has already checked [id] exists).
+     */
+    fun update(id: String, req: UpdateCongregationRequest): CongregationDto?
     fun findById(id: String): CongregationDto?
     fun findByIds(ids: Collection<String>): List<CongregationDto>
     /** Case-insensitive substring search over name and city, for the step-1 typeahead. */
@@ -113,6 +120,23 @@ class InMemoryCongregationRepository : CongregationRepository {
             byId[dto.id] = dto
             return dto
         }
+    }
+
+    override fun update(id: String, req: UpdateCongregationRequest): CongregationDto? = synchronized(byId) {
+        val existing = byId[id] ?: return null
+        val n = req.name.trim()
+        val c = req.city.trim()
+        if (byId.values.any { it.id != id && it.name.equals(n, ignoreCase = true) && it.city.equals(c, ignoreCase = true) }) {
+            return null
+        }
+        val updated = existing.copy(
+            name = n,
+            city = c,
+            mailingAddress = req.mailingAddress.trim(),
+            zip = req.zip.trim(),
+        )
+        byId[id] = updated
+        return updated
     }
 
     override fun findById(id: String): CongregationDto? = byId[id]
@@ -381,6 +405,26 @@ class PostgresCongregationRepository(private val db: Database) : CongregationRep
             it[createdAtEpochMs] = System.currentTimeMillis()
         }
         CongregationDto(newId, n, c, req.state.trim(), req.mailingAddress.trim(), req.zip.trim())
+    }
+
+    override fun update(id: String, req: UpdateCongregationRequest): CongregationDto? = transaction(db) {
+        val n = req.name.trim()
+        val c = req.city.trim()
+        val collides = CongregationsTable.selectAll()
+            .where {
+                (CongregationsTable.name.lowerCase() eq n.lowercase()) and
+                    (CongregationsTable.city.lowerCase() eq c.lowercase())
+            }
+            .any { it[CongregationsTable.id] != id }
+        if (collides) return@transaction null
+        val updated = CongregationsTable.update({ CongregationsTable.id eq id }) {
+            it[name] = n
+            it[city] = c
+            it[mailingAddress] = req.mailingAddress.trim()
+            it[zip] = req.zip.trim()
+        }
+        if (updated == 0) null
+        else CongregationsTable.selectAll().where { CongregationsTable.id eq id }.singleOrNull()?.toDto()
     }
 
     override fun findById(id: String): CongregationDto? = transaction(db) {

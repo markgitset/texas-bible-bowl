@@ -19,6 +19,7 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.SeasonDto
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
@@ -92,6 +93,32 @@ fun Route.registrationRoutes(
         get("/congregations") {
             if (currentUser(users) == null) return@get
             call.respond(congregations.search(call.request.queryParameters["query"] ?: ""))
+        }
+
+        // Editing a congregation's contact details after registration — a coach may fix a name,
+        // address, city, or ZIP typo until registration closes (admins any time). The two-letter
+        // state code is fixed at creation, so it isn't part of the request body.
+        put("/congregations/{congregationId}") {
+            val user = currentUser(users) ?: return@put
+            val congregationId = call.parameters["congregationId"]!!
+            if (!requireScopedPermission(user, Permission.REGISTRATION_MANAGE, congregationId)) return@put
+            if (!requireWindowOpen(user, seasons)) return@put
+            if (congregations.findById(congregationId) == null) {
+                return@put call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such congregation"))
+            }
+            val req = call.receive<UpdateCongregationRequest>()
+            if (!req.isValid()) {
+                return@put call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("invalid_congregation", "Name, mailing address, city, and 5-digit ZIP are required"),
+                )
+            }
+            val updated = congregations.update(congregationId, req)
+                ?: return@put call.respond(
+                    HttpStatusCode.Conflict,
+                    ApiError("congregation_exists", "Another congregation already uses that name and city"),
+                )
+            call.respond(updated)
         }
 
         get("/registration/mine") {
@@ -301,6 +328,11 @@ private val ZIP_REGEX = Regex("""\d{5}(-\d{4})?""")
 private fun CreateCongregationRequest.isValid(): Boolean =
     name.isNotBlank() && city.isNotBlank() && mailingAddress.isNotBlank() &&
         state.trim().length == 2 && state.trim().all { it.isLetter() } &&
+        zip.trim().matches(ZIP_REGEX)
+
+/** Same rules as create, minus the immutable state (which isn't part of an update). */
+private fun UpdateCongregationRequest.isValid(): Boolean =
+    name.isNotBlank() && city.isNotBlank() && mailingAddress.isNotBlank() &&
         zip.trim().matches(ZIP_REGEX)
 
 /** Decorates a registration with the contestant total computed from the current season's fees. */

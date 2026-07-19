@@ -43,6 +43,7 @@ import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.SetPaidRequest
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
 import net.markdrew.biblebowl.api.StandingsResponse
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
@@ -296,6 +297,15 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     /** Case-insensitive congregation search (step-1 typeahead). */
     suspend fun searchCongregations(query: String): List<CongregationDto> =
         client.get("$baseUrl/congregations") { authorize(); parameter("query", query) }.bodyOrThrow()
+
+    /**
+     * Edits a congregation's contact details (coach, window open); the two-letter state is fixed at
+     * creation, so it isn't sent. 404 if unknown, 409 if the new name+city collides with another.
+     */
+    suspend fun updateCongregation(id: String, req: UpdateCongregationRequest): CongregationDto =
+        client.put("$baseUrl/congregations/$id") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
 
     /** The register screen's resume fetch: coached congregations, current registration, window state. */
     suspend fun myRegistration(): MyRegistrationResponse =

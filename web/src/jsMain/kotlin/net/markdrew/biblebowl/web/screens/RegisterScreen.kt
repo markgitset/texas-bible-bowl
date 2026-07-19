@@ -12,6 +12,7 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.contestantCount
@@ -151,15 +152,8 @@ object RegisterScreen {
     private fun renderCongregationStep(parent: Element) {
         val existing = congregation
         if (existing != null) {
-            parent.child("div", "card section-card mb-3") {
-                child("div", "card-body") {
-                    child("h5", "card-title", "Your congregation")
-                    child("p", "mb-0", "${existing.name} — ${cityStateLine(existing)}")
-                    if (existing.mailingAddress.isNotBlank()) {
-                        child("p", "text-muted small mb-0", "${existing.mailingAddress}, ${cityStateLine(existing)} ${existing.zip}")
-                    }
-                }
-            }
+            if (canEdit) renderCongregationEditForm(parent, existing)
+            else renderCongregationSummary(parent, existing)
             parent.nextButton("Continue to teams", 2)
             return
         }
@@ -270,6 +264,103 @@ object RegisterScreen {
                                     }
                                 }
                             }
+                        }
+                    }
+                })
+            }
+        }
+    }
+
+    /** Read-only congregation card, shown once registration has closed (or before it opens). */
+    private fun renderCongregationSummary(parent: Element, existing: CongregationDto) {
+        parent.child("div", "card section-card mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title", "Your congregation")
+                child("p", "mb-0", "${existing.name} — ${cityStateLine(existing)}")
+                if (existing.mailingAddress.isNotBlank()) {
+                    child("p", "text-muted small mb-0", "${existing.mailingAddress}, ${cityStateLine(existing)} ${existing.zip}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Editable congregation card, shown while registration is open. Everything but the two-letter
+     * state is editable — the state is fixed at creation, so it renders disabled.
+     */
+    private fun renderCongregationEditForm(parent: Element, existing: CongregationDto) {
+        parent.child("div", "card section-card mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title", "Your congregation")
+                child("p", "text-muted small",
+                    "Fix a typo in your congregation's details below. The two-letter state code is set " +
+                        "when the congregation is first registered — contact us if it needs to change.")
+                val form = child("form")
+                lateinit var name: HTMLInputElement
+                lateinit var address: HTMLInputElement
+                lateinit var city: HTMLInputElement
+                lateinit var zip: HTMLInputElement
+                form.child("div", "mb-2") {
+                    child("label", "form-label", "Congregation name")
+                    name = child("input", "form-control") as HTMLInputElement
+                    name.value = existing.name
+                }
+                form.child("div", "mb-2") {
+                    child("label", "form-label", "Mailing address")
+                    address = child("input", "form-control") as HTMLInputElement
+                    address.setAttribute("placeholder", "Street address or PO Box")
+                    address.value = existing.mailingAddress
+                }
+                form.child("div", "d-flex flex-wrap gap-2 mb-3") {
+                    child("div", "flex-grow-1") {
+                        child("label", "form-label", "City")
+                        city = child("input", "form-control") as HTMLInputElement
+                        city.value = existing.city
+                    }
+                    child("div") {
+                        child("label", "form-label", "State")
+                        val state = child("input", "form-control") as HTMLInputElement
+                        state.value = existing.state
+                        state.disabled = true
+                        state.setAttribute("size", "3")
+                        state.setAttribute("title", "The state is fixed when the congregation is first registered")
+                    }
+                    child("div") {
+                        child("label", "form-label", "ZIP")
+                        zip = child("input", "form-control") as HTMLInputElement
+                        zip.setAttribute("maxlength", "10")
+                        zip.setAttribute("size", "6")
+                        zip.value = existing.zip
+                    }
+                }
+                val save = form.child("button", "btn btn-primary", "Save changes") {
+                    setAttribute("type", "submit")
+                } as HTMLButtonElement
+                val slot = form.child("div")
+                form.addEventListener("submit", { event ->
+                    event.preventDefault()
+                    if (listOf(name, address, city, zip).any { it.value.isBlank() }) return@addEventListener
+                    save.disabled = true
+                    slot.clear()
+                    Shell.scope.launch {
+                        try {
+                            Session.api.updateCongregation(
+                                existing.id,
+                                UpdateCongregationRequest(
+                                    name = name.value,
+                                    city = city.value,
+                                    mailingAddress = address.value,
+                                    zip = zip.value,
+                                ),
+                            )
+                            // Refresh so the embedded registration.congregation (review step) matches too.
+                            loaded = Session.api.myRegistration()
+                            save.disabled = false
+                            slot.clear()
+                            slot.child("div", "alert alert-success mt-3 mb-0", "Saved.")
+                        } catch (e: Throwable) {
+                            save.disabled = false
+                            slot.child("div", "alert alert-warning mt-3 mb-0", e.message ?: "Something went wrong")
                         }
                     }
                 })

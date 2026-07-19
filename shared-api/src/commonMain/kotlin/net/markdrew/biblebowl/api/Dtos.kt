@@ -244,6 +244,20 @@ data class CreateCongregationRequest(
 )
 
 /**
+ * Edits a congregation's contact details after creation (`PUT /congregations/{id}`) — allowed to its
+ * coach while the registration window is open (admins any time). The two-letter [CongregationDto.state]
+ * code is deliberately absent: it's fixed at creation, so a coach can correct a name, address, city, or
+ * ZIP typo but not the state.
+ */
+@Serializable
+data class UpdateCongregationRequest(
+    val name: String,
+    val city: String,
+    val mailingAddress: String = "",
+    val zip: String = "",
+)
+
+/**
  * One contestant — either on a team's roster or registered as an individual (adult).
  * [claimCode] lets a contestant/parent account claim the entry later.
  */

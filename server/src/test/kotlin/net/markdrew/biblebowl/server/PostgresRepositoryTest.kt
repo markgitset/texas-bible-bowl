@@ -6,6 +6,7 @@ import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
@@ -163,6 +164,39 @@ class PostgresRepositoryTest {
         assertEquals(releasedAt, scores.setReleased("2027", grader.id, released = true))
         assertNull(scores.setReleased("2027", grader.id, released = false))
         assertNull(scores.releasedAt("2027"))
+    }
+
+    @Test
+    fun updatingACongregationPersistsAndKeepsTheState() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val db = DatabaseFactory.connect()
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+
+        val coach = users.create("coach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertNotNull(congregations.create(
+            CreateCongregationRequest("First Church", "Austin", state = "TX", mailingAddress = "1 Main St", zip = "78701"),
+            coach.id,
+        ))
+        val other = assertNotNull(congregations.create(
+            CreateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "2 Elm St", zip = "75001"),
+            coach.id,
+        ))
+
+        val updated = assertNotNull(congregations.update(
+            cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", "456 Oak Ave", "78664"),
+        ))
+        assertEquals("First Christian Church", updated.name)
+        assertEquals("Round Rock", updated.city)
+        assertEquals("456 Oak Ave", updated.mailingAddress)
+        assertEquals("78664", updated.zip)
+        assertEquals("TX", updated.state)
+        assertEquals(updated, congregations.findById(cong.id))
+
+        // Colliding with the other congregation's name+city is refused; the other stays as it was.
+        assertNull(congregations.update(cong.id, UpdateCongregationRequest("Second Church", "Dallas", "9 St", "75001")))
+        assertEquals("Second Church", congregations.findById(other.id)!!.name)
     }
 
     @Test
