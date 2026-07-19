@@ -16,11 +16,18 @@ import net.markdrew.biblebowl.api.SaveScoresRequest
 import net.markdrew.biblebowl.api.ScoreRowDto
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
+import net.markdrew.biblebowl.api.StandingRowDto
+import net.markdrew.biblebowl.api.StandingsResponse
+import net.markdrew.biblebowl.api.TEAM_MEMBER_MAX_POINTS
 import net.markdrew.biblebowl.api.coachedCongregationIds
 import net.markdrew.biblebowl.api.division
+import net.markdrew.biblebowl.api.DivisionStandingsDto
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.isInexperienced
+import net.markdrew.biblebowl.api.maxScore
 import net.markdrew.biblebowl.api.rounds
+import net.markdrew.biblebowl.api.teamPoints
+import net.markdrew.biblebowl.api.totalPoints
 import net.markdrew.biblebowl.server.data.RegistrationRepository
 import net.markdrew.biblebowl.server.data.ScoreRepository
 import net.markdrew.biblebowl.server.data.SeasonRepository
@@ -96,6 +103,19 @@ fun Route.scoreRoutes(
             call.respond(gradingSheet(season, registrations, scores))
         }
 
+        get("/admin/scores/standings") {
+            val user = currentUser(users) ?: return@get
+            if (!requireEventWidePermission(user, Permission.SCORE_VIEW_ALL)) return@get
+            val season = seasons.current()
+            call.respond(
+                StandingsResponse(
+                    seasonYear = season.eventYear,
+                    releasedAt = scores.releasedAt(season.eventYear),
+                    divisions = computeStandings(rowSeeds(season, registrations), scores).divisions,
+                )
+            )
+        }
+
         get("/scores/mine") {
             val user = currentUser(users) ?: return@get
             val season = seasons.current()
@@ -112,15 +132,29 @@ fun Route.scoreRoutes(
                 val owned = registrations.entryIdsOwnedBy(user.id)
                 seeds.filter { it.congregationId in coached || it.row.rosterEntryId in owned }
             }
-            call.respond(
-                MyScoresResponse(season.eventYear, released = true, rows = visible.withScores(scores))
-            )
+            // Placement is ranked against the WHOLE field (all seeds), not just the visible rows.
+            val standings = computeStandings(seeds, scores)
+            val rows = visible.withScores(scores).map { row ->
+                val individual = standings.individualRank[row.rosterEntryId]
+                val team = standings.teamRank[row.rosterEntryId]
+                row.copy(
+                    rank = individual?.rank,
+                    rankOf = individual?.of,
+                    teamRank = team?.rank,
+                    teamRankOf = team?.of,
+                    teamPoints = team?.points,
+                )
+            }
+            call.respond(MyScoresResponse(season.eventYear, released = true, rows = rows))
         }
     }
 }
 
-/** A grading/My-Scores row plus the congregation id it belongs to (for coach scoping). */
-private data class RowSeed(val congregationId: String, val row: ScoreRowDto)
+/**
+ * A grading/My-Scores row plus the ids scoping needs: the congregation (coach scoping) and the
+ * team (standings grouping; null for individual contestants).
+ */
+private data class RowSeed(val congregationId: String, val teamId: String?, val row: ScoreRowDto)
 
 /**
  * One row per contestant registered this season, in desk order (congregation, team — individuals
@@ -137,6 +171,7 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
                 team.members.map { member ->
                     RowSeed(
                         reg.congregation.id,
+                        team.id,
                         ScoreRowDto(
                             rosterEntryId = member.id,
                             contestantName = member.name,
@@ -151,6 +186,7 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
             val individualRows = reg.individuals.map { individual ->
                 RowSeed(
                     reg.congregation.id,
+                    null,
                     ScoreRowDto(
                         rosterEntryId = individual.id,
                         contestantName = individual.name,
@@ -185,3 +221,97 @@ private fun gradingSheet(
     releasedAt = scores.releasedAt(season.eventYear),
     rows = rowSeeds(season, registrations).withScores(scores),
 )
+
+// --- Standings (the division tally) ---------------------------------------------------------
+
+private data class BracketKey(val division: Division, val inexperienced: Boolean)
+
+private data class Placement(val rank: Int, val of: Int)
+
+private data class TeamPlacement(val rank: Int, val of: Int, val points: Int)
+
+private data class TeamAgg(val members: List<ScoreRowDto>, val points: Int)
+
+/** Standings DTOs plus per-entry placement lookups (for decorating My Scores rows). */
+private class StandingsData(
+    val divisions: List<DivisionStandingsDto>,
+    /** Roster entry id → individual placement within its division bracket. */
+    val individualRank: Map<String, Placement>,
+    /** Roster entry id → its TEAM's placement (absent for individual contestants). */
+    val teamRank: Map<String, TeamPlacement>,
+)
+
+/**
+ * The division tally: contestants and teams grouped by (division, experience bracket) and ranked
+ * by points — competition ranking, so ties share a rank and the next rank skips. Individual
+ * totals span every eligible round; team totals are the members' rounds 1–5 only (the Power
+ * Round never counts toward team scores — the published 800 team max is 4 × 200). Ungraded
+ * rounds simply count 0, so the tally is meaningful mid-grading. Rows whose division is unknown
+ * (legacy unparseable birthdates) can't be bracketed and are left out.
+ */
+private fun computeStandings(seeds: List<RowSeed>, scores: ScoreRepository): StandingsData {
+    val scored = seeds.zip(seeds.withScores(scores)) // RowSeed + its row with scores attached
+    val individualRank = mutableMapOf<String, Placement>()
+    val teamRank = mutableMapOf<String, TeamPlacement>()
+
+    val divisions = scored
+        .filter { (_, row) -> row.division != null }
+        .groupBy { (_, row) -> BracketKey(row.division!!, row.inexperienced) }
+        .entries
+        .sortedWith(compareBy({ it.key.division.ordinal }, { it.key.inexperienced }))
+        .map { (key, entries) ->
+            val allPoints = entries.map { (_, row) -> row.totalPoints }
+            val individuals = entries
+                .sortedWith(
+                    compareByDescending<Pair<RowSeed, ScoreRowDto>> { it.second.totalPoints }
+                        .thenBy { it.second.contestantName.lowercase() }
+                )
+                .map { (_, row) ->
+                    val rank = allPoints.count { it > row.totalPoints } + 1
+                    individualRank[row.rosterEntryId] = Placement(rank, entries.size)
+                    StandingRowDto(
+                        rank = rank,
+                        name = row.contestantName,
+                        congregationName = row.congregationName,
+                        teamName = row.teamName,
+                        rosterEntryId = row.rosterEntryId,
+                        points = row.totalPoints,
+                        maxPoints = key.division.maxScore,
+                    )
+                }
+
+            val teamAggs = entries
+                .filter { (seed, _) -> seed.teamId != null }
+                .groupBy { (seed, _) -> seed.teamId!! }
+                .values
+                .map { members ->
+                    val rows = members.map { (_, row) -> row }
+                    TeamAgg(rows, teamPoints(rows.map { it.scores }))
+                }
+            val allTeamPoints = teamAggs.map { it.points }
+            val teams = teamAggs
+                .sortedWith(
+                    compareByDescending<TeamAgg> { it.points }
+                        .thenBy { it.members.first().teamName?.lowercase() ?: "" }
+                )
+                .map { agg ->
+                    val rank = allTeamPoints.count { it > agg.points } + 1
+                    agg.members.forEach { row ->
+                        teamRank[row.rosterEntryId] = TeamPlacement(rank, teamAggs.size, agg.points)
+                    }
+                    StandingRowDto(
+                        rank = rank,
+                        name = agg.members.first().teamName ?: "?",
+                        congregationName = agg.members.first().congregationName,
+                        teamName = null,
+                        rosterEntryId = null,
+                        points = agg.points,
+                        maxPoints = TEAM_MEMBER_MAX_POINTS * agg.members.size,
+                    )
+                }
+
+            DivisionStandingsDto(key.division, key.inexperienced, individuals, teams)
+        }
+
+    return StandingsData(divisions, individualRank, teamRank)
+}

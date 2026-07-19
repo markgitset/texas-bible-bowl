@@ -36,6 +36,7 @@ import net.markdrew.biblebowl.api.SaveScoresRequest
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.StandingsResponse
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
@@ -282,6 +283,97 @@ class ScoreRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${grader.token}")
         }.body()
         assertNull(after.rows.single { it.rosterEntryId == junior.rosterEntryId }.scores[Round.QUOTES])
+    }
+
+    @Test
+    fun standingsRankBracketsWithTeamTotalsExcludingPower() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+
+        // Two junior teams in different congregations, plus an adult individual.
+        val (coachA, _, regA) = api.coachWithTeam(
+            "a@tbb.org", "Alpha Church", listOf(juniorBirthdate, juniorBirthdate),
+        )
+        val (memberA1, memberA2) = regA.teams.single().members
+        val (_, _, regB) = api.coachWithTeam(
+            "b@tbb.org", "Beta Church", listOf(juniorBirthdate), individualName = "Deacon Dan",
+        )
+        val memberB1 = regB.teams.single().members.single()
+
+        // The tally is a cross-congregation surface: coaches get 403, graders pass.
+        assertEquals(
+            HttpStatusCode.Forbidden,
+            api.get("/admin/scores/standings") {
+                header(HttpHeaders.Authorization, "Bearer ${coachA.token}")
+            }.status,
+        )
+        val grader = api.grader(users)
+
+        // A1: 40 + Power 50 → individual 90, but only 40 counts for the team.
+        // A2: 30 → team Alpha = 70.  B1: 35 + 35 = 70 → team Beta = 70 (a team tie).
+        // Dan (adult individual): 40.
+        api.put("/admin/scores") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+            setBody(
+                SaveScoresRequest(
+                    listOf(
+                        ScoreEntryDto(memberA1.id, Round.FIND_THE_VERSE, 40),
+                        ScoreEntryDto(memberA1.id, Round.POWER, 50),
+                        ScoreEntryDto(memberA2.id, Round.QUOTES, 30),
+                        ScoreEntryDto(memberB1.id, Round.FIND_THE_VERSE, 35),
+                        ScoreEntryDto(memberB1.id, Round.EVENTS, 35),
+                        ScoreEntryDto(regB.individuals.single().id, Round.FIND_THE_VERSE, 40),
+                    )
+                )
+            )
+        }
+
+        val standings: StandingsResponse = api.get("/admin/scores/standings") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        assertEquals(openSeason.eventYear, standings.seasonYear)
+        assertNull(standings.releasedAt)
+        assertEquals(listOf(Division.JUNIOR, Division.ADULT), standings.divisions.map { it.division })
+
+        val junior = standings.divisions.first()
+        // Individuals rank by their full totals (Power included): 90, 70, 30.
+        assertEquals(listOf(1, 2, 3), junior.individuals.map { it.rank })
+        assertEquals(listOf(90, 70, 30), junior.individuals.map { it.points })
+        assertEquals(listOf(memberA1.id, memberB1.id, memberA2.id), junior.individuals.map { it.rosterEntryId })
+        assertTrue(junior.individuals.all { it.maxPoints == 250 })
+        // Teams tie at 70 (Alpha's Power 50 doesn't count) and share rank 1.
+        assertEquals(listOf(1, 1), junior.teams.map { it.rank })
+        assertEquals(listOf(70, 70), junior.teams.map { it.points })
+        assertEquals(setOf("Alpha Church", "Beta Church"), junior.teams.map { it.congregationName }.toSet())
+        assertEquals(400, junior.teams.first { it.congregationName == "Alpha Church" }.maxPoints)
+        assertEquals(200, junior.teams.first { it.congregationName == "Beta Church" }.maxPoints)
+
+        val adult = standings.divisions.last()
+        assertEquals(listOf(1), adult.individuals.map { it.rank })
+        assertEquals(listOf(40), adult.individuals.map { it.points })
+        assertTrue(adult.teams.isEmpty(), "adults never form teams")
+
+        // Post-release, My Scores rows carry placement ranked against the whole field.
+        api.put("/admin/scores/release") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+            setBody(SetScoresReleasedRequest(released = true))
+        }
+        val coachView: MyScoresResponse = api.get("/scores/mine") {
+            header(HttpHeaders.Authorization, "Bearer ${coachA.token}")
+        }.body()
+        val a1 = coachView.rows.single { it.rosterEntryId == memberA1.id }
+        assertEquals(1, a1.rank)
+        assertEquals(3, a1.rankOf)
+        assertEquals(1, a1.teamRank)
+        assertEquals(2, a1.teamRankOf)
+        assertEquals(70, a1.teamPoints)
+        val a2 = coachView.rows.single { it.rosterEntryId == memberA2.id }
+        assertEquals(3, a2.rank)
+        assertEquals(70, a2.teamPoints)
     }
 
     @Test
