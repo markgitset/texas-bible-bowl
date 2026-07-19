@@ -22,6 +22,7 @@ import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ClaimEntryRequest
 import net.markdrew.biblebowl.api.ClearPdfCacheResponse
+import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.GradingSheetResponse
@@ -44,6 +45,7 @@ import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.SetPaidRequest
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
 import net.markdrew.biblebowl.api.StandingsResponse
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
@@ -298,6 +300,20 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun searchCongregations(query: String): List<CongregationDto> =
         client.get("$baseUrl/congregations") { authorize(); parameter("query", query) }.bodyOrThrow()
 
+    /** Suggests an available two-letter code derived from a congregation name (register form prefill). */
+    suspend fun suggestCongregationCode(name: String): String =
+        client.get("$baseUrl/congregations/code-suggestion") { authorize(); parameter("name", name) }
+            .bodyOrThrow<CodeSuggestionResponse>().code
+
+    /**
+     * Edits a congregation's contact details (coach, window open); the two-letter state is fixed at
+     * creation, so it isn't sent. 404 if unknown, 409 if the new name+city collides with another.
+     */
+    suspend fun updateCongregation(id: String, req: UpdateCongregationRequest): CongregationDto =
+        client.put("$baseUrl/congregations/$id") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
     /** The register screen's resume fetch: coached congregations, current registration, window state. */
     suspend fun myRegistration(): MyRegistrationResponse =
         client.get("$baseUrl/registration/mine") { authorize() }.bodyOrThrow()
@@ -436,11 +452,11 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     private suspend inline fun <reified T> HttpResponse.bodyOrThrow(): T {
         if (status.isSuccess()) return body()
         val raw = runCatching { bodyAsText() }.getOrNull()
-        val message = raw
-            ?.let { runCatching { errorJson.decodeFromString<ApiError>(it).message }.getOrNull() }
+        val error = raw?.let { runCatching { errorJson.decodeFromString<ApiError>(it) }.getOrNull() }
+        val message = error?.message
             ?: raw?.takeIf { it.isNotBlank() }
             ?: "Server returned $status"
-        throw ApiException(message, status.value)
+        throw ApiException(message, status.value, error?.code)
     }
 
     companion object {
@@ -452,7 +468,9 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
 }
 
 /**
- * Thrown when a backend request fails; [message] carries the server's human-readable reason and
- * [status] the HTTP status code (null when the failure happened before a response arrived).
+ * Thrown when a backend request fails; [message] carries the server's human-readable reason,
+ * [status] the HTTP status code (null when the failure happened before a response arrived), and
+ * [errorCode] the machine-readable [ApiError.code] when the body carried one (lets callers branch
+ * on the specific error, e.g. "code_taken" vs "congregation_exists").
  */
-class ApiException(message: String, val status: Int? = null) : Exception(message)
+class ApiException(message: String, val status: Int? = null, val errorCode: String? = null) : Exception(message)

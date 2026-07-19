@@ -13,6 +13,7 @@ import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.contestantCount
@@ -59,10 +60,13 @@ object RegisterScreen {
     private val congregation: CongregationDto? get() = loaded?.congregations?.firstOrNull()
     private val registration: RegistrationDto? get() = loaded?.registration
 
+    /** A globally-scoped admin (may edit outside the window, and may change a set congregation code). */
+    private val isAdmin: Boolean
+        get() = Session.user?.roles?.any { it.role == Role.ADMIN && it.scopeType == ScopeType.GLOBAL } == true
+
     /** Admins may keep editing outside the window (the server exempts them too). */
     private val canEdit: Boolean
-        get() = loaded?.windowOpen == true ||
-            Session.user?.roles?.any { it.role == Role.ADMIN && it.scopeType == ScopeType.GLOBAL } == true
+        get() = loaded?.windowOpen == true || isAdmin
 
     fun render(container: HTMLElement) {
         container.child("h1", "page-title", "Register my teams")
@@ -154,15 +158,8 @@ object RegisterScreen {
     private fun renderCongregationStep(parent: Element) {
         val existing = congregation
         if (existing != null) {
-            parent.child("div", "card section-card mb-3") {
-                child("div", "card-body") {
-                    child("h5", "card-title", "Your congregation")
-                    child("p", "mb-0", "${existing.name} — ${cityStateLine(existing)}")
-                    if (existing.mailingAddress.isNotBlank()) {
-                        child("p", "text-muted small mb-0", "${existing.mailingAddress}, ${cityStateLine(existing)} ${existing.zip}")
-                    }
-                }
-            }
+            if (canEdit) renderCongregationEditForm(parent, existing)
+            else renderCongregationSummary(parent, existing)
             parent.nextButton("Continue to teams", 2)
             return
         }
@@ -175,6 +172,7 @@ object RegisterScreen {
                 child("h5", "card-title", "Start a new congregation")
                 val form = child("form")
                 lateinit var name: HTMLInputElement
+                lateinit var code: HTMLInputElement
                 lateinit var address: HTMLInputElement
                 lateinit var city: HTMLInputElement
                 lateinit var state: HTMLInputElement
@@ -182,6 +180,20 @@ object RegisterScreen {
                 form.child("div", "mb-2") {
                     child("label", "form-label", "Congregation name")
                     name = child("input", "form-control") as HTMLInputElement
+                }
+                // The two-letter code, suggested from the name (a coach can override). Once saved,
+                // only an admin can change it.
+                form.child("div", "mb-2") {
+                    child("label", "form-label", "Congregation code")
+                    code = child("input", "form-control w-auto") as HTMLInputElement
+                    code.setAttribute("maxlength", "2")
+                    code.setAttribute("size", "4")
+                    code.setAttribute("placeholder", "e.g. WB")
+                    code.style.textTransform = "uppercase"
+                    child("div", "form-text",
+                        "A two-letter shorthand for your congregation (suggested from the name — " +
+                            "\"West Bexar County Church of Christ\" → WB). You can change it now; once saved, " +
+                            "only an admin can.")
                 }
                 form.child("div", "mb-2") {
                     child("label", "form-label", "Mailing address")
@@ -207,6 +219,23 @@ object RegisterScreen {
                         zip.setAttribute("size", "6")
                     }
                 }
+                // Suggest a code from the name until the coach types their own; debounced so we
+                // don't hit the backend on every keystroke.
+                var codeEdited = false
+                var suggestTimer: Int? = null
+                name.addEventListener("input", {
+                    if (codeEdited) return@addEventListener
+                    suggestTimer?.let { window.clearTimeout(it) }
+                    val query = name.value.trim()
+                    if (query.isBlank()) return@addEventListener
+                    suggestTimer = window.setTimeout({
+                        Shell.scope.launch {
+                            runCatching { Session.api.suggestCongregationCode(query) }
+                                .onSuccess { suggestion -> if (!codeEdited) code.value = suggestion }
+                        }
+                    }, 300)
+                })
+                code.addEventListener("input", { codeEdited = true })
                 // Deliberately enabled even outside the window: creating a congregation is
                 // onboarding, not registration (the server draws the same line).
                 val create = form.child("button", "btn btn-primary", "Create & continue") {
@@ -228,6 +257,7 @@ object RegisterScreen {
                                     state = state.value,
                                     mailingAddress = address.value,
                                     zip = zip.value,
+                                    code = code.value,
                                 )
                             )
                             Session.api.refreshUser() // pick up the new scoped COACH grant
@@ -236,10 +266,12 @@ object RegisterScreen {
                             renderContent()
                         } catch (e: Throwable) {
                             create.disabled = false
-                            // Only the name+city dupe (409) gets the "contact us to claim it" flow;
-                            // other errors (e.g. the adult-only rule) show the server's message as-is.
-                            val message = if ((e as? ApiException)?.status == 409) contactUsMessage(e.message)
-                                else e.message ?: "Something went wrong"
+                            // Only the name+city dupe gets the "contact us to claim it" flow; a taken
+                            // code or any other error shows the server's message as-is.
+                            val ex = e as? ApiException
+                            val message = if (ex?.status == 409 && ex.errorCode == "congregation_exists")
+                                contactUsMessage(e.message)
+                            else e.message ?: "Something went wrong"
                             slot.child("div", "alert alert-warning mt-3", message)
                         }
                     }
@@ -273,6 +305,133 @@ object RegisterScreen {
                                     }
                                 }
                             }
+                        }
+                    }
+                })
+            }
+        }
+    }
+
+    /** Read-only congregation card, shown once registration has closed (or before it opens). */
+    private fun renderCongregationSummary(parent: Element, existing: CongregationDto) {
+        parent.child("div", "card section-card mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title", "Your congregation")
+                child("p", "mb-0") {
+                    append("${existing.name} — ${cityStateLine(existing)}")
+                    if (existing.code.isNotBlank()) child("span", "badge text-bg-secondary ms-2", existing.code)
+                }
+                if (existing.mailingAddress.isNotBlank()) {
+                    child("p", "text-muted small mb-0", "${existing.mailingAddress}, ${cityStateLine(existing)} ${existing.zip}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Editable congregation card, shown while registration is open. Name, address, city, state, and
+     * ZIP are freely editable. The two-letter congregation code is set-once for a coach: editable
+     * while it's still blank, then locked (only an admin can change it) — the server enforces this.
+     */
+    private fun renderCongregationEditForm(parent: Element, existing: CongregationDto) {
+        parent.child("div", "card section-card mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title", "Your congregation")
+                child("p", "text-muted small", "Fix a typo in your congregation's details below.")
+                val form = child("form")
+                lateinit var name: HTMLInputElement
+                lateinit var address: HTMLInputElement
+                lateinit var city: HTMLInputElement
+                lateinit var state: HTMLInputElement
+                lateinit var zip: HTMLInputElement
+                lateinit var code: HTMLInputElement
+                form.child("div", "mb-2") {
+                    child("label", "form-label", "Congregation name")
+                    name = child("input", "form-control") as HTMLInputElement
+                    name.value = existing.name
+                }
+                // The two-letter code: a coach picks it once, then only an admin can change it.
+                val codeLocked = existing.code.isNotBlank() && !isAdmin
+                form.child("div", "mb-2") {
+                    child("label", "form-label", "Congregation code")
+                    code = child("input", "form-control w-auto") as HTMLInputElement
+                    code.value = existing.code
+                    code.setAttribute("maxlength", "2")
+                    code.setAttribute("size", "4")
+                    code.setAttribute("placeholder", "e.g. FB")
+                    code.style.textTransform = "uppercase"
+                    code.disabled = codeLocked
+                    val note = if (codeLocked)
+                        "Your two-letter code is set — contact us and an admin can change it."
+                    else
+                        "Pick a unique two-letter code for your congregation. Once you save it, only an " +
+                            "admin can change it."
+                    child("div", "form-text", note)
+                }
+                // A congregation that predates codes has none — suggest one from its name.
+                if (!codeLocked && existing.code.isBlank()) {
+                    Shell.scope.launch {
+                        runCatching { Session.api.suggestCongregationCode(existing.name) }
+                            .onSuccess { if (code.value.isBlank()) code.value = it }
+                    }
+                }
+                form.child("div", "mb-2") {
+                    child("label", "form-label", "Mailing address")
+                    address = child("input", "form-control") as HTMLInputElement
+                    address.setAttribute("placeholder", "Street address or PO Box")
+                    address.value = existing.mailingAddress
+                }
+                form.child("div", "d-flex flex-wrap gap-2 mb-3") {
+                    child("div", "flex-grow-1") {
+                        child("label", "form-label", "City")
+                        city = child("input", "form-control") as HTMLInputElement
+                        city.value = existing.city
+                    }
+                    child("div") {
+                        child("label", "form-label", "State")
+                        state = child("input", "form-control") as HTMLInputElement
+                        state.value = existing.state
+                        state.setAttribute("maxlength", "2")
+                        state.setAttribute("size", "3")
+                    }
+                    child("div") {
+                        child("label", "form-label", "ZIP")
+                        zip = child("input", "form-control") as HTMLInputElement
+                        zip.setAttribute("maxlength", "10")
+                        zip.setAttribute("size", "6")
+                        zip.value = existing.zip
+                    }
+                }
+                val save = form.child("button", "btn btn-primary", "Save changes") {
+                    setAttribute("type", "submit")
+                } as HTMLButtonElement
+                val slot = form.child("div")
+                form.addEventListener("submit", { event ->
+                    event.preventDefault()
+                    if (listOf(name, address, city, state, zip).any { it.value.isBlank() }) return@addEventListener
+                    save.disabled = true
+                    slot.clear()
+                    Shell.scope.launch {
+                        try {
+                            Session.api.updateCongregation(
+                                existing.id,
+                                UpdateCongregationRequest(
+                                    name = name.value,
+                                    city = city.value,
+                                    state = state.value,
+                                    mailingAddress = address.value,
+                                    zip = zip.value,
+                                    code = code.value,
+                                ),
+                            )
+                            // Refresh so the embedded registration.congregation (review step) matches too.
+                            loaded = Session.api.myRegistration()
+                            save.disabled = false
+                            slot.clear()
+                            slot.child("div", "alert alert-success mt-3 mb-0", "Saved.")
+                        } catch (e: Throwable) {
+                            save.disabled = false
+                            slot.child("div", "alert alert-warning mt-3 mb-0", e.message ?: "Something went wrong")
                         }
                     }
                 })

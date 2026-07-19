@@ -6,12 +6,14 @@ import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.CongregationsTable
+import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.DatabaseFactory
 import net.markdrew.biblebowl.server.data.IndividualsTable
 import net.markdrew.biblebowl.server.data.PostgresCongregationRepository
@@ -27,6 +29,7 @@ import net.markdrew.biblebowl.server.data.ScoreReleasesTable
 import net.markdrew.biblebowl.server.data.ScoresTable
 import net.markdrew.biblebowl.server.data.TeamMembersTable
 import net.markdrew.biblebowl.server.data.TeamsTable
+import net.markdrew.biblebowl.server.data.UpdateCongregationResult
 import net.markdrew.biblebowl.server.data.UsersTable
 import net.markdrew.biblebowl.server.security.Passwords
 import org.jetbrains.exposed.v1.jdbc.deleteAll
@@ -166,6 +169,44 @@ class PostgresRepositoryTest {
     }
 
     @Test
+    fun updatingACongregationPersistsFieldsAndEnforcesCodeUniqueness() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val db = DatabaseFactory.connect()
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+
+        val coach = users.create("coach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("First Church", "Austin", state = "TX", mailingAddress = "1 Main St", zip = "78701"),
+            coach.id,
+        )).congregation
+        val other = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "2 Elm St", zip = "75001"),
+            coach.id,
+        )).congregation
+
+        val updated = assertIs<UpdateCongregationResult.Updated>(congregations.update(
+            cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", state = "ok", mailingAddress = "456 Oak Ave", zip = "78664", code = "fc"),
+        )).congregation
+        assertEquals("First Christian Church", updated.name)
+        assertEquals("Round Rock", updated.city)
+        assertEquals("456 Oak Ave", updated.mailingAddress)
+        assertEquals("78664", updated.zip)
+        assertEquals("OK", updated.state, "state is editable and uppercased")
+        assertEquals("FC", updated.code, "code is uppercased")
+        assertEquals(updated, congregations.findById(cong.id))
+
+        // Name+city and code collisions are reported distinctly; the other congregation is untouched.
+        assertIs<UpdateCongregationResult.NameCityTaken>(congregations.update(
+            cong.id, UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "9 St", zip = "75001")))
+        congregations.update(other.id, UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "2 Elm St", zip = "75001", code = "SC"))
+        assertIs<UpdateCongregationResult.CodeTaken>(congregations.update(
+            cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", state = "OK", mailingAddress = "456 Oak Ave", zip = "78664", code = "sc")))
+        assertEquals("Second Church", congregations.findById(other.id)!!.name)
+    }
+
+    @Test
     fun claimLinksARosterEntryToItsOwnerAccount() {
         if (!available) { println("Postgres not reachable — skipping"); return }
         val db = DatabaseFactory.connect()
@@ -180,10 +221,10 @@ class PostgresRepositoryTest {
         val other = users.create("other@tbb.org", "Other", "2013-06-01", adult = false,
             passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
 
-        val cong = assertNotNull(congregations.create(
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
             CreateCongregationRequest("Claim Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
             coach.id,
-        ))
+        )).congregation
         val team = assertNotNull(registrations.addTeam(cong.id, "2027", "Team A"))
         val added = assertIs<AddMemberResult.Added>(
             registrations.addMember(

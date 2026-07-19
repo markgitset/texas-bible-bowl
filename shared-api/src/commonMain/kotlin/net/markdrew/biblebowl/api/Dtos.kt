@@ -232,6 +232,11 @@ data class CongregationDto(
     /** Street address or PO Box (the city/state/zip complete the mailing label). */
     val mailingAddress: String = "",
     val zip: String = "",
+    /**
+     * The congregation's unique two-letter code, e.g. "FB" — a coach picks it once, after which only
+     * an admin can change it. Blank until chosen; unique (case-insensitively) across congregations.
+     */
+    val code: String = "",
 )
 
 @Serializable
@@ -241,6 +246,33 @@ data class CreateCongregationRequest(
     val state: String = "",
     val mailingAddress: String = "",
     val zip: String = "",
+    /**
+     * The congregation's unique two-letter code, e.g. "WB" for "West Bexar County Church of Christ".
+     * Chosen at creation (a suggestion is derived from the name — see [congregationCodeCandidates]);
+     * blank is allowed, and once set only an admin can change it.
+     */
+    val code: String = "",
+)
+
+/** A suggested, currently-available two-letter code for a congregation name (`GET /congregations/code-suggestion`). */
+@Serializable
+data class CodeSuggestionResponse(val code: String)
+
+/**
+ * Edits a congregation's details after creation (`PUT /congregations/{id}`) — allowed to its coach
+ * while the registration window is open (admins any time). Name, address, city, state, and ZIP are
+ * freely editable. The two-letter [code] is special: a coach may *set* it while it's still blank,
+ * but once set only an admin may change it (enforced server-side).
+ */
+@Serializable
+data class UpdateCongregationRequest(
+    val name: String,
+    val city: String,
+    val state: String = "",
+    val mailingAddress: String = "",
+    val zip: String = "",
+    /** Unique two-letter congregation code; blank leaves it unset. */
+    val code: String = "",
 )
 
 /**

@@ -6,7 +6,10 @@ import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDeskRowDto
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
+import net.markdrew.biblebowl.api.Role
+import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.TeamDto
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.division
 import net.markdrew.biblebowl.api.formatCents
@@ -40,6 +43,10 @@ object AdminRegistrationsScreen {
     private val expanded = mutableSetOf<String>() // congregation ids with the roster detail open
     private var message: String? = null
     private lateinit var content: HTMLElement
+
+    /** Only a globally-scoped admin may change a congregation's two-letter code once it's set. */
+    private val isAdmin: Boolean
+        get() = Session.user?.roles?.any { it.role == Role.ADMIN && it.scopeType == ScopeType.GLOBAL } == true
 
     fun render(container: HTMLElement) {
         container.child("h1", "page-title", "Registration desk")
@@ -81,7 +88,7 @@ object AdminRegistrationsScreen {
                 child("thead") {
                     child("tr") {
                         listOf(
-                            "Congregation", "Status", "Teams", "Contestants", "Individuals",
+                            "Congregation", "Code", "Status", "Teams", "Contestants", "Individuals",
                             "Total due", "Submitted", "Paid", "Coaches",
                         ).forEach { child("th", text = it) }
                     }
@@ -104,6 +111,7 @@ object AdminRegistrationsScreen {
                     else "${row.congregation.city}, ${row.congregation.state}"
                 child("div", "text-muted small", cityState)
             }
+            child("td") { renderCodeCell(this, row) }
             child("td") {
                 statusBadge(this, reg?.status)
                 val unassigned = reg?.unassigned?.size ?: 0
@@ -139,10 +147,57 @@ object AdminRegistrationsScreen {
         if (row.congregation.id in expanded) {
             tbody.child("tr") {
                 child("td", "bg-light") {
-                    setAttribute("colspan", "9")
+                    setAttribute("colspan", "10")
                     renderDetail(this, row)
                 }
             }
+        }
+    }
+
+    /**
+     * The two-letter code cell: an inline editor for admins (the only ones allowed to change a set
+     * code), plain text otherwise. Saving reuses `PUT /congregations/{id}`, resending the row's other
+     * fields unchanged.
+     */
+    private fun renderCodeCell(cell: Element, row: RegistrationDeskRowDto) {
+        val cong = row.congregation
+        if (!isAdmin) {
+            if (cong.code.isBlank()) cell.child("span", "text-muted", "—")
+            else cell.child("span", "badge text-bg-secondary", cong.code)
+            return
+        }
+        cell.child("div", "d-flex align-items-center gap-1") {
+            val input = child("input", "form-control form-control-sm w-auto font-monospace") as HTMLInputElement
+            input.value = cong.code
+            input.setAttribute("maxlength", "2")
+            input.setAttribute("size", "3")
+            input.setAttribute("title", "Two-letter congregation code")
+            input.style.textTransform = "uppercase"
+            input.addEventListener("change", {
+                val next = input.value.trim().uppercase()
+                if (next == cong.code) return@addEventListener
+                input.disabled = true
+                message = null
+                Shell.scope.launch {
+                    try {
+                        val updated = Session.api.updateCongregation(
+                            cong.id,
+                            UpdateCongregationRequest(
+                                name = cong.name, city = cong.city, state = cong.state,
+                                mailingAddress = cong.mailingAddress, zip = cong.zip, code = next,
+                            ),
+                        )
+                        data = data?.let { desk ->
+                            desk.copy(rows = desk.rows.map { r ->
+                                if (r.congregation.id == cong.id) r.copy(congregation = updated) else r
+                            })
+                        }
+                    } catch (e: Throwable) {
+                        message = "Could not update code: ${e.message}"
+                    }
+                    renderContent()
+                }
+            })
         }
     }
 
@@ -304,13 +359,14 @@ object AdminRegistrationsScreen {
 
     private fun deskCsv(desk: RegistrationDeskResponse): String {
         val header = listOf(
-            "Congregation", "City", "State", "Status", "Teams", "Contestants", "Individuals",
+            "Congregation", "Code", "City", "State", "Status", "Teams", "Contestants", "Individuals",
             "Total Due", "Submitted", "Paid", "Coach Names", "Coach Emails",
         )
         val rows = desk.rows.map { row ->
             val reg = row.registration
             listOf(
                 row.congregation.name,
+                row.congregation.code,
                 row.congregation.city,
                 row.congregation.state,
                 reg?.status?.name ?: "NONE",

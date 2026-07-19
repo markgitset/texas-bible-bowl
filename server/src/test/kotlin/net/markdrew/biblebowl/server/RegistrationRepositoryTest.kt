@@ -4,6 +4,7 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
@@ -12,7 +13,9 @@ import net.markdrew.biblebowl.server.data.ClaimCodes
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
 import net.markdrew.biblebowl.server.data.InMemoryRegistrationRepository
+import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.MAX_TEAM_SIZE
+import net.markdrew.biblebowl.server.data.UpdateCongregationResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -30,10 +33,10 @@ class RegistrationRepositoryTest {
     )
 
     private fun newCongregation(name: String, city: String, userId: String = "u1") =
-        congregations.create(
+        (congregations.create(
             CreateCongregationRequest(name, city, state = "TX", mailingAddress = "123 Main St", zip = "78701"),
             userId,
-        )
+        ) as? CreateCongregationResult.Created)?.congregation
 
     @Test
     fun congregationNamesAreUniquePerCity() {
@@ -42,6 +45,71 @@ class RegistrationRepositoryTest {
         assertNotNull(newCongregation("First Church", "Dallas", "u2"), "same name, different city is fine")
         assertEquals(2, congregations.search("church").size)
         assertEquals(1, congregations.search("dallas").size)
+    }
+
+    @Test
+    fun codesAreSuggestedFromTheNameAndUniqueAtCreation() {
+        // The suggestion follows the initials convention.
+        assertEquals("WB", congregations.suggestCode("West Bexar County Church of Christ"))
+
+        val wb = assertIs<CreateCongregationResult.Created>(
+            congregations.create(
+                CreateCongregationRequest("West Bexar County Church of Christ", "San Antonio", state = "TX", mailingAddress = "1 St", zip = "78254", code = "wb"),
+                "u1",
+            ),
+        ).congregation
+        assertEquals("WB", wb.code, "the code is stored uppercased")
+
+        // With WB taken, the next suggestion for the same name moves on to WC.
+        assertEquals("WC", congregations.suggestCode("West Bexar County Church of Christ"))
+
+        // Another congregation can't grab WB (case-insensitively).
+        assertIs<CreateCongregationResult.CodeTaken>(
+            congregations.create(
+                CreateCongregationRequest("Westside Baptist", "Dallas", state = "TX", mailingAddress = "2 St", zip = "75001", code = "wb"),
+                "u2",
+            ),
+        )
+    }
+
+    @Test
+    fun updatingACongregationEditsFieldsAndEnforcesUniqueness() {
+        val cong = newCongregation("First Church", "Austin")!!
+        val other = newCongregation("Second Church", "Dallas", "u2")!!
+
+        // Name, city, and state are all freely editable; state and code are stored uppercased.
+        val updated = assertIs<UpdateCongregationResult.Updated>(
+            congregations.update(
+                cong.id,
+                UpdateCongregationRequest(
+                    "First Christian Church", "Round Rock", state = "ok",
+                    mailingAddress = "456 Oak Ave", zip = "78664", code = "fc",
+                ),
+            ),
+        ).congregation
+        assertEquals("First Christian Church", updated.name)
+        assertEquals("Round Rock", updated.city)
+        assertEquals("OK", updated.state, "state is editable and normalized to uppercase")
+        assertEquals("456 Oak Ave", updated.mailingAddress)
+        assertEquals("78664", updated.zip)
+        assertEquals("FC", updated.code, "code is stored uppercased")
+        assertEquals(updated, congregations.findById(cong.id))
+
+        // The two uniqueness constraints are reported distinctly.
+        assertIs<UpdateCongregationResult.NameCityTaken>(
+            congregations.update(cong.id, UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "1 St", zip = "75001")),
+        )
+        congregations.update(other.id, UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "2 Elm St", zip = "75001", code = "SC"))
+        assertIs<UpdateCongregationResult.CodeTaken>(
+            congregations.update(cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", state = "OK", mailingAddress = "456 Oak Ave", zip = "78664", code = "sc")),
+        )
+        // Re-saving a congregation's own code is fine (self is excluded from the collision check).
+        assertIs<UpdateCongregationResult.Updated>(
+            congregations.update(cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", state = "OK", mailingAddress = "456 Oak Ave", zip = "78664", code = "FC")),
+        )
+        assertIs<UpdateCongregationResult.NotFound>(
+            congregations.update("nope", UpdateCongregationRequest("Ghost", "Nowhere", state = "TX", mailingAddress = "0 St", zip = "00000")),
+        )
     }
 
     @Test

@@ -12,6 +12,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AssignMemberTeamRequest
+import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
@@ -20,6 +21,7 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.SeasonDto
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
@@ -35,8 +37,10 @@ import net.markdrew.biblebowl.server.data.AssignResult
 import net.markdrew.biblebowl.server.data.ClaimCodes
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.CongregationRepository
+import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.RegistrationRepository
 import net.markdrew.biblebowl.server.data.SeasonRepository
+import net.markdrew.biblebowl.server.data.UpdateCongregationResult
 import net.markdrew.biblebowl.server.data.UserRecord
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.registrationWindowState
@@ -80,21 +84,86 @@ fun Route.registrationRoutes(
                     ),
                 )
             }
-            val created = congregations.create(req.copy(state = req.state.trim().uppercase()), user.id)
-                ?: return@post call.respond(
+            val code = req.code.trim().uppercase()
+            if (!isCodeValid(code)) {
+                return@post call.respond(HttpStatusCode.BadRequest, INVALID_CODE_ERROR)
+            }
+            val normalized = req.copy(state = req.state.trim().uppercase(), code = code)
+            when (val result = congregations.create(normalized, user.id)) {
+                is CreateCongregationResult.Created -> {
+                    users.addRoleGrant(user.id, RoleGrant(Role.COACH, ScopeType.CONGREGATION, result.congregation.id))
+                    call.respond(HttpStatusCode.Created, result.congregation)
+                }
+                CreateCongregationResult.NameCityTaken -> call.respond(
                     HttpStatusCode.Conflict,
                     ApiError(
                         "congregation_exists",
                         "That congregation is already registered — contact us to be added as its coach",
                     ),
                 )
-            users.addRoleGrant(user.id, RoleGrant(Role.COACH, ScopeType.CONGREGATION, created.id))
-            call.respond(HttpStatusCode.Created, created)
+                CreateCongregationResult.CodeTaken -> call.respond(HttpStatusCode.Conflict, CODE_TAKEN_ERROR)
+            }
         }
 
         get("/congregations") {
             if (currentUser(users) == null) return@get
             call.respond(congregations.search(call.request.queryParameters["query"] ?: ""))
+        }
+
+        // Suggests an available two-letter code derived from a congregation name (see
+        // congregationCodeCandidates) — the register form prefills it as the coach types the name.
+        get("/congregations/code-suggestion") {
+            if (currentUser(users) == null) return@get
+            call.respond(CodeSuggestionResponse(congregations.suggestCode(call.request.queryParameters["name"] ?: "")))
+        }
+
+        // Editing a congregation after registration — a coach may fix its name, address, city,
+        // state, or ZIP until registration closes (admins any time). The two-letter congregation
+        // code is set-once for a coach: they choose it while it's blank, but once set only an admin
+        // may change it.
+        put("/congregations/{congregationId}") {
+            val user = currentUser(users) ?: return@put
+            val congregationId = call.parameters["congregationId"]!!
+            if (!requireScopedPermission(user, Permission.REGISTRATION_MANAGE, congregationId)) return@put
+            if (!requireWindowOpen(user, seasons)) return@put
+            val existing = congregations.findById(congregationId)
+                ?: return@put call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such congregation"))
+            val req = call.receive<UpdateCongregationRequest>()
+            if (!req.isValid()) {
+                return@put call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError(
+                        "invalid_congregation",
+                        "Name, mailing address, city, two-letter state, and 5-digit ZIP are required",
+                    ),
+                )
+            }
+            val code = req.code.trim().uppercase()
+            if (!isCodeValid(code)) {
+                return@put call.respond(HttpStatusCode.BadRequest, INVALID_CODE_ERROR)
+            }
+            // Once a coach has picked the code, it's locked to everyone but an admin.
+            if (existing.code.isNotBlank() && code != existing.code && !user.isAdmin) {
+                return@put call.respond(
+                    HttpStatusCode.Forbidden,
+                    ApiError(
+                        "forbidden_code_change",
+                        "Your congregation code is already set — contact us and an admin can change it",
+                    ),
+                )
+            }
+            val normalized = req.copy(state = req.state.trim().uppercase(), code = code)
+            when (val result = congregations.update(congregationId, normalized)) {
+                is UpdateCongregationResult.Updated -> call.respond(result.congregation)
+                UpdateCongregationResult.NotFound ->
+                    call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such congregation"))
+                UpdateCongregationResult.NameCityTaken ->
+                    call.respond(
+                        HttpStatusCode.Conflict,
+                        ApiError("congregation_exists", "Another congregation already uses that name and city"),
+                    )
+                UpdateCongregationResult.CodeTaken -> call.respond(HttpStatusCode.Conflict, CODE_TAKEN_ERROR)
+            }
         }
 
         get("/registration/mine") {
@@ -320,9 +389,24 @@ private const val INVALID_MEMBER_MESSAGE =
 private fun UpsertRosterEntryRequest.isValid(season: SeasonDto): Boolean =
     name.isNotBlank() && (season.gradeForBirthdate(birthdate) ?: -1) in 3..12
 
+/** A congregation code is optional (blank), but if present must be exactly two letters. */
+private fun isCodeValid(code: String): Boolean {
+    val c = code.trim()
+    return c.isBlank() || (c.length == 2 && c.all { it.isLetter() })
+}
+
+private val INVALID_CODE_ERROR = ApiError("invalid_code", "A congregation code must be exactly two letters")
+private val CODE_TAKEN_ERROR = ApiError("code_taken", "That two-letter code is already taken — pick another")
+
 private val ZIP_REGEX = Regex("""\d{5}(-\d{4})?""")
 
 private fun CreateCongregationRequest.isValid(): Boolean =
+    name.isNotBlank() && city.isNotBlank() && mailingAddress.isNotBlank() &&
+        state.trim().length == 2 && state.trim().all { it.isLetter() } &&
+        zip.trim().matches(ZIP_REGEX)
+
+/** Required-field rules for an update — the same as create (the code is validated separately). */
+private fun UpdateCongregationRequest.isValid(): Boolean =
     name.isNotBlank() && city.isNotBlank() && mailingAddress.isNotBlank() &&
         state.trim().length == 2 && state.trim().all { it.isLetter() } &&
         zip.trim().matches(ZIP_REGEX)

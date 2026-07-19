@@ -10,6 +10,7 @@ import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.Gender
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
@@ -54,6 +55,9 @@ class TbbApiRequestTest {
                     } else {
                         """[{"id":"c1","name":"First Church","city":"Austin"}]""" to "application/json"
                     }
+                "/congregations/c1" ->
+                    """{"id":"c1","name":"First Christian Church","city":"Round Rock","state":"TX"}""" to "application/json"
+                "/congregations/code-suggestion" -> """{"code":"WB"}""" to "application/json"
                 "/registration/mine" ->
                     """{"congregations":[],"registration":null,"windowOpen":true}""" to "application/json"
                 "/admin/registrations" ->
@@ -138,6 +142,13 @@ class TbbApiRequestTest {
         api.searchCongregations("first")
         assertEquals("GET", methods.last())
         assertTrue(requests.last().startsWith("/congregations?query=first"), requests.last())
+
+        api.updateCongregation("c1", UpdateCongregationRequest("First Christian Church", "Round Rock", state = "TX", mailingAddress = "456 Oak Ave", zip = "78664", code = "FC"))
+        assertEquals("PUT" to "/congregations/c1", methods.last() to requests.last())
+
+        assertEquals("WB", api.suggestCongregationCode("West Bexar County Church of Christ"))
+        assertEquals("GET", methods.last())
+        assertTrue(requests.last().startsWith("/congregations/code-suggestion?name="), requests.last())
 
         val mine = api.myRegistration()
         assertTrue(mine.windowOpen)

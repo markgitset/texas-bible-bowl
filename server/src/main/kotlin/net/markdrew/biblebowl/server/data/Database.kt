@@ -64,6 +64,8 @@ object CongregationsTable : Table("congregations") {
     val state = varchar("state", 2).default("")
     val mailingAddress = varchar("mailing_address", 200).default("")
     val zip = varchar("zip", 10).default("")
+    /** Unique two-letter congregation code, e.g. "FB"; "" until a coach chooses one. */
+    val code = varchar("code", 2).default("")
     val createdByUserId = varchar("created_by_user_id", 36).references(UsersTable.id)
     val createdAtEpochMs = long("created_at_epoch_ms")
     override val primaryKey = PrimaryKey(id)
@@ -255,6 +257,10 @@ object DatabaseFactory {
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS state VARCHAR(2) NOT NULL DEFAULT ''")
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS mailing_address VARCHAR(200) NOT NULL DEFAULT ''")
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS zip VARCHAR(10) NOT NULL DEFAULT ''")
+            exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS code VARCHAR(2) NOT NULL DEFAULT ''")
+            // Congregation codes are unique — but only among the ones actually assigned; unassigned
+            // congregations all share the "" default, so the uniqueness is a partial index.
+            exec("CREATE UNIQUE INDEX IF NOT EXISTS congregations_code_key ON congregations (code) WHERE code <> ''")
             exec("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS paid_at_epoch_ms BIGINT")
             // Birthdates replaced self-reported grades (2026-07). Legacy grades are dropped, not
             // converted: affected users/roster entries fall back to "no division" until a birthdate

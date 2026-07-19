@@ -22,6 +22,7 @@ import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AuthResponse
+import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
@@ -33,6 +34,7 @@ import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
@@ -160,6 +162,184 @@ class RegistrationRoutesTest {
             setBody(congregationRequest("Kid Church", "Lystra"))
         }
         assertEquals(HttpStatusCode.Created, allowed.status)
+    }
+
+    @Test
+    fun creatingACongregationSuggestsAndStoresATwoLetterCode() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+        val coach = api.signUp("coach@tbb.org", "Carol Coach")
+        fun io.ktor.client.request.HttpRequestBuilder.asCoach() =
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+
+        // The suggestion endpoint derives an available code from the name.
+        val suggested: CodeSuggestionResponse =
+            api.get("/congregations/code-suggestion?name=West%20Bexar%20County%20Church%20of%20Christ") { asCoach() }.body()
+        assertEquals("WB", suggested.code)
+
+        // Create with a code (lowercase) — stored uppercased.
+        val cong: CongregationDto = api.post("/congregations") {
+            asCoach(); setBody(congregationRequest("West Bexar County Church of Christ", "San Antonio").copy(code = "wb"))
+        }.body()
+        assertEquals("WB", cong.code)
+
+        // With WB taken, the suggestion for the same name moves on to WC.
+        val next: CodeSuggestionResponse =
+            api.get("/congregations/code-suggestion?name=West%20Bexar%20County%20Church%20of%20Christ") { asCoach() }.body()
+        assertEquals("WC", next.code)
+
+        // A second congregation can't grab WB, and a non-two-letter code is a 400.
+        val other = api.signUp("other@tbb.org", "Other Coach")
+        val taken = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${other.token}")
+            setBody(congregationRequest("Westside Baptist", "Dallas").copy(code = "WB"))
+        }
+        assertEquals(HttpStatusCode.Conflict, taken.status)
+        assertEquals("code_taken", taken.body<ApiError>().code)
+        val bad = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${other.token}")
+            setBody(congregationRequest("Third Church", "Waco").copy(code = "W1"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, bad.status)
+        assertEquals("invalid_code", bad.body<ApiError>().code)
+    }
+
+    @Test
+    fun coachEditsCongregationAndPicksACodeOnlyAnAdminCanLaterChange() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+        val coach = api.signUp("coach@tbb.org", "Carol Coach")
+        fun io.ktor.client.request.HttpRequestBuilder.asCoach() =
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+
+        val congregation: CongregationDto = api.post("/congregations") {
+            asCoach(); setBody(congregationRequest("First Church", "Austin"))
+        }.body()
+        assertEquals("", congregation.code, "a new congregation has no code yet")
+
+        // Name, city, and state are all editable; the coach also picks a two-letter code (uppercased).
+        val edited: CongregationDto = api.put("/congregations/${congregation.id}") {
+            asCoach()
+            setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "ok", mailingAddress = "456 Oak Ave", zip = "78664", code = "fc"))
+        }.body()
+        assertEquals("First Christian Church", edited.name)
+        assertEquals("Round Rock", edited.city)
+        assertEquals("OK", edited.state, "state is editable now")
+        assertEquals("FC", edited.code, "code is stored uppercased")
+
+        // The edit round-trips through the resume fetch.
+        val mine: MyRegistrationResponse = api.get("/registration/mine") { asCoach() }.body()
+        assertEquals("FC", mine.congregations.single().code)
+
+        // Re-saving other fields while keeping the same code is fine.
+        val keptCode: CongregationDto = api.put("/congregations/${congregation.id}") {
+            asCoach()
+            setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "TX", mailingAddress = "456 Oak Ave", zip = "78664", code = "FC"))
+        }.body()
+        assertEquals("TX", keptCode.state)
+        assertEquals("FC", keptCode.code)
+
+        // A coach cannot *change* the code once it's set.
+        val lockedChange = api.put("/congregations/${congregation.id}") {
+            asCoach()
+            setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "TX", mailingAddress = "456 Oak Ave", zip = "78664", code = "ZZ"))
+        }
+        assertEquals(HttpStatusCode.Forbidden, lockedChange.status)
+        assertEquals("forbidden_code_change", lockedChange.body<ApiError>().code)
+
+        // A code that isn't two letters is a 400; a blank required field (state) is also a 400.
+        val badCode = api.put("/congregations/${congregation.id}") {
+            asCoach(); setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "TX", mailingAddress = "456 Oak Ave", zip = "78664", code = "F1"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, badCode.status)
+        assertEquals("invalid_code", badCode.body<ApiError>().code)
+        val blankState = api.put("/congregations/${congregation.id}") {
+            asCoach(); setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "", mailingAddress = "456 Oak Ave", zip = "78664", code = "FC"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, blankState.status)
+        assertEquals("invalid_congregation", blankState.body<ApiError>().code)
+
+        // A second congregation can't grab a taken code, and renaming onto another's name+city clashes.
+        val other = api.signUp("other@tbb.org", "Other Coach")
+        val cong2: CongregationDto = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${other.token}")
+            setBody(congregationRequest("Second Church", "Dallas"))
+        }.body()
+        val codeClash = api.put("/congregations/${cong2.id}") {
+            header(HttpHeaders.Authorization, "Bearer ${other.token}")
+            setBody(UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "1 St", zip = "75001", code = "fc"))
+        }
+        assertEquals(HttpStatusCode.Conflict, codeClash.status)
+        assertEquals("code_taken", codeClash.body<ApiError>().code)
+        val nameCityClash = api.put("/congregations/${congregation.id}") {
+            asCoach(); setBody(UpdateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "456 Oak Ave", zip = "78664", code = "FC"))
+        }
+        assertEquals(HttpStatusCode.Conflict, nameCityClash.status)
+        assertEquals("congregation_exists", nameCityClash.body<ApiError>().code)
+
+        // A different coach can't edit the first congregation at all (scoped grant).
+        val forbidden = api.put("/congregations/${congregation.id}") {
+            header(HttpHeaders.Authorization, "Bearer ${other.token}")
+            setBody(UpdateCongregationRequest("Hostile Takeover", "Dallas", state = "TX", mailingAddress = "1 St", zip = "75001", code = "FC"))
+        }
+        assertEquals(HttpStatusCode.Forbidden, forbidden.status)
+        assertEquals("forbidden_scope", forbidden.body<ApiError>().code)
+
+        // An admin *can* change a set code.
+        users.create("admin@tbb.org", "Admin", null, adult = true, passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)))
+        val admin: AuthResponse = json.decodeFromString(
+            api.post("/auth/login") { setBody(net.markdrew.biblebowl.api.LoginRequest("admin@tbb.org", "supersecret")) }.bodyAsText()
+        )
+        val adminChanged: CongregationDto = api.put("/congregations/${congregation.id}") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(UpdateCongregationRequest("First Christian Church", "Round Rock", state = "TX", mailingAddress = "456 Oak Ave", zip = "78664", code = "FA"))
+        }.body()
+        assertEquals("FA", adminChanged.code)
+    }
+
+    @Test
+    fun editingCongregationIsWindowGatedButAdminsMayFixItLate() = testApplication {
+        val users = InMemoryUserRepository()
+        val closedSeason = openSeason.copy(registrationClosesOn = "2000-12-31")
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(closedSeason))
+        }
+        val api = jsonClient()
+
+        // Creating (onboarding) still works after close; editing details does not, for a coach.
+        val coach = api.signUp("late@tbb.org", "Late Coach")
+        val congregation: CongregationDto = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+            setBody(congregationRequest("Late Church", "Waco"))
+        }.body()
+        val closed = api.put("/congregations/${congregation.id}") {
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+            setBody(UpdateCongregationRequest("Late Church Renamed", "Waco", state = "TX", mailingAddress = "123 Main St", zip = "78701"))
+        }
+        assertEquals(HttpStatusCode.Conflict, closed.status)
+        assertEquals("registration_closed", closed.body<ApiError>().code)
+
+        // Admins may still fix a congregation after the deadline.
+        users.create("admin@tbb.org", "Admin", null, adult = true, passwordHash = Passwords.hash("supersecret"), roles = listOf(RoleGrant(Role.ADMIN)))
+        val admin: AuthResponse = json.decodeFromString(
+            api.post("/auth/login") {
+                setBody(net.markdrew.biblebowl.api.LoginRequest("admin@tbb.org", "supersecret"))
+            }.bodyAsText()
+        )
+        val adminEdit: CongregationDto = api.put("/congregations/${congregation.id}") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(UpdateCongregationRequest("Late Church Renamed", "Waco", state = "TX", mailingAddress = "123 Main St", zip = "78701"))
+        }.body()
+        assertEquals("Late Church Renamed", adminEdit.name)
     }
 
     @Test
