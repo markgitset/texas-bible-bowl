@@ -136,6 +136,8 @@ with category highlighting and unique-word underlining. Registration is in:
 coach flow (congregation → teams → rosters → submit), birthdate-driven
 divisions, itemized fees, a registration desk with payment tracking, claim
 codes, and admin user management. Event-ops scoring is in too: a grading desk
-(per-round score entry for every contestant), a season release switch, and
-scoped My Scores for owners and coaches. Next: event-day check-in, division
-standings/tally, the curated champions page, and the iOS target.
+(per-round score entry for every contestant), a season release switch, scoped
+My Scores for owners and coaches with placement, and a live division tally
+(individual and team standings per division bracket; team totals exclude the
+Power Round). Next: event-day check-in, the curated champions page, and the
+iOS target.

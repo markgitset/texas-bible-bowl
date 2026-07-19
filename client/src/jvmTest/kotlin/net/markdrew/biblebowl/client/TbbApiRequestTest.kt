@@ -71,6 +71,8 @@ class TbbApiRequestTest {
                         "application/json"
                 "/admin/scores", "/admin/scores/release" ->
                     """{"seasonYear":"2027","rows":[]}""" to "application/json"
+                "/admin/scores/standings" ->
+                    """{"seasonYear":"2027","divisions":[]}""" to "application/json"
                 "/scores/mine" ->
                     """{"seasonYear":"2027","released":false,"rows":[]}""" to "application/json"
                 else ->
@@ -237,6 +239,10 @@ class TbbApiRequestTest {
 
         api.setScoresReleased(true)
         assertEquals("PUT" to "/admin/scores/release", methods.last() to requests.last())
+
+        val tally = api.standings()
+        assertEquals("2027", tally.seasonYear)
+        assertEquals("GET" to "/admin/scores/standings", methods.last() to requests.last())
 
         val mine = api.myScores()
         assertEquals(false, mine.released)

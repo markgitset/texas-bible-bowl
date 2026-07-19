@@ -42,6 +42,7 @@ import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.SetPaidRequest
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
+import net.markdrew.biblebowl.api.StandingsResponse
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
@@ -373,6 +374,10 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     /** The signed-in user's visible released scores (owned entries + coached congregations). */
     suspend fun myScores(): MyScoresResponse =
         client.get("$baseUrl/scores/mine") { authorize() }.bodyOrThrow()
+
+    /** The division tally (event-wide SCORE_VIEW_ALL): every bracket ranked as grading progresses. */
+    suspend fun standings(): StandingsResponse =
+        client.get("$baseUrl/admin/scores/standings") { authorize() }.bodyOrThrow()
 
     // --- Admin: registration desk & user management (docs/gui-redesign.md §5G) ---
 
