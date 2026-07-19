@@ -54,6 +54,27 @@ class RoundTest {
     }
 
     @Test
+    fun teamScoresExcludeThePowerRoundAndMaxAtEightHundred() {
+        // site/content/event/round-description.md: "Team (4 members) | 800 points" = 4 × 200.
+        assertEquals(200, TEAM_MEMBER_MAX_POINTS)
+        assertEquals(800, 4 * TEAM_MEMBER_MAX_POINTS)
+        val members = listOf(
+            mapOf(Round.FIND_THE_VERSE to 40, Round.POWER to 50), // Power never counts for the team
+            mapOf(Round.QUOTES to 30),
+            emptyMap(), // ungraded member contributes 0
+        )
+        assertEquals(70, teamPoints(members))
+    }
+
+    @Test
+    fun ordinalsFollowEnglishSuffixRules() {
+        assertEquals(
+            listOf("1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "23rd", "111th"),
+            listOf(1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 111).map { ordinal(it) },
+        )
+    }
+
+    @Test
     fun maxScoresMatchTheOfficialScoringSummary() {
         // site/content/event/round-description.md: Elementary max 200, everyone else 250.
         assertEquals(200, Division.ELEMENTARY.maxScore)

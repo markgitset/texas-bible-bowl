@@ -141,6 +141,30 @@ val Division.maxScore: Int
 val ScoreRowDto.totalPoints: Int
     get() = scores.values.sum()
 
+/**
+ * What one member can contribute to a team score: rounds 1–5 only (200 points). The Power Round
+ * never counts toward team totals — that's why the published team maximum is 800 = 4 × 200.
+ */
+val TEAM_MEMBER_MAX_POINTS: Int = Round.entries.filter { it != Round.POWER }.sumOf { it.maxPoints }
+
+/** A team's total: every member's rounds 1–5 points; Power Round scores are excluded. */
+fun teamPoints(memberScores: Iterable<Map<Round, Int>>): Int =
+    memberScores.sumOf { scores ->
+        scores.entries.sumOf { (round, points) -> if (round == Round.POWER) 0 else points }
+    }
+
+/** "1st", "2nd", "3rd", "4th", … "11th", "12th", "13th", "21st", … */
+fun ordinal(n: Int): String {
+    val suffix = when {
+        n % 100 in 11..13 -> "th"
+        n % 10 == 1 -> "st"
+        n % 10 == 2 -> "nd"
+        n % 10 == 3 -> "rd"
+        else -> "th"
+    }
+    return "$n$suffix"
+}
+
 /** All contestants in a registration: every team member plus every individual (adult) contestant. */
 val RegistrationDto.contestantCount: Int
     get() = teams.sumOf { it.members.size } + individuals.size
