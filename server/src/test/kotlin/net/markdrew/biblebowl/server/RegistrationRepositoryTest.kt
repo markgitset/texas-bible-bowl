@@ -12,6 +12,7 @@ import net.markdrew.biblebowl.server.data.ClaimCodes
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
 import net.markdrew.biblebowl.server.data.InMemoryRegistrationRepository
+import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.MAX_TEAM_SIZE
 import net.markdrew.biblebowl.server.data.UpdateCongregationResult
 import kotlin.test.Test
@@ -31,10 +32,10 @@ class RegistrationRepositoryTest {
     )
 
     private fun newCongregation(name: String, city: String, userId: String = "u1") =
-        congregations.create(
+        (congregations.create(
             CreateCongregationRequest(name, city, state = "TX", mailingAddress = "123 Main St", zip = "78701"),
             userId,
-        )
+        ) as? CreateCongregationResult.Created)?.congregation
 
     @Test
     fun congregationNamesAreUniquePerCity() {
@@ -43,6 +44,31 @@ class RegistrationRepositoryTest {
         assertNotNull(newCongregation("First Church", "Dallas", "u2"), "same name, different city is fine")
         assertEquals(2, congregations.search("church").size)
         assertEquals(1, congregations.search("dallas").size)
+    }
+
+    @Test
+    fun codesAreSuggestedFromTheNameAndUniqueAtCreation() {
+        // The suggestion follows the initials convention.
+        assertEquals("WB", congregations.suggestCode("West Bexar County Church of Christ"))
+
+        val wb = assertIs<CreateCongregationResult.Created>(
+            congregations.create(
+                CreateCongregationRequest("West Bexar County Church of Christ", "San Antonio", state = "TX", mailingAddress = "1 St", zip = "78254", code = "wb"),
+                "u1",
+            ),
+        ).congregation
+        assertEquals("WB", wb.code, "the code is stored uppercased")
+
+        // With WB taken, the next suggestion for the same name moves on to WC.
+        assertEquals("WC", congregations.suggestCode("West Bexar County Church of Christ"))
+
+        // Another congregation can't grab WB (case-insensitively).
+        assertIs<CreateCongregationResult.CodeTaken>(
+            congregations.create(
+                CreateCongregationRequest("Westside Baptist", "Dallas", state = "TX", mailingAddress = "2 St", zip = "75001", code = "wb"),
+                "u2",
+            ),
+        )
     }
 
     @Test

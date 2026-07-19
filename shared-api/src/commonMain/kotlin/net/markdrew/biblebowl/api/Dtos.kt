@@ -246,7 +246,17 @@ data class CreateCongregationRequest(
     val state: String = "",
     val mailingAddress: String = "",
     val zip: String = "",
+    /**
+     * The congregation's unique two-letter code, e.g. "WB" for "West Bexar County Church of Christ".
+     * Chosen at creation (a suggestion is derived from the name — see [congregationCodeCandidates]);
+     * blank is allowed, and once set only an admin can change it.
+     */
+    val code: String = "",
 )
+
+/** A suggested, currently-available two-letter code for a congregation name (`GET /congregations/code-suggestion`). */
+@Serializable
+data class CodeSuggestionResponse(val code: String)
 
 /**
  * Edits a congregation's details after creation (`PUT /congregations/{id}`) — allowed to its coach

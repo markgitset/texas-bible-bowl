@@ -21,6 +21,7 @@ import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
+import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
@@ -160,6 +161,50 @@ class RegistrationRoutesTest {
             setBody(congregationRequest("Kid Church", "Lystra"))
         }
         assertEquals(HttpStatusCode.Created, allowed.status)
+    }
+
+    @Test
+    fun creatingACongregationSuggestsAndStoresATwoLetterCode() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+        val coach = api.signUp("coach@tbb.org", "Carol Coach")
+        fun io.ktor.client.request.HttpRequestBuilder.asCoach() =
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+
+        // The suggestion endpoint derives an available code from the name.
+        val suggested: CodeSuggestionResponse =
+            api.get("/congregations/code-suggestion?name=West%20Bexar%20County%20Church%20of%20Christ") { asCoach() }.body()
+        assertEquals("WB", suggested.code)
+
+        // Create with a code (lowercase) — stored uppercased.
+        val cong: CongregationDto = api.post("/congregations") {
+            asCoach(); setBody(congregationRequest("West Bexar County Church of Christ", "San Antonio").copy(code = "wb"))
+        }.body()
+        assertEquals("WB", cong.code)
+
+        // With WB taken, the suggestion for the same name moves on to WC.
+        val next: CodeSuggestionResponse =
+            api.get("/congregations/code-suggestion?name=West%20Bexar%20County%20Church%20of%20Christ") { asCoach() }.body()
+        assertEquals("WC", next.code)
+
+        // A second congregation can't grab WB, and a non-two-letter code is a 400.
+        val other = api.signUp("other@tbb.org", "Other Coach")
+        val taken = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${other.token}")
+            setBody(congregationRequest("Westside Baptist", "Dallas").copy(code = "WB"))
+        }
+        assertEquals(HttpStatusCode.Conflict, taken.status)
+        assertEquals("code_taken", taken.body<ApiError>().code)
+        val bad = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${other.token}")
+            setBody(congregationRequest("Third Church", "Waco").copy(code = "W1"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, bad.status)
+        assertEquals("invalid_code", bad.body<ApiError>().code)
     }
 
     @Test

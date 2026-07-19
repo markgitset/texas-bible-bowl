@@ -169,6 +169,7 @@ object RegisterScreen {
                 child("h5", "card-title", "Start a new congregation")
                 val form = child("form")
                 lateinit var name: HTMLInputElement
+                lateinit var code: HTMLInputElement
                 lateinit var address: HTMLInputElement
                 lateinit var city: HTMLInputElement
                 lateinit var state: HTMLInputElement
@@ -176,6 +177,20 @@ object RegisterScreen {
                 form.child("div", "mb-2") {
                     child("label", "form-label", "Congregation name")
                     name = child("input", "form-control") as HTMLInputElement
+                }
+                // The two-letter code, suggested from the name (a coach can override). Once saved,
+                // only an admin can change it.
+                form.child("div", "mb-2") {
+                    child("label", "form-label", "Congregation code")
+                    code = child("input", "form-control w-auto") as HTMLInputElement
+                    code.setAttribute("maxlength", "2")
+                    code.setAttribute("size", "4")
+                    code.setAttribute("placeholder", "e.g. WB")
+                    code.style.textTransform = "uppercase"
+                    child("div", "form-text",
+                        "A two-letter shorthand for your congregation (suggested from the name — " +
+                            "\"West Bexar County Church of Christ\" → WB). You can change it now; once saved, " +
+                            "only an admin can.")
                 }
                 form.child("div", "mb-2") {
                     child("label", "form-label", "Mailing address")
@@ -201,6 +216,23 @@ object RegisterScreen {
                         zip.setAttribute("size", "6")
                     }
                 }
+                // Suggest a code from the name until the coach types their own; debounced so we
+                // don't hit the backend on every keystroke.
+                var codeEdited = false
+                var suggestTimer: Int? = null
+                name.addEventListener("input", {
+                    if (codeEdited) return@addEventListener
+                    suggestTimer?.let { window.clearTimeout(it) }
+                    val query = name.value.trim()
+                    if (query.isBlank()) return@addEventListener
+                    suggestTimer = window.setTimeout({
+                        Shell.scope.launch {
+                            runCatching { Session.api.suggestCongregationCode(query) }
+                                .onSuccess { suggestion -> if (!codeEdited) code.value = suggestion }
+                        }
+                    }, 300)
+                })
+                code.addEventListener("input", { codeEdited = true })
                 // Deliberately enabled even outside the window: creating a congregation is
                 // onboarding, not registration (the server draws the same line).
                 val create = form.child("button", "btn btn-primary", "Create & continue") {
@@ -222,6 +254,7 @@ object RegisterScreen {
                                     state = state.value,
                                     mailingAddress = address.value,
                                     zip = zip.value,
+                                    code = code.value,
                                 )
                             )
                             Session.api.refreshUser() // pick up the new scoped COACH grant
@@ -230,10 +263,12 @@ object RegisterScreen {
                             renderContent()
                         } catch (e: Throwable) {
                             create.disabled = false
-                            // Only the name+city dupe (409) gets the "contact us to claim it" flow;
-                            // other errors (e.g. the adult-only rule) show the server's message as-is.
-                            val message = if ((e as? ApiException)?.status == 409) contactUsMessage(e.message)
-                                else e.message ?: "Something went wrong"
+                            // Only the name+city dupe gets the "contact us to claim it" flow; a taken
+                            // code or any other error shows the server's message as-is.
+                            val ex = e as? ApiException
+                            val message = if (ex?.status == 409 && ex.errorCode == "congregation_exists")
+                                contactUsMessage(e.message)
+                            else e.message ?: "Something went wrong"
                             slot.child("div", "alert alert-warning mt-3", message)
                         }
                     }
@@ -329,6 +364,13 @@ object RegisterScreen {
                         "Pick a unique two-letter code for your congregation. Once you save it, only an " +
                             "admin can change it."
                     child("div", "form-text", note)
+                }
+                // A congregation that predates codes has none — suggest one from its name.
+                if (!codeLocked && existing.code.isBlank()) {
+                    Shell.scope.launch {
+                        runCatching { Session.api.suggestCongregationCode(existing.name) }
+                            .onSuccess { if (code.value.isBlank()) code.value = it }
+                    }
                 }
                 form.child("div", "mb-2") {
                     child("label", "form-label", "Mailing address")

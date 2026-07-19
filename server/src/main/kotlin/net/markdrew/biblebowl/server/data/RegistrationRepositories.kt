@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.server.data
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
+import net.markdrew.biblebowl.api.congregationCodeCandidates
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.RosterEntryDto
@@ -30,6 +31,18 @@ import java.util.concurrent.ConcurrentHashMap
 const val MAX_TEAM_SIZE = 4
 
 /**
+ * Outcome of creating a congregation: the two uniqueness constraints (name+city, and the two-letter
+ * code) are reported distinctly so the route can explain which one collided.
+ */
+sealed interface CreateCongregationResult {
+    data class Created(val congregation: CongregationDto) : CreateCongregationResult
+    /** A congregation with the same name+city already exists. */
+    data object NameCityTaken : CreateCongregationResult
+    /** The chosen two-letter code is already used by another congregation. */
+    data object CodeTaken : CreateCongregationResult
+}
+
+/**
  * Outcome of a congregation update: the two uniqueness constraints (name+city, and the two-letter
  * code) are reported distinctly so the route can explain which one collided. The "code locked once
  * set" rule is an authorization concern and lives in the route, not here.
@@ -44,14 +57,19 @@ sealed interface UpdateCongregationResult {
 }
 
 interface CongregationRepository {
-    /** Creates a congregation, or returns null when one with the same name+city already exists. */
-    fun create(req: CreateCongregationRequest, createdByUserId: String): CongregationDto?
+    /**
+     * Creates a congregation (its [CreateCongregationRequest.code], if any, is stored uppercased).
+     * Reports name+city and code collisions distinctly.
+     */
+    fun create(req: CreateCongregationRequest, createdByUserId: String): CreateCongregationResult
     /**
      * Updates a congregation's editable fields (name, address, city, state, ZIP, and its two-letter
      * [CongregationDto.code]). State and code are normalized to uppercase. Reports collisions on
      * name+city or code distinctly; the route enforces who may change an already-set code.
      */
     fun update(id: String, req: UpdateCongregationRequest): UpdateCongregationResult
+    /** The most mnemonic two-letter code for [name] that no congregation is using yet (see [congregationCodeCandidates]). */
+    fun suggestCode(name: String): String
     fun findById(id: String): CongregationDto?
     fun findByIds(ids: Collection<String>): List<CongregationDto>
     /** Case-insensitive substring search over name and city, for the step-1 typeahead. */
@@ -116,24 +134,34 @@ interface RegistrationRepository {
 class InMemoryCongregationRepository : CongregationRepository {
     private val byId = ConcurrentHashMap<String, CongregationDto>()
 
-    override fun create(req: CreateCongregationRequest, createdByUserId: String): CongregationDto? {
+    override fun create(req: CreateCongregationRequest, createdByUserId: String): CreateCongregationResult {
         val n = req.name.trim()
         val c = req.city.trim()
+        val code = req.code.trim().uppercase()
         synchronized(byId) {
             if (byId.values.any { it.name.equals(n, ignoreCase = true) && it.city.equals(c, ignoreCase = true) }) {
-                return null
+                return CreateCongregationResult.NameCityTaken
+            }
+            if (code.isNotBlank() && byId.values.any { it.code.equals(code, ignoreCase = true) }) {
+                return CreateCongregationResult.CodeTaken
             }
             val dto = CongregationDto(
                 id = UUID.randomUUID().toString(),
                 name = n,
                 city = c,
-                state = req.state.trim(),
+                state = req.state.trim().uppercase(),
                 mailingAddress = req.mailingAddress.trim(),
                 zip = req.zip.trim(),
+                code = code,
             )
             byId[dto.id] = dto
-            return dto
+            return CreateCongregationResult.Created(dto)
         }
+    }
+
+    override fun suggestCode(name: String): String = synchronized(byId) {
+        val taken = byId.values.mapNotNull { it.code.takeIf(String::isNotBlank)?.uppercase() }.toSet()
+        congregationCodeCandidates(name).firstOrNull { it !in taken } ?: ""
     }
 
     override fun update(id: String, req: UpdateCongregationRequest): UpdateCongregationResult = synchronized(byId) {
@@ -403,28 +431,43 @@ class InMemoryRegistrationRepository(
 
 class PostgresCongregationRepository(private val db: Database) : CongregationRepository {
 
-    override fun create(req: CreateCongregationRequest, createdByUserId: String): CongregationDto? = transaction(db) {
+    override fun create(req: CreateCongregationRequest, createdByUserId: String): CreateCongregationResult = transaction(db) {
         val n = req.name.trim()
         val c = req.city.trim()
-        val dupe = CongregationsTable.selectAll()
+        val code = req.code.trim().uppercase()
+        val state = req.state.trim().uppercase()
+        val nameCityTaken = CongregationsTable.selectAll()
             .where {
                 (CongregationsTable.name.lowerCase() eq n.lowercase()) and
                     (CongregationsTable.city.lowerCase() eq c.lowercase())
             }
             .any()
-        if (dupe) return@transaction null
+        if (nameCityTaken) return@transaction CreateCongregationResult.NameCityTaken
+        if (code.isNotBlank() && CongregationsTable.selectAll().where { CongregationsTable.code.lowerCase() eq code.lowercase() }.any()) {
+            return@transaction CreateCongregationResult.CodeTaken
+        }
         val newId = UUID.randomUUID().toString()
         CongregationsTable.insert {
             it[id] = newId
             it[CongregationsTable.name] = n
             it[CongregationsTable.city] = c
-            it[state] = req.state.trim()
+            it[CongregationsTable.state] = state
             it[mailingAddress] = req.mailingAddress.trim()
             it[zip] = req.zip.trim()
+            it[CongregationsTable.code] = code
             it[CongregationsTable.createdByUserId] = createdByUserId
             it[createdAtEpochMs] = System.currentTimeMillis()
         }
-        CongregationDto(newId, n, c, req.state.trim(), req.mailingAddress.trim(), req.zip.trim())
+        CreateCongregationResult.Created(
+            CongregationDto(newId, n, c, state, req.mailingAddress.trim(), req.zip.trim(), code),
+        )
+    }
+
+    override fun suggestCode(name: String): String = transaction(db) {
+        val taken = CongregationsTable.selectAll()
+            .mapNotNull { it[CongregationsTable.code].takeIf(String::isNotBlank)?.uppercase() }
+            .toSet()
+        congregationCodeCandidates(name).firstOrNull { it !in taken } ?: ""
     }
 
     override fun update(id: String, req: UpdateCongregationRequest): UpdateCongregationResult = transaction(db) {

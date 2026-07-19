@@ -13,6 +13,7 @@ import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.CongregationsTable
+import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.DatabaseFactory
 import net.markdrew.biblebowl.server.data.IndividualsTable
 import net.markdrew.biblebowl.server.data.PostgresCongregationRepository
@@ -176,14 +177,14 @@ class PostgresRepositoryTest {
 
         val coach = users.create("coach@tbb.org", "Coach", null, adult = true,
             passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
-        val cong = assertNotNull(congregations.create(
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
             CreateCongregationRequest("First Church", "Austin", state = "TX", mailingAddress = "1 Main St", zip = "78701"),
             coach.id,
-        ))
-        val other = assertNotNull(congregations.create(
+        )).congregation
+        val other = assertIs<CreateCongregationResult.Created>(congregations.create(
             CreateCongregationRequest("Second Church", "Dallas", state = "TX", mailingAddress = "2 Elm St", zip = "75001"),
             coach.id,
-        ))
+        )).congregation
 
         val updated = assertIs<UpdateCongregationResult.Updated>(congregations.update(
             cong.id, UpdateCongregationRequest("First Christian Church", "Round Rock", state = "ok", mailingAddress = "456 Oak Ave", zip = "78664", code = "fc"),
@@ -220,10 +221,10 @@ class PostgresRepositoryTest {
         val other = users.create("other@tbb.org", "Other", "2013-06-01", adult = false,
             passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
 
-        val cong = assertNotNull(congregations.create(
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
             CreateCongregationRequest("Claim Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
             coach.id,
-        ))
+        )).congregation
         val team = assertNotNull(registrations.addTeam(cong.id, "2027", "Team A"))
         val added = assertIs<AddMemberResult.Added>(
             registrations.addMember(
