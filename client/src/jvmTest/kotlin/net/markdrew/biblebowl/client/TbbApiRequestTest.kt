@@ -178,6 +178,9 @@ class TbbApiRequestTest {
         api.assignMemberTeam("m1", null) // unassign
         assertEquals("PUT" to "/registration/members/m1/team", methods.last() to requests.last())
 
+        api.enrollContestant("c1", "ct1", ShirtSize.YM, "t2")
+        assertEquals("POST" to "/registration/c1/contestants/ct1/enroll", methods.last() to requests.last())
+
         api.addIndividual("c1", UpsertIndividualRequest("Pat Adult", ShirtSize.AXL, Gender.FEMALE))
         assertEquals("POST" to "/registration/c1/individuals", methods.last() to requests.last())
 

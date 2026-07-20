@@ -6,6 +6,7 @@ import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.congregationCodeCandidates
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
+import net.markdrew.biblebowl.api.ReturningContestantDto
 import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
@@ -95,6 +96,18 @@ sealed interface AssignResult {
     data object MemberNotFound : AssignResult
 }
 
+/** Outcome of enrolling a returning contestant into the current season. */
+sealed interface EnrollResult {
+    data object Enrolled : EnrollResult
+    /** No such contestant in this congregation. */
+    data object ContestantNotFound : EnrollResult
+    /** The contestant already has a roster entry this season. */
+    data object AlreadyEnrolled : EnrollResult
+    /** The target team doesn't exist or belongs to another registration. */
+    data object TeamNotFound : EnrollResult
+    data object RosterFull : EnrollResult
+}
+
 /** Outcome of claiming a roster entry by its coach-shared code. */
 sealed interface ClaimResult {
     data class Claimed(val entry: RosterEntryDto) : ClaimResult
@@ -132,6 +145,20 @@ interface RegistrationRepository {
     fun congregationIdForIndividual(individualId: String): String?
     /** The durable contestant a roster entry belongs to; null for an unlinked legacy row. */
     fun contestantIdForMember(memberId: String): String?
+    /**
+     * Durable contestants of [congregationId] with no roster entry in [seasonYear] — returning
+     * *candidates*, offered for one-click enrollment. Youth-eligibility filtering (division) is the
+     * caller's, since it needs the season; here they're returned name-sorted with last-seen details.
+     */
+    fun returningContestants(congregationId: String, seasonYear: String): List<ReturningContestantDto>
+    /** Creates [seasonYear]'s roster entry for an existing contestant (on [teamId], else unassigned). */
+    fun enrollContestant(
+        congregationId: String,
+        seasonYear: String,
+        contestantId: String,
+        shirtSize: ShirtSize,
+        teamId: String?,
+    ): EnrollResult
     /** Every registration for [seasonYear], with full teams/rosters (registration desk). */
     fun listForSeason(seasonYear: String): List<RegistrationDto>
     /** Sets (non-null) or clears (null) payment received. Null return = no such registration. */
@@ -483,6 +510,65 @@ class InMemoryRegistrationRepository(
 
     override fun contestantIdForMember(memberId: String): String? = synchronized(lock) {
         memberContestant[memberId]
+    }
+
+    override fun returningContestants(congregationId: String, seasonYear: String): List<ReturningContestantDto> =
+        synchronized(lock) {
+            val seasonRegId = regs["$congregationId|$seasonYear"]?.id
+            val enrolledThisSeason = memberContestant.filterKeys { memberReg[it] == seasonRegId }.values.toSet()
+            contestants.values
+                .filter { it.congregationId == congregationId && it.id !in enrolledThisSeason }
+                .sortedBy { it.name.lowercase() }
+                .map { contestant ->
+                    // Most recent enrollment of this person, for display + shirt-size prefill.
+                    val recent = memberContestant.filterValues { it == contestant.id }.keys
+                        .mapNotNull { memberId -> members[memberId]?.let { it to memberReg[memberId] } }
+                        .mapNotNull { (entry, regId) -> regs.values.firstOrNull { it.id == regId }?.let { entry to it } }
+                        .maxByOrNull { (_, reg) -> reg.seasonYear }
+                    ReturningContestantDto(
+                        contestantId = contestant.id,
+                        name = contestant.name,
+                        birthdate = contestant.birthdate,
+                        gender = contestant.gender,
+                        lastSeasonYear = recent?.second?.seasonYear,
+                        lastShirtSize = recent?.first?.shirtSize,
+                        firstSeasonYear = contestant.firstSeasonYear,
+                    )
+                }
+        }
+
+    override fun enrollContestant(
+        congregationId: String,
+        seasonYear: String,
+        contestantId: String,
+        shirtSize: ShirtSize,
+        teamId: String?,
+    ): EnrollResult = synchronized(lock) {
+        val contestant = contestants[contestantId]?.takeIf { it.congregationId == congregationId }
+            ?: return EnrollResult.ContestantNotFound
+        val reg = regFor(congregationId, seasonYear)
+        val alreadyEnrolled = memberContestant.any { (memberId, cid) -> cid == contestantId && memberReg[memberId] == reg.id }
+        if (alreadyEnrolled) return EnrollResult.AlreadyEnrolled
+        val team = teamId?.let { teams[it]?.takeIf { t -> t.regId == reg.id } ?: return EnrollResult.TeamNotFound }
+        if (team != null && team.memberIds.size >= MAX_TEAM_SIZE) return EnrollResult.RosterFull
+        val code = generateSequence { ClaimCodes.generate() }.first { usedCodes.add(it) }
+        val entry = RosterEntryDto(
+            id = UUID.randomUUID().toString(),
+            name = contestant.name,
+            birthdate = contestant.birthdate,
+            shirtSize = shirtSize,
+            gender = contestant.gender,
+            firstSeasonYear = contestant.firstSeasonYear,
+            claimCode = code,
+        )
+        members[entry.id] = entry
+        memberReg[entry.id] = reg.id
+        memberContestant[entry.id] = contestantId
+        if (team != null) {
+            memberTeam[entry.id] = team.id
+            team.memberIds += entry.id
+        }
+        EnrollResult.Enrolled
     }
 
     override fun listForSeason(seasonYear: String): List<RegistrationDto> = synchronized(lock) {
@@ -920,6 +1006,74 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
     override fun contestantIdForMember(memberId: String): String? = transaction(db) {
         TeamMembersTable.selectAll().where { TeamMembersTable.id eq memberId }
             .singleOrNull()?.get(TeamMembersTable.contestantId)
+    }
+
+    override fun returningContestants(congregationId: String, seasonYear: String): List<ReturningContestantDto> =
+        transaction(db) {
+            val seasonRegId = regRow(congregationId, seasonYear)?.get(RegistrationsTable.id)
+            val enrolledThisSeason = if (seasonRegId == null) emptySet() else
+                TeamMembersTable.selectAll().where { TeamMembersTable.registrationId eq seasonRegId }
+                    .mapNotNull { it[TeamMembersTable.contestantId] }.toSet()
+            ContestantsTable.selectAll()
+                .where { ContestantsTable.congregationId eq congregationId }
+                .orderBy(ContestantsTable.name)
+                .filter { it[ContestantsTable.id] !in enrolledThisSeason }
+                .map { row ->
+                    val cid = row[ContestantsTable.id]
+                    // Most recent enrollment of this person, for display + shirt-size prefill.
+                    val recent = (TeamMembersTable innerJoin RegistrationsTable).selectAll()
+                        .where { TeamMembersTable.contestantId eq cid }
+                        .maxByOrNull { it[RegistrationsTable.seasonYear] }
+                    ReturningContestantDto(
+                        contestantId = cid,
+                        name = row[ContestantsTable.name],
+                        birthdate = row[ContestantsTable.birthdate],
+                        gender = row[ContestantsTable.gender]?.let { Gender.valueOf(it) },
+                        lastSeasonYear = recent?.get(RegistrationsTable.seasonYear),
+                        lastShirtSize = recent?.get(TeamMembersTable.shirtSize)?.let { ShirtSize.valueOf(it) },
+                        firstSeasonYear = row[ContestantsTable.firstSeasonYear],
+                    )
+                }
+        }
+
+    override fun enrollContestant(
+        congregationId: String,
+        seasonYear: String,
+        contestantId: String,
+        shirtSize: ShirtSize,
+        teamId: String?,
+    ): EnrollResult = transaction(db) {
+        val contestant = ContestantsTable.selectAll().where { ContestantsTable.id eq contestantId }.singleOrNull()
+            ?.takeIf { it[ContestantsTable.congregationId] == congregationId }
+            ?: return@transaction EnrollResult.ContestantNotFound
+        val regId = regIdFor(congregationId, seasonYear)
+        val alreadyEnrolled = TeamMembersTable.selectAll()
+            .where { (TeamMembersTable.contestantId eq contestantId) and (TeamMembersTable.registrationId eq regId) }
+            .any()
+        if (alreadyEnrolled) return@transaction EnrollResult.AlreadyEnrolled
+        if (teamId != null) {
+            val team = TeamsTable.selectAll().where { TeamsTable.id eq teamId }.singleOrNull()
+                ?: return@transaction EnrollResult.TeamNotFound
+            if (team[TeamsTable.registrationId] != regId) return@transaction EnrollResult.TeamNotFound
+            val size = TeamMembersTable.selectAll().where { TeamMembersTable.teamId eq teamId }.count()
+            if (size >= MAX_TEAM_SIZE) return@transaction EnrollResult.RosterFull
+        }
+        val code = freshClaimCode()
+        val memberId = UUID.randomUUID().toString()
+        TeamMembersTable.insert {
+            it[id] = memberId
+            it[TeamMembersTable.teamId] = teamId
+            it[registrationId] = regId
+            it[TeamMembersTable.contestantId] = contestantId
+            it[name] = contestant[ContestantsTable.name]
+            it[birthdate] = contestant[ContestantsTable.birthdate]
+            it[TeamMembersTable.shirtSize] = shirtSize.name
+            it[gender] = contestant[ContestantsTable.gender]
+            it[firstSeasonYear] = contestant[ContestantsTable.firstSeasonYear]
+            it[claimCode] = code
+        }
+        touch(regId)
+        EnrollResult.Enrolled
     }
 
     override fun listForSeason(seasonYear: String): List<RegistrationDto> = transaction(db) {

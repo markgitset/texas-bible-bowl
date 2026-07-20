@@ -8,6 +8,7 @@ import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
+import net.markdrew.biblebowl.api.ReturningContestantDto
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.ScopeType
@@ -18,6 +19,7 @@ import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.division
+import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.divisionLabel
 import net.markdrew.biblebowl.api.feesNote
 import net.markdrew.biblebowl.api.isInexperienced
@@ -91,7 +93,7 @@ object RegisterScreen {
     private fun firstIncompleteStep(): Int = when {
         congregation == null -> 1
         registration?.teams.isNullOrEmpty() && registration?.individuals.isNullOrEmpty() &&
-            registration?.unassigned.isNullOrEmpty() -> 2
+            registration?.unassigned.isNullOrEmpty() && loaded?.returningCandidates.isNullOrEmpty() -> 2
         contestants == 0 -> 3
         registration?.unassigned.isNullOrEmpty() == false -> 3 // land on the roster to place them
         else -> 4
@@ -521,6 +523,7 @@ object RegisterScreen {
     private fun renderRosterStep(parent: Element) {
         registration?.teams?.forEach { team -> renderTeamRoster(parent, team) }
         renderUnassignedCard(parent)
+        renderReturningCard(parent)
         renderIndividualsCard(parent)
 
         registration?.let { reg ->
@@ -558,6 +561,61 @@ object RegisterScreen {
                         "Add a team on the Teams step first, then assign these contestants to it.")
                 }
                 unassigned.forEach { member -> renderContestantRow(this, member, currentTeamId = null) }
+            }
+        }
+    }
+
+    /**
+     * Contestants who competed here before but aren't on this season's roster yet. Team assignments
+     * are per-year, so a new season starts with none — these are offered for one-click enrollment
+     * (which is what starts counting/billing them). Only shown when the coach can edit.
+     */
+    private fun renderReturningCard(parent: Element) {
+        val candidates = loaded?.returningCandidates.orEmpty()
+        if (candidates.isEmpty() || !canEdit) return
+        val cong = congregation ?: return
+        parent.child("div", "card section-card border-info mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title") {
+                    append("Returning contestants ")
+                    child("span", "badge text-bg-info", candidates.size.toString())
+                }
+                child("p", "text-muted small",
+                    "These competed for your congregation before but aren't on this year's roster yet. " +
+                        "Add each to a team (or the roster) — they're only counted once you do.")
+                candidates.forEach { candidate -> renderReturningRow(this, candidate, cong.id) }
+            }
+        }
+    }
+
+    private fun renderReturningRow(parent: Element, candidate: ReturningContestantDto, congregationId: String) {
+        parent.child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
+            child("span", "flex-grow-1") {
+                append("${candidate.name} ")
+                val division = candidate.birthdate?.let { Session.season.divisionForBirthdate(it) }
+                child(
+                    "span", "badge " + (if (division == null) "text-bg-secondary" else "text-bg-primary"),
+                    division?.displayName ?: "—",
+                )
+                candidate.lastSeasonYear?.let { child("span", "text-muted small ms-2", "last competed $it") }
+            }
+            val shirt = shirtSelect(this, candidate.lastShirtSize ?: ShirtSize.YM)
+            val teamSel = child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
+            teamSel.setAttribute("title", "Team")
+            (teamSel.child("option", text = "— Unassigned —") as HTMLOptionElement).value = ""
+            registration?.teams.orEmpty().forEach { team ->
+                (teamSel.child("option", text = team.name) as HTMLOptionElement).value = team.id
+            }
+            child("button", "btn btn-sm btn-primary", "Add") {
+                setAttribute("type", "button")
+                onClick {
+                    enroll {
+                        Session.api.enrollContestant(
+                            congregationId, candidate.contestantId,
+                            ShirtSize.valueOf(shirt.value), teamSel.value.ifEmpty { null },
+                        )
+                    }
+                }
             }
         }
     }
@@ -931,6 +989,24 @@ object RegisterScreen {
             try {
                 val updated = call()
                 loaded = loaded?.copy(registration = updated)
+                error = null
+            } catch (e: Throwable) {
+                error = e.message ?: "Something went wrong"
+            }
+            renderContent()
+        }
+    }
+
+    /**
+     * Like [mutate] but re-fetches the whole registration afterward — enrolling a returning
+     * contestant both updates the roster and removes them from the candidate list, so a plain
+     * registration swap isn't enough.
+     */
+    private fun enroll(call: suspend () -> RegistrationDto) {
+        Shell.scope.launch {
+            try {
+                call()
+                loaded = Session.api.myRegistration()
                 error = null
             } catch (e: Throwable) {
                 error = e.message ?: "Something went wrong"
