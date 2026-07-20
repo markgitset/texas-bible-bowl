@@ -184,7 +184,7 @@ fun Route.registrationRoutes(
             val registration = congregation?.let { registrations.find(it.id, season.eventYear) }?.withTotal(seasons)
             val candidates = congregation
                 ?.let { registrations.returningContestants(it.id, season.eventYear) }
-                ?.filter { season.isYouthEligible(it.birthdate) }
+                ?.filter { season.isEligibleReturningCandidate(it.birthdate) }
                 ?: emptyList()
             call.respond(
                 MyRegistrationResponse(
@@ -331,7 +331,7 @@ fun Route.registrationRoutes(
             if (!requireCongregationEditor(user, congregationId, seasons)) return@post
             val season = seasons.current()
             val eligible = registrations.returningContestants(congregationId, season.eventYear)
-                .any { it.contestantId == contestantId && season.isYouthEligible(it.birthdate) }
+                .any { it.contestantId == contestantId && season.isEligibleReturningCandidate(it.birthdate) }
             if (!eligible) {
                 return@post call.respond(
                     HttpStatusCode.Conflict,
@@ -451,6 +451,13 @@ private fun UpsertRosterEntryRequest.isValid(season: SeasonDto): Boolean =
 /** True when [birthdate] places a contestant in a youth division (grades 3\u201312) this season. */
 private fun SeasonDto.isYouthEligible(birthdate: String?): Boolean =
     birthdate != null && divisionForBirthdate(birthdate).let { it != null && it != Division.ADULT }
+
+/**
+ * A returning contestant is offered as a candidate when they're an adult (no birthdate \u2192 they enroll
+ * as an individual) or still youth-eligible this season (a youth who has aged out is neither).
+ */
+private fun SeasonDto.isEligibleReturningCandidate(birthdate: String?): Boolean =
+    birthdate == null || isYouthEligible(birthdate)
 
 /** A congregation code is optional (blank), but if present must be exactly two letters. */
 private fun isCodeValid(code: String): Boolean {

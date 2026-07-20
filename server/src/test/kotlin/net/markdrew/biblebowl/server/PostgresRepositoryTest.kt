@@ -325,6 +325,35 @@ class PostgresRepositoryTest {
     }
 
     @Test
+    fun returningAdultsEnrollAsIndividuals() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val db = DatabaseFactory.connect()
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val coach = users.create("aracoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Adult Return Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+
+        registrations.addIndividual(cong.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AL, Gender.FEMALE))
+        val candidates = registrations.returningContestants(cong.id, "2028")
+        assertEquals(listOf("Pat Adult"), candidates.map { it.name })
+        assertNull(candidates.single().birthdate, "adults have no birthdate")
+        assertEquals("2027", candidates.single().lastSeasonYear)
+
+        // Enrolling a returning adult creates a 2028 individual (not a team member) and clears the candidate.
+        assertIs<EnrollResult.Enrolled>(
+            registrations.enrollContestant(cong.id, "2028", candidates.single().contestantId, ShirtSize.AM, null),
+        )
+        assertEquals(listOf("Pat Adult"), registrations.find(cong.id, "2028")!!.individuals.map { it.name })
+        assertTrue(registrations.returningContestants(cong.id, "2028").isEmpty())
+    }
+
+    @Test
     fun claimingPersistsAcrossSeasons() {
         if (!available) { println("Postgres not reachable — skipping"); return }
         val db = DatabaseFactory.connect()

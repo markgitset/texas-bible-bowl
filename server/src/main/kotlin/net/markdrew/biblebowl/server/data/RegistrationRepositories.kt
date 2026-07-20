@@ -528,23 +528,27 @@ class InMemoryRegistrationRepository(
     override fun returningContestants(congregationId: String, seasonYear: String): List<ReturningContestantDto> =
         synchronized(lock) {
             val seasonRegId = regs["$congregationId|$seasonYear"]?.id
-            val enrolledThisSeason = memberContestant.filterKeys { memberReg[it] == seasonRegId }.values.toSet()
+            // Enrolled this season = has a team OR individual entry in this season's registration.
+            val enrolledThisSeason = (memberContestant.filterKeys { memberReg[it] == seasonRegId } +
+                individualContestant.filterKeys { individualReg[it] == seasonRegId }).values.toSet()
             contestants.values
                 .filter { it.congregationId == congregationId && it.id !in enrolledThisSeason }
                 .sortedBy { it.name.lowercase() }
                 .map { contestant ->
-                    // Most recent enrollment of this person, for display + shirt-size prefill.
-                    val recent = memberContestant.filterValues { it == contestant.id }.keys
-                        .mapNotNull { memberId -> members[memberId]?.let { it to memberReg[memberId] } }
-                        .mapNotNull { (entry, regId) -> regs.values.firstOrNull { it.id == regId }?.let { entry to it } }
-                        .maxByOrNull { (_, reg) -> reg.seasonYear }
+                    // Most recent enrollment of this person (team for youth, individual for adults).
+                    val recent = (memberContestant.filterValues { it == contestant.id }.keys
+                        .mapNotNull { id -> members[id]?.shirtSize?.let { memberReg[id] to it } } +
+                        individualContestant.filterValues { it == contestant.id }.keys
+                            .mapNotNull { id -> individuals[id]?.shirtSize?.let { individualReg[id] to it } })
+                        .mapNotNull { (regId, shirt) -> regs.values.firstOrNull { it.id == regId }?.let { it.seasonYear to shirt } }
+                        .maxByOrNull { it.first }
                     ReturningContestantDto(
                         contestantId = contestant.id,
                         name = contestant.name,
                         birthdate = contestant.birthdate,
                         gender = contestant.gender,
-                        lastSeasonYear = recent?.second?.seasonYear,
-                        lastShirtSize = recent?.first?.shirtSize,
+                        lastSeasonYear = recent?.first,
+                        lastShirtSize = recent?.second,
                         firstSeasonYear = contestant.firstSeasonYear,
                     )
                 }
@@ -560,11 +564,26 @@ class InMemoryRegistrationRepository(
         val contestant = contestants[contestantId]?.takeIf { it.congregationId == congregationId }
             ?: return EnrollResult.ContestantNotFound
         val reg = regFor(congregationId, seasonYear)
+        val code = generateSequence { ClaimCodes.generate() }.first { usedCodes.add(it) }
+        // Adults (birthdate-less) enroll as individuals; youth as team members (optionally on a team).
+        if (contestant.birthdate == null) {
+            val already = individualContestant.any { (iid, cid) -> cid == contestantId && individualReg[iid] == reg.id }
+            if (already) return EnrollResult.AlreadyEnrolled
+            val entry = RosterEntryDto(
+                id = UUID.randomUUID().toString(), name = contestant.name, birthdate = null,
+                shirtSize = shirtSize, gender = contestant.gender, claimCode = code,
+            )
+            individuals[entry.id] = entry
+            individualReg[entry.id] = reg.id
+            individualContestant[entry.id] = contestantId
+            ownerForContestant(contestantId)?.let { entryOwner[entry.id] = it }
+            reg.individualIds += entry.id
+            return EnrollResult.Enrolled
+        }
         val alreadyEnrolled = memberContestant.any { (memberId, cid) -> cid == contestantId && memberReg[memberId] == reg.id }
         if (alreadyEnrolled) return EnrollResult.AlreadyEnrolled
         val team = teamId?.let { teams[it]?.takeIf { t -> t.regId == reg.id } ?: return EnrollResult.TeamNotFound }
         if (team != null && team.memberIds.size >= MAX_TEAM_SIZE) return EnrollResult.RosterFull
-        val code = generateSequence { ClaimCodes.generate() }.first { usedCodes.add(it) }
         val entry = RosterEntryDto(
             id = UUID.randomUUID().toString(),
             name = contestant.name,
@@ -1105,26 +1124,37 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
     override fun returningContestants(congregationId: String, seasonYear: String): List<ReturningContestantDto> =
         transaction(db) {
             val seasonRegId = regRow(congregationId, seasonYear)?.get(RegistrationsTable.id)
-            val enrolledThisSeason = if (seasonRegId == null) emptySet() else
+            // Enrolled this season = has a team OR individual entry in this season's registration.
+            val enrolledThisSeason = if (seasonRegId == null) emptySet() else (
                 TeamMembersTable.selectAll().where { TeamMembersTable.registrationId eq seasonRegId }
-                    .mapNotNull { it[TeamMembersTable.contestantId] }.toSet()
+                    .mapNotNull { it[TeamMembersTable.contestantId] } +
+                    IndividualsTable.selectAll().where { IndividualsTable.registrationId eq seasonRegId }
+                        .mapNotNull { it[IndividualsTable.contestantId] }
+                ).toSet()
             ContestantsTable.selectAll()
                 .where { ContestantsTable.congregationId eq congregationId }
                 .orderBy(ContestantsTable.name)
                 .filter { it[ContestantsTable.id] !in enrolledThisSeason }
                 .map { row ->
                     val cid = row[ContestantsTable.id]
-                    // Most recent enrollment of this person, for display + shirt-size prefill.
-                    val recent = (TeamMembersTable innerJoin RegistrationsTable).selectAll()
+                    // Most recent enrollment of this person (team for youth, individual for adults),
+                    // for display + shirt-size prefill.
+                    val recentTeam = (TeamMembersTable innerJoin RegistrationsTable).selectAll()
                         .where { TeamMembersTable.contestantId eq cid }
                         .maxByOrNull { it[RegistrationsTable.seasonYear] }
+                        ?.let { it[RegistrationsTable.seasonYear] to it[TeamMembersTable.shirtSize] }
+                    val recentIndiv = (IndividualsTable innerJoin RegistrationsTable).selectAll()
+                        .where { IndividualsTable.contestantId eq cid }
+                        .maxByOrNull { it[RegistrationsTable.seasonYear] }
+                        ?.let { it[RegistrationsTable.seasonYear] to it[IndividualsTable.shirtSize] }
+                    val recent = listOfNotNull(recentTeam, recentIndiv).maxByOrNull { it.first }
                     ReturningContestantDto(
                         contestantId = cid,
                         name = row[ContestantsTable.name],
                         birthdate = row[ContestantsTable.birthdate],
                         gender = row[ContestantsTable.gender]?.let { Gender.valueOf(it) },
-                        lastSeasonYear = recent?.get(RegistrationsTable.seasonYear),
-                        lastShirtSize = recent?.get(TeamMembersTable.shirtSize)?.let { ShirtSize.valueOf(it) },
+                        lastSeasonYear = recent?.first,
+                        lastShirtSize = recent?.second?.let { ShirtSize.valueOf(it) },
                         firstSeasonYear = row[ContestantsTable.firstSeasonYear],
                     )
                 }
@@ -1138,10 +1168,30 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         teamId: String?,
     ): EnrollResult = transaction(db) {
         // The contestant must exist and belong to this congregation.
-        ContestantsTable.selectAll().where { ContestantsTable.id eq contestantId }.singleOrNull()
+        val contestant = ContestantsTable.selectAll().where { ContestantsTable.id eq contestantId }.singleOrNull()
             ?.takeIf { it[ContestantsTable.congregationId] == congregationId }
             ?: return@transaction EnrollResult.ContestantNotFound
         val regId = regIdFor(congregationId, seasonYear)
+        val code = freshClaimCode()
+        // Adults (birthdate-less) enroll as individuals; youth as team members (optionally on a team).
+        if (contestant[ContestantsTable.birthdate] == null) {
+            val already = IndividualsTable.selectAll()
+                .where { (IndividualsTable.contestantId eq contestantId) and (IndividualsTable.registrationId eq regId) }
+                .any()
+            if (already) return@transaction EnrollResult.AlreadyEnrolled
+            IndividualsTable.insert {
+                it[id] = UUID.randomUUID().toString()
+                it[registrationId] = regId
+                it[IndividualsTable.contestantId] = contestantId
+                it[name] = contestant[ContestantsTable.name]
+                it[IndividualsTable.shirtSize] = shirtSize.name
+                it[gender] = contestant[ContestantsTable.gender]
+                it[claimCode] = code
+                it[ownerUserId] = ownerForContestant(contestantId)
+            }
+            touch(regId)
+            return@transaction EnrollResult.Enrolled
+        }
         val alreadyEnrolled = TeamMembersTable.selectAll()
             .where { (TeamMembersTable.contestantId eq contestantId) and (TeamMembersTable.registrationId eq regId) }
             .any()
@@ -1153,7 +1203,6 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             val size = TeamMembersTable.selectAll().where { TeamMembersTable.teamId eq teamId }.count()
             if (size >= MAX_TEAM_SIZE) return@transaction EnrollResult.RosterFull
         }
-        val code = freshClaimCode()
         val memberId = UUID.randomUUID().toString()
         TeamMembersTable.insert {
             it[id] = memberId

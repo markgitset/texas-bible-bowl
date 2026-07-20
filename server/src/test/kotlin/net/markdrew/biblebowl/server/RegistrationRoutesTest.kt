@@ -539,6 +539,16 @@ class RegistrationRoutesTest {
         assertEquals(HttpStatusCode.Conflict, api.post("/registration/${cong.id}/contestants/nope/enroll") {
             asCoach(); setBody(EnrollContestantRequest(ShirtSize.YL))
         }.status)
+
+        // A returning adult is offered too (birthdate-less) and enrolls as an individual, not a team member.
+        registrations.addIndividual(cong.id, "2026", UpsertIndividualRequest("Pat Adult", ShirtSize.AL, Gender.FEMALE))
+        val adult = api.get("/registration/mine") { asCoach() }.body<MyRegistrationResponse>().returningCandidates.single()
+        assertEquals("Pat Adult", adult.name)
+        assertNull(adult.birthdate, "an adult candidate has no birthdate")
+        val enrolledAdult: RegistrationDto = api.post("/registration/${cong.id}/contestants/${adult.contestantId}/enroll") {
+            asCoach(); setBody(EnrollContestantRequest(ShirtSize.AM))
+        }.body()
+        assertEquals(listOf("Pat Adult"), enrolledAdult.individuals.map { it.name })
     }
 
     @Test

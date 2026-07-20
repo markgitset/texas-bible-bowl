@@ -441,6 +441,27 @@ class RegistrationRepositoryTest {
     }
 
     @Test
+    fun returningAdultsAreOfferedAndEnrollAsIndividuals() {
+        val cong = newCongregation("Adult Return Church", "Waco")!!
+        repo.addIndividual(cong.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AL, Gender.FEMALE))
+
+        // Next season Pat competed before but isn't on the roster yet → a returning adult candidate.
+        val candidates = repo.returningContestants(cong.id, "2028")
+        assertEquals(listOf("Pat Adult"), candidates.map { it.name })
+        val pat = candidates.single()
+        assertNull(pat.birthdate, "adults have no birthdate")
+        assertEquals("2027", pat.lastSeasonYear)
+        assertEquals(ShirtSize.AL, pat.lastShirtSize)
+
+        // Enrolling creates a 2028 individual from the durable contestant, and clears the candidate.
+        assertIs<EnrollResult.Enrolled>(repo.enrollContestant(cong.id, "2028", pat.contestantId, ShirtSize.AM, teamId = null))
+        val enrolled = repo.find(cong.id, "2028")!!.individuals.single()
+        assertEquals("Pat Adult" to ShirtSize.AM, enrolled.name to enrolled.shirtSize)
+        assertTrue(repo.returningContestants(cong.id, "2028").isEmpty())
+        assertIs<EnrollResult.AlreadyEnrolled>(repo.enrollContestant(cong.id, "2028", pat.contestantId, ShirtSize.AM, teamId = null))
+    }
+
+    @Test
     fun enrollCreatesThisSeasonsEntryFromTheDurableContestant() {
         val cong = newCongregation("Enroll Church", "Waco")!!
         val t2027 = repo.addTeam(cong.id, "2027", "Team A")!!

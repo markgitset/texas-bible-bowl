@@ -571,7 +571,8 @@ object RegisterScreen {
      * (which is what starts counting/billing them). Only shown when the coach can edit.
      */
     private fun renderReturningCard(parent: Element) {
-        val candidates = loaded?.returningCandidates.orEmpty()
+        // Youth candidates go on a team here; returning adults are offered in the individuals card.
+        val candidates = loaded?.returningCandidates.orEmpty().filter { it.birthdate != null }
         if (candidates.isEmpty() || !canEdit) return
         val cong = congregation ?: return
         parent.child("div", "card section-card border-info mb-3") {
@@ -657,6 +658,29 @@ object RegisterScreen {
                             child("button", "btn btn-outline-danger btn-sm", "Remove") {
                                 setAttribute("type", "button")
                                 onClick { mutate { Session.api.deleteIndividual(member.id) } }
+                            }
+                        }
+                    }
+                }
+                // Returning adults: competed here before but not on this year's roster — one-click add.
+                val returningAdults = loaded?.returningCandidates.orEmpty().filter { it.birthdate == null }
+                if (canEdit && returningAdults.isNotEmpty()) {
+                    child("p", "text-info small mb-1 mt-2", "Returning adults — add each to this year's roster:")
+                    returningAdults.forEach { candidate ->
+                        child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
+                            child("span", "flex-grow-1") {
+                                append("${candidate.name} ")
+                                child("span", "badge text-bg-primary", "Adult")
+                                candidate.lastSeasonYear?.let { child("span", "text-muted small ms-2", "last competed $it") }
+                            }
+                            val shirt = shirtSelect(this, candidate.lastShirtSize ?: ShirtSize.AM)
+                            child("button", "btn btn-sm btn-primary", "Add") {
+                                setAttribute("type", "button")
+                                onClick {
+                                    enroll {
+                                        Session.api.enrollContestant(cong.id, candidate.contestantId, ShirtSize.valueOf(shirt.value), null)
+                                    }
+                                }
                             }
                         }
                     }
