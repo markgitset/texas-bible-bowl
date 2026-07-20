@@ -73,22 +73,27 @@ private data class StudyTextChoices(
 /**
  * Download center (docs/gui-redesign.md §5B): one scrolling page of preset cards in five groups —
  * each card is one click to a sensible default, with options behind a "Customize" sheet. Public.
- * One shared chapter scope (set in any chapter-aware card's sheet) covers flashcards, practice
- * tests, and exports alike; each affected card's subtitle names the current scope.
+ * Chapter scope lives in each chapter-aware card's sheet and covers only that card's group
+ * (question flashcards, heading flashcards, the practice tests, the exports); each card's
+ * subtitle names its current scope.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadsScreen(api: TbbApi) {
-    var chapter by remember { mutableStateOf<Int?>(null) }
     var busyCard by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
     var customize by remember { mutableStateOf<Customize?>(null) }
     // Sheet choices live at screen level so closing/reopening a sheet keeps the last selections.
+    // Chapter scope is per card group: each sheet's chips affect only the cards it belongs to.
     var textChoices by remember { mutableStateOf(StudyTextChoices()) }
+    var flashcardChapter by remember { mutableStateOf<Int?>(null) }
     var flashcardRound by remember { mutableStateOf<Round?>(null) }
+    var headingChapter by remember { mutableStateOf<Int?>(null) }
+    var practiceChapter by remember { mutableStateOf<Int?>(null) }
     var practiceLimit by remember { mutableStateOf<Int?>(null) }
     var practiceSeed by remember { mutableStateOf("") }
+    var exportChapter by remember { mutableStateOf<Int?>(null) }
     var exportHeadings by remember { mutableStateOf(false) }
     var exportRound by remember { mutableStateOf<Round?>(null) }
     val scope = rememberCoroutineScope()
@@ -110,8 +115,7 @@ fun DownloadsScreen(api: TbbApi) {
         }
     }
 
-    val chSuffix = chapter?.let { "-ch$it" } ?: ""
-    val throughSuffix = chapter?.let { "-through-ch$it" } ?: ""
+    fun chSuffix(chapter: Int?) = chapter?.let { "-ch$it" } ?: ""
 
     // One download action per card, honoring the (sticky) customize choices. Used by BOTH the
     // card's primary button and the sheet's Download button — customizing and then pressing
@@ -147,8 +151,9 @@ fun DownloadsScreen(api: TbbApi) {
 
     fun downloadQuestionFlashcards() {
         val round = flashcardRound
-        download("Question flashcards", "flashcards${round?.let { "-${it.name.lowercase()}" } ?: ""}$chSuffix.pdf") {
-            api.flashcardsPdf(chapter, round)
+        val name = "flashcards${round?.let { "-${it.name.lowercase()}" } ?: ""}${chSuffix(flashcardChapter)}.pdf"
+        download("Question flashcards", name) {
+            api.flashcardsPdf(flashcardChapter, round)
         }
     }
 
@@ -157,30 +162,30 @@ fun DownloadsScreen(api: TbbApi) {
         val seed = practiceSeed.toIntOrNull().takeIf { !round.crowdSourced }
         download(
             "Round ${round.number}: ${round.displayName}",
-            "practice-${round.name.lowercase()}$chSuffix${seed?.let { "-seed$it" } ?: ""}.pdf",
+            "practice-${round.name.lowercase()}${chSuffix(practiceChapter)}${seed?.let { "-seed$it" } ?: ""}.pdf",
         ) {
-            api.practiceTestPdf(round, chapter, limit = limit, seed = seed)
+            api.practiceTestPdf(round, practiceChapter, limit = limit, seed = seed)
         }
     }
 
     fun downloadHeadingFlashcards() {
-        download("Chapter-heading flashcards", PdfFileNames.headingFlashcards(chapter)) {
-            api.headingFlashcardsPdf(chapter)
+        download("Chapter-heading flashcards", PdfFileNames.headingFlashcards(headingChapter)) {
+            api.headingFlashcardsPdf(headingChapter)
         }
     }
 
     fun downloadExport(kahoot: Boolean) {
         val headings = exportHeadings
         val round = exportRound.takeIf { !headings }
-        val base = if (headings) "headings$throughSuffix" else
-            "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}$chSuffix"
+        val base = if (headings) "headings${exportChapter?.let { "-through-ch$it" } ?: ""}" else
+            "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}${chSuffix(exportChapter)}"
         if (kahoot) {
             download("Kahoot spreadsheet", "kahoot-$base.xlsx", Mime.XLSX) {
-                api.questionsXlsx(headings, round, chapter)
+                api.questionsXlsx(headings, round, exportChapter)
             }
         } else {
             download("Quizlet / Space TSV", "quizlet-$base.tsv", Mime.TSV) {
-                api.questionsTsv(headings, round, chapter)
+                api.questionsTsv(headings, round, exportChapter)
             }
         }
     }
@@ -210,7 +215,7 @@ fun DownloadsScreen(api: TbbApi) {
         GroupHeader("Flashcards")
         DownloadCard(
             title = "Question flashcards",
-            subtitle = "Duplex deck built from the approved community questions." + scopeNote(chapter) +
+            subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardChapter) +
                 customizedNote(flashcardRound != null),
             busyCard = busyCard,
             onClick = ::downloadQuestionFlashcards,
@@ -219,7 +224,7 @@ fun DownloadsScreen(api: TbbApi) {
         DownloadCard(
             title = "Chapter-heading flashcards",
             subtitle = "One card per ESV section heading (Round 5 material)." +
-                (chapter?.let { " Through chapter $it." } ?: ""),
+                (headingChapter?.let { " Through chapter $it." } ?: ""),
             busyCard = busyCard,
             onClick = ::downloadHeadingFlashcards,
             onCustomize = { customize = Customize.HeadingFlashcards },
@@ -247,7 +252,7 @@ fun DownloadsScreen(api: TbbApi) {
             DownloadCard(
                 title = "Round ${round.number}: ${round.displayName}",
                 subtitle = (if (round.crowdSourced) "Built from the approved community questions."
-                else "Generated from the ESV text.") + scopeNote(chapter) + customizedNote(roundCustomized),
+                else "Generated from the ESV text.") + scopeNote(practiceChapter) + customizedNote(roundCustomized),
                 busyCard = busyCard,
                 onClick = { downloadPracticeTest(round) },
                 onCustomize = { customize = Customize.PracticeTest(round) },
@@ -259,7 +264,7 @@ fun DownloadsScreen(api: TbbApi) {
         DownloadCard(
             title = "Kahoot spreadsheet",
             subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout)." +
-                scopeNote(chapter) + customizedNote(exportCustomized),
+                scopeNote(exportChapter) + customizedNote(exportCustomized),
             busyCard = busyCard,
             onClick = { downloadExport(kahoot = true) },
             onCustomize = { customize = Customize.Export(kahoot = true) },
@@ -267,7 +272,7 @@ fun DownloadsScreen(api: TbbApi) {
         DownloadCard(
             title = "Quizlet / Space TSV",
             subtitle = "Question-and-answer pairs as tab-separated text, import-ready for " +
-                "Quizlet, Space, or Anki." + scopeNote(chapter) + customizedNote(exportCustomized),
+                "Quizlet, Space, or Anki." + scopeNote(exportChapter) + customizedNote(exportCustomized),
             busyCard = busyCard,
             onClick = { downloadExport(kahoot = false) },
             onCustomize = { customize = Customize.Export(kahoot = false) },
@@ -294,22 +299,22 @@ fun DownloadsScreen(api: TbbApi) {
                             onChange = { textChoices = it },
                         )
                         Customize.QuestionFlashcards -> QuestionFlashcardOptions(
-                            chapter = chapter, onChapter = { chapter = it },
+                            chapter = flashcardChapter, onChapter = { flashcardChapter = it },
                             round = flashcardRound,
                             onChange = { flashcardRound = it },
                         )
                         Customize.HeadingFlashcards -> HeadingFlashcardOptions(
-                            chapter = chapter, onChapter = { chapter = it },
+                            chapter = headingChapter, onChapter = { headingChapter = it },
                         )
                         is Customize.PracticeTest -> PracticeTestOptions(
                             round = target.round,
-                            chapter = chapter, onChapter = { chapter = it },
+                            chapter = practiceChapter, onChapter = { practiceChapter = it },
                             limit = practiceLimit, onLimit = { practiceLimit = it },
                             seedText = practiceSeed, onSeedText = { practiceSeed = it },
                         )
                         is Customize.Export -> ExportOptions(
                             kahoot = target.kahoot,
-                            chapter = chapter, onChapter = { chapter = it },
+                            chapter = exportChapter, onChapter = { exportChapter = it },
                             headingsSource = exportHeadings, onHeadingsSource = { exportHeadings = it },
                             round = exportRound, onRound = { exportRound = it },
                         )
@@ -467,7 +472,7 @@ private fun ExportOptions(
     }
 }
 
-/** One shared value scopes every chapter-aware download; each card's subtitle says so. */
+/** Chapter chips for one card group's downloads; the cards' subtitles echo the choice. */
 @Composable
 private fun ChapterScope(chapter: Int?, onChapter: (Int?) -> Unit, label: String = "Chapter scope") {
     Text(label, style = MaterialTheme.typography.labelLarge)
