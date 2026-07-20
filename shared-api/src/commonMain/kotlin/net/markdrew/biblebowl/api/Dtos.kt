@@ -437,6 +437,8 @@ data class RegistrationDeskRowDto(
     val congregation: CongregationDto,
     val registration: RegistrationDto? = null,
     val coaches: List<CoachContactDto> = emptyList(),
+    /** Prior-year contestants (youth or adult) still eligible but not on this season's roster — a registrar may enroll them. */
+    val returningCandidates: List<ReturningContestantDto> = emptyList(),
 )
 
 /** The full registration desk for the current season (`GET /admin/registrations`). */

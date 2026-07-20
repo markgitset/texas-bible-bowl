@@ -79,6 +79,14 @@ fun SeasonDto.divisionForBirthdate(birthdateIso: String): Division? {
 }
 
 /**
+ * True when a returning contestant with this [birthdate] is offerable as a candidate this season:
+ * an adult (no birthdate → enrolls as an individual) or still youth-eligible (grades 3–12). A youth
+ * who has aged out of the youth divisions is neither, and isn't offered.
+ */
+fun SeasonDto.isEligibleReturningCandidate(birthdate: String?): Boolean =
+    birthdate == null || divisionForBirthdate(birthdate).let { it != null && it != Division.ADULT }
+
+/**
  * A user's division this [season]: [Division.ADULT] for self-attested adults, computed from the
  * birthdate otherwise, and null while the profile has neither (legacy account) or is too young.
  */
