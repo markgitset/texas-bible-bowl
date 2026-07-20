@@ -372,6 +372,34 @@ class RegistrationRepositoryTest {
     }
 
     @Test
+    fun claimingAContestantPersistsAcrossSeasons() {
+        val cong = newCongregation("Persist Church", "Waco")!!
+        val t2027 = repo.addTeam(cong.id, "2027", "Team A")!!
+        val m2027 = assertIs<AddMemberResult.Added>(repo.addMember(t2027.id, entry("Timothy"))).entry
+        val contestantId = repo.contestantIdForMember(m2027.id)!!
+
+        // A parent claims the 2027 code → they own that entry, which shows claimed.
+        assertIs<ClaimResult.Claimed>(repo.claimEntry(m2027.claimCode, "parent"))
+        assertEquals(setOf(m2027.id), repo.entryIdsOwnedBy("parent"))
+        assertTrue(repo.find(cong.id, "2027")!!.teams.single().members.single().claimed)
+
+        // Next season the coach enrolls him → the new entry is owned automatically (no re-claim needed).
+        val t2028 = repo.addTeam(cong.id, "2028", "Team A")!!
+        assertIs<EnrollResult.Enrolled>(repo.enrollContestant(cong.id, "2028", contestantId, ShirtSize.YL, t2028.id))
+        val m2028 = repo.find(cong.id, "2028")!!.teams.single().members.single()
+        assertTrue(m2028.claimed, "the new season's entry inherits the durable owner")
+        assertEquals(setOf(m2027.id, m2028.id), repo.entryIdsOwnedBy("parent"))
+
+        // Re-adding the same person by name (via addMember) in a third season also inherits the owner.
+        val t2029 = repo.addTeam(cong.id, "2029", "Team A")!!
+        val m2029 = assertIs<AddMemberResult.Added>(repo.addMember(t2029.id, entry("  timothy "))).entry
+        assertEquals(setOf(m2027.id, m2028.id, m2029.id), repo.entryIdsOwnedBy("parent"))
+
+        // A different account can't claim a contestant already owned by someone else.
+        assertIs<ClaimResult.AlreadyClaimed>(repo.claimEntry(m2029.claimCode, "someone-else"))
+    }
+
+    @Test
     fun returningContestantsSurfacePriorPeopleAndClearOnceEnrolled() {
         val cong = newCongregation("Returning Church", "Waco")!!
         val t2027 = repo.addTeam(cong.id, "2027", "Team A")!!

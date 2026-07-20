@@ -322,4 +322,38 @@ class PostgresRepositoryTest {
         assertTrue(registrations.returningContestants(cong.id, "2027").isEmpty())
         assertIs<EnrollResult.AlreadyEnrolled>(registrations.enrollContestant(cong.id, "2027", contestantId, ShirtSize.YL, null))
     }
+
+    @Test
+    fun claimingPersistsAcrossSeasons() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val db = DatabaseFactory.connect()
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val coach = users.create("pcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val parent = users.create("pparent@tbb.org", "Parent", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Persist Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+
+        val t2027 = assertNotNull(registrations.addTeam(cong.id, "2027", "Team A"))
+        val m2027 = assertIs<AddMemberResult.Added>(registrations.addMember(
+            t2027.id, UpsertRosterEntryRequest("Timothy", birthdate = "2013-05-01", shirtSize = ShirtSize.YM, gender = Gender.MALE),
+        )).entry
+        val contestantId = registrations.contestantIdForMember(m2027.id)!!
+
+        assertIs<ClaimResult.Claimed>(registrations.claimEntry(m2027.claimCode, parent.id))
+        assertEquals(setOf(m2027.id), registrations.entryIdsOwnedBy(parent.id))
+
+        // Enrolling him next season carries the claim forward — no re-claim needed.
+        val t2028 = assertNotNull(registrations.addTeam(cong.id, "2028", "Team A"))
+        assertIs<EnrollResult.Enrolled>(registrations.enrollContestant(cong.id, "2028", contestantId, ShirtSize.YL, t2028.id))
+        val m2028 = registrations.find(cong.id, "2028")!!.teams.single().members.single()
+        assertTrue(m2028.claimed, "the new season's entry inherits the durable owner")
+        assertEquals(setOf(m2027.id, m2028.id), registrations.entryIdsOwnedBy(parent.id))
+    }
 }
