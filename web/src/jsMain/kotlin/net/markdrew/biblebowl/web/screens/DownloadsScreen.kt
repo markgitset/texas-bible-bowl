@@ -16,6 +16,7 @@ import org.w3c.dom.HTMLInputElement
 private sealed interface Customize {
     data object StudyText : Customize
     data object QuestionFlashcards : Customize
+    data object HeadingFlashcards : Customize
     data class PracticeTest(val round: Round) : Customize
     data class Export(val kahoot: Boolean) : Customize
 }
@@ -49,8 +50,12 @@ private data class StudyTextChoices(
  */
 object DownloadsScreen {
 
-    // Sticky for the whole page session, deliberately outliving route changes.
-    private var chapter: Int? = null
+    // Sticky for the whole page session, deliberately outliving route changes. Chapter scope is
+    // per card group: each customize panel's chips affect only the cards that panel belongs to.
+    private var flashcardChapter: Int? = null
+    private var headingChapter: Int? = null
+    private var practiceChapter: Int? = null
+    private var exportChapter: Int? = null
     private var customize: Customize? = null
     private var textChoices = StudyTextChoices()
     private var flashcardRound: Round? = null
@@ -71,8 +76,6 @@ object DownloadsScreen {
         val season = Session.season
 
         root.child("h1", "page-title", "Downloads")
-        root.child("p", "fw-semibold mb-1", "Chapter scope (flashcards, practice tests & exports)")
-        root.chapterChips(chapter) { chapter = it; rerender() }
 
         groupHeader("Study text")
         downloadCard(
@@ -87,11 +90,11 @@ object DownloadsScreen {
         groupHeader("Flashcards")
         downloadCard(
             title = "Question flashcards",
-            subtitle = "Duplex deck built from the approved community questions." + scopeNote() +
+            subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardChapter) +
                 customizedNote(flashcardRound != null),
             href = generateUrl(
                 "/generate/flashcards.pdf",
-                "chapter" to chapter,
+                "chapter" to flashcardChapter,
                 "round" to flashcardRound?.name,
             ),
             customize = Customize.QuestionFlashcards,
@@ -99,8 +102,9 @@ object DownloadsScreen {
         downloadCard(
             title = "Chapter-heading flashcards",
             subtitle = "One card per ESV section heading (Round 5 material)." +
-                (chapter?.let { " Through chapter $it." } ?: ""),
-            href = generateUrl("/generate/heading-flashcards.pdf", "throughChapter" to chapter),
+                (headingChapter?.let { " Through chapter $it." } ?: ""),
+            href = generateUrl("/generate/heading-flashcards.pdf", "throughChapter" to headingChapter),
+            customize = Customize.HeadingFlashcards,
         )
 
         groupHeader("Indices")
@@ -123,7 +127,7 @@ object DownloadsScreen {
             downloadCard(
                 title = "Round ${round.number}: ${round.displayName}",
                 subtitle = (if (round.crowdSourced) "Built from the approved community questions."
-                else "Generated from the ESV text.") + scopeNote() + customizedNote(roundCustomized),
+                else "Generated from the ESV text.") + scopeNote(practiceChapter) + customizedNote(roundCustomized),
                 href = practiceTestUrl(round),
                 customize = Customize.PracticeTest(round),
             )
@@ -134,7 +138,7 @@ object DownloadsScreen {
         downloadCard(
             title = "Kahoot spreadsheet",
             subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout)." +
-                scopeNote() + customizedNote(exportCustomized),
+                scopeNote(exportChapter) + customizedNote(exportCustomized),
             href = exportUrl(kahoot = true),
             customize = Customize.Export(kahoot = true),
             buttonLabel = "Download",
@@ -142,7 +146,7 @@ object DownloadsScreen {
         downloadCard(
             title = "Quizlet / Space TSV",
             subtitle = "Question-and-answer pairs as tab-separated text, import-ready for " +
-                "Quizlet, Space, or Anki." + scopeNote() + customizedNote(exportCustomized),
+                "Quizlet, Space, or Anki." + scopeNote(exportChapter) + customizedNote(exportCustomized),
             href = exportUrl(kahoot = false),
             customize = Customize.Export(kahoot = false),
             buttonLabel = "Download",
@@ -175,7 +179,7 @@ object DownloadsScreen {
     private fun practiceTestUrl(round: Round): String = generateUrl(
         "/generate/practice-test.pdf",
         "round" to round.name,
-        "chapter" to chapter,
+        "chapter" to practiceChapter,
         "limit" to practiceLimit.takeIf { round.crowdSourced },
         "seed" to practiceSeed.toIntOrNull().takeIf { !round.crowdSourced },
     )
@@ -184,7 +188,7 @@ object DownloadsScreen {
         if (kahoot) "/generate/questions.xlsx" else "/generate/questions.tsv",
         "source" to "headings".takeIf { exportHeadings },
         "round" to exportRound?.name.takeIf { !exportHeadings },
-        "chapter" to chapter,
+        "chapter" to exportChapter,
     )
 
     // --- rendering ---
@@ -259,10 +263,14 @@ object DownloadsScreen {
                 }
             }
             Customize.QuestionFlashcards -> {
+                chapterScope(flashcardChapter) { flashcardChapter = it }
                 child("p", "fw-semibold mb-1", "Round")
                 chipRow(roundOptions(), flashcardRound) { flashcardRound = it; rerender() }
             }
+            Customize.HeadingFlashcards ->
+                chapterScope(headingChapter, "Through chapter") { headingChapter = it }
             is Customize.PracticeTest -> {
+                chapterScope(practiceChapter) { practiceChapter = it }
                 if (target.round.crowdSourced) {
                     child("p", "fw-semibold mb-1", "Number of questions")
                     chipRow(
@@ -289,6 +297,7 @@ object DownloadsScreen {
                 }
             }
             is Customize.Export -> {
+                chapterScope(exportChapter) { exportChapter = it }
                 child("p", "fw-semibold mb-1", "Source")
                 chipRow(
                     listOf("Question bank" to false, "Chapter headings" to true),
@@ -305,10 +314,16 @@ object DownloadsScreen {
         }
     }
 
+    /** Chapter chips for one card group's downloads; the cards' subtitles echo the choice. */
+    private fun Element.chapterScope(selected: Int?, label: String = "Chapter scope", onSelect: (Int?) -> Unit) {
+        child("p", "fw-semibold mb-1", label)
+        chapterChips(selected) { onSelect(it); rerender() }
+    }
+
     private fun roundOptions(): List<Pair<String, Round?>> =
         listOf<Pair<String, Round?>>("All" to null) + Round.crowdSourcedRounds.map { it.displayName to it }
 
-    private fun scopeNote(): String = chapter?.let { " Scoped to chapter $it." } ?: ""
+    private fun scopeNote(chapter: Int?): String = chapter?.let { " Scoped to chapter $it." } ?: ""
 
     private fun customizedNote(customized: Boolean): String =
         if (customized) " Using your customized settings." else ""
