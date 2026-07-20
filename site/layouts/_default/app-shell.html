@@ -1,0 +1,23 @@
+{{/* Shell page for the Kotlin/JS study app (content/app.md → public/app/index.html).
+     Hugo owns the app's chrome — same nav/footer partials as every other page — so the site
+     and app are one application with one navbar. CI copies the :web dist into public/app/
+     EXCLUDING its index.html (pages.yml); web/src/jsMain/resources/index.html is dev-only. */}}
+
+{{ define "head-extra" }}
+<link rel="stylesheet" href="{{ .Site.BaseURL }}app/css/app.css">
+{{ end }}
+
+{{ define "main" }}
+<div class="py-4">
+  <div class="container" id="app">
+    <div class="text-center py-5">
+      <div class="spinner-border tbb-spinner" role="status" aria-label="Loading"></div>
+    </div>
+  </div>
+</div>
+{{ end }}
+
+{{ define "body-scripts" }}
+{{ with .Site.Params.backendURL }}<script>window.TBB_BACKEND_URL={{ . | jsonify | safeJS }};</script>{{ end }}
+<script src="{{ .Site.BaseURL }}app/tbb.js"></script>
+{{ end }}

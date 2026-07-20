@@ -1,0 +1,54 @@
+{{ define "main" }}
+{{/* Section override of _default/list.html: instead of auto-cards for child pages, a curated
+     grid of the headline study resources deep-linking into the app (which shares this site's
+     chrome, so following a card never feels like leaving the site). Season references use
+     data-tbb-param spans so params.js keeps them live. */}}
+<div class="container py-5">
+
+  {{ partial "breadcrumbs.html" . }}
+  <h1 class="page-title mb-3">{{ .Title }}</h1>
+
+  {{ with .Content }}
+  <div class="content-body mb-5">{{ . }}</div>
+  {{ end }}
+
+  {{ $scripture := partial "tbb-param.html" "eventScripture" }}
+  {{ $appUrl := printf "%sapp/" .Site.BaseURL }}
+  {{ $cards := slice
+    (dict "title" "Highlighted Study Text" "href" (printf "%s#downloads" $appUrl) "start" true
+          "desc" (printf "The full ESV text of %s with names, numbers, and more highlighted by category — the flagship study PDF, customizable before you download." $scripture))
+    (dict "title" "Practice Tests" "href" (printf "%s#downloads" $appUrl)
+          "desc" "A fresh printable test for any round, whenever you want one — scoped to the chapters you've covered so far.")
+    (dict "title" "Flashcards" "href" (printf "%s#downloads" $appUrl)
+          "desc" "Printable duplex flashcard decks: community questions by round, and every chapter heading for Round 5.")
+    (dict "title" "Names &amp; Numbers Indices" "href" (printf "%s#study/indices" $appUrl)
+          "desc" (printf "Every proper name and number in %s with all its verses — search and browse online, or download the PDFs." $scripture))
+    (dict "title" "Quiz Yourself" "href" (printf "%s#quiz" $appUrl)
+          "desc" "Drill the community question bank or chapter headings online, with instant feedback.")
+    (dict "title" "Kahoot &amp; Quizlet Exports" "href" (printf "%s#downloads" $appUrl)
+          "desc" "The question bank exported for your favorite tools: Kahoot spreadsheets and Quizlet/Space/Anki TSV files.")
+    (dict "title" "Study Games" "href" "/study-resources/practice-tests/"
+          "desc" "Interactive Kahoot and CRAM review games from the Texas Bible Bowl community.")
+  }}
+  <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
+    {{ range $cards }}
+    <div class="col">
+      <div class="card h-100 border-0 shadow-sm section-card{{ if .start }} start-here-card{{ end }}">
+        <div class="card-body">
+          {{ if .start }}
+          <span class="start-here-badge"><i class="bi bi-arrow-right-circle-fill"></i> Start here</span>
+          {{ end }}
+          <h5 class="card-title">
+            <a href="{{ .href }}" class="text-decoration-none stretched-link text-dark">
+              {{ .title | safeHTML }}
+            </a>
+          </h5>
+          <p class="card-text text-muted small">{{ .desc | safeHTML }}</p>
+        </div>
+      </div>
+    </div>
+    {{ end }}
+  </div>
+
+</div>
+{{ end }}

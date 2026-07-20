@@ -1,9 +1,13 @@
 <!DOCTYPE html>
+<!-- DEV-ONLY SHELL. In production Hugo renders the app's page (site/content/app.md +
+     site/layouts/_default/app-shell.html) with the real site navbar/footer, and pages.yml
+     copies this dist under /app/ EXCLUDING this file. This copy approximates the merged
+     navbar (same ids/data-route hooks) so local previews exercise the same Shell code. -->
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Study App | Texas Bible Bowl</title>
+  <title>Study | Texas Bible Bowl</title>
   <meta name="description" content="Free Texas Bible Bowl study tools: quizzes, flashcards, practice tests, and printable study materials for this season's book.">
   <meta name="theme-color" content="#1a3a5c">
 
@@ -24,18 +28,39 @@
         Texas Bible Bowl
       </a>
       <button class="navbar-toggler" type="button"
-              data-bs-toggle="collapse" data-bs-target="#appNav"
-              aria-controls="appNav" aria-expanded="false" aria-label="Toggle navigation">
+              data-bs-toggle="collapse" data-bs-target="#mainNav"
+              aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
         <span class="navbar-toggler-icon"></span>
       </button>
-      <div class="collapse navbar-collapse" id="appNav">
+      <div class="collapse navbar-collapse" id="mainNav">
         <ul class="navbar-nav ms-auto">
-          <li class="nav-item"><a class="nav-link" data-route="study" href="#study">Study</a></li>
-          <li class="nav-item"><a class="nav-link" data-route="quiz" href="#quiz">Quiz</a></li>
-          <li class="nav-item"><a class="nav-link" data-route="questions" href="#questions">Questions</a></li>
-          <li class="nav-item"><a class="nav-link" data-route="downloads" href="#downloads">Downloads</a></li>
+          <li class="nav-item"><a class="nav-link" href="../registration/">Registration</a></li>
+          <li class="nav-item"><a class="nav-link" href="../event/">Event</a></li>
+          <li class="nav-item dropdown">
+            <a class="nav-link dropdown-toggle active" href="../study-resources/"
+               role="button" data-bs-toggle="dropdown" aria-expanded="false" aria-current="page">
+              Study Resources
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end">
+              <li><a class="dropdown-item" href="../study-resources/">Study Resources overview</a></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><a class="dropdown-item" data-route="study" href="#study">Study Hub</a></li>
+              <li><a class="dropdown-item" data-route="quiz" href="#quiz">Quiz Me</a></li>
+              <li><a class="dropdown-item" data-route="downloads" href="#downloads">Downloads</a></li>
+              <li><a class="dropdown-item" data-route="questions" href="#questions">Community Questions</a></li>
+              <li><a class="dropdown-item" href="../study-resources/practice-tests/">Study Games</a></li>
+            </ul>
+          </li>
+          <li class="nav-item"><a class="nav-link" href="../scholarships/">Scholarships</a></li>
+          <li class="nav-item"><a class="nav-link" href="../about/">About</a></li>
+          <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
+            <a class="btn btn-outline-light btn-sm fw-bold px-3" href="../donate/">Donate</a>
+          </li>
+          <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
+            <a class="btn btn-warning btn-sm fw-bold px-3" href="#study">Study</a>
+          </li>
           <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center" id="accountSlot">
-            <a class="btn btn-warning btn-sm fw-bold px-3" href="#signin">Sign in</a>
+            <a class="btn btn-outline-light btn-sm px-3" href="#signin">Sign in</a>
           </li>
         </ul>
       </div>

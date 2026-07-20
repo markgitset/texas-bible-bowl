@@ -36,6 +36,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="icon" href="{{ .Site.BaseURL }}favicon.ico" sizes="any">
   <link rel="stylesheet" href="{{ .Site.BaseURL }}css/custom.css">
+  {{ block "head-extra" . }}{{ end }}
 </head>
 <body>
   {{ partial "nav.html" . }}
@@ -44,6 +45,7 @@
   </main>
   {{ partial "footer.html" . }}
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  {{ block "body-scripts" . }}{{ end }}
   <!-- Live season values: patches [data-tbb-param] spans from the localStorage cache, then
        GET /seasons/current. Inlined (not an external script) so the cached patch runs during
        parsing, before first paint — no flash of stale baked values. -->

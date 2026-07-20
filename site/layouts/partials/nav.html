@@ -14,7 +14,9 @@
       <ul class="navbar-nav ms-auto">
 
         {{ range .Site.Menus.main }}
-          {{ $active := or ($.IsMenuCurrent "main" .) ($.HasMenuCurrent "main" .) }}
+          {{/* menuActive front matter forces a top item active on pages outside the menu tree
+               (the /app/ shell); the app's Shell also re-toggles these classes per hash route. */}}
+          {{ $active := or ($.IsMenuCurrent "main" .) ($.HasMenuCurrent "main" .) (eq ($.Param "menuActive") .Name) }}
           {{ if .HasChildren }}
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle{{ if $active }} active{{ end }}" href="{{ .URL }}"
@@ -26,7 +28,10 @@
                 <li><a class="dropdown-item" href="{{ .URL }}">{{ .Name }} overview</a></li>
                 <li><hr class="dropdown-divider"></li>
                 {{ range .Children }}
-                  <li><a class="dropdown-item" href="{{ .URL }}">{{ .Name }}</a></li>
+                  {{/* data-route lets the app highlight the item matching the current hash. */}}
+                  {{ $parts := split .URL "#" }}
+                  {{ $hash := cond (gt (len $parts) 1) (index $parts 1) "" }}
+                  <li><a class="dropdown-item" {{ with $hash }}data-route="{{ . }}"{{ end }} href="{{ .URL }}">{{ .Name }}</a></li>
                 {{ end }}
               </ul>
             </li>
@@ -35,7 +40,12 @@
               <a class="btn btn-outline-light btn-sm fw-bold px-3" href="{{ .URL }}">{{ .Name }}</a>
             </li>
             <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
-              <a class="btn btn-warning btn-sm fw-bold px-3" href="{{ $.Site.BaseURL }}app/#study">Study App</a>
+              <a class="btn btn-warning btn-sm fw-bold px-3" href="{{ $.Site.BaseURL }}app/#study">Study</a>
+            </li>
+            {{/* Site-wide account slot: params.js swaps in the cached signed-in name; on /app/
+                 the Shell owns it. Keep the id/markup in sync with web/.../Shell.updateNav. */}}
+            <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center" id="accountSlot">
+              <a class="btn btn-outline-light btn-sm px-3" href="{{ $.Site.BaseURL }}app/#signin">Sign in</a>
             </li>
           {{ else }}
             <li class="nav-item">

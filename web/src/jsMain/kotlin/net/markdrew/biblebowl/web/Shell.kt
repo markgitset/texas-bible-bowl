@@ -23,6 +23,7 @@ import net.markdrew.biblebowl.web.screens.RegisterScreen
 import net.markdrew.biblebowl.web.screens.StandingsScreen
 import net.markdrew.biblebowl.web.screens.StudyHubScreen
 import org.w3c.dom.HTMLElement
+import org.w3c.dom.asList
 
 /**
  * Owns the render loop: listens for hash changes and session changes, keeps the static navbar's
@@ -51,22 +52,53 @@ object Shell {
     private fun render() {
         val route = currentRoute()
         updateNav(route)
+        document.title = "${routeLabel(route)} | Texas Bible Bowl"
         app.clear()
+        breadcrumbs(route)
         // content-body opts into the site's content styles (navy headings/tables, gold link hovers).
         val screen = app.child("div", "content-body")
         renderScreen(route, screen)
         window.scrollTo(0.0, 0.0)
     }
 
+    /**
+     * Site-style breadcrumb trail (Home › Study Hub › …) — the app shares the site's navbar,
+     * so in-app wayfinding rides on breadcrumbs and the hub cards instead of a tab row.
+     */
+    private fun breadcrumbs(route: String) {
+        if (route == Routes.STUDY) return // the hub is the app's landing page
+        app.child("nav") {
+            setAttribute("aria-label", "breadcrumb")
+            child("ol", "breadcrumb small mb-3") {
+                child("li", "breadcrumb-item") {
+                    child("a", text = "Home") { setAttribute("href", "../") }
+                }
+                child("li", "breadcrumb-item") {
+                    child("a", text = "Study Hub") { setAttribute("href", "#${Routes.STUDY}") }
+                }
+                val top = topDestinationOf(route)
+                if (top != null && top != TopDestination.STUDY && top.route != route) {
+                    child("li", "breadcrumb-item") {
+                        child("a", text = top.label) { setAttribute("href", "#${top.route}") }
+                    }
+                }
+                child("li", "breadcrumb-item active", routeLabel(route)) {
+                    setAttribute("aria-current", "page")
+                }
+            }
+        }
+    }
+
     private fun updateNav(route: String) {
-        val active = topDestinationOf(route)
-        TopDestination.entries.forEach { dest ->
-            (document.querySelector("[data-route='${dest.route}']") as? HTMLElement)
-                ?.classList?.toggle("active", dest == active)
+        // The merged navbar's app links (Study Resources dropdown items) carry data-route.
+        document.querySelectorAll("[data-route]").asList().forEach { node ->
+            val el = node as? HTMLElement ?: return@forEach
+            val dest = el.getAttribute("data-route") ?: return@forEach
+            el.classList.toggle("active", route == dest || route.startsWith("$dest/"))
         }
         // Collapse the mobile menu after navigating — a hash change doesn't reload the page,
         // so Bootstrap would otherwise leave it open over the new screen.
-        document.getElementById("appNav")?.classList?.remove("show")
+        document.getElementById("mainNav")?.classList?.remove("show")
 
         val slot = document.getElementById("accountSlot") as HTMLElement
         slot.clear()

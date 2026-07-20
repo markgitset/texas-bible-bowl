@@ -40,6 +40,9 @@ canonifyURLs = true
   # swapping the photo, give the new file a NEW name (e.g. share-2027.jpg) — scrapers
   # cache previews per URL, so reusing a filename keeps stale images alive for weeks.
   shareImage    = "share-2026.jpg"
+  # Backend base URL baked into the app shell (window.TBB_BACKEND_URL). Empty locally so the
+  # app falls back to localhost; CI overrides via HUGO_PARAMS_BACKENDURL (pages.yml).
+  backendURL    = ""
 
 # Homepage hero slideshow. Image files live in static/images/hero/ (cropped to the
 # 2.26:1 banner ratio, e.g. 1100x486). To refresh photos for a new year: drop new
@@ -132,17 +135,38 @@ canonifyURLs = true
   url    = "/study-resources/"
   weight = 30
 
+# The app destinations sit directly in this dropdown — the app under /app/ shares this
+# navbar (Hugo renders its shell page too), so these are ordinary section links, not an
+# exit to a separate app. Keep hash routes in sync with web/.../Routes.kt.
+[[menus.main]]
+  name   = "Study Hub"
+  url    = "/app/#study"
+  parent = "Study Resources"
+  weight = 1
+
+[[menus.main]]
+  name   = "Quiz Me"
+  url    = "/app/#quiz"
+  parent = "Study Resources"
+  weight = 2
+
 [[menus.main]]
   name   = "Downloads"
   url    = "/app/#downloads"   # the app's download center replaced the hand-linked PDF page
   parent = "Study Resources"
-  weight = 1
+  weight = 3
+
+[[menus.main]]
+  name   = "Community Questions"
+  url    = "/app/#questions"
+  parent = "Study Resources"
+  weight = 4
 
 [[menus.main]]
   name   = "Study Games"
   url    = "/study-resources/practice-tests/"
   parent = "Study Resources"
-  weight = 2
+  weight = 5
 
 [[menus.main]]
   name   = "Scholarships"

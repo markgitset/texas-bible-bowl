@@ -57,6 +57,23 @@
     patch(JSON.parse(localStorage.getItem(CACHE_KEY)));
   } catch (e) {}
 
+  // Account slot: the app caches the signed-in display name (web/.../Session.kt writes
+  // "tbb.user-name" next to the JWT). On static pages, swap the "Sign in" button for the
+  // name so the shared navbar reads as one signed-in application. On /app/ the Shell
+  // re-renders this slot itself with live state, overwriting whatever we do here.
+  try {
+    var name = localStorage.getItem("tbb.user-name");
+    var slot = document.getElementById("accountSlot");
+    if (name && slot) {
+      var link = slot.querySelector("a");
+      if (link) {
+        link.href = link.href.replace("#signin", "#account");
+        link.innerHTML = '<i class="bi bi-person-circle me-1"></i>';
+        link.appendChild(document.createTextNode(name));
+      }
+    }
+  } catch (e) {}
+
   fetch(base + "/seasons/current")
     .then(function (r) { return r.ok ? r.json() : null; })
     .then(function (s) {

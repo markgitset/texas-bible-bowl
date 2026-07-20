@@ -14,6 +14,9 @@ import net.markdrew.biblebowl.client.TbbApi
 object Session {
     private const val TOKEN_KEY = "tbb.token"
 
+    /** The site's params.js reads this to show the signed-in name on static pages' navbars. */
+    private const val NAME_KEY = "tbb.user-name"
+
     val api = TbbApi()
 
     var season: SeasonDto = FALLBACK_SEASON
@@ -43,6 +46,7 @@ object Session {
                 // An invalid/expired token is dropped; a transient failure keeps it for the next load.
                 runCatching { api.restoreSession(saved) }
                     .onSuccess { if (it == null) localStorage.removeItem(TOKEN_KEY) }
+                cacheDisplayName()
                 if (user != null) onChange()
             }
         }
@@ -54,13 +58,22 @@ object Session {
     /** Records a fresh sign-in (TbbApi already holds the token/user after login/register). */
     fun signedIn(auth: AuthResponse) {
         localStorage.setItem(TOKEN_KEY, auth.token)
+        cacheDisplayName()
         onChange()
     }
 
     fun signOut() {
         api.signOut()
         localStorage.removeItem(TOKEN_KEY)
+        cacheDisplayName()
         onChange()
+    }
+
+    /** Mirrors the signed-in display name into localStorage for the static pages' navbar. */
+    private fun cacheDisplayName() {
+        val name = user?.displayName
+        if (name.isNullOrBlank()) localStorage.removeItem(NAME_KEY)
+        else localStorage.setItem(NAME_KEY, name)
     }
 
     /** Adopts an admin's just-saved season so every screen sees the new values immediately. */
@@ -71,6 +84,7 @@ object Session {
 
     /** Re-renders after a profile edit ([api] already holds the updated user). */
     fun profileSaved() {
+        cacheDisplayName()
         onChange()
     }
 }

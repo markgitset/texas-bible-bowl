@@ -54,25 +54,22 @@ jobs:
           fi
 
       - name: Build static site (Hugo)
+        env:
+          # Baked into the app shell (site/layouts/_default/app-shell.html) as
+          # window.TBB_BACKEND_URL — overrides params.backendURL in hugo.toml.
+          HUGO_PARAMS_BACKENDURL: ${{ vars.BACKEND_URL || 'https://texas-bible-bowl.fly.dev' }}
         run: hugo -s site --gc --minify -d ../public
 
       - name: Build web (Kotlin/JS) distribution
         run: ./gradlew :web:jsBrowserDistribution
 
-      - name: Assemble app under /app/ and inject backend URL
-        env:
-          BACKEND_URL: ${{ vars.BACKEND_URL }}
+      - name: Assemble app under /app/
         run: |
+          # Hugo already rendered public/app/index.html (the shared-chrome shell from
+          # content/app.md); copy the JS dist around it, excluding the dev-only index.html.
           dist=web/build/dist/js/productionExecutable
-          mkdir -p public/app
-          cp -r "$dist"/. public/app/
-          if [ -n "$BACKEND_URL" ]; then
-            # Define the global the JS client reads, before the app script runs.
-            sed -i "s#<script src=\"tbb.js\"></script>#<script>window.TBB_BACKEND_URL=\"${BACKEND_URL}\";</script>\n    <script src=\"tbb.js\"></script>#" public/app/index.html
-            echo "Injected BACKEND_URL=$BACKEND_URL"
-          else
-            echo "::warning::BACKEND_URL repo variable is unset; the published app will fall back to localhost."
-          fi
+          test -s public/app/index.html || { echo "::error::Hugo did not render the app shell (public/app/index.html)"; exit 1; }
+          rsync -a --exclude=index.html "$dist"/ public/app/
           # Hash routing needs no SPA fallback, but keep one so /app/anything still loads the app.
           cp public/app/index.html public/app/404.html
 
