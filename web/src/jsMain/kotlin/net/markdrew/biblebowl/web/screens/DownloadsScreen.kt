@@ -16,6 +16,7 @@ import org.w3c.dom.HTMLInputElement
 private sealed interface Customize {
     data object StudyText : Customize
     data object QuestionFlashcards : Customize
+    data object HeadingFlashcards : Customize
     data class PracticeTest(val round: Round) : Customize
     data class Export(val kahoot: Boolean) : Customize
 }
@@ -71,8 +72,6 @@ object DownloadsScreen {
         val season = Session.season
 
         root.child("h1", "page-title", "Downloads")
-        root.child("p", "fw-semibold mb-1", "Chapter scope (flashcards, practice tests & exports)")
-        root.chapterChips(chapter) { chapter = it; rerender() }
 
         groupHeader("Study text")
         downloadCard(
@@ -101,6 +100,7 @@ object DownloadsScreen {
             subtitle = "One card per ESV section heading (Round 5 material)." +
                 (chapter?.let { " Through chapter $it." } ?: ""),
             href = generateUrl("/generate/heading-flashcards.pdf", "throughChapter" to chapter),
+            customize = Customize.HeadingFlashcards,
         )
 
         groupHeader("Indices")
@@ -259,10 +259,13 @@ object DownloadsScreen {
                 }
             }
             Customize.QuestionFlashcards -> {
+                chapterScope()
                 child("p", "fw-semibold mb-1", "Round")
                 chipRow(roundOptions(), flashcardRound) { flashcardRound = it; rerender() }
             }
+            Customize.HeadingFlashcards -> chapterScope("Through chapter")
             is Customize.PracticeTest -> {
+                chapterScope()
                 if (target.round.crowdSourced) {
                     child("p", "fw-semibold mb-1", "Number of questions")
                     chipRow(
@@ -289,6 +292,7 @@ object DownloadsScreen {
                 }
             }
             is Customize.Export -> {
+                chapterScope()
                 child("p", "fw-semibold mb-1", "Source")
                 chipRow(
                     listOf("Question bank" to false, "Chapter headings" to true),
@@ -303,6 +307,12 @@ object DownloadsScreen {
                 }
             }
         }
+    }
+
+    /** One shared value scopes every chapter-aware download; each card's subtitle says so. */
+    private fun Element.chapterScope(label: String = "Chapter scope") {
+        child("p", "fw-semibold mb-1", label)
+        chapterChips(chapter) { chapter = it; rerender() }
     }
 
     private fun roundOptions(): List<Pair<String, Round?>> =
