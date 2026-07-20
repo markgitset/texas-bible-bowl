@@ -146,12 +146,10 @@ object TeamMembersTable : Table("team_members") {
 object IndividualsTable : Table("individual_contestants") {
     val id = varchar("id", 36)
     val registrationId = varchar("registration_id", 36).references(RegistrationsTable.id)
-    // The durable adult contestant (birthdate-less) this per-season entry belongs to — the person who
-    // persists even though the per-season entry doesn't. Nullable only for rows not yet backfilled.
+    // The durable adult contestant (birthdate-less) this per-season entry belongs to — the source of
+    // the person's identity (name/gender). The entry itself carries only the per-season facts below.
     val contestantId = varchar("contestant_id", 36).references(ContestantsTable.id).nullable()
-    val name = varchar("name", 120)
     val shirtSize = varchar("shirt_size", 8)
-    val gender = varchar("gender", 6).nullable() // null only on rows created before gender was collected
     val claimCode = varchar("claim_code", 12).uniqueIndex()
     val ownerUserId = varchar("owner_user_id", 36).references(UsersTable.id).nullable()
     override val primaryKey = PrimaryKey(id)
@@ -294,7 +292,6 @@ object DatabaseFactory {
             exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_adult BOOLEAN NOT NULL DEFAULT FALSE")
             exec("ALTER TABLE users DROP COLUMN IF EXISTS grade")
             exec("ALTER TABLE team_members DROP COLUMN IF EXISTS grade")
-            exec("ALTER TABLE individual_contestants ADD COLUMN IF NOT EXISTS gender VARCHAR(6)")
             // Deleting a team frees its members (they become unassigned) rather than deleting them
             // (2026-07): give each member a direct registration link and let team_id go null.
             exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS registration_id VARCHAR(36)")
@@ -314,36 +311,15 @@ object DatabaseFactory {
             exec("ALTER TABLE team_members DROP COLUMN IF EXISTS birthdate")
             exec("ALTER TABLE team_members DROP COLUMN IF EXISTS gender")
             exec("ALTER TABLE team_members DROP COLUMN IF EXISTS first_season_year")
-            // Durable adults (2026-07, phase 5): individual (adult) contestants also become durable
-            // people that persist across seasons. Link each per-season adult entry to a birthdate-less
-            // contestant, backfilling one per distinct (congregation, lower(name)). Idempotent: only
-            // rows not yet linked are touched, so re-running on startup is a no-op.
+            // Durable adults: individual (adult) contestants link to a birthdate-less contestant (added
+            // in the phase-5 release, which also backfilled contestants from individual_contestants).
             exec("ALTER TABLE individual_contestants ADD COLUMN IF NOT EXISTS contestant_id VARCHAR(36)")
-            exec(
-                """
-                INSERT INTO contestants (id, congregation_id, name, birthdate, gender, first_season_year)
-                SELECT gen_random_uuid()::text, sub.congregation_id, sub.name, NULL, sub.gender, NULL
-                FROM (
-                    SELECT DISTINCT ON (r.congregation_id, lower(ic.name))
-                        r.congregation_id AS congregation_id, ic.name AS name, ic.gender AS gender
-                    FROM individual_contestants ic
-                    JOIN registrations r ON r.id = ic.registration_id
-                    WHERE ic.contestant_id IS NULL
-                    ORDER BY r.congregation_id, lower(ic.name), r.season_year
-                ) sub
-                """.trimIndent()
-            )
-            exec(
-                """
-                UPDATE individual_contestants ic SET contestant_id = c.id
-                FROM contestants c, registrations r
-                WHERE r.id = ic.registration_id
-                  AND c.congregation_id = r.congregation_id
-                  AND lower(c.name) = lower(ic.name)
-                  AND c.birthdate IS NULL
-                  AND ic.contestant_id IS NULL
-                """.trimIndent()
-            )
+            // Phase 6 (2026-07): the contestant is now the single source of truth for an adult's identity
+            // too, so the denormalized copies are dropped from the per-season entry (mirrors phase 4 for
+            // youth). Existing databases already carry adult identity on contestants (the phase-5 backfill
+            // ran on deploy); a fresh database starts empty — just drop the dead columns.
+            exec("ALTER TABLE individual_contestants DROP COLUMN IF EXISTS name")
+            exec("ALTER TABLE individual_contestants DROP COLUMN IF EXISTS gender")
         }
         return db
     }
