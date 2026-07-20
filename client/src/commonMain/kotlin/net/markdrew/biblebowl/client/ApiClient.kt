@@ -25,6 +25,7 @@ import net.markdrew.biblebowl.api.ClearPdfCacheResponse
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.GradingSheetResponse
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
@@ -43,6 +44,7 @@ import net.markdrew.biblebowl.api.SaveScoresRequest
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.SetPaidRequest
+import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
 import net.markdrew.biblebowl.api.StandingsResponse
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
@@ -353,6 +355,16 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun assignMemberTeam(memberId: String, teamId: String?): RegistrationDto =
         client.put("$baseUrl/registration/members/$memberId/team") {
             authorize(); contentType(ContentType.Application.Json); setBody(AssignMemberTeamRequest(teamId))
+        }.bodyOrThrow()
+
+    /**
+     * Enrolls a returning contestant into the current season — creates this year's roster entry from
+     * the durable contestant, on [teamId] (or unassigned when null), with a freshly-collected
+     * [shirtSize]. Returns the updated registration; refetch [myRegistration] for the pared candidate list.
+     */
+    suspend fun enrollContestant(congregationId: String, contestantId: String, shirtSize: ShirtSize, teamId: String? = null): RegistrationDto =
+        client.post("$baseUrl/registration/$congregationId/contestants/$contestantId/enroll") {
+            authorize(); contentType(ContentType.Application.Json); setBody(EnrollContestantRequest(shirtSize, teamId))
         }.bodyOrThrow()
 
     /** Adds an individual (adult) contestant — adults compete individually, never on a team. */

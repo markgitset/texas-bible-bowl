@@ -25,6 +25,7 @@ import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
@@ -493,6 +494,51 @@ class RegistrationRoutesTest {
             asCoach(); setBody(AssignMemberTeamRequest(null))
         }.body()
         assertEquals(listOf("Timothy"), backInPool.unassigned.map { it.name })
+    }
+
+    @Test
+    fun returningContestantsAreOfferedAndCanBeEnrolled() = testApplication {
+        val users = InMemoryUserRepository()
+        val congregations = InMemoryCongregationRepository()
+        val registrations = InMemoryRegistrationRepository(congregations)
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason), congregations = congregations, registrations = registrations)
+        }
+        val api = jsonClient()
+        val coach = api.signUp("coach@tbb.org", "Carol Coach")
+        fun io.ktor.client.request.HttpRequestBuilder.asCoach() =
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+
+        val cong: CongregationDto = api.post("/congregations") {
+            asCoach(); setBody(congregationRequest("Return Church", "Waco"))
+        }.body()
+
+        // Seed a prior season (2026) enrollment directly, so the person is a returning candidate for 2027.
+        val oldTeam = registrations.addTeam(cong.id, "2026", "Old Team")!!
+        registrations.addMember(oldTeam.id, UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE))
+
+        // The current-season resume offers Timothy as a returning candidate (not yet billed).
+        val mine: MyRegistrationResponse = api.get("/registration/mine") { asCoach() }.body()
+        assertEquals(listOf("Timothy"), mine.returningCandidates.map { it.name })
+        assertEquals("2026", mine.returningCandidates.single().lastSeasonYear)
+        val contestantId = mine.returningCandidates.single().contestantId
+
+        // Enrolling him into 2027 puts him on the roster (unassigned) and starts billing him.
+        val afterEnroll: RegistrationDto = api.post("/registration/${cong.id}/contestants/$contestantId/enroll") {
+            asCoach(); setBody(EnrollContestantRequest(ShirtSize.YL))
+        }.body()
+        assertEquals(listOf("Timothy"), afterEnroll.unassigned.map { it.name })
+        assertEquals(8500, afterEnroll.totalCents, "enrolling counts him as one paid contestant")
+
+        // He's no longer a candidate, and re-enrolling / a bogus contestant are both rejected.
+        assertTrue(api.get("/registration/mine") { asCoach() }.body<MyRegistrationResponse>().returningCandidates.isEmpty())
+        assertEquals(HttpStatusCode.Conflict, api.post("/registration/${cong.id}/contestants/$contestantId/enroll") {
+            asCoach(); setBody(EnrollContestantRequest(ShirtSize.YL))
+        }.status)
+        assertEquals(HttpStatusCode.Conflict, api.post("/registration/${cong.id}/contestants/nope/enroll") {
+            asCoach(); setBody(EnrollContestantRequest(ShirtSize.YL))
+        }.status)
     }
 
     @Test

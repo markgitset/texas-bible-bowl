@@ -16,6 +16,7 @@ import net.markdrew.biblebowl.server.data.CongregationsTable
 import net.markdrew.biblebowl.server.data.ContestantsTable
 import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.DatabaseFactory
+import net.markdrew.biblebowl.server.data.EnrollResult
 import net.markdrew.biblebowl.server.data.IndividualsTable
 import net.markdrew.biblebowl.server.data.PostgresCongregationRepository
 import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
@@ -284,5 +285,41 @@ class PostgresRepositoryTest {
         // The contestant survives while the 2027 enrollment remains, then is pruned once all are gone.
         assertTrue(registrations.deleteMember(m2028.id))
         assertEquals(contestantId, registrations.contestantIdForMember(add(t2028.id, "Timothy").id))
+    }
+
+    @Test
+    fun returningContestantsAndEnrollAcrossSeasons() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val db = DatabaseFactory.connect()
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val coach = users.create("rcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Return Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+
+        // A 2026 enrollment → a returning candidate for 2027.
+        val old = assertNotNull(registrations.addTeam(cong.id, "2026", "Old Team"))
+        registrations.addMember(
+            old.id, UpsertRosterEntryRequest("Timothy", birthdate = "2013-05-01", shirtSize = ShirtSize.YM, gender = Gender.MALE),
+        )
+        val candidates = registrations.returningContestants(cong.id, "2027")
+        assertEquals(listOf("Timothy"), candidates.map { it.name })
+        assertEquals("2026", candidates.single().lastSeasonYear)
+        assertEquals(ShirtSize.YM, candidates.single().lastShirtSize)
+        val contestantId = candidates.single().contestantId
+
+        // Enrolling into 2027 creates that season's entry from the durable contestant and clears the candidate.
+        val team2027 = assertNotNull(registrations.addTeam(cong.id, "2027", "Team A"))
+        assertIs<EnrollResult.Enrolled>(registrations.enrollContestant(cong.id, "2027", contestantId, ShirtSize.YL, team2027.id))
+        val member = registrations.find(cong.id, "2027")!!.teams.single().members.single()
+        assertEquals("Timothy" to ShirtSize.YL, member.name to member.shirtSize)
+        assertEquals(contestantId, registrations.contestantIdForMember(member.id))
+        assertTrue(registrations.returningContestants(cong.id, "2027").isEmpty())
+        assertIs<EnrollResult.AlreadyEnrolled>(registrations.enrollContestant(cong.id, "2027", contestantId, ShirtSize.YL, null))
     }
 }

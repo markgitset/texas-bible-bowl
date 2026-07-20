@@ -10,6 +10,7 @@ import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
 import net.markdrew.biblebowl.server.data.AssignResult
 import net.markdrew.biblebowl.server.data.ClaimCodes
+import net.markdrew.biblebowl.server.data.EnrollResult
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
 import net.markdrew.biblebowl.server.data.InMemoryRegistrationRepository
@@ -368,6 +369,54 @@ class RegistrationRepositoryTest {
         assertTrue(repo.deleteMember(m2028b.id))
         val fresh = assertIs<AddMemberResult.Added>(repo.addMember(t2028.id, entry("Ada"))).entry
         assertNotEquals(contestantId, repo.contestantIdForMember(fresh.id))
+    }
+
+    @Test
+    fun returningContestantsSurfacePriorPeopleAndClearOnceEnrolled() {
+        val cong = newCongregation("Returning Church", "Waco")!!
+        val t2027 = repo.addTeam(cong.id, "2027", "Team A")!!
+        repo.addMember(t2027.id, entry("Timothy"))
+
+        // Next season: Timothy competed before but isn't on the 2028 roster yet → a returning candidate.
+        val candidates = repo.returningContestants(cong.id, "2028")
+        assertEquals(listOf("Timothy"), candidates.map { it.name })
+        assertEquals("2027", candidates.single().lastSeasonYear)
+        assertEquals(ShirtSize.AM, candidates.single().lastShirtSize, "prefill from last enrollment")
+
+        // He's not a candidate in 2027 (already on that roster).
+        assertTrue(repo.returningContestants(cong.id, "2027").isEmpty())
+
+        // Enrolling him in 2028 clears him from the candidate list.
+        val contestantId = candidates.single().contestantId
+        assertIs<EnrollResult.Enrolled>(repo.enrollContestant(cong.id, "2028", contestantId, ShirtSize.YL, null))
+        assertTrue(repo.returningContestants(cong.id, "2028").isEmpty())
+    }
+
+    @Test
+    fun enrollCreatesThisSeasonsEntryFromTheDurableContestant() {
+        val cong = newCongregation("Enroll Church", "Waco")!!
+        val t2027 = repo.addTeam(cong.id, "2027", "Team A")!!
+        val m2027 = assertIs<AddMemberResult.Added>(repo.addMember(t2027.id, entry("Timothy"))).entry
+        val contestantId = repo.contestantIdForMember(m2027.id)!!
+
+        val t2028 = repo.addTeam(cong.id, "2028", "Team A")!!
+        assertIs<EnrollResult.Enrolled>(repo.enrollContestant(cong.id, "2028", contestantId, ShirtSize.YL, t2028.id))
+        val enrolled = repo.find(cong.id, "2028")!!.teams.single().members.single()
+        assertEquals("Timothy" to ShirtSize.YL, enrolled.name to enrolled.shirtSize)
+        assertEquals(contestantId, repo.contestantIdForMember(enrolled.id), "same durable person, new season's entry")
+
+        // Enrolling the same contestant again is rejected.
+        assertIs<EnrollResult.AlreadyEnrolled>(repo.enrollContestant(cong.id, "2028", contestantId, ShirtSize.YL, t2028.id))
+        // An unknown / other-congregation contestant is rejected.
+        assertIs<EnrollResult.ContestantNotFound>(repo.enrollContestant(cong.id, "2028", "nope", ShirtSize.YL, null))
+
+        // Enrolling a returning candidate onto a full team is rejected.
+        val full = repo.addTeam(cong.id, "2028", "Full")!!
+        repeat(MAX_TEAM_SIZE) { repo.addMember(full.id, entry("Filler $it")) }
+        val returnerId = repo.contestantIdForMember(
+            assertIs<AddMemberResult.Added>(repo.addMember(repo.addTeam(cong.id, "2026", "Old")!!.id, entry("Returner"))).entry.id
+        )!!
+        assertIs<EnrollResult.RosterFull>(repo.enrollContestant(cong.id, "2028", returnerId, ShirtSize.YL, full.id))
     }
 
     @Test

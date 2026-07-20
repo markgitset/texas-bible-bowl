@@ -14,6 +14,8 @@ import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.Division
+import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.RegistrationDto
@@ -27,6 +29,7 @@ import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.api.coachedCongregationIds
 import net.markdrew.biblebowl.api.contestantCount
+import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.gradeForBirthdate
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.registrationTotalCents
@@ -35,6 +38,7 @@ import net.markdrew.biblebowl.server.RegistrationWindowState
 import net.markdrew.biblebowl.server.data.AddMemberResult
 import net.markdrew.biblebowl.server.data.AssignResult
 import net.markdrew.biblebowl.server.data.ClaimCodes
+import net.markdrew.biblebowl.server.data.EnrollResult
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.CongregationRepository
 import net.markdrew.biblebowl.server.data.CreateCongregationResult
@@ -176,14 +180,18 @@ fun Route.registrationRoutes(
             if (!requireRegistrationFeature(user, seasons)) return@get
             val season = seasons.current()
             val coached = congregations.findByIds(coachedCongregationIds(user.roles))
-            val registration = coached.firstOrNull()
-                ?.let { registrations.find(it.id, season.eventYear) }
-                ?.withTotal(seasons)
+            val congregation = coached.firstOrNull()
+            val registration = congregation?.let { registrations.find(it.id, season.eventYear) }?.withTotal(seasons)
+            val candidates = congregation
+                ?.let { registrations.returningContestants(it.id, season.eventYear) }
+                ?.filter { season.isYouthEligible(it.birthdate) }
+                ?: emptyList()
             call.respond(
                 MyRegistrationResponse(
                     congregations = coached,
                     registration = registration,
                     windowOpen = season.registrationWindowState() == RegistrationWindowState.OPEN,
+                    returningCandidates = candidates,
                 )
             )
         }
@@ -312,6 +320,39 @@ fun Route.registrationRoutes(
             }
         }
 
+        // Enroll a returning contestant into this season — creates their roster entry from the durable
+        // contestant (they competed before but aren't on this year's roster yet). Only youth-eligible
+        // returning candidates qualify; enrolling is what starts billing them ("candidates until kept").
+        post("/registration/{congregationId}/contestants/{contestantId}/enroll") {
+            val user = currentUser(users) ?: return@post
+            if (!requireRegistrationFeature(user, seasons)) return@post
+            val congregationId = call.parameters["congregationId"]!!
+            val contestantId = call.parameters["contestantId"]!!
+            if (!requireCongregationEditor(user, congregationId, seasons)) return@post
+            val season = seasons.current()
+            val eligible = registrations.returningContestants(congregationId, season.eventYear)
+                .any { it.contestantId == contestantId && season.isYouthEligible(it.birthdate) }
+            if (!eligible) {
+                return@post call.respond(
+                    HttpStatusCode.Conflict,
+                    ApiError("not_eligible", "That contestant isn't an eligible returning contestant this season"),
+                )
+            }
+            val req = call.receive<EnrollContestantRequest>()
+            when (registrations.enrollContestant(congregationId, season.eventYear, contestantId, req.shirtSize, req.teamId)) {
+                EnrollResult.Enrolled ->
+                    call.respond(registrations.find(congregationId, season.eventYear)!!.withTotal(seasons))
+                EnrollResult.RosterFull ->
+                    call.respond(HttpStatusCode.Conflict, ApiError("roster_full", "A team may have at most 4 contestants"))
+                EnrollResult.TeamNotFound ->
+                    call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such team for this registration"))
+                EnrollResult.ContestantNotFound ->
+                    call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such contestant"))
+                EnrollResult.AlreadyEnrolled ->
+                    call.respond(HttpStatusCode.Conflict, ApiError("already_enrolled", "That contestant is already on this season's roster"))
+            }
+        }
+
         // Individual (adult) contestants — adults are never on a team; they compete individually.
         post("/registration/{congregationId}/individuals") {
             val user = currentUser(users) ?: return@post
@@ -406,6 +447,10 @@ private const val INVALID_MEMBER_MESSAGE =
 /** A team member needs a name and a birthdate implying school grade 3\u201312 this season. */
 private fun UpsertRosterEntryRequest.isValid(season: SeasonDto): Boolean =
     name.isNotBlank() && (season.gradeForBirthdate(birthdate) ?: -1) in 3..12
+
+/** True when [birthdate] places a contestant in a youth division (grades 3\u201312) this season. */
+private fun SeasonDto.isYouthEligible(birthdate: String?): Boolean =
+    birthdate != null && divisionForBirthdate(birthdate).let { it != null && it != Division.ADULT }
 
 /** A congregation code is optional (blank), but if present must be exactly two letters. */
 private fun isCodeValid(code: String): Boolean {

@@ -353,6 +353,38 @@ data class UpsertIndividualRequest(
     val gender: Gender,
 )
 
+/**
+ * A durable contestant who competed for this congregation before but has no roster entry yet this
+ * season — a returning *candidate*. Team assignments are per-season, so a new event year starts with
+ * none; candidates are surfaced (not billed) until the coach enrolls one, which creates that
+ * season's roster entry. Identity is [contestantId] (see the `contestants` table).
+ */
+@Serializable
+data class ReturningContestantDto(
+    val contestantId: String,
+    val name: String,
+    /** ISO-8601 birthdate (drives the division this season); youth always have one. */
+    val birthdate: String? = null,
+    val gender: Gender? = null,
+    /** The most recent season this contestant competed, for display ("last competed 2027"). */
+    val lastSeasonYear: String? = null,
+    /** Their most recent shirt size, to prefill the enroll form (they may have grown). */
+    val lastShirtSize: ShirtSize? = null,
+    /** The season this contestant first competed, if known (drives the inexperienced bracket). */
+    val firstSeasonYear: String? = null,
+)
+
+/**
+ * Enrolls a returning [ReturningContestantDto] into the current season — creating that season's
+ * roster entry from the durable contestant. [teamId] places them straight on a team (else they land
+ * in the unassigned pool); [shirtSize] is re-collected because it changes year to year.
+ */
+@Serializable
+data class EnrollContestantRequest(
+    val shirtSize: ShirtSize,
+    val teamId: String? = null,
+)
+
 /** A congregation's registration for one season; unique per (congregation, seasonYear). */
 @Serializable
 data class RegistrationDto(
@@ -384,6 +416,12 @@ data class MyRegistrationResponse(
     val congregations: List<CongregationDto> = emptyList(),
     val registration: RegistrationDto? = null,
     val windowOpen: Boolean = false,
+    /**
+     * Contestants who competed for this congregation before but aren't on this season's roster yet —
+     * offered for one-click enrollment. Empty until the coach's first congregation has prior-year
+     * contestants who are still youth-eligible this season.
+     */
+    val returningCandidates: List<ReturningContestantDto> = emptyList(),
 )
 
 /** Minimal coach contact for the registration desk — deliberately not a full [UserDto]. */
