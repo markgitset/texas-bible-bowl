@@ -43,12 +43,6 @@ Individual chapter review quizzes. Click any chapter to launch its Kahoot.
 
 ---
 
-## Practice Verse Find Tests (Round 1)
-
-### Joshua (Chapters 1–24)
-[Test 1](/uploads/josh-judg-ruth-verse-find-jos01to24-seed0010.pdf) · [Test 2](/uploads/josh-judg-ruth-verse-find-jos01to24-seed0020.pdf) · [Test 3](/uploads/josh-judg-ruth-verse-find-jos01to24-seed0030.pdf) · [Test 4](/uploads/josh-judg-ruth-verse-find-jos01to24-seed0040.pdf) · [Test 5](/uploads/josh-judg-ruth-verse-find-jos01to24-seed0050.pdf)
-
-### Joshua & Judges
-[Test 1](/uploads/josh-judg-ruth-verse-find-jos01tojdg21-seed0010.pdf) · [Test 2](/uploads/josh-judg-ruth-verse-find-jos01tojdg21-seed0020.pdf) · [Test 3](/uploads/josh-judg-ruth-verse-find-jos01tojdg21-seed0030.pdf) · [Test 4](/uploads/josh-judg-ruth-verse-find-jos01tojdg21-seed0040.pdf)
-
----
+Looking for printable practice tests? Fresh tests for every round — including Round 1
+verse finds — are generated on demand in the [download center](/app/#downloads), always
+up to date for the current season.

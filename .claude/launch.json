@@ -16,6 +16,13 @@
       "autoPort": true
     },
     {
+      "name": "full-dist",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "HUGO=$(command -v hugo || echo /home/mark/bin/hugo); \"$HUGO\" -s site --gc -d build/public -b \"http://localhost:${PORT:-8092}/\" && rsync -a --exclude=index.html web/build/dist/js/productionExecutable/ site/build/public/app/ && python3 -m http.server \"${PORT:-8092}\" --directory site/build/public"],
+      "port": 8092,
+      "autoPort": true
+    },
+    {
       "name": "backend",
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-c", "if [ -z \"$DATABASE_URL\" ]; then export ADMIN_EMAIL=admin@tbb.org ADMIN_PASSWORD=admin-secret-123; fi; ./gradlew :server:run"],

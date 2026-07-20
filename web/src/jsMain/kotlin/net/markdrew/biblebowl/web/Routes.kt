@@ -24,9 +24,13 @@ object Routes {
     const val ADMIN_USERS = "admin/users"
 }
 
-/** The four top-level navbar destinations (matches the Compose app's TopDestination). */
+/**
+ * The four top-level app destinations (matches the Compose app's TopDestination). Since the
+ * merged-navbar redesign these are dropdown items under "Study Resources" rather than tabs,
+ * but they still anchor breadcrumb grouping and active-state matching.
+ */
 enum class TopDestination(val route: String, val label: String) {
-    STUDY(Routes.STUDY, "Study"),
+    STUDY(Routes.STUDY, "Study Hub"),
     QUIZ(Routes.QUIZ, "Quiz"),
     QUESTIONS(Routes.QUESTIONS, "Questions"),
     DOWNLOADS(Routes.DOWNLOADS, "Downloads"),
@@ -35,3 +39,25 @@ enum class TopDestination(val route: String, val label: String) {
 /** The top-level parent of [route] (e.g. `questions/new` → QUESTIONS), or null for signin/account/admin. */
 fun topDestinationOf(route: String): TopDestination? =
     TopDestination.entries.firstOrNull { route == it.route || route.startsWith("${it.route}/") }
+
+/** Human label for [route], used for breadcrumbs and the document title. */
+fun routeLabel(route: String): String = when (route) {
+    Routes.STUDY -> "Study Hub"
+    Routes.STUDY_INDICES -> "Names & Numbers"
+    Routes.STUDY_HEADINGS -> "Chapter Headings"
+    Routes.QUIZ -> "Quiz"
+    Routes.QUESTIONS -> "Questions"
+    Routes.QUESTIONS_NEW -> "Submit a Question"
+    Routes.QUESTIONS_MODERATE -> "Moderate Questions"
+    Routes.DOWNLOADS -> "Downloads"
+    Routes.REGISTER -> "Registration"
+    Routes.GRADING -> "Grading Desk"
+    Routes.STANDINGS -> "Standings"
+    Routes.MY_SCORES -> "My Scores"
+    Routes.SIGN_IN -> "Sign In"
+    Routes.ACCOUNT -> "Account"
+    Routes.ADMIN_SEASON -> "Season Settings"
+    Routes.ADMIN_REGISTRATIONS -> "Registrations"
+    Routes.ADMIN_USERS -> "Users"
+    else -> "Study Hub"
+}
