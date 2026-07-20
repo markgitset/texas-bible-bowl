@@ -19,6 +19,7 @@ import net.markdrew.biblebowl.server.data.UpdateCongregationResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -327,6 +328,46 @@ class RegistrationRepositoryTest {
         // Assign from the pool back onto a team.
         assertIs<AssignResult.Assigned>(repo.assignMemberToTeam(member.id, teamA.id))
         assertEquals(listOf("Mover"), repo.find(cong.id, "2027")!!.teams.single { it.id == teamA.id }.members.map { it.name })
+    }
+
+    @Test
+    fun sameContestantAcrossSeasonsSharesOneDurableRecord() {
+        val cong = newCongregation("Durable Church", "Waco")!!
+        val t2027 = repo.addTeam(cong.id, "2027", "Team A")!!
+        val m2027 = assertIs<AddMemberResult.Added>(repo.addMember(t2027.id, entry("Timothy"))).entry
+        val contestantId = assertNotNull(repo.contestantIdForMember(m2027.id), "each roster entry links a durable contestant")
+
+        // Next season the same person (case/space-insensitively) reuses the same durable contestant —
+        // this is what lets a returning contestant be recognized without a rollover step.
+        val t2028 = repo.addTeam(cong.id, "2028", "Team A")!!
+        val m2028 = assertIs<AddMemberResult.Added>(repo.addMember(t2028.id, entry("  timothy "))).entry
+        assertEquals(contestantId, repo.contestantIdForMember(m2028.id))
+
+        // A different name (or birthdate) is a different person → a distinct contestant.
+        val silas = assertIs<AddMemberResult.Added>(repo.addMember(t2028.id, entry("Silas"))).entry
+        assertNotEquals(contestantId, repo.contestantIdForMember(silas.id))
+    }
+
+    @Test
+    fun durableContestantSurvivesWhileAnyEnrollmentRemainsElsePruned() {
+        val cong = newCongregation("Survive Church", "Waco")!!
+        val t2027 = repo.addTeam(cong.id, "2027", "Team A")!!
+        val m2027 = assertIs<AddMemberResult.Added>(repo.addMember(t2027.id, entry("Ada"))).entry
+        val contestantId = repo.contestantIdForMember(m2027.id)!!
+        val t2028 = repo.addTeam(cong.id, "2028", "Team A")!!
+        val m2028 = assertIs<AddMemberResult.Added>(repo.addMember(t2028.id, entry("Ada"))).entry
+        assertEquals(contestantId, repo.contestantIdForMember(m2028.id))
+
+        // Removing the 2028 enrollment keeps the person (2027 still references them); re-adding reuses it.
+        assertTrue(repo.deleteMember(m2028.id))
+        val m2028b = assertIs<AddMemberResult.Added>(repo.addMember(t2028.id, entry("Ada"))).entry
+        assertEquals(contestantId, repo.contestantIdForMember(m2028b.id))
+
+        // Once the *last* enrollment is gone the durable contestant is pruned, so a later re-add is fresh.
+        assertTrue(repo.deleteMember(m2027.id))
+        assertTrue(repo.deleteMember(m2028b.id))
+        val fresh = assertIs<AddMemberResult.Added>(repo.addMember(t2028.id, entry("Ada"))).entry
+        assertNotEquals(contestantId, repo.contestantIdForMember(fresh.id))
     }
 
     @Test

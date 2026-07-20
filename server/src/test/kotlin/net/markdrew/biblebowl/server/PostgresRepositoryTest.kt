@@ -13,6 +13,7 @@ import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.CongregationsTable
+import net.markdrew.biblebowl.server.data.ContestantsTable
 import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.DatabaseFactory
 import net.markdrew.biblebowl.server.data.IndividualsTable
@@ -68,6 +69,7 @@ class PostgresRepositoryTest {
             ScoresTable.deleteAll()
             ScoreReleasesTable.deleteAll()
             TeamMembersTable.deleteAll()
+            ContestantsTable.deleteAll()
             TeamsTable.deleteAll()
             IndividualsTable.deleteAll()
             RegistrationsTable.deleteAll()
@@ -242,5 +244,45 @@ class PostgresRepositoryTest {
         assertTrue(registrations.entryIdsOwnedBy(other.id).isEmpty())
         // The claimed flag round-trips through the full registration read.
         assertTrue(registrations.find(cong.id, "2027")!!.teams.single().members.single().claimed)
+    }
+
+    @Test
+    fun durableContestantsLinkAndReuseAcrossSeasons() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val db = DatabaseFactory.connect()
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val coach = users.create("dcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Durable Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+
+        fun add(teamId: String, name: String) = assertIs<AddMemberResult.Added>(
+            registrations.addMember(
+                teamId,
+                UpsertRosterEntryRequest(name, birthdate = "2013-05-01", shirtSize = ShirtSize.YL, gender = Gender.FEMALE),
+            )
+        ).entry
+
+        val t2027 = assertNotNull(registrations.addTeam(cong.id, "2027", "Team A"))
+        val m2027 = add(t2027.id, "Timothy")
+        val contestantId = assertNotNull(registrations.contestantIdForMember(m2027.id))
+
+        // Same person next season (case/space-insensitively) → the same durable contestant.
+        val t2028 = assertNotNull(registrations.addTeam(cong.id, "2028", "Team A"))
+        val m2028 = add(t2028.id, "  timothy ")
+        assertEquals(contestantId, registrations.contestantIdForMember(m2028.id))
+
+        // A different person → a distinct contestant.
+        val silas = add(t2028.id, "Silas")
+        assertTrue(contestantId != registrations.contestantIdForMember(silas.id))
+
+        // The contestant survives while the 2027 enrollment remains, then is pruned once all are gone.
+        assertTrue(registrations.deleteMember(m2028.id))
+        assertEquals(contestantId, registrations.contestantIdForMember(add(t2028.id, "Timothy").id))
     }
 }

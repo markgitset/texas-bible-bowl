@@ -100,6 +100,27 @@ object TeamsTable : Table("teams") {
     }
 }
 
+/**
+ * A durable youth contestant (a *person*), scoped to a congregation and reused season over season —
+ * the identity that persists even though team assignments do not (a roster row is per-season, this
+ * is not). A team_members row is one season's *enrollment* of a contestant; the contestant carries
+ * the stable facts (name, birthdate, and the derived-once experience anchor [firstSeasonYear]).
+ * Identity is `(congregation, lower(name), birthdate)`. Adults (individual contestants) are not
+ * modelled here yet.
+ */
+object ContestantsTable : Table("contestants") {
+    val id = varchar("id", 36)
+    val congregationId = varchar("congregation_id", 36).references(CongregationsTable.id)
+    val name = varchar("name", 120)
+    val birthdate = varchar("birthdate", 10).nullable() // null only for legacy rows pre-dating birthdates
+    val gender = varchar("gender", 6).nullable()
+    val firstSeasonYear = varchar("first_season_year", 4).nullable()
+    override val primaryKey = PrimaryKey(id)
+    init {
+        index(false, congregationId, name) // lookups by congregation + name for find-or-create
+    }
+}
+
 /** Roster entries (≤4 per team, enforced in the repository). Division is always computed, never stored. */
 object TeamMembersTable : Table("team_members") {
     val id = varchar("id", 36)
@@ -108,6 +129,9 @@ object TeamMembersTable : Table("team_members") {
     val teamId = varchar("team_id", 36).references(TeamsTable.id).nullable()
     // Direct link to the registration so a teamless member is still scoped and queryable without a team.
     val registrationId = varchar("registration_id", 36).references(RegistrationsTable.id)
+    // The durable contestant (person) this per-season enrollment belongs to. Nullable only for legacy
+    // rows the backfill hasn't linked; new rows always set it.
+    val contestantId = varchar("contestant_id", 36).references(ContestantsTable.id).nullable()
     val name = varchar("name", 120)
     // ISO-8601; required for team members (grades 3-12) since adults can't be on teams;
     // nullable only for rows that pre-date birthdate collection
@@ -249,8 +273,8 @@ object DatabaseFactory {
             SchemaUtils.create(
                 UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable, EsvChaptersTable,
                 TextAnnotationsTable, GeneratedPdfsTable, SeasonsTable,
-                CongregationsTable, RegistrationsTable, TeamsTable, TeamMembersTable, IndividualsTable,
-                ScoresTable, ScoreReleasesTable,
+                CongregationsTable, RegistrationsTable, TeamsTable, ContestantsTable, TeamMembersTable,
+                IndividualsTable, ScoresTable, ScoreReleasesTable,
             )
             // SchemaUtils.create only creates missing *tables* — columns added after a table
             // first shipped need explicit (idempotent) ALTERs for existing databases.
@@ -281,6 +305,37 @@ object DatabaseFactory {
                     "FROM teams t WHERE t.id = tm.team_id AND tm.registration_id IS NULL"
             )
             exec("ALTER TABLE team_members ALTER COLUMN team_id DROP NOT NULL")
+            // Durable contestants (2026-07): a person persists across seasons even though team
+            // assignments don't. Link each per-season roster row to a durable contestant. The backfill
+            // is idempotent — it only touches rows not yet linked, so re-running on startup is a no-op.
+            exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS contestant_id VARCHAR(36)")
+            exec(
+                """
+                INSERT INTO contestants (id, congregation_id, name, birthdate, gender, first_season_year)
+                SELECT gen_random_uuid()::text, sub.congregation_id, sub.name, sub.birthdate,
+                       sub.gender, sub.first_season_year
+                FROM (
+                    SELECT DISTINCT ON (r.congregation_id, lower(tm.name), COALESCE(tm.birthdate, ''))
+                        r.congregation_id AS congregation_id, tm.name AS name, tm.birthdate AS birthdate,
+                        tm.gender AS gender, tm.first_season_year AS first_season_year
+                    FROM team_members tm
+                    JOIN registrations r ON r.id = tm.registration_id
+                    WHERE tm.contestant_id IS NULL
+                    ORDER BY r.congregation_id, lower(tm.name), COALESCE(tm.birthdate, ''), r.season_year
+                ) sub
+                """.trimIndent()
+            )
+            exec(
+                """
+                UPDATE team_members tm SET contestant_id = c.id
+                FROM contestants c, registrations r
+                WHERE r.id = tm.registration_id
+                  AND c.congregation_id = r.congregation_id
+                  AND lower(c.name) = lower(tm.name)
+                  AND c.birthdate IS NOT DISTINCT FROM tm.birthdate
+                  AND tm.contestant_id IS NULL
+                """.trimIndent()
+            )
         }
         return db
     }
