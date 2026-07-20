@@ -146,6 +146,9 @@ object TeamMembersTable : Table("team_members") {
 object IndividualsTable : Table("individual_contestants") {
     val id = varchar("id", 36)
     val registrationId = varchar("registration_id", 36).references(RegistrationsTable.id)
+    // The durable adult contestant (birthdate-less) this per-season entry belongs to — the person who
+    // persists even though the per-season entry doesn't. Nullable only for rows not yet backfilled.
+    val contestantId = varchar("contestant_id", 36).references(ContestantsTable.id).nullable()
     val name = varchar("name", 120)
     val shirtSize = varchar("shirt_size", 8)
     val gender = varchar("gender", 6).nullable() // null only on rows created before gender was collected
@@ -311,6 +314,36 @@ object DatabaseFactory {
             exec("ALTER TABLE team_members DROP COLUMN IF EXISTS birthdate")
             exec("ALTER TABLE team_members DROP COLUMN IF EXISTS gender")
             exec("ALTER TABLE team_members DROP COLUMN IF EXISTS first_season_year")
+            // Durable adults (2026-07, phase 5): individual (adult) contestants also become durable
+            // people that persist across seasons. Link each per-season adult entry to a birthdate-less
+            // contestant, backfilling one per distinct (congregation, lower(name)). Idempotent: only
+            // rows not yet linked are touched, so re-running on startup is a no-op.
+            exec("ALTER TABLE individual_contestants ADD COLUMN IF NOT EXISTS contestant_id VARCHAR(36)")
+            exec(
+                """
+                INSERT INTO contestants (id, congregation_id, name, birthdate, gender, first_season_year)
+                SELECT gen_random_uuid()::text, sub.congregation_id, sub.name, NULL, sub.gender, NULL
+                FROM (
+                    SELECT DISTINCT ON (r.congregation_id, lower(ic.name))
+                        r.congregation_id AS congregation_id, ic.name AS name, ic.gender AS gender
+                    FROM individual_contestants ic
+                    JOIN registrations r ON r.id = ic.registration_id
+                    WHERE ic.contestant_id IS NULL
+                    ORDER BY r.congregation_id, lower(ic.name), r.season_year
+                ) sub
+                """.trimIndent()
+            )
+            exec(
+                """
+                UPDATE individual_contestants ic SET contestant_id = c.id
+                FROM contestants c, registrations r
+                WHERE r.id = ic.registration_id
+                  AND c.congregation_id = r.congregation_id
+                  AND lower(c.name) = lower(ic.name)
+                  AND c.birthdate IS NULL
+                  AND ic.contestant_id IS NULL
+                """.trimIndent()
+            )
         }
         return db
     }

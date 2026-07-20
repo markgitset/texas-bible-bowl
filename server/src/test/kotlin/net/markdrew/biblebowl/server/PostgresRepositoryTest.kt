@@ -7,6 +7,7 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
+import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
@@ -70,9 +71,9 @@ class PostgresRepositoryTest {
             ScoresTable.deleteAll()
             ScoreReleasesTable.deleteAll()
             TeamMembersTable.deleteAll()
-            ContestantsTable.deleteAll()
-            TeamsTable.deleteAll()
             IndividualsTable.deleteAll()
+            ContestantsTable.deleteAll() // after team_members + individuals (both FK-reference it)
+            TeamsTable.deleteAll()
             RegistrationsTable.deleteAll()
             CongregationsTable.deleteAll()
             RoleGrantsTable.deleteAll()
@@ -355,5 +356,32 @@ class PostgresRepositoryTest {
         val m2028 = registrations.find(cong.id, "2028")!!.teams.single().members.single()
         assertTrue(m2028.claimed, "the new season's entry inherits the durable owner")
         assertEquals(setOf(m2027.id, m2028.id), registrations.entryIdsOwnedBy(parent.id))
+    }
+
+    @Test
+    fun claimingAnAdultPersistsAcrossSeasons() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val db = DatabaseFactory.connect()
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val coach = users.create("acoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val pat = users.create("apat@tbb.org", "Pat", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Adult Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+
+        val a2027 = registrations.addIndividual(cong.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AL, Gender.FEMALE))
+        assertIs<ClaimResult.Claimed>(registrations.claimEntry(a2027.claimCode, pat.id))
+        assertEquals(setOf(a2027.id), registrations.entryIdsOwnedBy(pat.id))
+
+        // The same adult re-added next season inherits the durable owner (claim persists).
+        val a2028 = registrations.addIndividual(cong.id, "2028", UpsertIndividualRequest("Pat Adult", ShirtSize.AL, Gender.FEMALE))
+        assertTrue(a2028.claimed, "the new season's adult entry inherits the durable owner")
+        assertEquals(setOf(a2027.id, a2028.id), registrations.entryIdsOwnedBy(pat.id))
     }
 }

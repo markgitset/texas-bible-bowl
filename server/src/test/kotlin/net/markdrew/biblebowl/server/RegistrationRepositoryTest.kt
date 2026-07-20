@@ -19,6 +19,7 @@ import net.markdrew.biblebowl.server.data.MAX_TEAM_SIZE
 import net.markdrew.biblebowl.server.data.UpdateCongregationResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
@@ -369,6 +370,25 @@ class RegistrationRepositoryTest {
         assertTrue(repo.deleteMember(m2028b.id))
         val fresh = assertIs<AddMemberResult.Added>(repo.addMember(t2028.id, entry("Ada"))).entry
         assertNotEquals(contestantId, repo.contestantIdForMember(fresh.id))
+    }
+
+    @Test
+    fun claimingAnAdultPersistsAcrossSeasons() {
+        val cong = newCongregation("Adult Persist Church", "Waco")!!
+        val a2027 = repo.addIndividual(cong.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AL, Gender.FEMALE))
+        assertIs<ClaimResult.Claimed>(repo.claimEntry(a2027.claimCode, "pat-account"))
+        assertEquals(setOf(a2027.id), repo.entryIdsOwnedBy("pat-account"))
+        assertTrue(repo.find(cong.id, "2027")!!.individuals.single().claimed)
+
+        // Next season the same adult (case/space-insensitively) is re-added → inherits the durable owner.
+        val a2028 = repo.addIndividual(cong.id, "2028", UpsertIndividualRequest("  pat adult ", ShirtSize.AL, Gender.FEMALE))
+        assertTrue(a2028.claimed, "the new season's adult entry inherits the durable owner")
+        assertEquals(setOf(a2027.id, a2028.id), repo.entryIdsOwnedBy("pat-account"))
+
+        // Another account can't claim them, and a distinct name is a distinct person.
+        assertIs<ClaimResult.AlreadyClaimed>(repo.claimEntry(a2028.claimCode, "someone-else"))
+        val other = repo.addIndividual(cong.id, "2028", UpsertIndividualRequest("Other Adult", ShirtSize.AM, Gender.MALE))
+        assertFalse(other.claimed)
     }
 
     @Test
