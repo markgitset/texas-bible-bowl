@@ -276,7 +276,8 @@ class InMemoryRegistrationRepository(
     private val memberTeam = mutableMapOf<String, String>() // member id -> team id (absent = unassigned)
     private val memberReg = mutableMapOf<String, String>() // member id -> registration id (always set)
     private val contestants = mutableMapOf<String, Contestant>() // durable person id -> contestant
-    private val memberContestant = mutableMapOf<String, String>() // member id -> contestant id
+    private val memberContestant = mutableMapOf<String, String>() // team member id -> contestant id
+    private val individualContestant = mutableMapOf<String, String>() // individual id -> contestant id
     private val individuals = mutableMapOf<String, RosterEntryDto>()
     private val individualReg = mutableMapOf<String, String>()
     private val usedCodes = mutableSetOf<String>()
@@ -417,9 +418,11 @@ class InMemoryRegistrationRepository(
         memberDto(memberId)
     }
 
-    /** Drops a durable contestant once no roster entry (in any season) still references it. */
+    /** Drops a durable contestant once no roster entry (team or individual, any season) references it. */
     private fun pruneContestantIfOrphaned(contestantId: String) {
-        if (memberContestant.values.none { it == contestantId }) contestants.remove(contestantId)
+        val used = memberContestant.values.any { it == contestantId } ||
+            individualContestant.values.any { it == contestantId }
+        if (!used) contestants.remove(contestantId)
     }
 
     override fun deleteMember(memberId: String): Boolean = synchronized(lock) {
@@ -440,6 +443,7 @@ class InMemoryRegistrationRepository(
     ): RosterEntryDto = synchronized(lock) {
         val reg = regFor(congregationId, seasonYear)
         val code = generateSequence { ClaimCodes.generate() }.first { usedCodes.add(it) }
+        val contestantId = findOrCreateAdultContestant(congregationId, req)
         val entry = RosterEntryDto(
             id = UUID.randomUUID().toString(),
             name = req.name.trim(),
@@ -450,23 +454,50 @@ class InMemoryRegistrationRepository(
         )
         individuals[entry.id] = entry
         individualReg[entry.id] = reg.id
+        individualContestant[entry.id] = contestantId
+        // A returning adult re-added by name inherits their existing owner (claim persists).
+        ownerForContestant(contestantId)?.let { entryOwner[entry.id] = it }
         reg.individualIds += entry.id
-        entry
+        individualDto(entry.id)!!
+    }
+
+    /** Finds or creates the birthdate-less durable contestant for an adult `(congregation, name)`. */
+    private fun findOrCreateAdultContestant(congregationId: String, req: UpsertIndividualRequest): String {
+        val trimmed = req.name.trim()
+        val existing = contestants.values.firstOrNull {
+            it.congregationId == congregationId && it.name.equals(trimmed, ignoreCase = true) && it.birthdate == null
+        }
+        if (existing != null) {
+            existing.name = trimmed
+            existing.gender = req.gender
+            return existing.id
+        }
+        val contestant = Contestant(UUID.randomUUID().toString(), congregationId, trimmed, null, req.gender, null)
+        contestants[contestant.id] = contestant
+        return contestant.id
     }
 
     override fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RosterEntryDto? =
         synchronized(lock) {
             val entry = individuals[individualId] ?: return null
-            val updated = entry.copy(name = req.name.trim(), shirtSize = req.shirtSize, gender = req.gender)
-            individuals[individualId] = updated
-            updated
+            individuals[individualId] = entry.copy(name = req.name.trim(), shirtSize = req.shirtSize, gender = req.gender)
+            val congregationId = congregationIdForIndividual(individualId)
+            if (congregationId != null) {
+                val previous = individualContestant[individualId]
+                val contestantId = findOrCreateAdultContestant(congregationId, req)
+                individualContestant[individualId] = contestantId
+                previous?.takeIf { it != contestantId }?.let { pruneContestantIfOrphaned(it) }
+            }
+            individualDto(individualId)
         }
 
     override fun deleteIndividual(individualId: String): Boolean = synchronized(lock) {
         val entry = individuals.remove(individualId) ?: return false
         usedCodes.remove(entry.claimCode)
         individualReg.remove(individualId)
+        val contestantId = individualContestant.remove(individualId)
         regs.values.forEach { it.individualIds.remove(individualId) }
+        contestantId?.let { pruneContestantIfOrphaned(it) }
         true
     }
 
@@ -568,11 +599,14 @@ class InMemoryRegistrationRepository(
     override fun claimEntry(code: String, userId: String): ClaimResult = synchronized(lock) {
         val entry = (members.values + individuals.values).firstOrNull { it.claimCode == code }
             ?: return ClaimResult.NotFound
-        // Ownership is durable per person: claiming any of a youth contestant's entries owns them all
-        // (across seasons), so a parent claims once and future enrollments are theirs automatically.
-        val owned: Set<String> = memberContestant[entry.id]
-            ?.let { cid -> memberContestant.filterValues { it == cid }.keys }
-            ?: setOf(entry.id) // adult individual (not a durable contestant), or an unlinked legacy row
+        // Ownership is durable per person: claiming any of a contestant's entries owns them all
+        // (across seasons), so an account claims once and future enrollments are theirs automatically.
+        val owned: Set<String> = when {
+            entry.id in members ->
+                memberContestant[entry.id]?.let { cid -> memberContestant.filterValues { it == cid }.keys }
+            else ->
+                individualContestant[entry.id]?.let { cid -> individualContestant.filterValues { it == cid }.keys }
+        } ?: setOf(entry.id) // an unlinked legacy row
         val existingOwner = owned.firstNotNullOfOrNull { entryOwner[it] }
         if (existingOwner != null && existingOwner != userId) return ClaimResult.AlreadyClaimed
         owned.forEach { entryOwner[it] = userId }
@@ -583,13 +617,12 @@ class InMemoryRegistrationRepository(
         entryOwner.filterValues { it == userId }.keys.toSet()
     }
 
-    /** The account that owns [contestantId], via any of its entries (durable across seasons). */
+    /** The account that owns [contestantId], via any of its entries (team or individual), or null. */
     private fun ownerForContestant(contestantId: String): String? =
-        memberContestant.entries.firstOrNull { (mid, cid) -> cid == contestantId && entryOwner[mid] != null }
-            ?.let { entryOwner[it.key] }
+        (memberContestant + individualContestant).entries
+            .firstOrNull { (eid, cid) -> cid == contestantId && entryOwner[eid] != null }?.let { entryOwner[it.key] }
 
-    /** The stored roster entry with its [RosterEntryDto.claimed] flag resolved from current ownership. */
-    /** A roster entry with its identity sourced from the durable contestant and ownership resolved. */
+    /** A team roster entry with its identity sourced from the durable contestant and ownership resolved. */
     private fun memberDto(id: String): RosterEntryDto? {
         val entry = members[id] ?: return null
         val contestant = memberContestant[id]?.let { contestants[it] }
@@ -598,6 +631,17 @@ class InMemoryRegistrationRepository(
             birthdate = contestant?.birthdate ?: entry.birthdate,
             gender = contestant?.gender ?: entry.gender,
             firstSeasonYear = if (contestant != null) contestant.firstSeasonYear else entry.firstSeasonYear,
+            claimed = id in entryOwner,
+        )
+    }
+
+    /** An individual (adult) entry with its identity sourced from the durable contestant and claimed resolved. */
+    private fun individualDto(id: String): RosterEntryDto? {
+        val entry = individuals[id] ?: return null
+        val contestant = individualContestant[id]?.let { contestants[it] }
+        return entry.copy(
+            name = contestant?.name ?: entry.name,
+            gender = contestant?.gender ?: entry.gender,
             claimed = id in entryOwner,
         )
     }
@@ -611,7 +655,7 @@ class InMemoryRegistrationRepository(
         seasonYear = seasonYear,
         status = status,
         teams = teamIds.mapNotNull { teams[it]?.toDto() },
-        individuals = individualIds.mapNotNull { id -> individuals[id]?.copy(claimed = id in entryOwner) },
+        individuals = individualIds.mapNotNull { individualDto(it) },
         unassigned = members.keys
             .filter { memberReg[it] == id && it !in memberTeam }
             .mapNotNull { memberDto(it) }
@@ -870,16 +914,52 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         return newId to firstYear
     }
 
-    /** Drops a durable contestant once no roster entry (in any season) still references it. */
+    /** Drops a durable contestant once no roster entry (team or individual, any season) references it. */
     private fun pruneContestantIfOrphaned(contestantId: String) {
-        val stillUsed = TeamMembersTable.selectAll().where { TeamMembersTable.contestantId eq contestantId }.any()
+        val stillUsed = TeamMembersTable.selectAll().where { TeamMembersTable.contestantId eq contestantId }.any() ||
+            IndividualsTable.selectAll().where { IndividualsTable.contestantId eq contestantId }.any()
         if (!stillUsed) ContestantsTable.deleteWhere { ContestantsTable.id eq contestantId }
     }
 
-    /** The account that owns [contestantId], via any of its entries (durable across seasons), or null. */
+    /** The account that owns [contestantId], via any of its entries (team or individual), or null. */
     private fun ownerForContestant(contestantId: String): String? =
         TeamMembersTable.selectAll().where { TeamMembersTable.contestantId eq contestantId }
             .mapNotNull { it[TeamMembersTable.ownerUserId] }.firstOrNull()
+            ?: IndividualsTable.selectAll().where { IndividualsTable.contestantId eq contestantId }
+                .mapNotNull { it[IndividualsTable.ownerUserId] }.firstOrNull()
+
+    /**
+     * Finds the durable adult contestant for `(congregation, name)` — birthdate-less, reused across
+     * seasons — or creates one, refreshing name and gender. Adults have no division/experience.
+     */
+    private fun findOrCreateAdultContestant(congregationId: String, req: UpsertIndividualRequest): String {
+        val trimmed = req.name.trim()
+        val existing = ContestantsTable.selectAll()
+            .where {
+                (ContestantsTable.congregationId eq congregationId) and
+                    (ContestantsTable.name.lowerCase() eq trimmed.lowercase()) and
+                    ContestantsTable.birthdate.isNull()
+            }
+            .firstOrNull()
+        if (existing != null) {
+            val existingId = existing[ContestantsTable.id]
+            ContestantsTable.update({ ContestantsTable.id eq existingId }) {
+                it[name] = trimmed
+                it[gender] = req.gender.name
+            }
+            return existingId
+        }
+        val newId = UUID.randomUUID().toString()
+        ContestantsTable.insert {
+            it[id] = newId
+            it[ContestantsTable.congregationId] = congregationId
+            it[name] = trimmed
+            it[birthdate] = null
+            it[gender] = req.gender.name
+            it[ContestantsTable.firstSeasonYear] = null
+        }
+        return newId
+    }
 
     /** Reads one enrollment as a [RosterEntryDto], joining the contestant for its identity. */
     private fun memberEntry(memberId: String): RosterEntryDto? =
@@ -939,36 +1019,50 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         req: UpsertIndividualRequest,
     ): RosterEntryDto = transaction(db) {
         val regId = regIdFor(congregationId, seasonYear)
+        val contestant = findOrCreateAdultContestant(congregationId, req)
+        val inheritedOwner = ownerForContestant(contestant)
         val code = freshClaimCode()
         val individualId = UUID.randomUUID().toString()
         IndividualsTable.insert {
             it[id] = individualId
             it[registrationId] = regId
+            it[IndividualsTable.contestantId] = contestant
             it[name] = req.name.trim()
             it[shirtSize] = req.shirtSize.name
             it[gender] = req.gender.name
             it[claimCode] = code
+            // A returning adult re-added by name inherits their existing owner (claim persists).
+            it[ownerUserId] = inheritedOwner
         }
         touch(regId)
         RosterEntryDto(
             individualId, req.name.trim(), birthdate = null,
-            shirtSize = req.shirtSize, gender = req.gender, claimCode = code,
+            shirtSize = req.shirtSize, gender = req.gender, claimCode = code, claimed = inheritedOwner != null,
         )
     }
 
     override fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RosterEntryDto? =
         transaction(db) {
-            val updated = IndividualsTable.update({ IndividualsTable.id eq individualId }) {
+            val row = IndividualsTable.selectAll().where { IndividualsTable.id eq individualId }.singleOrNull()
+                ?: return@transaction null
+            val previousContestant = row[IndividualsTable.contestantId]
+            val contestant = findOrCreateAdultContestant(congregationIdFor(row[IndividualsTable.registrationId]), req)
+            IndividualsTable.update({ IndividualsTable.id eq individualId }) {
                 it[name] = req.name.trim()
                 it[shirtSize] = req.shirtSize.name
                 it[gender] = req.gender.name
+                it[IndividualsTable.contestantId] = contestant
             }
-            if (updated == 0) null
-            else IndividualsTable.selectAll().where { IndividualsTable.id eq individualId }.single().toIndividual()
+            if (previousContestant != null && previousContestant != contestant) pruneContestantIfOrphaned(previousContestant)
+            IndividualsTable.selectAll().where { IndividualsTable.id eq individualId }.single().toIndividual()
         }
 
     override fun deleteIndividual(individualId: String): Boolean = transaction(db) {
-        IndividualsTable.deleteWhere { IndividualsTable.id eq individualId } > 0
+        val contestantId = IndividualsTable.selectAll().where { IndividualsTable.id eq individualId }
+            .singleOrNull()?.get(IndividualsTable.contestantId)
+        val deleted = IndividualsTable.deleteWhere { IndividualsTable.id eq individualId } > 0
+        if (deleted && contestantId != null) pruneContestantIfOrphaned(contestantId)
+        deleted
     }
 
     override fun submit(congregationId: String, seasonYear: String): RegistrationDto? = transaction(db) {
@@ -1108,12 +1202,21 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 ?: ClaimResult.NotFound
         }
         IndividualsTable.selectAll().where { IndividualsTable.claimCode eq code }.singleOrNull()?.let { row ->
-            val owner = row[IndividualsTable.ownerUserId]
-            if (owner != null && owner != userId) return@transaction ClaimResult.AlreadyClaimed
-            IndividualsTable.update({ IndividualsTable.id eq row[IndividualsTable.id] }) {
-                it[ownerUserId] = userId
-            }
-            return@transaction ClaimResult.Claimed(row.toIndividual().copy(claimed = true))
+            // Durable ownership for adults too: claiming any of a contestant's individual entries owns
+            // them all (across seasons), so an adult claims once and future entries are theirs.
+            val contestantId = row[IndividualsTable.contestantId]
+            val siblings = if (contestantId != null)
+                IndividualsTable.selectAll().where { IndividualsTable.contestantId eq contestantId }.toList()
+            else listOf(row)
+            val existingOwner = siblings.firstNotNullOfOrNull { it[IndividualsTable.ownerUserId] }
+            if (existingOwner != null && existingOwner != userId) return@transaction ClaimResult.AlreadyClaimed
+            val target = if (contestantId != null) IndividualsTable.contestantId eq contestantId
+                else IndividualsTable.id eq row[IndividualsTable.id]
+            IndividualsTable.update({ target }) { it[ownerUserId] = userId }
+            return@transaction ClaimResult.Claimed(
+                IndividualsTable.selectAll().where { IndividualsTable.id eq row[IndividualsTable.id] }
+                    .single().toIndividual().copy(claimed = true),
+            )
         }
         ClaimResult.NotFound
     }
