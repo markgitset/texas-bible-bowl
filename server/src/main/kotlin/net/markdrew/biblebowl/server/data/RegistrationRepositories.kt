@@ -321,7 +321,7 @@ class InMemoryRegistrationRepository(
         if (team.memberIds.size >= MAX_TEAM_SIZE) return AddMemberResult.RosterFull
         val reg = regs.values.first { it.id == team.regId }
         val code = generateSequence { ClaimCodes.generate() }.first { usedCodes.add(it) }
-        val firstYear = resolveFirstSeasonYear(reg.congregationId, reg.seasonYear, req.name, req.inexperienced)
+        val (contestantId, firstYear) = findOrCreateContestant(reg.congregationId, req, reg.seasonYear)
         val entry = RosterEntryDto(
             id = UUID.randomUUID().toString(),
             name = req.name.trim(),
@@ -334,7 +334,6 @@ class InMemoryRegistrationRepository(
         members[entry.id] = entry
         memberTeam[entry.id] = teamId
         memberReg[entry.id] = reg.id
-        val contestantId = findOrCreateContestant(reg.congregationId, req.name, req.birthdate, req.gender, firstYear)
         memberContestant[entry.id] = contestantId
         // A returning contestant re-added by name inherits their existing owner (claim persists).
         ownerForContestant(contestantId)?.let { entryOwner[entry.id] = it }
@@ -342,33 +341,42 @@ class InMemoryRegistrationRepository(
         AddMemberResult.Added(entry)
     }
 
+    /** True when [contestantId] has an enrollment in a season earlier than [seasonYear]. */
+    private fun contestantHasPriorSeason(contestantId: String, seasonYear: String): Boolean =
+        memberContestant.filterValues { it == contestantId }.keys.any { mid ->
+            memberReg[mid]?.let { regId -> regs.values.firstOrNull { it.id == regId }?.seasonYear }
+                ?.let { it < seasonYear } == true
+        }
+
     /**
      * Finds the durable contestant for `(congregation, name, birthdate)` — reused across seasons, so
-     * re-adding last year's contestant recognizes the same person — or creates one. Refreshes the
-     * mutable facts (name casing, gender, experience anchor) either way.
+     * re-adding last year's contestant recognizes the same person — or creates one, refreshing name
+     * and gender. Returns the contestant id and the resolved first season year: locked to the earliest
+     * once the person has competed before, else this season when the coach marked them inexperienced.
      */
     private fun findOrCreateContestant(
         congregationId: String,
-        name: String,
-        birthdate: String?,
-        gender: Gender?,
-        firstSeasonYear: String?,
-    ): String {
-        val trimmed = name.trim()
+        req: UpsertRosterEntryRequest,
+        seasonYear: String,
+    ): Pair<String, String?> {
+        val trimmed = req.name.trim()
         val existing = contestants.values.firstOrNull {
             it.congregationId == congregationId &&
                 it.name.equals(trimmed, ignoreCase = true) &&
-                it.birthdate == birthdate
+                it.birthdate == req.birthdate
         }
         if (existing != null) {
+            val firstYear = if (contestantHasPriorSeason(existing.id, seasonYear)) existing.firstSeasonYear
+                else seasonYear.takeIf { req.inexperienced }
             existing.name = trimmed
-            existing.gender = gender
-            existing.firstSeasonYear = firstSeasonYear
-            return existing.id
+            existing.gender = req.gender
+            existing.firstSeasonYear = firstYear
+            return existing.id to firstYear
         }
-        val contestant = Contestant(UUID.randomUUID().toString(), congregationId, trimmed, birthdate, gender, firstSeasonYear)
+        val firstYear = seasonYear.takeIf { req.inexperienced }
+        val contestant = Contestant(UUID.randomUUID().toString(), congregationId, trimmed, req.birthdate, req.gender, firstYear)
         contestants[contestant.id] = contestant
-        return contestant.id
+        return contestant.id to firstYear
     }
 
     override fun assignMemberToTeam(memberId: String, teamId: String?): AssignResult = synchronized(lock) {
@@ -392,55 +400,26 @@ class InMemoryRegistrationRepository(
     override fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto? = synchronized(lock) {
         val entry = members[memberId] ?: return null
         val reg = memberReg[memberId]?.let { regId -> regs.values.firstOrNull { it.id == regId } }
-        val firstYear = reg?.let {
-            resolveFirstSeasonYear(it.congregationId, it.seasonYear, req.name, req.inexperienced)
-        }
-        val updated = entry.copy(
+            ?: return entry
+        val (contestantId, firstYear) = findOrCreateContestant(reg.congregationId, req, reg.seasonYear)
+        members[memberId] = entry.copy(
             name = req.name.trim(),
             birthdate = req.birthdate,
             shirtSize = req.shirtSize,
             gender = req.gender,
             firstSeasonYear = firstYear,
         )
-        members[memberId] = updated
         // Re-point at the (possibly different) durable contestant — the person may have been renamed
         // or had their birthdate corrected — and prune the old one if nothing else references it.
-        if (reg != null) {
-            val previous = memberContestant[memberId]
-            memberContestant[memberId] = findOrCreateContestant(reg.congregationId, req.name, req.birthdate, req.gender, firstYear)
-            previous?.takeIf { it != memberContestant[memberId] }?.let { pruneContestantIfOrphaned(it) }
-        }
-        updated
+        val previous = memberContestant[memberId]
+        memberContestant[memberId] = contestantId
+        previous?.takeIf { it != contestantId }?.let { pruneContestantIfOrphaned(it) }
+        memberDto(memberId)
     }
 
     /** Drops a durable contestant once no roster entry (in any season) still references it. */
     private fun pruneContestantIfOrphaned(contestantId: String) {
         if (memberContestant.values.none { it == contestantId }) contestants.remove(contestantId)
-    }
-
-    /**
-     * The first season year to store for a team contestant: any same-named entry on one of this
-     * congregation's earlier-season rosters wins (its own first year, or failing that the season it
-     * appeared in) — that's what turns last year's first-year contestant into this year's
-     * experienced one automatically. With no history: the current season when the coach marked
-     * them inexperienced, else null (experienced, first year unknown).
-     */
-    private fun resolveFirstSeasonYear(
-        congregationId: String,
-        seasonYear: String,
-        name: String,
-        inexperienced: Boolean,
-    ): String? {
-        val trimmed = name.trim()
-        val priorYears = regs.values
-            .filter { it.congregationId == congregationId && it.seasonYear < seasonYear }
-            .flatMap { reg ->
-                reg.teamIds.mapNotNull { teams[it] }
-                    .flatMap { team -> team.memberIds.mapNotNull { members[it] } }
-                    .filter { it.name.equals(trimmed, ignoreCase = true) }
-                    .map { it.firstSeasonYear ?: reg.seasonYear }
-            }
-        return priorYears.minOrNull() ?: seasonYear.takeIf { inexperienced }
     }
 
     override fun deleteMember(memberId: String): Boolean = synchronized(lock) {
@@ -610,7 +589,18 @@ class InMemoryRegistrationRepository(
             ?.let { entryOwner[it.key] }
 
     /** The stored roster entry with its [RosterEntryDto.claimed] flag resolved from current ownership. */
-    private fun memberDto(id: String): RosterEntryDto? = members[id]?.copy(claimed = id in entryOwner)
+    /** A roster entry with its identity sourced from the durable contestant and ownership resolved. */
+    private fun memberDto(id: String): RosterEntryDto? {
+        val entry = members[id] ?: return null
+        val contestant = memberContestant[id]?.let { contestants[it] }
+        return entry.copy(
+            name = contestant?.name ?: entry.name,
+            birthdate = contestant?.birthdate ?: entry.birthdate,
+            gender = contestant?.gender ?: entry.gender,
+            firstSeasonYear = if (contestant != null) contestant.firstSeasonYear else entry.firstSeasonYear,
+            claimed = id in entryOwner,
+        )
+    }
 
     private fun Team.toDto() = TeamDto(id, name, memberIds.mapNotNull { memberDto(it) })
 
@@ -809,8 +799,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         val size = TeamMembersTable.selectAll().where { TeamMembersTable.teamId eq teamId }.count()
         if (size >= MAX_TEAM_SIZE) return@transaction AddMemberResult.RosterFull
         val regId = team[TeamsTable.registrationId]
-        val firstYear = resolveFirstSeasonYear(regId, req)
-        val contestant = findOrCreateContestant(congregationIdFor(regId), req, firstYear)
+        val (contestant, firstYear) = findOrCreateContestant(congregationIdFor(regId), req, seasonYearForReg(regId))
         val code = freshClaimCode()
         val memberId = UUID.randomUUID().toString()
         TeamMembersTable.insert {
@@ -818,11 +807,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             it[TeamMembersTable.teamId] = teamId
             it[registrationId] = regId
             it[contestantId] = contestant
-            it[name] = req.name.trim()
-            it[birthdate] = req.birthdate
             it[shirtSize] = req.shirtSize.name
-            it[gender] = req.gender.name
-            it[firstSeasonYear] = firstYear
             it[claimCode] = code
             // A returning contestant re-added by name inherits their existing owner (claim persists).
             it[ownerUserId] = ownerForContestant(contestant)
@@ -832,16 +817,24 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         )
     }
 
-    private fun congregationIdFor(regId: String): String =
-        RegistrationsTable.selectAll().where { RegistrationsTable.id eq regId }
-            .single()[RegistrationsTable.congregationId]
+    private fun regRowById(regId: String): ResultRow =
+        RegistrationsTable.selectAll().where { RegistrationsTable.id eq regId }.single()
+
+    private fun congregationIdFor(regId: String): String = regRowById(regId)[RegistrationsTable.congregationId]
+    private fun seasonYearForReg(regId: String): String = regRowById(regId)[RegistrationsTable.seasonYear]
 
     /**
      * Finds the durable contestant for `(congregation, name, birthdate)` — reused across seasons, so
-     * re-adding last year's contestant recognizes the same person — or creates one, refreshing the
-     * mutable facts (name casing, gender, experience anchor) either way. Returns the contestant id.
+     * re-adding last year's contestant recognizes the same person — or creates one, refreshing name and
+     * gender. Returns the contestant id and the resolved first season year: locked to the earliest once
+     * the person has competed before, else this season when the coach marked them inexperienced. The
+     * contestant is the source of truth, so the value is written there, not on the enrollment.
      */
-    private fun findOrCreateContestant(congregationId: String, req: UpsertRosterEntryRequest, firstSeasonYear: String?): String {
+    private fun findOrCreateContestant(
+        congregationId: String,
+        req: UpsertRosterEntryRequest,
+        seasonYear: String,
+    ): Pair<String, String?> {
         val trimmed = req.name.trim()
         val existing = ContestantsTable.selectAll()
             .where {
@@ -852,23 +845,29 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             .firstOrNull()
         if (existing != null) {
             val existingId = existing[ContestantsTable.id]
+            val hasPriorSeason = (TeamMembersTable innerJoin RegistrationsTable).selectAll()
+                .where { (TeamMembersTable.contestantId eq existingId) and (RegistrationsTable.seasonYear less seasonYear) }
+                .any()
+            val firstYear = if (hasPriorSeason) existing[ContestantsTable.firstSeasonYear]
+                else seasonYear.takeIf { req.inexperienced }
             ContestantsTable.update({ ContestantsTable.id eq existingId }) {
                 it[name] = trimmed
                 it[gender] = req.gender.name
-                it[ContestantsTable.firstSeasonYear] = firstSeasonYear
+                it[ContestantsTable.firstSeasonYear] = firstYear
             }
-            return existingId
+            return existingId to firstYear
         }
         val newId = UUID.randomUUID().toString()
+        val firstYear = seasonYear.takeIf { req.inexperienced }
         ContestantsTable.insert {
             it[id] = newId
             it[ContestantsTable.congregationId] = congregationId
             it[name] = trimmed
             it[birthdate] = req.birthdate
             it[gender] = req.gender.name
-            it[ContestantsTable.firstSeasonYear] = firstSeasonYear
+            it[ContestantsTable.firstSeasonYear] = firstYear
         }
-        return newId
+        return newId to firstYear
     }
 
     /** Drops a durable contestant once no roster entry (in any season) still references it. */
@@ -882,47 +881,25 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         TeamMembersTable.selectAll().where { TeamMembersTable.contestantId eq contestantId }
             .mapNotNull { it[TeamMembersTable.ownerUserId] }.firstOrNull()
 
+    /** Reads one enrollment as a [RosterEntryDto], joining the contestant for its identity. */
+    private fun memberEntry(memberId: String): RosterEntryDto? =
+        (TeamMembersTable innerJoin ContestantsTable).selectAll()
+            .where { TeamMembersTable.id eq memberId }.singleOrNull()?.toEntry()
+
     override fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto? = transaction(db) {
         val row = TeamMembersTable.selectAll().where { TeamMembersTable.id eq memberId }.singleOrNull()
             ?: return@transaction null
         val regId = row[TeamMembersTable.registrationId]
         val previousContestant = row[TeamMembersTable.contestantId]
-        val firstYear = resolveFirstSeasonYear(regId, req)
-        val contestant = findOrCreateContestant(congregationIdFor(regId), req, firstYear)
+        val (contestant, _) = findOrCreateContestant(congregationIdFor(regId), req, seasonYearForReg(regId))
         TeamMembersTable.update({ TeamMembersTable.id eq memberId }) {
-            it[name] = req.name.trim()
-            it[birthdate] = req.birthdate
             it[shirtSize] = req.shirtSize.name
-            it[gender] = req.gender.name
-            it[firstSeasonYear] = firstYear
             it[contestantId] = contestant
         }
         // The person may have been renamed / had a birthdate fixed — prune the old contestant if it's
         // now unreferenced.
         if (previousContestant != null && previousContestant != contestant) pruneContestantIfOrphaned(previousContestant)
-        TeamMembersTable.selectAll().where { TeamMembersTable.id eq memberId }.single().toEntry()
-    }
-
-    /**
-     * The first season year to store for a team contestant: any same-named entry on one of this
-     * congregation's earlier-season rosters wins (its own first year, or failing that the season it
-     * appeared in) — that's what turns last year's first-year contestant into this year's
-     * experienced one automatically. With no history: the current season when the coach marked
-     * them inexperienced, else null (experienced, first year unknown).
-     */
-    private fun resolveFirstSeasonYear(regId: String, req: UpsertRosterEntryRequest): String? {
-        val reg = RegistrationsTable.selectAll().where { RegistrationsTable.id eq regId }.single()
-        val congregationId = reg[RegistrationsTable.congregationId]
-        val seasonYear = reg[RegistrationsTable.seasonYear]
-        val prior = (TeamMembersTable innerJoin RegistrationsTable)
-            .selectAll()
-            .where {
-                (RegistrationsTable.congregationId eq congregationId) and
-                    (RegistrationsTable.seasonYear less seasonYear) and
-                    (TeamMembersTable.name.lowerCase() eq req.name.trim().lowercase())
-            }
-            .minOfOrNull { it[TeamMembersTable.firstSeasonYear] ?: it[RegistrationsTable.seasonYear] }
-        return prior ?: seasonYear.takeIf { req.inexperienced }
+        memberEntry(memberId)
     }
 
     override fun deleteMember(memberId: String): Boolean = transaction(db) {
@@ -1066,7 +1043,8 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         shirtSize: ShirtSize,
         teamId: String?,
     ): EnrollResult = transaction(db) {
-        val contestant = ContestantsTable.selectAll().where { ContestantsTable.id eq contestantId }.singleOrNull()
+        // The contestant must exist and belong to this congregation.
+        ContestantsTable.selectAll().where { ContestantsTable.id eq contestantId }.singleOrNull()
             ?.takeIf { it[ContestantsTable.congregationId] == congregationId }
             ?: return@transaction EnrollResult.ContestantNotFound
         val regId = regIdFor(congregationId, seasonYear)
@@ -1088,11 +1066,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             it[TeamMembersTable.teamId] = teamId
             it[registrationId] = regId
             it[TeamMembersTable.contestantId] = contestantId
-            it[name] = contestant[ContestantsTable.name]
-            it[birthdate] = contestant[ContestantsTable.birthdate]
             it[TeamMembersTable.shirtSize] = shirtSize.name
-            it[gender] = contestant[ContestantsTable.gender]
-            it[firstSeasonYear] = contestant[ContestantsTable.firstSeasonYear]
             it[claimCode] = code
             // Enrolling a returning contestant carries their existing owner forward (claim persists).
             it[ownerUserId] = ownerForContestant(contestantId)
@@ -1129,7 +1103,9 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             val target = if (contestantId != null) TeamMembersTable.contestantId eq contestantId
                 else TeamMembersTable.id eq row[TeamMembersTable.id]
             TeamMembersTable.update({ target }) { it[ownerUserId] = userId }
-            return@transaction ClaimResult.Claimed(row.toEntry().copy(claimed = true))
+            // Read back through the contestant join (toEntry sources identity there) — now owned.
+            return@transaction memberEntry(row[TeamMembersTable.id])?.let { ClaimResult.Claimed(it) }
+                ?: ClaimResult.NotFound
         }
         IndividualsTable.selectAll().where { IndividualsTable.claimCode eq code }.singleOrNull()?.let { row ->
             val owner = row[IndividualsTable.ownerUserId]
@@ -1171,19 +1147,21 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             TeamDto(
                 id = row[TeamsTable.id],
                 name = row[TeamsTable.name],
-                members = TeamMembersTable.selectAll()
+                members = (TeamMembersTable innerJoin ContestantsTable).selectAll()
                     .where { TeamMembersTable.teamId eq teamId }
                     .map { it.toEntry() },
             )
         }
 
+    /** Builds a roster entry from a row that joins [TeamMembersTable] to its [ContestantsTable] (the
+     *  source of identity); the enrollment supplies only shirt size, claim code, and ownership. */
     private fun ResultRow.toEntry() = RosterEntryDto(
         id = this[TeamMembersTable.id],
-        name = this[TeamMembersTable.name],
-        birthdate = this[TeamMembersTable.birthdate],
+        name = this[ContestantsTable.name],
+        birthdate = this[ContestantsTable.birthdate],
         shirtSize = ShirtSize.valueOf(this[TeamMembersTable.shirtSize]),
-        gender = this[TeamMembersTable.gender]?.let { Gender.valueOf(it) },
-        firstSeasonYear = this[TeamMembersTable.firstSeasonYear],
+        gender = this[ContestantsTable.gender]?.let { Gender.valueOf(it) },
+        firstSeasonYear = this[ContestantsTable.firstSeasonYear],
         claimCode = this[TeamMembersTable.claimCode],
         claimed = this[TeamMembersTable.ownerUserId] != null,
     )
@@ -1223,9 +1201,9 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 .where { IndividualsTable.registrationId eq regId }
                 .orderBy(IndividualsTable.name)
                 .map { it.toIndividual() },
-            unassigned = TeamMembersTable.selectAll()
+            unassigned = (TeamMembersTable innerJoin ContestantsTable).selectAll()
                 .where { (TeamMembersTable.registrationId eq regId) and TeamMembersTable.teamId.isNull() }
-                .orderBy(TeamMembersTable.name)
+                .orderBy(ContestantsTable.name)
                 .map { it.toEntry() },
             submittedAt = this[RegistrationsTable.submittedAtEpochMs]?.let { Instant.ofEpochMilli(it).toString() },
             paidAt = this[RegistrationsTable.paidAtEpochMs]?.let { Instant.ofEpochMilli(it).toString() },

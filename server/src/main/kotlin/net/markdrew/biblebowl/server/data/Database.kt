@@ -103,10 +103,10 @@ object TeamsTable : Table("teams") {
 /**
  * A durable youth contestant (a *person*), scoped to a congregation and reused season over season —
  * the identity that persists even though team assignments do not (a roster row is per-season, this
- * is not). A team_members row is one season's *enrollment* of a contestant; the contestant carries
- * the stable facts (name, birthdate, and the derived-once experience anchor [firstSeasonYear]).
- * Identity is `(congregation, lower(name), birthdate)`. Adults (individual contestants) are not
- * modelled here yet.
+ * is not). A team_members row is one season's *enrollment* of a contestant; the contestant is the
+ * single source of truth for the stable facts (name, birthdate, gender, and the experience anchor
+ * [firstSeasonYear]). Identity is `(congregation, lower(name), birthdate)`. Adults (individual
+ * contestants) are not modelled here yet.
  */
 object ContestantsTable : Table("contestants") {
     val id = varchar("id", 36)
@@ -121,7 +121,12 @@ object ContestantsTable : Table("contestants") {
     }
 }
 
-/** Roster entries (≤4 per team, enforced in the repository). Division is always computed, never stored. */
+/**
+ * One season's enrollment of a [ContestantsTable] contestant onto a team (≤4/team, enforced in the
+ * repository). Carries only the per-season facts — the team, the shirt size (kids grow), the claim
+ * code, and who claimed it; the person's identity (name/birthdate/gender/experience) lives on the
+ * contestant. Division is always computed, never stored.
+ */
 object TeamMembersTable : Table("team_members") {
     val id = varchar("id", 36)
     // Nullable: a member with no team is "unassigned" — eligible but not yet placed (e.g. their
@@ -129,16 +134,9 @@ object TeamMembersTable : Table("team_members") {
     val teamId = varchar("team_id", 36).references(TeamsTable.id).nullable()
     // Direct link to the registration so a teamless member is still scoped and queryable without a team.
     val registrationId = varchar("registration_id", 36).references(RegistrationsTable.id)
-    // The durable contestant (person) this per-season enrollment belongs to. Nullable only for legacy
-    // rows the backfill hasn't linked; new rows always set it.
+    // The durable contestant (person) this per-season enrollment belongs to — the source of identity.
     val contestantId = varchar("contestant_id", 36).references(ContestantsTable.id).nullable()
-    val name = varchar("name", 120)
-    // ISO-8601; required for team members (grades 3-12) since adults can't be on teams;
-    // nullable only for rows that pre-date birthdate collection
-    val birthdate = varchar("birthdate", 10).nullable()
     val shirtSize = varchar("shirt_size", 8)
-    val gender = varchar("gender", 6).nullable() // null only on rows created before gender was collected
-    val firstSeasonYear = varchar("first_season_year", 4).nullable() // null = experienced, first year unknown
     val claimCode = varchar("claim_code", 12).uniqueIndex()
     val ownerUserId = varchar("owner_user_id", 36).references(UsersTable.id).nullable()
     override val primaryKey = PrimaryKey(id)
@@ -292,10 +290,7 @@ object DatabaseFactory {
             exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS birthdate VARCHAR(10)")
             exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_adult BOOLEAN NOT NULL DEFAULT FALSE")
             exec("ALTER TABLE users DROP COLUMN IF EXISTS grade")
-            exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS birthdate VARCHAR(10)")
             exec("ALTER TABLE team_members DROP COLUMN IF EXISTS grade")
-            exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS gender VARCHAR(6)")
-            exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS first_season_year VARCHAR(4)")
             exec("ALTER TABLE individual_contestants ADD COLUMN IF NOT EXISTS gender VARCHAR(6)")
             // Deleting a team frees its members (they become unassigned) rather than deleting them
             // (2026-07): give each member a direct registration link and let team_id go null.
@@ -305,37 +300,17 @@ object DatabaseFactory {
                     "FROM teams t WHERE t.id = tm.team_id AND tm.registration_id IS NULL"
             )
             exec("ALTER TABLE team_members ALTER COLUMN team_id DROP NOT NULL")
-            // Durable contestants (2026-07): a person persists across seasons even though team
-            // assignments don't. Link each per-season roster row to a durable contestant. The backfill
-            // is idempotent — it only touches rows not yet linked, so re-running on startup is a no-op.
+            // Durable contestants: each per-season roster row links to a durable contestant (added in
+            // the phase-1 release, which also backfilled the contestants table from team_members).
             exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS contestant_id VARCHAR(36)")
-            exec(
-                """
-                INSERT INTO contestants (id, congregation_id, name, birthdate, gender, first_season_year)
-                SELECT gen_random_uuid()::text, sub.congregation_id, sub.name, sub.birthdate,
-                       sub.gender, sub.first_season_year
-                FROM (
-                    SELECT DISTINCT ON (r.congregation_id, lower(tm.name), COALESCE(tm.birthdate, ''))
-                        r.congregation_id AS congregation_id, tm.name AS name, tm.birthdate AS birthdate,
-                        tm.gender AS gender, tm.first_season_year AS first_season_year
-                    FROM team_members tm
-                    JOIN registrations r ON r.id = tm.registration_id
-                    WHERE tm.contestant_id IS NULL
-                    ORDER BY r.congregation_id, lower(tm.name), COALESCE(tm.birthdate, ''), r.season_year
-                ) sub
-                """.trimIndent()
-            )
-            exec(
-                """
-                UPDATE team_members tm SET contestant_id = c.id
-                FROM contestants c, registrations r
-                WHERE r.id = tm.registration_id
-                  AND c.congregation_id = r.congregation_id
-                  AND lower(c.name) = lower(tm.name)
-                  AND c.birthdate IS NOT DISTINCT FROM tm.birthdate
-                  AND tm.contestant_id IS NULL
-                """.trimIndent()
-            )
+            // Phase 4 (2026-07): the contestant is now the single source of truth for a person's identity,
+            // so the denormalized copies are dropped from the per-season enrollment row. Existing databases
+            // are already fully linked (the phase-1 backfill ran on deploy); a fresh database starts empty,
+            // so nothing needs migrating here — just drop the dead columns.
+            exec("ALTER TABLE team_members DROP COLUMN IF EXISTS name")
+            exec("ALTER TABLE team_members DROP COLUMN IF EXISTS birthdate")
+            exec("ALTER TABLE team_members DROP COLUMN IF EXISTS gender")
+            exec("ALTER TABLE team_members DROP COLUMN IF EXISTS first_season_year")
         }
         return db
     }
