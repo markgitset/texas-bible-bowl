@@ -573,14 +573,15 @@ private fun guestError(req: UpsertGuestRequest, season: SeasonDto): ApiError? = 
 
 /**
  * Under-3 guests attend free with no included t-shirt — drop any stray shirt selection. Only
- * adult (age-9+) guests volunteer or lead tribes — clear both for the child tiers.
+ * adult (age-9+) guests volunteer or lead tribes — clear both for the child tiers. All-blank
+ * contact info collapses to none.
  */
 private fun UpsertGuestRequest.normalized(): UpsertGuestRequest = when {
     ageTier == GuestAgeTier.UNDER_3 ->
         copy(shirtSize = null, positions = emptyList(), tribeLeaderWilling = false)
     ageTier == GuestAgeTier.AGE_3_TO_8 -> copy(positions = emptyList(), tribeLeaderWilling = false)
     else -> copy(positions = positions.distinct())
-}
+}.copy(contact = contact?.takeUnless { it.isEmpty() })
 
 /**
  * Passes when the caller may edit [congregationId]'s teams/roster: an event-wide REGISTRATION_MANAGE

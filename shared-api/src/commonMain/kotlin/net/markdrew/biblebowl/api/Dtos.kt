@@ -18,12 +18,44 @@ data class RegisterRequest(
     val adult: Boolean = false,
 )
 
-/** Edits the signed-in user's own profile (`PUT /auth/me`); same birthdate/adult rules as signup. */
+/** How an adult prefers to be reached for event communication. */
+@Serializable
+enum class ContactPreference(val displayName: String) {
+    EMAIL("Email"), PHONE("Phone call"), TEXT("Text"),
+}
+
+/**
+ * Optional contact details for an adult attendee — the 2026 workbook's per-adult columns
+ * (address/city/state/zip/phone/email + preferred method). Every field is optional free-form;
+ * [email] is only collected where there's no account to get it from (guests — accounts already
+ * carry an email).
+ */
+@Serializable
+data class ContactInfoDto(
+    val address: String = "",
+    val city: String = "",
+    val state: String = "",
+    val zip: String = "",
+    val phone: String = "",
+    val email: String = "",
+    val preference: ContactPreference? = null,
+) {
+    fun isEmpty(): Boolean =
+        address.isBlank() && city.isBlank() && state.isBlank() && zip.isBlank() &&
+            phone.isBlank() && email.isBlank() && preference == null
+}
+
+/**
+ * Edits the signed-in user's own profile (`PUT /auth/me`); same birthdate/adult rules as signup.
+ * [contact] replaces the stored contact info when non-null and is left unchanged when null — so
+ * clients that don't collect it yet (the Compose app) can't silently wipe it.
+ */
 @Serializable
 data class UpdateProfileRequest(
     val displayName: String,
     val birthdate: String? = null,
     val adult: Boolean = false,
+    val contact: ContactInfoDto? = null,
 )
 
 @Serializable
@@ -46,6 +78,8 @@ data class UserDto(
     val birthdate: String? = null,
     /** True for self-attested adults (only adults may register a congregation). */
     val adult: Boolean = false,
+    /** Optional contact details (adults; edited on the account page). Null = never provided. */
+    val contact: ContactInfoDto? = null,
     val roles: List<RoleGrant> = emptyList(),
     val permissions: Set<Permission> = emptySet(),
     /**
@@ -467,6 +501,8 @@ data class GuestDto(
     val positions: List<String> = emptyList(),
     /** Willing to serve as a tribe leader; age-9+ guests only. */
     val tribeLeaderWilling: Boolean = false,
+    /** Optional contact details — collected for adult (9+) guests, who have no account. */
+    val contact: ContactInfoDto? = null,
 )
 
 /**
@@ -474,6 +510,7 @@ data class GuestDto(
  * friendlier server-side error); [shirtSize] is required except for under-3s, who get no shirt.
  * [positions] must come from the season's volunteer-position list; the server clears positions
  * and [tribeLeaderWilling] for the child tiers.
+ * [contact] fully replaces the guest's stored contact info (null or empty clears it).
  */
 @Serializable
 data class UpsertGuestRequest(
@@ -483,6 +520,7 @@ data class UpsertGuestRequest(
     val gender: Gender? = null,
     val positions: List<String> = emptyList(),
     val tribeLeaderWilling: Boolean = false,
+    val contact: ContactInfoDto? = null,
 )
 
 /**
@@ -584,6 +622,8 @@ data class MyRegistrationResponse(
 data class CoachContactDto(
     val displayName: String,
     val email: String,
+    /** The coach's account contact details (item 9, F3), when they've provided any. */
+    val contact: ContactInfoDto? = null,
 )
 
 /** One registration-desk row: every congregation appears; [registration] is null when none started this season. */

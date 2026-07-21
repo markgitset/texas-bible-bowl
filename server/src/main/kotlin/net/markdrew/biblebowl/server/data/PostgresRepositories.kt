@@ -3,6 +3,8 @@ package net.markdrew.biblebowl.server.data
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import net.markdrew.biblebowl.api.ContactInfoDto
+import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.Role
@@ -61,12 +63,24 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
         UsersTable.selectAll().where { UsersTable.id eq id }.singleOrNull()?.toUserRecord()
     }
 
-    override fun updateProfile(userId: String, displayName: String, birthdate: String?, adult: Boolean): UserRecord? =
+    override fun updateProfile(
+        userId: String,
+        displayName: String,
+        birthdate: String?,
+        adult: Boolean,
+        contact: ContactInfoDto?,
+    ): UserRecord? =
         transaction(db) {
             val updated = UsersTable.update({ UsersTable.id eq userId }) {
                 it[UsersTable.displayName] = displayName
                 it[UsersTable.birthdate] = birthdate
                 it[isAdult] = adult
+                it[contactAddress] = contact?.address?.trim() ?: ""
+                it[contactCity] = contact?.city?.trim() ?: ""
+                it[contactState] = contact?.state?.trim() ?: ""
+                it[contactZip] = contact?.zip?.trim() ?: ""
+                it[contactPhone] = contact?.phone?.trim() ?: ""
+                it[contactPreference] = contact?.preference?.name
             }
             if (updated == 0) null else findById(userId)
         }
@@ -153,6 +167,14 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
             adult = this[UsersTable.isAdult],
             passwordHash = this[UsersTable.passwordHash],
             roles = grants.toMutableList(),
+            contact = ContactInfoDto(
+                address = this[UsersTable.contactAddress],
+                city = this[UsersTable.contactCity],
+                state = this[UsersTable.contactState],
+                zip = this[UsersTable.contactZip],
+                phone = this[UsersTable.contactPhone],
+                preference = this[UsersTable.contactPreference]?.let { ContactPreference.valueOf(it) },
+            ).takeUnless { it.isEmpty() },
         )
     }
 }
