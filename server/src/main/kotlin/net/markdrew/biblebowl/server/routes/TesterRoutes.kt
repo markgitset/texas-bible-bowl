@@ -1,10 +1,17 @@
 package net.markdrew.biblebowl.server.routes
 
+import io.ktor.http.ContentDisposition
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.auth.authenticate
+import io.ktor.server.response.header
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.Permission
@@ -18,18 +25,25 @@ import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.isInexperienced
 import net.markdrew.biblebowl.api.siteFor
 import net.markdrew.biblebowl.api.testerTeamPart
+import net.markdrew.biblebowl.generation.typst.Nametag
+import net.markdrew.biblebowl.generation.typst.NametagSheet
+import net.markdrew.biblebowl.generation.typst.nametagsTypst
 import net.markdrew.biblebowl.server.data.RegistrationRepository
 import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.TesterIdRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.currentUser
+import net.markdrew.biblebowl.server.security.requireEventWidePermission
+import net.markdrew.biblebowl.server.typst.TypstCompiler
+import net.markdrew.biblebowl.server.typst.TypstException
 
 /**
  * Tester IDs + the ZipGrade roster (registration backlog item 13, F7; scheme in shared-api's
- * TesterIds.kt). One endpoint: `GET /admin/testers` lists every contestant this season with their
- * per-site tester ID and ZipGrade external ID, lazily assigning numbers to any tester who doesn't
- * have one yet (append-only — an assigned number never changes, so nametags can print early). The
- * ZipGrade CSV itself is built client-side from this response, like the registration-desk CSV.
+ * TesterIds.kt), and the nametags PDF built on those IDs (item 14, F8). `GET /admin/testers`
+ * lists every contestant this season with their per-site tester ID and ZipGrade external ID,
+ * lazily assigning numbers to any tester who doesn't have one yet (append-only — an assigned
+ * number never changes, so nametags can print early). The ZipGrade CSV itself is built
+ * client-side from this response, like the registration-desk CSV.
  *
  * Open to event-wide REGISTRATION_MANAGE (registrars prep IDs and nametags) *or* SCORE_ENTER
  * (ZipGrade is the primary 2027 scan-grading path, so graders need the export too).
@@ -56,6 +70,97 @@ fun Route.testerRoutes(
                 )
             }
             call.respond(testerList(seasons.current(), registrations, testerIds))
+        }
+
+        // GET /admin/registrations/nametags.pdf?siteId=<EventSiteDto.id>
+        //
+        // Printable nametags (registration backlog item 14, F8 — replaces the workbook's four
+        // nametag tabs): 4×3in badges per site for every attendee — testers (with division and
+        // tester ID, assigned lazily via the same append-only scheme as /admin/testers) and
+        // guests (no ID). Authenticated (attendee names include minors') — unlike the public
+        // /generate PDFs — and registrar-gated like the desk.
+        get("/admin/registrations/nametags.pdf") {
+            val user = currentUser(users) ?: return@get
+            if (!requireRegistrationFeature(user, seasons)) return@get
+            if (!requireEventWidePermission(user, Permission.REGISTRATION_MANAGE)) return@get
+            val season = seasons.current()
+            val siteIdParam = call.request.queryParameters["siteId"]
+
+            // Testers (assigning any missing IDs) in per-site tester-ID order, then guests per
+            // congregation — every tag carries its resolved site so the sheets group cleanly.
+            data class SitedTag(val siteId: String?, val siteName: String, val tag: Nametag)
+            val testerTags = testerList(season, registrations, testerIds).rows.map { row ->
+                SitedTag(
+                    siteId = row.siteId,
+                    siteName = row.siteName,
+                    tag = Nametag(
+                        name = row.name,
+                        congregation = row.congregationName,
+                        role = row.division?.displayName ?: "",
+                        testerId = row.testerId,
+                    ),
+                )
+            }
+            val guestTags = registrations.listForSeason(season.eventYear)
+                .sortedBy { it.congregation.name.lowercase() }
+                .flatMap { reg ->
+                    val site = season.siteFor(reg.siteId)
+                    reg.guests.sortedBy { it.name.lowercase() }.map { guest ->
+                        SitedTag(
+                            siteId = site?.id,
+                            siteName = site?.name.orEmpty(),
+                            tag = Nametag(
+                                name = guest.name,
+                                congregation = reg.congregation.name,
+                                role = if (guest.positions.isNotEmpty()) "Volunteer" else "Guest",
+                            ),
+                        )
+                    }
+                }
+
+            // One sheet per site, in season site order; tags with no resolvable site (unpinned in
+            // a multi-site season) come last so they're printable but visibly unplaced.
+            val siteOrder: Map<String?, Int> = season.sites.mapIndexed { i, s -> s.id to i }.toMap()
+            val sheets = (testerTags + guestTags)
+                .filter { siteIdParam == null || it.siteId == siteIdParam }
+                .groupBy { it.siteId to it.siteName }
+                .entries
+                .sortedBy { (key, _) -> siteOrder[key.first] ?: season.sites.size }
+                .map { (key, sited) ->
+                    val (_, siteName) = key
+                    NametagSheet(
+                        heading = listOfNotNull(
+                            "Texas Bible Bowl ${season.eventYear}",
+                            siteName.takeIf { it.isNotBlank() },
+                        ).joinToString(" — "),
+                        tags = sited.map { it.tag },
+                    )
+                }
+                .filter { it.tags.isNotEmpty() }
+            if (sheets.isEmpty()) return@get call.respond(
+                HttpStatusCode.NotFound,
+                ApiError("no_attendees", "No registered attendees to print nametags for"),
+            )
+
+            val siteSuffix = siteIdParam?.let { season.siteFor(it)?.name }
+                ?.lowercase()?.replace(Regex("[^a-z0-9]+"), "-")?.let { "-$it" } ?: ""
+            try {
+                val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(nametagsTypst(sheets)) }
+                call.response.header(
+                    HttpHeaders.ContentDisposition,
+                    ContentDisposition.Attachment
+                        .withParameter(
+                            ContentDisposition.Parameters.FileName,
+                            "tbb-nametags-${season.eventYear}$siteSuffix.pdf",
+                        ).toString(),
+                )
+                call.respondBytes(pdf, ContentType.Application.Pdf)
+            } catch (e: TypstException) {
+                call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ApiError("typst_failed", e.message ?: "PDF generation failed"),
+                )
+            }
         }
     }
 }

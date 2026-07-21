@@ -10,6 +10,7 @@ import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -33,6 +34,7 @@ import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.SetRegistrationSiteRequest
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TesterListResponse
+import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
@@ -43,6 +45,7 @@ import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
+import net.markdrew.biblebowl.server.typst.TypstCompiler
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
@@ -287,5 +290,53 @@ class TesterRoutesTest {
         assertNull(unpinned.testerId)
         assertNull(unpinned.externalId)
         assertNull(unpinned.siteId)
+    }
+
+    @Test
+    fun nametagsPdfAssignsTesterIdsAndIsRegistrarGated() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+        val (coach, cong, _) = api.coachWithTeam(
+            "coach@tbb.org", "Tag Church", "TC", listOf(juniorBirthdate, elementaryBirthdate),
+        )
+        // A guest gets a nametag too — but never a tester ID.
+        api.post("/registration/${cong.id}/guests") {
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+            setBody(UpsertGuestRequest("Helpful Aunt", ShirtSize.AM, gender = Gender.FEMALE))
+        }
+
+        // The coach's congregation-scoped grant isn't enough, and neither is SCORE_ENTER alone —
+        // nametags are a registrar artifact, unlike the tester list graders also need.
+        assertEquals(
+            HttpStatusCode.Forbidden,
+            api.get("/admin/registrations/nametags.pdf") {
+                header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+            }.status,
+        )
+        val grader = api.signUp("grader@tbb.org", "Grader")
+        users.addRoleGrant(grader.user.id, RoleGrant(Role.GRADER))
+        assertEquals(
+            HttpStatusCode.Forbidden,
+            api.get("/admin/registrations/nametags.pdf") {
+                header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+            }.status,
+        )
+
+        if (!TypstCompiler.isAvailable) { println("typst not on PATH — skipping the compile half"); return@testApplication }
+
+        val admin = api.loginSeededAdmin(users)
+        val response = api.get("/admin/registrations/nametags.pdf") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals("%PDF", response.readRawBytes().decodeToString(0, 4), "responds with a real PDF")
+
+        // Generating assigned tester IDs through the same append-only scheme /admin/testers uses.
+        val testers = api.testers(admin.token)
+        assertEquals(listOf(1, 2), testers.rows.map { it.testerId })
     }
 }

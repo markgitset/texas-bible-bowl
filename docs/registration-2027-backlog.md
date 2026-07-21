@@ -39,7 +39,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 11 | F11 | Registration counts dashboard | done |
 | 12 | F12 | Shirt-order report | done |
 | 13 | F7 | Tester IDs + ZipGrade export | done |
-| 14 | F8 | Nametag PDF generation | not started |
+| 14 | F8 | Nametag PDF generation | done |
 | 15 | F9 | Housing / cabin assignments | done |
 | 16 | F10 | Tribes & tribe leaders | not started |
 | 17 | F13 | Seed the database from the 2026 workbook | not started |
@@ -296,6 +296,17 @@ for testers, optionally a photo. Build on the existing Typst pipeline (`:generat
 markup builders, server-side `typst` compile) like the other PDF endpoints.
 
 - **Dependencies:** 13 (tester IDs), 7 (guests get nametags too).
+- **As built (2026-07):** `GET /admin/registrations/nametags.pdf?siteId=` — authenticated
+  (names include minors', so deliberately NOT a public `/generate` link), event-wide
+  REGISTRATION_MANAGE only (a registrar artifact; SCORE_ENTER alone gets 403 unlike
+  `/admin/testers`). 4×3in badges, six per letter page with dashed cut guides
+  (`nametagsTypst` in `:generation`); each badge shows event+site heading, name,
+  congregation, role at bottom-left (division for testers, Volunteer/Guest for guests),
+  and the tester ID big at bottom-right. Generating reuses item 13's append-only ID
+  scheme (testers with no ID get one, exactly as if `#admin/testers` had been viewed);
+  each site starts its own page stack, unpinned-site attendees print last with no site
+  in the heading. The desk's "Nametags PDF" button honors its site filter. Photos
+  skipped — the app stores none.
 
 ## 15. (F9) Housing / cabin assignments
 
