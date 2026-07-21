@@ -661,6 +661,91 @@ data class SetPaidRequest(val paid: Boolean)
 data class ClaimEntryRequest(val code: String)
 
 // ---------------------------------------------------------------------------
+// Housing / cabin assignments (item 15, F9) — thin event-ops assignment grid
+// ---------------------------------------------------------------------------
+
+/**
+ * One cabin (or other sleeping quarters — an RV site, a duplex) at the event, defined per season
+ * by the registrar. On a multi-site season each cabin belongs to one site ([siteId]); single-site
+ * seasons leave it null, mirroring [RegistrationDto.siteId].
+ */
+@Serializable
+data class CabinDto(
+    val id: String,
+    val name: String,
+    /** The [EventSiteDto.id] this cabin is at; null on single-site seasons (nothing to pick). */
+    val siteId: String? = null,
+    /** Optional bed count, shown beside the derived occupancy as an eyeball check; null = unknown. */
+    val capacity: Int? = null,
+    val assignments: List<CabinAssignmentDto> = emptyList(),
+)
+
+/**
+ * One row of a cabin's assignment grid — free-form, not an optimizer. Either a congregation ×
+ * gender *group* (the 2026 pattern: one congregation's boys → one cabin, girls → another;
+ * [gender] null = the whole congregation) or an ad-hoc [label] row for families/staff ("Smith
+ * family — RV 3"). A group row may also carry a label as a note. Occupant counts are derived
+ * client-side from the registration-desk payload, never stored.
+ */
+@Serializable
+data class CabinAssignmentDto(
+    val id: String,
+    /** The assigned congregation; null for a pure ad-hoc (label-only) row. */
+    val congregationId: String? = null,
+    /** Display name matching [congregationId]; resolved server-side. */
+    val congregationName: String? = null,
+    /** Which of the congregation's attendees this row houses; null = all (or an ad-hoc row). */
+    val gender: Gender? = null,
+    /** Free-form note, or the whole row for an ad-hoc assignment; "" when unused. */
+    val label: String = "",
+)
+
+/** Adds or renames a cabin. [siteId] must be a current season site id on multi-site seasons. */
+@Serializable
+data class UpsertCabinRequest(
+    val name: String,
+    val siteId: String? = null,
+    val capacity: Int? = null,
+)
+
+/** Adds an assignment row to a cabin: a congregation × gender group and/or a free-text label. */
+@Serializable
+data class AddCabinAssignmentRequest(
+    val congregationId: String? = null,
+    val gender: Gender? = null,
+    val label: String = "",
+)
+
+/**
+ * A congregation's cabin check-out duty (replaces the workbook's `Check out assignments` tab):
+ * the one adult responsible for their congregation's cabin walk-through at departure. Free-form
+ * name — the adult need not be a registered attendee.
+ */
+@Serializable
+data class CheckoutDutyDto(
+    val congregationId: String,
+    /** Display name matching [congregationId]; resolved server-side. */
+    val congregationName: String = "",
+    val adultName: String,
+)
+
+/** Sets (non-blank) or clears (blank) a congregation's check-out duty adult. */
+@Serializable
+data class SetCheckoutDutyRequest(val adultName: String)
+
+/**
+ * The full housing picture for the current season (`GET /admin/housing`): every cabin with its
+ * assignment rows, plus the check-out duty roster (only congregations with a duty set appear —
+ * the screen lists registered congregations from the desk payload and fills in from here).
+ */
+@Serializable
+data class HousingResponse(
+    val seasonYear: String,
+    val cabins: List<CabinDto> = emptyList(),
+    val duties: List<CheckoutDutyDto> = emptyList(),
+)
+
+// ---------------------------------------------------------------------------
 // Scoring (grading desk, release, my scores) — docs/gui-redesign.md §5F
 // ---------------------------------------------------------------------------
 

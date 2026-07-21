@@ -43,6 +43,10 @@ import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.SaveScoresRequest
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.SeasonDto
+import net.markdrew.biblebowl.api.AddCabinAssignmentRequest
+import net.markdrew.biblebowl.api.HousingResponse
+import net.markdrew.biblebowl.api.SetCheckoutDutyRequest
+import net.markdrew.biblebowl.api.UpsertCabinRequest
 import net.markdrew.biblebowl.api.SetPaidRequest
 import net.markdrew.biblebowl.api.SetRegistrationSiteRequest
 import net.markdrew.biblebowl.api.ShirtSize
@@ -449,6 +453,44 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun setRegistrationPaid(registrationId: String, paid: Boolean): RegistrationDto =
         client.put("$baseUrl/admin/registrations/$registrationId/paid") {
             authorize(); contentType(ContentType.Application.Json); setBody(SetPaidRequest(paid))
+        }.bodyOrThrow()
+
+    // --- Admin: housing / cabin assignments (item 15, F9) — all REGISTRATION_MANAGE ---
+
+    /** The season's cabins with their assignment rows plus the check-out duty roster. */
+    suspend fun housing(): HousingResponse =
+        client.get("$baseUrl/admin/housing") { authorize() }.bodyOrThrow()
+
+    /** Adds a cabin (name unique per season + site); returns the refreshed housing picture. */
+    suspend fun addCabin(req: UpsertCabinRequest): HousingResponse =
+        client.post("$baseUrl/admin/housing/cabins") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    /** Renames/re-sites/re-sizes a cabin; returns the refreshed housing picture. */
+    suspend fun updateCabin(cabinId: String, req: UpsertCabinRequest): HousingResponse =
+        client.put("$baseUrl/admin/housing/cabins/$cabinId") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    /** Deletes a cabin and its assignment rows; returns the refreshed housing picture. */
+    suspend fun deleteCabin(cabinId: String): HousingResponse =
+        client.delete("$baseUrl/admin/housing/cabins/$cabinId") { authorize() }.bodyOrThrow()
+
+    /** Adds an assignment row (congregation × gender group and/or free-text label) to a cabin. */
+    suspend fun addCabinAssignment(cabinId: String, req: AddCabinAssignmentRequest): HousingResponse =
+        client.post("$baseUrl/admin/housing/cabins/$cabinId/assignments") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    /** Removes an assignment row; returns the refreshed housing picture. */
+    suspend fun deleteCabinAssignment(assignmentId: String): HousingResponse =
+        client.delete("$baseUrl/admin/housing/assignments/$assignmentId") { authorize() }.bodyOrThrow()
+
+    /** Sets (non-blank) or clears (blank) a congregation's check-out duty adult. */
+    suspend fun setCheckoutDuty(congregationId: String, adultName: String): HousingResponse =
+        client.put("$baseUrl/admin/housing/checkout/$congregationId") {
+            authorize(); contentType(ContentType.Application.Json); setBody(SetCheckoutDutyRequest(adultName))
         }.bodyOrThrow()
 
     /** Searches users by name/email fragment (USER_MANAGE). A blank query returns nothing. */
