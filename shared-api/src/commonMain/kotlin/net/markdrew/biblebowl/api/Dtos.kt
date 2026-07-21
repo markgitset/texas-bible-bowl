@@ -653,6 +653,42 @@ data class RegistrationDeskResponse(
 data class SetPaidRequest(val paid: Boolean)
 
 /**
+ * One tester (= contestant) with their assigned IDs (registration backlog item 13, F7; see
+ * shared-api TesterIds.kt for the scheme). [testerId]/[externalId] are null only while the tester
+ * can't be numbered yet: their registration hasn't pinned an event site in a multi-site season.
+ */
+@Serializable
+data class TesterRowDto(
+    val rosterEntryId: String,
+    /** Stable per-site sequential ID (never reassigned once given); null while un-numberable. */
+    val testerId: Int? = null,
+    /** ZipGrade external ID, e.g. "EI-MR-ENT-4"; null exactly when [testerId] is. */
+    val externalId: String? = null,
+    val name: String,
+    val congregationName: String,
+    /** The congregation's two-letter code — the ZipGrade "class"; "" while unchosen. */
+    val congregationCode: String = "",
+    /** Hosting team (a visiting combo member shows their host team); null for the teamless. */
+    val teamName: String? = null,
+    /** The contestant's own division; null only for an unparseable legacy birthdate. */
+    val division: Division? = null,
+    val inexperienced: Boolean = false,
+    /** The resolved event site; null while the registration is unpinned in a multi-site season. */
+    val siteId: String? = null,
+    val siteName: String = "",
+)
+
+/**
+ * Every tester this season with IDs (`GET /admin/testers`), in tester-ID order per site. Fetching
+ * the list is what (lazily, append-only) assigns IDs to any not-yet-numbered testers.
+ */
+@Serializable
+data class TesterListResponse(
+    val seasonYear: String,
+    val rows: List<TesterRowDto> = emptyList(),
+)
+
+/**
  * Claims a roster entry by its coach-shared code (`POST /roster/claim`); dashes and case are
  * ignored, so "abcd-2345" matches "ABCD2345". Claiming links the entry to the signed-in account,
  * which is what My Scores' owner scoping keys off.

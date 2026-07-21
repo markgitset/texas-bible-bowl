@@ -63,6 +63,11 @@ class TbbApiRequestTest {
                     """{"congregations":[],"registration":null,"windowOpen":true}""" to "application/json"
                 "/admin/registrations" ->
                     """{"seasonYear":"2027","rows":[]}""" to "application/json"
+                "/admin/testers" ->
+                    """{"seasonYear":"2027","rows":[{"rosterEntryId":"m1","testerId":4,
+                        "externalId":"EI-MR-ENT-4","name":"Eli Tester","congregationName":"McDermott Road",
+                        "congregationCode":"MR","division":"ELEMENTARY","inexperienced":true,
+                        "siteId":"s1","siteName":"Bandina"}]}""" to "application/json"
                 "/admin/registrations/r1/paid" ->
                     """{"id":"r1","congregation":{"id":"c1","name":"First Church","city":"Austin"},
                         "seasonYear":"2027","status":"SUBMITTED","paidAt":"2027-01-15T00:00:00Z"}""" to
@@ -221,6 +226,11 @@ class TbbApiRequestTest {
         val desk = api.registrationDesk()
         assertEquals("2027", desk.seasonYear)
         assertEquals("GET" to "/admin/registrations", methods.last() to requests.last())
+
+        val testers = api.adminTesters()
+        assertEquals("GET" to "/admin/testers", methods.last() to requests.last())
+        assertEquals("EI-MR-ENT-4", testers.rows.single().externalId)
+        assertEquals(4, testers.rows.single().testerId)
 
         val paid = api.setRegistrationPaid("r1", paid = true)
         assertEquals("2027-01-15T00:00:00Z", paid.paidAt)
