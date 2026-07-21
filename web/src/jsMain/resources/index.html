@@ -44,8 +44,9 @@
             <ul class="dropdown-menu dropdown-menu-end">
               <li><a class="dropdown-item" href="../study-resources/">Study Resources overview</a></li>
               <li><hr class="dropdown-divider"></li>
-              <li><a class="dropdown-item" data-route="study" href="#study">Study Hub</a></li>
               <li><a class="dropdown-item" data-route="quiz" href="#quiz">Quiz Me</a></li>
+              <li><a class="dropdown-item" data-route="study/indices" href="#study/indices">Names &amp; Numbers Indices</a></li>
+              <li><a class="dropdown-item" data-route="study/headings" href="#study/headings">Chapter Headings</a></li>
               <li><a class="dropdown-item" data-route="downloads" href="#downloads">Downloads</a></li>
               <li><a class="dropdown-item" data-route="questions" href="#questions">Community Questions</a></li>
               <li><a class="dropdown-item" href="../study-resources/practice-tests/">Study Games</a></li>
@@ -57,7 +58,8 @@
             <a class="btn btn-outline-light btn-sm fw-bold px-3" href="../donate/">Donate</a>
           </li>
           <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
-            <a class="btn btn-warning btn-sm fw-bold px-3" href="#study">Study</a>
+            <!-- Points at the Hugo hub page in prod; 404s in this standalone dev shell. -->
+            <a class="btn btn-warning btn-sm fw-bold px-3" href="../study-resources/">Study</a>
           </li>
           <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center" id="accountSlot">
             <a class="btn btn-outline-light btn-sm px-3" href="#signin">Sign in</a>
@@ -94,6 +96,9 @@
   </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- No Hugo site around this shell: #study renders a fallback tool list instead of
+       redirecting to ../study-resources/ (see Shell.studyOverview). -->
+  <script>window.TBB_STANDALONE = true;</script>
   <script src="tbb.js"></script>
 </body>
 </html>

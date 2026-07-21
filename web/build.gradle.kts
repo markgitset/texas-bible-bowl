@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.kotlin.serialization) // NavMenu is cached as JSON in localStorage
 }
 
 kotlin {

@@ -19,6 +19,7 @@ canonifyURLs = true
   eventDateRange = "April 2–4"   # year comes from eventYear; compose in templates
   eventTheme    = "TBD"
   eventScripture = "Acts"
+  bookCode      = "ACT"    # USFM code for the season book; used for read-online links
   scholarshipAmount = "$25,000"   # total awarded in the prior year (eventYear - 1)
   registrationOpensOn = ""   # ISO date "2027-02-01"; "" = not announced (renders TBD)
   registrationClosesOn = ""  # ISO date, last day to register; "" = TBD
@@ -137,36 +138,44 @@ canonifyURLs = true
 
 # The app destinations sit directly in this dropdown — the app under /app/ shares this
 # navbar (Hugo renders its shell page too), so these are ordinary section links, not an
-# exit to a separate app. Keep hash routes in sync with web/.../Routes.kt.
-[[menus.main]]
-  name   = "Study Hub"
-  url    = "/app/#study"
-  parent = "Study Resources"
-  weight = 1
-
+# exit to a separate app. The section landing page /study-resources/ is the single study
+# hub (the auto "overview" dropdown item and the navbar Study button both point there);
+# the dropdown lists the individual tools. Keep hash routes in sync with web/.../Routes.kt.
 [[menus.main]]
   name   = "Quiz Me"
   url    = "/app/#quiz"
   parent = "Study Resources"
+  weight = 1
+
+[[menus.main]]
+  name   = "Names & Numbers Indices"
+  url    = "/app/#study/indices"
+  parent = "Study Resources"
   weight = 2
+
+[[menus.main]]
+  name   = "Chapter Headings"
+  url    = "/app/#study/headings"
+  parent = "Study Resources"
+  weight = 3
 
 [[menus.main]]
   name   = "Downloads"
   url    = "/app/#downloads"   # the app's download center replaced the hand-linked PDF page
   parent = "Study Resources"
-  weight = 3
+  weight = 4
 
 [[menus.main]]
   name   = "Community Questions"
   url    = "/app/#questions"
   parent = "Study Resources"
-  weight = 4
+  weight = 5
 
 [[menus.main]]
   name   = "Study Games"
   url    = "/study-resources/practice-tests/"
   parent = "Study Resources"
-  weight = 5
+  weight = 6
 
 [[menus.main]]
   name   = "Scholarships"

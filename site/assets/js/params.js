@@ -57,20 +57,75 @@
     patch(JSON.parse(localStorage.getItem(CACHE_KEY)));
   } catch (e) {}
 
-  // Account slot: the app caches the signed-in display name (web/.../Session.kt writes
-  // "tbb.user-name" next to the JWT). On static pages, swap the "Sign in" button for the
-  // name so the shared navbar reads as one signed-in application. On /app/ the Shell
-  // re-renders this slot itself with live state, overwriting whatever we do here.
+  // Account slot: the app caches the signed-in user menu (web/.../Session.kt writes "tbb.nav",
+  // JSON of the NavMenu model in web/.../NavMenu.kt). On static pages, swap the "Sign in"
+  // button for the same grouped dropdown the app's Shell renders, so the shared navbar reads
+  // as one signed-in application — keep this markup in sync with Shell.updateNav. On /app/ the
+  // Shell re-renders the slot from live state, overwriting this. The cache can lag server-side
+  // role/toggle changes until the next app visit — cosmetic only; the app and server enforce.
+  // (Bootstrap's bundle loads before this inline script and uses delegated events, so the
+  // injected dropdown works without initialization.)
   try {
-    var name = localStorage.getItem("tbb.user-name");
     var slot = document.getElementById("accountSlot");
-    if (name && slot) {
-      var link = slot.querySelector("a");
-      if (link) {
-        link.href = link.href.replace("#signin", "#account");
-        link.innerHTML = '<i class="bi bi-person-circle me-1"></i>';
-        link.appendChild(document.createTextNode(name));
+    var link = slot && slot.querySelector("a");
+    var menu = JSON.parse(localStorage.getItem("tbb.nav") || "null");
+    if (menu && link) {
+      var appBase = link.href.replace(/#.*$/, ""); // …/app/, correct on the GH Pages subpath
+      var toggle = document.createElement("a");
+      toggle.className = "btn btn-outline-light btn-sm px-3 dropdown-toggle";
+      toggle.href = appBase + "#account";
+      toggle.setAttribute("role", "button");
+      toggle.setAttribute("data-bs-toggle", "dropdown");
+      toggle.setAttribute("aria-expanded", "false");
+      toggle.innerHTML = '<i class="bi bi-person-circle me-1"></i>';
+      toggle.appendChild(document.createTextNode(menu.name));
+      var list = document.createElement("ul");
+      list.className = "dropdown-menu dropdown-menu-end";
+      function li(el) {
+        var l = document.createElement("li");
+        l.appendChild(el);
+        list.appendChild(l);
       }
+      function divider() {
+        var hr = document.createElement("hr");
+        hr.className = "dropdown-divider";
+        li(hr);
+      }
+      menu.sections.forEach(function (section, i) {
+        if (i > 0) divider();
+        var header = document.createElement("h6");
+        header.className = "dropdown-header";
+        header.textContent = section.label;
+        li(header);
+        section.items.forEach(function (item) {
+          var a = document.createElement("a");
+          a.className = "dropdown-item";
+          a.href = appBase + "#" + item.route;
+          a.textContent = item.label;
+          if (item.badge) {
+            var badge = document.createElement("span");
+            badge.className = "badge text-bg-warning ms-2";
+            badge.textContent = "hidden until launch";
+            a.appendChild(badge);
+          }
+          li(a);
+        });
+      });
+      divider();
+      var signOut = document.createElement("button");
+      signOut.type = "button";
+      signOut.className = "dropdown-item";
+      signOut.textContent = "Sign out";
+      signOut.addEventListener("click", function () {
+        ["tbb.token", "tbb.nav", "tbb.user-name"].forEach(function (k) {
+          localStorage.removeItem(k);
+        });
+        slot.classList.remove("dropdown");
+        slot.replaceChildren(link); // restore the baked Sign in button
+      });
+      li(signOut);
+      slot.classList.add("dropdown");
+      slot.replaceChildren(toggle, list);
     }
   } catch (e) {}
 
