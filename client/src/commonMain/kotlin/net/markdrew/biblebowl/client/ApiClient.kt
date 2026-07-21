@@ -44,7 +44,10 @@ import net.markdrew.biblebowl.api.SaveScoresRequest
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.AddCabinAssignmentRequest
+import net.markdrew.biblebowl.api.AddTribeLeaderRequest
 import net.markdrew.biblebowl.api.HousingResponse
+import net.markdrew.biblebowl.api.TribesResponse
+import net.markdrew.biblebowl.api.UpsertTribeRequest
 import net.markdrew.biblebowl.api.SetCheckoutDutyRequest
 import net.markdrew.biblebowl.api.UpsertCabinRequest
 import net.markdrew.biblebowl.api.SetPaidRequest
@@ -501,6 +504,38 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         client.put("$baseUrl/admin/housing/checkout/$congregationId") {
             authorize(); contentType(ContentType.Application.Json); setBody(SetCheckoutDutyRequest(adultName))
         }.bodyOrThrow()
+
+    // --- Admin: tribes & tribe leaders (item 16, F10) — all REGISTRATION_MANAGE ---
+
+    /** The season's tribes with their assigned leaders. */
+    suspend fun tribes(): TribesResponse =
+        client.get("$baseUrl/admin/tribes") { authorize() }.bodyOrThrow()
+
+    /** Adds a tribe (name unique per season + site); returns the refreshed tribe list. */
+    suspend fun addTribe(req: UpsertTribeRequest): TribesResponse =
+        client.post("$baseUrl/admin/tribes") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    /** Renames/re-sites a tribe; returns the refreshed tribe list. */
+    suspend fun updateTribe(tribeId: String, req: UpsertTribeRequest): TribesResponse =
+        client.put("$baseUrl/admin/tribes/$tribeId") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    /** Deletes a tribe and its leader rows; returns the refreshed tribe list. */
+    suspend fun deleteTribe(tribeId: String): TribesResponse =
+        client.delete("$baseUrl/admin/tribes/$tribeId") { authorize() }.bodyOrThrow()
+
+    /** Assigns a leader (free-form adult name) to a tribe; returns the refreshed tribe list. */
+    suspend fun addTribeLeader(tribeId: String, name: String): TribesResponse =
+        client.post("$baseUrl/admin/tribes/$tribeId/leaders") {
+            authorize(); contentType(ContentType.Application.Json); setBody(AddTribeLeaderRequest(name))
+        }.bodyOrThrow()
+
+    /** Removes an assigned leader; returns the refreshed tribe list. */
+    suspend fun deleteTribeLeader(leaderId: String): TribesResponse =
+        client.delete("$baseUrl/admin/tribes/leaders/$leaderId") { authorize() }.bodyOrThrow()
 
     /** Searches users by name/email fragment (USER_MANAGE). A blank query returns nothing. */
     suspend fun searchUsers(query: String): List<UserDto> =

@@ -41,7 +41,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 13 | F7 | Tester IDs + ZipGrade export | done |
 | 14 | F8 | Nametag PDF generation | not started |
 | 15 | F9 | Housing / cabin assignments | done |
-| 16 | F10 | Tribes & tribe leaders | not started |
+| 16 | F10 | Tribes & tribe leaders | done |
 | 17 | F13 | Seed the database from the 2026 workbook | not started |
 
 ---
@@ -324,6 +324,16 @@ roster (one adult per congregation).
 Replaces the `Tribe leader assignment` tab: define tribes per site (2026: color names, two
 leaders each), assign leaders drawing from adults who flagged willingness (item 8).
 
+- **As built (2026-07):** `#admin/tribes` (gated like housing: registration toggle +
+  event-wide REGISTRATION_MANAGE) — tribes per season/site (name unique per season+site;
+  multi-site seasons require a site per tribe, like cabins) with **free-form leader names**:
+  the add-leader input suggests the tribe's site's willing adults (item 8's flags, derived
+  client-side from the desk payload) via a datalist, but any adult can be typed in. Fewer
+  than two leaders shows a soft "needs leaders" badge (the 2026 two-per-tribe pattern is a
+  convention, not a cap); a "Willing, not yet assigned" roll-up (name-matched against
+  assigned leaders) is the recruiting pool; CSV export mirrors the workbook tab (one row
+  per leader). Server: `tribes`/`tribe_leaders` tables, `TribeRepository`, `/admin/tribes`
+  routes returning the full picture after every mutation.
 - **Dependencies:** 8. Same thin-admin-tool scope note as 15.
 
 ## 17. (F13) Seed the database from the 2026 workbook — LAST
