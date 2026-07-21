@@ -27,7 +27,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | # | Label | Item | Status |
 |---|-------|------|--------|
 | 1 | C4 | Adult 3XL shirt size | done |
-| 2 | C5 | Congregation phone number | not started |
+| 2 | C5 | Congregation phone number | done |
 | 3 | C3 | Elementary contestants can't join teams | not started |
 | 4 | C2 | Individual standings in own bracket, not the team's | not started |
 | 5 | C1 | Combo (cross-congregation) teams | not started |

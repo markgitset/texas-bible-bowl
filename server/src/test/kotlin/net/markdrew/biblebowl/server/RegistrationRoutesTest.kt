@@ -86,6 +86,7 @@ class RegistrationRoutesTest {
 
     private fun congregationRequest(name: String, city: String) = CreateCongregationRequest(
         name = name, city = city, state = "TX", mailingAddress = "123 Main St", zip = "78701",
+        phone = "512-555-0100",
     )
 
     @Test
@@ -117,6 +118,7 @@ class RegistrationRoutesTest {
         assertEquals("TX", congregation.state, "state is normalized to uppercase")
         assertEquals("123 Main St", congregation.mailingAddress)
         assertEquals("78701", congregation.zip)
+        assertEquals("512-555-0100", congregation.phone)
 
         // The grant is scoped to the new congregation and visible via /auth/me.
         val me: UserDto = api.get("/auth/me") {

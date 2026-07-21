@@ -113,6 +113,9 @@ object AdminRegistrationsScreen {
                     if (row.congregation.state.isBlank()) row.congregation.city
                     else "${row.congregation.city}, ${row.congregation.state}"
                 child("div", "text-muted small", cityState)
+                if (row.congregation.phone.isNotBlank()) {
+                    child("div", "text-muted small", row.congregation.phone)
+                }
             }
             child("td") { renderCodeCell(this, row) }
             child("td") {
@@ -190,7 +193,7 @@ object AdminRegistrationsScreen {
                             cong.id,
                             UpdateCongregationRequest(
                                 name = cong.name, city = cong.city, state = cong.state,
-                                mailingAddress = cong.mailingAddress, zip = cong.zip, code = next,
+                                mailingAddress = cong.mailingAddress, zip = cong.zip, phone = cong.phone, code = next,
                             ),
                         )
                         data = data?.let { desk ->

@@ -64,6 +64,8 @@ object CongregationsTable : Table("congregations") {
     val state = varchar("state", 2).default("")
     val mailingAddress = varchar("mailing_address", 200).default("")
     val zip = varchar("zip", 10).default("")
+    /** Optional contact phone, free-form; "" when not provided. */
+    val phone = varchar("phone", 30).default("")
     /** Unique two-letter congregation code, e.g. "FB"; "" until a coach chooses one. */
     val code = varchar("code", 2).default("")
     val createdByUserId = varchar("created_by_user_id", 36).references(UsersTable.id)
@@ -294,6 +296,7 @@ object DatabaseFactory {
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS state VARCHAR(2) NOT NULL DEFAULT ''")
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS mailing_address VARCHAR(200) NOT NULL DEFAULT ''")
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS zip VARCHAR(10) NOT NULL DEFAULT ''")
+            exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS phone VARCHAR(30) NOT NULL DEFAULT ''")
             exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS code VARCHAR(2) NOT NULL DEFAULT ''")
             // Congregation codes are unique — but only among the ones actually assigned; unassigned
             // congregations all share the "" default, so the uniqueness is a partial index.

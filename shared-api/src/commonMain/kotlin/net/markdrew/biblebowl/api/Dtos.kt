@@ -249,6 +249,8 @@ data class CongregationDto(
     /** Street address or PO Box (the city/state/zip complete the mailing label). */
     val mailingAddress: String = "",
     val zip: String = "",
+    /** Optional contact phone number, free-form (e.g. "281-610-8924"); "" when not provided. */
+    val phone: String = "",
     /**
      * The congregation's unique two-letter code, e.g. "FB" — a coach picks it once, after which only
      * an admin can change it. Blank until chosen; unique (case-insensitively) across congregations.
@@ -263,6 +265,8 @@ data class CreateCongregationRequest(
     val state: String = "",
     val mailingAddress: String = "",
     val zip: String = "",
+    /** Optional contact phone number; blank is allowed. */
+    val phone: String = "",
     /**
      * The congregation's unique two-letter code, e.g. "WB" for "West Bexar County Church of Christ".
      * Chosen at creation (a suggestion is derived from the name — see [congregationCodeCandidates]);
@@ -288,6 +292,8 @@ data class UpdateCongregationRequest(
     val state: String = "",
     val mailingAddress: String = "",
     val zip: String = "",
+    /** Optional contact phone number; blank is allowed. */
+    val phone: String = "",
     /** Unique two-letter congregation code; blank leaves it unset. */
     val code: String = "",
 )

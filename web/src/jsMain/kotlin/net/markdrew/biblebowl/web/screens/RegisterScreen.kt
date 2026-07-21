@@ -185,6 +185,7 @@ object RegisterScreen {
                 lateinit var city: HTMLInputElement
                 lateinit var state: HTMLInputElement
                 lateinit var zip: HTMLInputElement
+                lateinit var phone: HTMLInputElement
                 form.child("div", "mb-2") {
                     child("label", "form-label", "Congregation name")
                     name = child("input", "form-control") as HTMLInputElement
@@ -226,6 +227,13 @@ object RegisterScreen {
                         zip.setAttribute("maxlength", "10")
                         zip.setAttribute("size", "6")
                     }
+                    child("div") {
+                        child("label", "form-label", "Phone (optional)")
+                        phone = child("input", "form-control") as HTMLInputElement
+                        phone.setAttribute("type", "tel")
+                        phone.setAttribute("maxlength", "30")
+                        phone.setAttribute("size", "14")
+                    }
                 }
                 // Suggest a code from the name until the coach types their own; debounced so we
                 // don't hit the backend on every keystroke.
@@ -265,6 +273,7 @@ object RegisterScreen {
                                     state = state.value,
                                     mailingAddress = address.value,
                                     zip = zip.value,
+                                    phone = phone.value,
                                     code = code.value,
                                 )
                             )
@@ -332,6 +341,9 @@ object RegisterScreen {
                 if (existing.mailingAddress.isNotBlank()) {
                     child("p", "text-muted small mb-0", "${existing.mailingAddress}, ${cityStateLine(existing)} ${existing.zip}")
                 }
+                if (existing.phone.isNotBlank()) {
+                    child("p", "text-muted small mb-0", existing.phone)
+                }
             }
         }
     }
@@ -352,6 +364,7 @@ object RegisterScreen {
                 lateinit var city: HTMLInputElement
                 lateinit var state: HTMLInputElement
                 lateinit var zip: HTMLInputElement
+                lateinit var phone: HTMLInputElement
                 lateinit var code: HTMLInputElement
                 form.child("div", "mb-2") {
                     child("label", "form-label", "Congregation name")
@@ -409,6 +422,14 @@ object RegisterScreen {
                         zip.setAttribute("size", "6")
                         zip.value = existing.zip
                     }
+                    child("div") {
+                        child("label", "form-label", "Phone (optional)")
+                        phone = child("input", "form-control") as HTMLInputElement
+                        phone.setAttribute("type", "tel")
+                        phone.setAttribute("maxlength", "30")
+                        phone.setAttribute("size", "14")
+                        phone.value = existing.phone
+                    }
                 }
                 val save = form.child("button", "btn btn-primary", "Save changes") {
                     setAttribute("type", "submit")
@@ -429,6 +450,7 @@ object RegisterScreen {
                                     state = state.value,
                                     mailingAddress = address.value,
                                     zip = zip.value,
+                                    phone = phone.value,
                                     code = code.value,
                                 ),
                             )
