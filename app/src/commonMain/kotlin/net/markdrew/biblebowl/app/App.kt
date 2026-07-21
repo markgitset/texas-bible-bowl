@@ -1,7 +1,9 @@
 package net.markdrew.biblebowl.app
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,6 +42,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.UserDto
+import net.markdrew.biblebowl.api.hasEventWidePermission
+import net.markdrew.biblebowl.api.isGlobalAdmin
 import net.markdrew.biblebowl.app.navigation.Routes
 import net.markdrew.biblebowl.app.navigation.TopDestination
 import net.markdrew.biblebowl.app.navigation.topDestinationOf
@@ -49,9 +53,12 @@ import net.markdrew.biblebowl.app.screens.AuthScreen
 import net.markdrew.biblebowl.app.screens.ContributeScreen
 import net.markdrew.biblebowl.app.screens.DownloadsScreen
 import net.markdrew.biblebowl.app.screens.EventScreen
+import net.markdrew.biblebowl.app.screens.GradingScreen
 import net.markdrew.biblebowl.app.screens.HeadingsScreen
 import net.markdrew.biblebowl.app.screens.IndexScreen
 import net.markdrew.biblebowl.app.screens.ModerateScreen
+import net.markdrew.biblebowl.app.screens.MyScoresScreen
+import net.markdrew.biblebowl.app.screens.StandingsScreen
 import net.markdrew.biblebowl.app.screens.QuestionsScreen
 import net.markdrew.biblebowl.app.screens.QuizScreen
 import net.markdrew.biblebowl.app.screens.StudyHubScreen
@@ -261,7 +268,38 @@ private fun AppNavHost(
             else AuthScreen(api, onSignedIn = onUserChange)
         }
         composable(Routes.DOWNLOADS) { DownloadsScreen(api) }
-        composable(Routes.EVENT) { EventScreen() }
+        composable(Routes.EVENT) {
+            EventScreen(
+                user = user,
+                onOpenMyScores = { navController.navigate(Routes.MY_SCORES) },
+                onOpenGrading = { navController.navigate(Routes.GRADING) },
+                onOpenStandings = { navController.navigate(Routes.STANDINGS) },
+            )
+        }
+        // Scoring routes deploy dark behind the season's gradingEnabled toggle (global admins
+        // preview them); permission gates render the sign-in screen in place, mirroring the web
+        // shell's feature()/gatedEventWide() — the server enforces both regardless.
+        composable(Routes.MY_SCORES) {
+            GradingFeature(user) {
+                // Sign-in only: the server scopes the response (owned entries + coached rosters).
+                if (user != null) MyScoresScreen(api)
+                else AuthScreen(api, onSignedIn = onUserChange)
+            }
+        }
+        composable(Routes.GRADING) {
+            GradingFeature(user) {
+                if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_ENTER)) {
+                    GradingScreen(api, user, onOpenStandings = { navController.navigate(Routes.STANDINGS) })
+                } else AuthScreen(api, onSignedIn = onUserChange)
+            }
+        }
+        composable(Routes.STANDINGS) {
+            GradingFeature(user) {
+                if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
+                    StandingsScreen(api, onOpenGrading = { navController.navigate(Routes.GRADING) })
+                } else AuthScreen(api, onSignedIn = onUserChange)
+            }
+        }
         composable(Routes.SIGN_IN) {
             AuthScreen(api, onSignedIn = { signedIn ->
                 onUserChange(signedIn)
@@ -290,4 +328,25 @@ private fun AppNavHost(
 
     // Runs after NavHost has set its graph (same subcomposition, effects in composition order).
     LaunchedEffect(navController) { onNavHostReady(navController) }
+}
+
+/**
+ * Renders [content] only while the season's grading feature is visible — the launch toggle is on,
+ * or the signed-in user is a global admin previewing the dark-deployed feature. A dark feature
+ * shows a launch notice instead, mirroring the web shell's feature() gate.
+ */
+@Composable
+private fun GradingFeature(user: UserDto?, content: @Composable () -> Unit) {
+    val season = LocalSeason.current
+    if (season.gradingEnabled || (user != null && isGlobalAdmin(user.roles))) {
+        content()
+    } else {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Not open yet", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(
+                "This part of the app hasn't opened for the season — check back soon.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
 }
