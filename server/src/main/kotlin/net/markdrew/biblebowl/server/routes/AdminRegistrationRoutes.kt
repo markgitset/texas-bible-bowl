@@ -53,7 +53,7 @@ fun Route.adminRegistrationRoutes(
                             coaches = coaches[cong.id].orEmpty()
                                 .map { CoachContactDto(it.displayName, it.email, it.contact) },
                             returningCandidates = registrations.returningContestants(cong.id, season.eventYear)
-                                .filter { season.isEligibleReturningCandidate(it.birthdate) },
+                                .filter { season.isEligibleReturningCandidate(it) },
                         )
                     },
                 )

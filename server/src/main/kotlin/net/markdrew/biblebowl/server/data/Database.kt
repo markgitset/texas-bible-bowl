@@ -124,13 +124,29 @@ object ContestantsTable : Table("contestants") {
     val id = varchar("id", 36)
     val congregationId = varchar("congregation_id", 36).references(CongregationsTable.id)
     val name = varchar("name", 120)
-    val birthdate = varchar("birthdate", 10).nullable() // null only for legacy rows pre-dating birthdates
+    val birthdate = varchar("birthdate", 10).nullable() // null for adults, legacy rows, and seeded youth
     val gender = varchar("gender", 6).nullable()
     val firstSeasonYear = varchar("first_season_year", 4).nullable()
+    // The event year this person finishes grade 12, derived from the 2026 workbook's school grade
+    // (item 17, F13) — the import has grades but no birthdates. Non-null + null birthdate = a
+    // *seeded youth*: treated as youth, real birthdate collected at first enrollment. Stays set
+    // afterward as historical provenance; birthdate wins once present.
+    val graduationYear = integer("graduation_year").nullable()
     override val primaryKey = PrimaryKey(id)
     init {
         index(false, congregationId, name) // lookups by congregation + name for find-or-create
     }
+}
+
+/**
+ * A coach email known from the 2026 workbook import (item 17, F13), waiting for its account: when
+ * someone registers with this email, they're granted the congregation-scoped COACH role and the
+ * row is consumed. No accounts are created by the import itself.
+ */
+object PendingCoachGrantsTable : Table("pending_coach_grants") {
+    val email = varchar("email", 255) // stored lowercased
+    val congregationId = varchar("congregation_id", 36).references(CongregationsTable.id)
+    override val primaryKey = PrimaryKey(email, congregationId)
 }
 
 /**
@@ -405,7 +421,7 @@ object DatabaseFactory {
                 CongregationsTable, RegistrationsTable, TeamsTable, ContestantsTable, TeamMembersTable,
                 IndividualsTable, RegistrationGuestsTable, ScoresTable, ScoreReleasesTable,
                 CabinsTable, CabinAssignmentsTable, CheckoutDutiesTable, TesterIdsTable,
-                TribesTable, TribeLeadersTable,
+                TribesTable, TribeLeadersTable, PendingCoachGrantsTable,
             )
             // SchemaUtils.create only creates missing *tables* — columns added after a table
             // first shipped need explicit (idempotent) ALTERs for existing databases.
@@ -418,6 +434,8 @@ object DatabaseFactory {
             // congregations all share the "" default, so the uniqueness is a partial index.
             exec("CREATE UNIQUE INDEX IF NOT EXISTS congregations_code_key ON congregations (code) WHERE code <> ''")
             exec("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS paid_at_epoch_ms BIGINT")
+            // Workbook-seeded youth (item 17, F13) carry a graduation year instead of a birthdate.
+            exec("ALTER TABLE contestants ADD COLUMN IF NOT EXISTS graduation_year INTEGER")
             // Multi-site seasons (2026-07): each registration pins to one of the season's event sites.
             exec("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS site_id VARCHAR(36)")
             // Birthdates replaced self-reported grades (2026-07). Legacy grades are dropped, not

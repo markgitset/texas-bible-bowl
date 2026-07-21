@@ -42,7 +42,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 14 | F8 | Nametag PDF generation | done |
 | 15 | F9 | Housing / cabin assignments | done |
 | 16 | F10 | Tribes & tribe leaders | done |
-| 17 | F13 | Seed the database from the 2026 workbook | not started |
+| 17 | F13 | Seed the database from the 2026 workbook | done |
 
 ---
 
@@ -365,6 +365,22 @@ candidate.
   never enters git; the import reads Mark's local copy). Idempotent so it can re-run.
 - **Dependencies:** everything above it that defines what's importable (6, 7, 8; 2 for
   phones). Deliberately last, per Mark.
+- **As built (2026-07):** two stages. `tools/seed/convert_registration_xlsx.py` (Python
+  stdlib only, safe to commit) reads the local workbook and writes a seed JSON to
+  ~/Downloads — workbook and JSON both hold PII and never enter git. `POST /admin/seed`
+  (global admins only) ingests it, idempotently by natural keys; re-runs update in place
+  and never overwrite curated data. What lands: 8 congregations (parsed addresses,
+  phones, codes — the "9/WO dupe" was one Woodland Oaks with a trailing space), the full
+  2026 registrations (19 teams incl. both combo teams with visiting members under their
+  own congregation, 108 grade-seeded youth + 1 skipped source row with no grade, 46 adult
+  individuals, 68 guests with positions/contact), site pins, submitted+paid stamps.
+  Grade-only youth: the durable contestant stores `graduation_year` (grade normalized so
+  it never goes stale) with a null birthdate; they list as returning candidates with a
+  "(seeded)" division, and the first enrollment requires and records the real birthdate
+  (400 `birthdate_required` otherwise). Grade-12-in-2026 testers age out automatically.
+  Coach emails (10) become `pending_coach_grants`: signing up with one auto-grants the
+  congregation-scoped COACH role; 3 coaches had no email in the workbook and need a
+  hand grant. Verified end-to-end against the real workbook locally.
 
 ---
 

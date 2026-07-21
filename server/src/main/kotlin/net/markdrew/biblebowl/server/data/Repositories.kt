@@ -59,6 +59,16 @@ interface UserRepository {
      * (callers want contact info, not the full grant list).
      */
     fun coachesByCongregation(congregationIds: Collection<String>): Map<String, List<UserRecord>>
+    /**
+     * Records a coach email known from the workbook seed (item 17, F13): when this email later
+     * registers, [consumePendingCoachGrants] hands out the congregation-scoped COACH role.
+     * Idempotent per (email, congregation).
+     */
+    fun addPendingCoachGrant(email: String, congregationId: String)
+    /** Congregation ids pending for [email] — removed (consumed) and returned; empty when none. */
+    fun consumePendingCoachGrants(email: String): List<String>
+    /** All not-yet-consumed pending coach grants, congregation ids keyed by email (seed summary). */
+    fun pendingCoachGrants(): Map<String, List<String>>
 }
 
 interface QuestionRepository {
@@ -131,6 +141,18 @@ class InMemoryUserRepository : UserRepository {
             }
             .groupBy({ it.first }, { it.second })
     }
+
+    private val pendingCoach = ConcurrentHashMap<String, MutableSet<String>>() // email -> congregation ids
+
+    override fun addPendingCoachGrant(email: String, congregationId: String) {
+        pendingCoach.getOrPut(email.lowercase()) { ConcurrentHashMap.newKeySet() }.add(congregationId)
+    }
+
+    override fun consumePendingCoachGrants(email: String): List<String> =
+        pendingCoach.remove(email.lowercase())?.toList() ?: emptyList()
+
+    override fun pendingCoachGrants(): Map<String, List<String>> =
+        pendingCoach.mapValues { it.value.toList() }
 }
 
 class InMemoryQuestionRepository : QuestionRepository {

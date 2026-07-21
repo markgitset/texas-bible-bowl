@@ -378,9 +378,17 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
      * the durable contestant, on [teamId] (or unassigned when null), with a freshly-collected
      * [shirtSize]. Returns the updated registration; refetch [myRegistration] for the pared candidate list.
      */
-    suspend fun enrollContestant(congregationId: String, contestantId: String, shirtSize: ShirtSize, teamId: String? = null): RegistrationDto =
+    /** [birthdate] is required for a workbook-seeded youth's first enrollment (records the real one). */
+    suspend fun enrollContestant(
+        congregationId: String,
+        contestantId: String,
+        shirtSize: ShirtSize,
+        teamId: String? = null,
+        birthdate: String? = null,
+    ): RegistrationDto =
         client.post("$baseUrl/registration/$congregationId/contestants/$contestantId/enroll") {
-            authorize(); contentType(ContentType.Application.Json); setBody(EnrollContestantRequest(shirtSize, teamId))
+            authorize(); contentType(ContentType.Application.Json)
+            setBody(EnrollContestantRequest(shirtSize, teamId, birthdate?.takeIf { it.isNotBlank() }))
         }.bodyOrThrow()
 
     /** Adds an individual (adult) contestant — adults compete individually, never on a team. */

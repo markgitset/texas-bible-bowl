@@ -150,6 +150,36 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
         }
     }
 
+    override fun addPendingCoachGrant(email: String, congregationId: String): Unit = transaction(db) {
+        val exists = PendingCoachGrantsTable.selectAll()
+            .where {
+                (PendingCoachGrantsTable.email eq email.lowercase()) and
+                    (PendingCoachGrantsTable.congregationId eq congregationId)
+            }
+            .any()
+        if (!exists) {
+            PendingCoachGrantsTable.insert {
+                it[PendingCoachGrantsTable.email] = email.lowercase()
+                it[PendingCoachGrantsTable.congregationId] = congregationId
+            }
+        }
+    }
+
+    override fun consumePendingCoachGrants(email: String): List<String> = transaction(db) {
+        val ids = PendingCoachGrantsTable.selectAll()
+            .where { PendingCoachGrantsTable.email eq email.lowercase() }
+            .map { it[PendingCoachGrantsTable.congregationId] }
+        if (ids.isNotEmpty()) {
+            PendingCoachGrantsTable.deleteWhere { PendingCoachGrantsTable.email eq email.lowercase() }
+        }
+        ids
+    }
+
+    override fun pendingCoachGrants(): Map<String, List<String>> = transaction(db) {
+        PendingCoachGrantsTable.selectAll()
+            .groupBy({ it[PendingCoachGrantsTable.email] }, { it[PendingCoachGrantsTable.congregationId] })
+    }
+
     private fun ResultRow.toUserRecord(): UserRecord {
         val userId = this[UsersTable.id]
         val grants = RoleGrantsTable.selectAll().where { RoleGrantsTable.userId eq userId }.map {

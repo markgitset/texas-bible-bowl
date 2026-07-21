@@ -16,6 +16,7 @@ import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.api.AddCabinAssignmentRequest
+import net.markdrew.biblebowl.api.SeedMemberDto
 import net.markdrew.biblebowl.api.UpsertCabinRequest
 import net.markdrew.biblebowl.api.UpsertTribeRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
@@ -23,6 +24,7 @@ import net.markdrew.biblebowl.server.data.CabinAssignmentsTable
 import net.markdrew.biblebowl.server.data.CabinResult
 import net.markdrew.biblebowl.server.data.TribeResult
 import net.markdrew.biblebowl.server.data.CabinsTable
+import net.markdrew.biblebowl.server.data.PendingCoachGrantsTable
 import net.markdrew.biblebowl.server.data.CheckoutDutiesTable
 import net.markdrew.biblebowl.server.data.PostgresHousingRepository
 import net.markdrew.biblebowl.server.data.PostgresTribeRepository
@@ -104,6 +106,7 @@ class PostgresRepositoryTest {
             TribesTable.deleteAll()
             CabinsTable.deleteAll()
             CheckoutDutiesTable.deleteAll()
+            PendingCoachGrantsTable.deleteAll()
             ContestantsTable.deleteAll() // after team_members + individuals (both FK-reference it)
             TeamsTable.deleteAll()
             RegistrationsTable.deleteAll()
@@ -644,6 +647,53 @@ class PostgresRepositoryTest {
         assertTrue(housing.listDuties("2028").isEmpty())
         housing.setDuty("2027", cong.id, "  ")
         assertTrue(housing.listDuties("2027").isEmpty())
+    }
+
+    @Test
+    fun workbookSeedRoundTripsGradesAndPendingCoaches() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val admin = users.create("seedadmin@tbb.org", "Admin", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.ADMIN)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Seed Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            admin.id,
+        )).congregation
+
+        // Seed a grade-only youth twice — one contestant, one enrollment, grade 4 => class of 2034.
+        val team = registrations.addTeam(cong.id, "2026", "Torch Bearers")!!
+        val seeded = registrations.seedMember(cong.id, "2026", team.id,
+            SeedMemberDto("Grace Grade", Gender.FEMALE, ShirtSize.YM, grade = 4, inexperienced = true))
+        assertNotNull(seeded)
+        registrations.seedMember(cong.id, "2026", team.id,
+            SeedMemberDto("Grace Grade", Gender.FEMALE, ShirtSize.YL, grade = 4, inexperienced = true))
+        val reg2026 = registrations.find(cong.id, "2026")!!
+        assertEquals(listOf("Grace Grade"), reg2026.teams.single().members.map { it.name })
+        assertEquals(ShirtSize.YL, reg2026.teams.single().members.single().shirtSize) // re-run updated in place
+
+        // She's a 2027 returning candidate carrying the graduation year, not a birthdate…
+        val candidate = registrations.returningContestants(cong.id, "2027").single { it.name == "Grace Grade" }
+        assertNull(candidate.birthdate)
+        assertEquals(2034, candidate.graduationYear)
+        assertEquals("2026", candidate.firstSeasonYear)
+
+        // …enrolling without a birthdate is refused, with one it lands and sticks.
+        assertIs<EnrollResult.BirthdateRequired>(
+            registrations.enrollContestant(cong.id, "2027", candidate.contestantId, ShirtSize.YM, null))
+        assertIs<EnrollResult.Enrolled>(
+            registrations.enrollContestant(cong.id, "2027", candidate.contestantId, ShirtSize.YM, null, "2015-05-01"))
+        assertEquals("2015-05-01",
+            registrations.find(cong.id, "2027")!!.unassigned.single { it.name == "Grace Grade" }.birthdate)
+
+        // Pending coach grants: add is idempotent, consume drains, unknown emails yield nothing.
+        users.addPendingCoachGrant("Coach@Seed.org", cong.id)
+        users.addPendingCoachGrant("coach@seed.org", cong.id)
+        assertEquals(mapOf("coach@seed.org" to listOf(cong.id)), users.pendingCoachGrants())
+        assertEquals(listOf(cong.id), users.consumePendingCoachGrants("COACH@seed.org"))
+        assertTrue(users.consumePendingCoachGrants("coach@seed.org").isEmpty())
     }
 
     @Test
