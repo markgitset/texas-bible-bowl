@@ -56,18 +56,24 @@ import kotlin.test.assertTrue
  */
 class PostgresRepositoryTest {
 
-    private val available: Boolean by lazy {
-        runCatching {
-            DriverManager.getConnection(
-                "jdbc:postgresql://localhost:5432/biblebowl", "biblebowl", "biblebowl-dev",
-            ).close()
-        }.isSuccess
+    companion object {
+        private val available: Boolean by lazy {
+            runCatching {
+                DriverManager.getConnection(
+                    "jdbc:postgresql://localhost:5432/biblebowl", "biblebowl", "biblebowl-dev",
+                ).close()
+            }.isSuccess
+        }
+
+        // One pool for the whole suite: every DatabaseFactory.connect() builds a fresh Hikari pool
+        // (5 eager connections) that nothing ever closes, so per-test connects leak pools until
+        // Postgres's connection cap — CI died with "FATAL: sorry, too many clients already".
+        private val db by lazy { DatabaseFactory.connect() }
     }
 
     @BeforeTest
     fun cleanTables() {
         if (!available) return
-        val db = DatabaseFactory.connect()
         transaction(db) {
             QuestionVotesTable.deleteAll()
             QuestionsTable.deleteAll()
@@ -88,7 +94,6 @@ class PostgresRepositoryTest {
     @Test
     fun userRoundTripsWithRoleGrants() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
 
         val created = users.create(
@@ -109,7 +114,6 @@ class PostgresRepositoryTest {
     @Test
     fun questionLifecycleSubmitVoteModerate() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
         val questions = PostgresQuestionRepository(db)
 
@@ -144,7 +148,6 @@ class PostgresRepositoryTest {
     @Test
     fun scoreCellsUpsertClearAndReleaseToggle() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
         val scores = PostgresScoreRepository(db)
 
@@ -179,7 +182,6 @@ class PostgresRepositoryTest {
     @Test
     fun updatingACongregationPersistsFieldsAndEnforcesCodeUniqueness() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
 
@@ -217,7 +219,6 @@ class PostgresRepositoryTest {
     @Test
     fun claimLinksARosterEntryToItsOwnerAccount() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -255,7 +256,6 @@ class PostgresRepositoryTest {
     @Test
     fun guestsRoundTripOnTheRegistration() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -290,7 +290,6 @@ class PostgresRepositoryTest {
     @Test
     fun durableContestantsLinkAndReuseAcrossSeasons() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -330,7 +329,6 @@ class PostgresRepositoryTest {
     @Test
     fun returningContestantsAndEnrollAcrossSeasons() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -366,7 +364,6 @@ class PostgresRepositoryTest {
     @Test
     fun returningAdultsEnrollAsIndividuals() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -395,7 +392,6 @@ class PostgresRepositoryTest {
     @Test
     fun claimingPersistsAcrossSeasons() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -429,7 +425,6 @@ class PostgresRepositoryTest {
     @Test
     fun claimingAnAdultPersistsAcrossSeasons() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
