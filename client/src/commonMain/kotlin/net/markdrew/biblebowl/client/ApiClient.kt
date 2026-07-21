@@ -458,6 +458,18 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun adminTesters(): TesterListResponse =
         client.get("$baseUrl/admin/testers") { authorize() }.bodyOrThrow()
 
+    /**
+     * Printable per-site nametags (item 14, F8); generating also assigns any missing tester IDs
+     * (same append-only scheme as [adminTesters]). Registrar/admin only (attendee names include
+     * minors'), hence the authenticated fetch rather than a public /generate link. Null [siteId] =
+     * every site, one per-site page stack.
+     */
+    suspend fun nametagsPdf(siteId: String? = null): ByteArray =
+        client.get("$baseUrl/admin/registrations/nametags.pdf") {
+            authorize()
+            if (siteId != null) parameter("siteId", siteId)
+        }.bodyOrThrow()
+
     /** Marks a registration's payment received, or clears it. Requires event-wide REGISTRATION_MANAGE. */
     suspend fun setRegistrationPaid(registrationId: String, paid: Boolean): RegistrationDto =
         client.put("$baseUrl/admin/registrations/$registrationId/paid") {
