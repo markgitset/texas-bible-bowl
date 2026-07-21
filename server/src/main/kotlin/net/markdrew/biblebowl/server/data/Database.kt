@@ -82,6 +82,9 @@ object RegistrationsTable : Table("registrations") {
     val congregationId = varchar("congregation_id", 36).references(CongregationsTable.id)
     val seasonYear = varchar("season_year", 8)
     val status = varchar("status", 16)
+    // The season event site (EventSiteDto.id) this congregation attends; null until chosen —
+    // permanently null (and fine) for single-site seasons, which never surface the choice.
+    val siteId = varchar("site_id", 36).nullable()
     val submittedAtEpochMs = long("submitted_at_epoch_ms").nullable()
     val paidAtEpochMs = long("paid_at_epoch_ms").nullable()
     val updatedAtEpochMs = long("updated_at_epoch_ms")
@@ -302,6 +305,8 @@ object DatabaseFactory {
             // congregations all share the "" default, so the uniqueness is a partial index.
             exec("CREATE UNIQUE INDEX IF NOT EXISTS congregations_code_key ON congregations (code) WHERE code <> ''")
             exec("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS paid_at_epoch_ms BIGINT")
+            // Multi-site seasons (2026-07): each registration pins to one of the season's event sites.
+            exec("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS site_id VARCHAR(36)")
             // Birthdates replaced self-reported grades (2026-07). Legacy grades are dropped, not
             // converted: affected users/roster entries fall back to "no division" until a birthdate
             // (or the adult flag) is set on the account/roster form.

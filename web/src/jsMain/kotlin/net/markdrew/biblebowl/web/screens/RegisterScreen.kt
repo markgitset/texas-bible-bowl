@@ -26,6 +26,8 @@ import net.markdrew.biblebowl.api.divisionLabel
 import net.markdrew.biblebowl.api.feesNote
 import net.markdrew.biblebowl.api.isInexperienced
 import net.markdrew.biblebowl.api.formatCents
+import net.markdrew.biblebowl.api.multiSite
+import net.markdrew.biblebowl.api.siteFor
 import net.markdrew.biblebowl.api.formatClaimCode
 import net.markdrew.biblebowl.api.formatIsoDate
 import net.markdrew.biblebowl.client.ApiException
@@ -97,6 +99,8 @@ object RegisterScreen {
 
     private fun firstIncompleteStep(): Int = when {
         congregation == null -> 1
+        // A multi-site season needs the event site chosen (part of the congregation step).
+        Session.season.multiSite && Session.season.siteFor(registration?.siteId) == null -> 1
         registration?.teams.isNullOrEmpty() && registration?.individuals.isNullOrEmpty() &&
             registration?.unassigned.isNullOrEmpty() && loaded?.returningCandidates.isNullOrEmpty() -> 2
         contestants == 0 && guests.isEmpty() -> 3
@@ -168,6 +172,7 @@ object RegisterScreen {
         if (existing != null) {
             if (canEdit) renderCongregationEditForm(parent, existing)
             else renderCongregationSummary(parent, existing)
+            renderSiteCard(parent, existing)
             parent.nextButton("Continue to teams", 2)
             return
         }
@@ -279,7 +284,8 @@ object RegisterScreen {
                             )
                             Session.api.refreshUser() // pick up the new scoped COACH grant
                             loaded = Session.api.myRegistration()
-                            step = 2
+                            // On a multi-site season, stay on step 1: the site picker is here.
+                            step = if (Session.season.multiSite) 1 else 2
                             renderContent()
                         } catch (e: Throwable) {
                             create.disabled = false
@@ -470,6 +476,45 @@ object RegisterScreen {
     }
 
     /** "Austin, TX" — or just "Austin" for congregations created before state was collected. */
+    /**
+     * Event-site picker (item F6), shown only when the season runs at two or more sites. Picking
+     * saves immediately (creating the draft registration if this is the first thing the coach
+     * does); a multi-site registration can't be submitted until a site is chosen.
+     */
+    private fun renderSiteCard(parent: Element, cong: CongregationDto) {
+        val season = Session.season
+        if (!season.multiSite) return
+        val chosen = season.siteFor(registration?.siteId)
+        parent.child("div", "card section-card mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title", "Event site")
+                child(
+                    "p", "text-muted",
+                    "This season runs at ${season.sites.size} locations — choose the one your congregation attends.",
+                )
+                season.sites.forEach { site ->
+                    child("div", "form-check") {
+                        val input = child("input", "form-check-input") as HTMLInputElement
+                        input.type = "radio"
+                        input.name = "event-site"
+                        input.id = "site-${site.id}"
+                        input.checked = site.id == chosen?.id
+                        input.disabled = !canEdit
+                        child("label", "form-check-label") {
+                            setAttribute("for", input.id)
+                            append(site.name)
+                            if (site.address.isNotBlank()) child("span", "text-muted", " — ${site.address}")
+                        }
+                        input.addEventListener("change", {
+                            if (input.checked) mutate { Session.api.setRegistrationSite(cong.id, site.id) }
+                        })
+                    }
+                }
+                if (chosen == null) child("div", "form-text text-warning", "Required before you can submit.")
+            }
+        }
+    }
+
     private fun cityStateLine(cong: CongregationDto): String =
         if (cong.state.isBlank()) cong.city else "${cong.city}, ${cong.state}"
 
@@ -1037,6 +1082,9 @@ object RegisterScreen {
         parent.child("div", "card section-card mb-3") {
             child("div", "card-body") {
                 child("h5", "card-title", "${cong.name} — ${cityStateLine(cong)} · ${reg.seasonYear} season")
+                Session.season.siteFor(reg.siteId)?.let { site ->
+                    child("p", "text-muted mb-2", "Event site: ${site.name}")
+                }
                 val price = Session.season.priceContestantCents
                 fun feeMath(count: Int): String =
                     if (price == null) "TBD" else "$count × ${formatCents(price)} = ${formatCents(price * count)}"
@@ -1133,11 +1181,24 @@ object RegisterScreen {
                     "and a registrar will assign ${if (n == 1) "them" else "them"} to a team for you.",
             )
         }
+        val siteMissing = Session.season.multiSite && Session.season.siteFor(reg.siteId) == null
+        if (canEdit && siteMissing) {
+            parent.child(
+                "div", "alert alert-warning",
+                "Choose your event site on the congregation step before submitting.",
+            )
+        }
         if (canEdit) {
             val label = if (reg.status == RegistrationStatus.SUBMITTED) "Update registration" else "Submit registration"
             parent.child("button", "btn btn-primary btn-lg", label) {
                 setAttribute("type", "button")
                 onClick {
+                    if (siteMissing) {
+                        step = 1
+                        error = null
+                        renderContent()
+                        return@onClick
+                    }
                     val n = reg.unassigned.size
                     if (n > 0 && !window.confirm(
                             "$n contestant${if (n == 1) "" else "s"} ${if (n == 1) "isn't" else "aren't"} on a team " +

@@ -253,6 +253,29 @@ class PostgresRepositoryTest {
     }
 
     @Test
+    fun siteChoicePersistsOnTheRegistration() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val db = DatabaseFactory.connect()
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val coach = users.create("scoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Site Church", "Bandera", state = "TX", mailingAddress = "1 Main St", zip = "78003"),
+            coach.id,
+        )).congregation
+
+        // Pinning the site creates the draft registration, like teams and guests do.
+        val pinned = registrations.setSite(cong.id, "2027", "bandina")
+        assertEquals("bandina", pinned.siteId)
+        assertEquals("bandina", assertNotNull(registrations.find(cong.id, "2027")).siteId)
+        // Re-pinning moves it.
+        assertEquals("white-river", registrations.setSite(cong.id, "2027", "white-river").siteId)
+    }
+
+    @Test
     fun guestsRoundTripOnTheRegistration() {
         if (!available) { println("Postgres not reachable — skipping"); return }
         val db = DatabaseFactory.connect()

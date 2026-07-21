@@ -16,6 +16,8 @@ import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.division
 import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.formatCents
+import net.markdrew.biblebowl.api.multiSite
+import net.markdrew.biblebowl.api.siteFor
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
@@ -45,7 +47,11 @@ object AdminRegistrationsScreen {
     private var data: RegistrationDeskResponse? = null
     private val expanded = mutableSetOf<String>() // congregation ids with the roster detail open
     private var message: String? = null
+    private var siteFilter: String? = null // EventSiteDto id, or null = all sites (multi-site seasons)
     private lateinit var content: HTMLElement
+
+    /** Multi-site seasons add a Site column, a site filter, and per-row site editing. */
+    private val multiSite: Boolean get() = Session.season.multiSite
 
     /** Only a globally-scoped admin may change a congregation's two-letter code once it's set. */
     private val isAdmin: Boolean
@@ -57,6 +63,7 @@ object AdminRegistrationsScreen {
         content.spinner()
         data = null
         message = null
+        siteFilter = null
         expanded.clear()
         Shell.scope.launch {
             try {
@@ -74,6 +81,7 @@ object AdminRegistrationsScreen {
         content.clear()
         content.child("div", "d-flex flex-wrap align-items-center gap-3 mb-3") {
             child("span", "text-muted", "Season ${desk.seasonYear} — click a row for its roster.")
+            if (multiSite) siteFilterSelect(this)
             child("button", "btn btn-outline-primary btn-sm", "Download CSV") {
                 setAttribute("type", "button")
                 onClick { downloadCsv("tbb-registrations-${desk.seasonYear}.csv", deskCsv(desk)) }
@@ -86,22 +94,49 @@ object AdminRegistrationsScreen {
             return
         }
 
+        // Everything below (the table and the summary) respects the site filter, so a desk worker
+        // gets per-site counts and totals just by picking a site.
+        val rows = desk.rows.filter { row ->
+            siteFilter == null || Session.season.siteFor(row.registration?.siteId)?.id == siteFilter
+        }
+        if (rows.isEmpty()) {
+            content.child("p", "text-muted", "No congregations at this site yet.")
+            return
+        }
+
         content.child("div", "table-responsive") {
             child("table", "table table-hover align-middle") {
                 child("thead") {
                     child("tr") {
-                        listOf(
-                            "Congregation", "Code", "Status", "Teams", "Contestants", "Individuals",
-                            "Guests", "Total due", "Submitted", "Paid", "Coaches",
-                        ).forEach { child("th", text = it) }
+                        columnHeaders().forEach { child("th", text = it) }
                     }
                 }
                 val tbody = child("tbody")
-                desk.rows.forEach { row -> renderRow(tbody, row) }
+                rows.forEach { row -> renderRow(tbody, row) }
             }
         }
 
-        renderSummary(content, desk)
+        renderSummary(content, desk.copy(rows = rows))
+    }
+
+    private fun columnHeaders(): List<String> = buildList {
+        add("Congregation"); add("Code")
+        if (multiSite) add("Site")
+        addAll(listOf("Status", "Teams", "Contestants", "Individuals", "Guests", "Total due", "Submitted", "Paid", "Coaches"))
+    }
+
+    private fun siteFilterSelect(parent: Element) {
+        val select = parent.child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
+        (select.child("option", text = "All sites") as HTMLOptionElement).value = ""
+        Session.season.sites.forEach { site ->
+            val option = select.child("option", text = site.name) as HTMLOptionElement
+            option.value = site.id
+            if (site.id == siteFilter) option.selected = true
+        }
+        select.addEventListener("change", {
+            siteFilter = select.value.ifEmpty { null }
+            renderContent()
+        })
     }
 
     private fun renderRow(tbody: Element, row: RegistrationDeskRowDto) {
@@ -118,6 +153,9 @@ object AdminRegistrationsScreen {
                 }
             }
             child("td") { renderCodeCell(this, row) }
+            if (multiSite) {
+                child("td", text = Session.season.siteFor(reg?.siteId)?.name ?: "—")
+            }
             child("td") {
                 statusBadge(this, reg?.status)
                 val unassigned = reg?.unassigned?.size ?: 0
@@ -156,7 +194,7 @@ object AdminRegistrationsScreen {
         if (row.congregation.id in expanded) {
             tbody.child("tr") {
                 child("td", "bg-light") {
-                    setAttribute("colspan", "11")
+                    setAttribute("colspan", columnHeaders().size.toString())
                     renderDetail(this, row)
                 }
             }
@@ -248,6 +286,7 @@ object AdminRegistrationsScreen {
     private fun renderDetail(parent: Element, row: RegistrationDeskRowDto) {
         val reg = row.registration
         if (reg != null) {
+            if (multiSite) renderSiteSelectAdmin(parent, row.congregation.id, reg)
             reg.teams.forEach { team -> renderTeamDetail(parent, team) }
             renderUnassignedAdmin(parent, row.congregation.id, reg)
             if (reg.individuals.isNotEmpty()) {
@@ -395,6 +434,32 @@ object AdminRegistrationsScreen {
         }
     }
 
+    /**
+     * Desk-side site pin (multi-site seasons): a registrar sets or fixes which event site the
+     * congregation attends — the same endpoint the coach uses, accepted for an event-wide grant.
+     */
+    private fun renderSiteSelectAdmin(parent: Element, congregationId: String, reg: RegistrationDto) {
+        parent.child("div", "d-flex align-items-center gap-2 mb-2 small") {
+            child("span", "fw-semibold", "Event site:")
+            val select = child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
+            val chosen = Session.season.siteFor(reg.siteId)
+            val placeholder = select.child("option", text = "— not chosen —") as HTMLOptionElement
+            placeholder.value = ""
+            placeholder.disabled = true
+            placeholder.selected = chosen == null
+            Session.season.sites.forEach { site ->
+                val option = select.child("option", text = site.name) as HTMLOptionElement
+                option.value = site.id
+                if (site.id == chosen?.id) option.selected = true
+            }
+            select.addEventListener("change", {
+                if (select.value.isNotEmpty()) {
+                    deskMutate(congregationId) { Session.api.setRegistrationSite(congregationId, select.value) }
+                }
+            })
+        }
+    }
+
     /** Runs a desk-side registration mutation and swaps the refreshed registration into its row. */
     private fun deskMutate(congregationId: String, call: suspend () -> RegistrationDto) {
         message = null
@@ -450,17 +515,18 @@ object AdminRegistrationsScreen {
     // --- CSV export -------------------------------------------------------------------------
 
     private fun deskCsv(desk: RegistrationDeskResponse): String {
-        val header = listOf(
-            "Congregation", "Code", "City", "State", "Status", "Teams", "Contestants", "Individuals",
-            "Guests", "Total Due", "Submitted", "Paid", "Coach Names", "Coach Emails",
+        val header = listOfNotNull(
+            "Congregation", "Code", "City", "State", "Site".takeIf { multiSite }, "Status", "Teams",
+            "Contestants", "Individuals", "Guests", "Total Due", "Submitted", "Paid", "Coach Names", "Coach Emails",
         )
         val rows = desk.rows.map { row ->
             val reg = row.registration
-            listOf(
+            listOfNotNull(
                 row.congregation.name,
                 row.congregation.code,
                 row.congregation.city,
                 row.congregation.state,
+                (Session.season.siteFor(reg?.siteId)?.name ?: "").takeIf { multiSite },
                 reg?.status?.name ?: "NONE",
                 reg?.teams?.size?.toString() ?: "",
                 reg?.contestantCount?.toString() ?: "",

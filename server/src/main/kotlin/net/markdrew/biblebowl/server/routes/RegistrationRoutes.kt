@@ -22,6 +22,7 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.SeasonDto
+import net.markdrew.biblebowl.api.SetRegistrationSiteRequest
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
@@ -31,7 +32,9 @@ import net.markdrew.biblebowl.api.coachedCongregationIds
 import net.markdrew.biblebowl.api.gradeForBirthdate
 import net.markdrew.biblebowl.api.isEligibleReturningCandidate
 import net.markdrew.biblebowl.api.hasEventWidePermission
+import net.markdrew.biblebowl.api.multiSite
 import net.markdrew.biblebowl.api.registrationTotalCents
+import net.markdrew.biblebowl.api.siteFor
 import net.markdrew.biblebowl.api.ClaimEntryRequest
 import net.markdrew.biblebowl.server.RegistrationWindowState
 import net.markdrew.biblebowl.server.data.AddMemberResult
@@ -193,6 +196,25 @@ fun Route.registrationRoutes(
                     returningCandidates = candidates,
                 )
             )
+        }
+
+        // Pin the congregation's registration to one of the season's event sites (multi-site
+        // seasons; item F6). Part of the congregation step, so it creates the draft registration
+        // if none exists yet. Coaches pick their own site; a registrar may fix one any time.
+        put("/registration/{congregationId}/site") {
+            val user = currentUser(users) ?: return@put
+            if (!requireRegistrationFeature(user, seasons)) return@put
+            val congregationId = call.parameters["congregationId"]!!
+            if (!requireCongregationEditor(user, congregationId, seasons)) return@put
+            val req = call.receive<SetRegistrationSiteRequest>()
+            val season = seasons.current()
+            if (season.sites.none { it.id == req.siteId }) {
+                return@put call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("unknown_site", "That event site isn't one of this season's sites"),
+                )
+            }
+            call.respond(registrations.setSite(congregationId, season.eventYear, req.siteId).withTotal(seasons))
         }
 
         post("/registration/{congregationId}/teams") {
@@ -474,7 +496,16 @@ fun Route.registrationRoutes(
             val congregationId = call.parameters["congregationId"]!!
             if (!requireScopedPermission(user, Permission.REGISTRATION_MANAGE, congregationId)) return@post
             if (!requireWindowOpen(user, seasons)) return@post
-            val submitted = registrations.submit(congregationId, seasons.current().eventYear)
+            val season = seasons.current()
+            // A multi-site season needs the site chosen before submit (a removed site unchooses).
+            val current = registrations.find(congregationId, season.eventYear)
+            if (season.multiSite && current != null && season.siteFor(current.siteId) == null) {
+                return@post call.respond(
+                    HttpStatusCode.Conflict,
+                    ApiError("site_required", "Choose which event site your congregation attends before submitting"),
+                )
+            }
+            val submitted = registrations.submit(congregationId, season.eventYear)
                 ?: return@post call.respond(
                     HttpStatusCode.NotFound,
                     ApiError("not_found", "No registration to submit — add a team or an individual contestant first"),

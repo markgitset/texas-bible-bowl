@@ -143,6 +143,12 @@ interface RegistrationRepository {
     fun addGuest(congregationId: String, seasonYear: String, req: UpsertGuestRequest): GuestDto
     fun updateGuest(guestId: String, req: UpsertGuestRequest): GuestDto?
     fun deleteGuest(guestId: String): Boolean
+    /**
+     * Pins the registration to the event site [siteId] (a season [net.markdrew.biblebowl.api.EventSiteDto] id),
+     * creating the draft registration if needed — site choice is part of the congregation step, before
+     * any team exists. Validation that the id is a real current-season site is the route's.
+     */
+    fun setSite(congregationId: String, seasonYear: String, siteId: String): RegistrationDto
     /** Marks the registration SUBMITTED (idempotent; re-submit refreshes the timestamp). */
     fun submit(congregationId: String, seasonYear: String): RegistrationDto?
     /** Scoping lookups: which congregation a team/member/individual belongs to (for permission checks). */
@@ -263,6 +269,7 @@ class InMemoryRegistrationRepository(
         var status: RegistrationStatus,
         var submittedAtMs: Long?,
         var paidAtMs: Long? = null,
+        var siteId: String? = null,
         val teamIds: MutableList<String> = mutableListOf(),
         val individualIds: MutableList<String> = mutableListOf(),
     )
@@ -532,6 +539,13 @@ class InMemoryRegistrationRepository(
         guests.remove(guestId) != null
     }
 
+    override fun setSite(congregationId: String, seasonYear: String, siteId: String): RegistrationDto =
+        synchronized(lock) {
+            val reg = regFor(congregationId, seasonYear)
+            reg.siteId = siteId
+            reg.toDto()
+        }
+
     override fun submit(congregationId: String, seasonYear: String): RegistrationDto? = synchronized(lock) {
         val reg = regs["$congregationId|$seasonYear"] ?: return null
         reg.status = RegistrationStatus.SUBMITTED
@@ -708,6 +722,7 @@ class InMemoryRegistrationRepository(
             ?: CongregationDto(congregationId, "?", "?"),
         seasonYear = seasonYear,
         status = status,
+        siteId = siteId,
         teams = teamIds.mapNotNull { teams[it]?.toDto() },
         individuals = individualIds.mapNotNull { individualDto(it) },
         unassigned = members.keys
@@ -1155,6 +1170,16 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         RegistrationGuestsTable.deleteWhere { RegistrationGuestsTable.id eq guestId } > 0
     }
 
+    override fun setSite(congregationId: String, seasonYear: String, siteId: String): RegistrationDto =
+        transaction(db) {
+            val regId = regIdFor(congregationId, seasonYear)
+            RegistrationsTable.update({ RegistrationsTable.id eq regId }) {
+                it[RegistrationsTable.siteId] = siteId
+                it[updatedAtEpochMs] = System.currentTimeMillis()
+            }
+            regRow(congregationId, seasonYear)!!.toDto()
+        }
+
     override fun submit(congregationId: String, seasonYear: String): RegistrationDto? = transaction(db) {
         val regId = regRow(congregationId, seasonYear)?.get(RegistrationsTable.id) ?: return@transaction null
         RegistrationsTable.update({ RegistrationsTable.id eq regId }) {
@@ -1429,6 +1454,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             ),
             seasonYear = this[RegistrationsTable.seasonYear],
             status = RegistrationStatus.valueOf(this[RegistrationsTable.status]),
+            siteId = this[RegistrationsTable.siteId],
             teams = TeamsTable.selectAll()
                 .where { TeamsTable.registrationId eq regId }
                 .orderBy(TeamsTable.sortOrder)

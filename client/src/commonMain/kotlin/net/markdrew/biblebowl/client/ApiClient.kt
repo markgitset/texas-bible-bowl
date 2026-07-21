@@ -44,6 +44,7 @@ import net.markdrew.biblebowl.api.SaveScoresRequest
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.SetPaidRequest
+import net.markdrew.biblebowl.api.SetRegistrationSiteRequest
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
 import net.markdrew.biblebowl.api.StandingsResponse
@@ -320,6 +321,12 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     /** The register screen's resume fetch: coached congregations, current registration, window state. */
     suspend fun myRegistration(): MyRegistrationResponse =
         client.get("$baseUrl/registration/mine") { authorize() }.bodyOrThrow()
+
+    /** Pins the congregation's registration to a season event site (multi-site seasons; creates the draft). */
+    suspend fun setRegistrationSite(congregationId: String, siteId: String): RegistrationDto =
+        client.put("$baseUrl/registration/$congregationId/site") {
+            authorize(); contentType(ContentType.Application.Json); setBody(SetRegistrationSiteRequest(siteId))
+        }.bodyOrThrow()
 
     /** Adds a team to the congregation's current-season registration (created on first team). */
     suspend fun addTeam(congregationId: String, name: String): RegistrationDto =
