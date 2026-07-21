@@ -14,7 +14,6 @@ import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CreateCongregationRequest
-import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
@@ -29,8 +28,8 @@ import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.api.coachedCongregationIds
 import net.markdrew.biblebowl.api.contestantCount
-import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.gradeForBirthdate
+import net.markdrew.biblebowl.api.isEligibleReturningCandidate
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.registrationTotalCents
 import net.markdrew.biblebowl.api.ClaimEntryRequest
@@ -447,17 +446,6 @@ private const val INVALID_MEMBER_MESSAGE =
 /** A team member needs a name and a birthdate implying school grade 3\u201312 this season. */
 private fun UpsertRosterEntryRequest.isValid(season: SeasonDto): Boolean =
     name.isNotBlank() && (season.gradeForBirthdate(birthdate) ?: -1) in 3..12
-
-/** True when [birthdate] places a contestant in a youth division (grades 3\u201312) this season. */
-private fun SeasonDto.isYouthEligible(birthdate: String?): Boolean =
-    birthdate != null && divisionForBirthdate(birthdate).let { it != null && it != Division.ADULT }
-
-/**
- * A returning contestant is offered as a candidate when they're an adult (no birthdate \u2192 they enroll
- * as an individual) or still youth-eligible this season (a youth who has aged out is neither).
- */
-private fun SeasonDto.isEligibleReturningCandidate(birthdate: String?): Boolean =
-    birthdate == null || isYouthEligible(birthdate)
 
 /** A congregation code is optional (blank), but if present must be exactly two letters. */
 private fun isCodeValid(code: String): Boolean {

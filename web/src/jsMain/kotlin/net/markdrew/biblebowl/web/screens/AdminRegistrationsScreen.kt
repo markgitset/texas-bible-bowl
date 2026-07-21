@@ -6,12 +6,15 @@ import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDeskRowDto
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
+import net.markdrew.biblebowl.api.ReturningContestantDto
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.ScopeType
+import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.division
+import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.formatCents
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
@@ -116,6 +119,8 @@ object AdminRegistrationsScreen {
                 statusBadge(this, reg?.status)
                 val unassigned = reg?.unassigned?.size ?: 0
                 if (unassigned > 0) child("span", "badge text-bg-warning ms-1", "$unassigned unassigned")
+                if (row.returningCandidates.isNotEmpty())
+                    child("span", "badge text-bg-info ms-1", "${row.returningCandidates.size} returning")
             }
             child("td", text = reg?.teams?.size?.toString() ?: "—")
             child("td", text = reg?.contestantCount?.toString() ?: "—")
@@ -238,20 +243,95 @@ object AdminRegistrationsScreen {
 
     private fun renderDetail(parent: Element, row: RegistrationDeskRowDto) {
         val reg = row.registration
-        if (reg == null) {
-            parent.child("p", "text-muted mb-0", "No registration started this season.")
-            return
-        }
-        reg.teams.forEach { team -> renderTeamDetail(parent, team) }
-        renderUnassignedAdmin(parent, row.congregation.id, reg)
-        if (reg.individuals.isNotEmpty()) {
-            parent.child("h6", "mt-2", "Individual contestants (adults)")
-            reg.individuals.forEach { entry ->
-                parent.child("div", "small", "${entry.name} — shirt ${entry.shirtSize.name}")
+        if (reg != null) {
+            reg.teams.forEach { team -> renderTeamDetail(parent, team) }
+            renderUnassignedAdmin(parent, row.congregation.id, reg)
+            if (reg.individuals.isNotEmpty()) {
+                parent.child("h6", "mt-2", "Individual contestants (adults)")
+                reg.individuals.forEach { entry ->
+                    parent.child("div", "small", "${entry.name} — shirt ${entry.shirtSize.name}")
+                }
             }
         }
-        if (reg.teams.isEmpty() && reg.individuals.isEmpty() && reg.unassigned.isEmpty()) {
-            parent.child("p", "text-muted mb-0", "Nothing on the roster yet.")
+        renderReturningCandidatesAdmin(parent, row)
+        val rosterEmpty = reg == null || (reg.teams.isEmpty() && reg.individuals.isEmpty() && reg.unassigned.isEmpty())
+        if (rosterEmpty && row.returningCandidates.isEmpty()) {
+            parent.child("p", "text-muted mb-0",
+                if (reg == null) "No registration started this season." else "Nothing on the roster yet.")
+        }
+    }
+
+    /**
+     * Prior-year contestants still eligible but not on this season's roster. A registrar may enroll
+     * each here (youth onto a team or the unassigned pool, adults as individuals) — the same
+     * enroll endpoint the coach uses, accepted for an event-wide grant. Enrolling creates the
+     * registration if it doesn't exist yet.
+     */
+    private fun renderReturningCandidatesAdmin(parent: Element, row: RegistrationDeskRowDto) {
+        val candidates = row.returningCandidates
+        if (candidates.isEmpty()) return
+        val teams = row.registration?.teams.orEmpty()
+        parent.child("h6", "mt-3") {
+            append("Returning contestants ")
+            child("span", "badge text-bg-info", candidates.size.toString())
+        }
+        candidates.forEach { candidate ->
+            parent.child("div", "d-flex flex-wrap align-items-center gap-2 small mb-1") {
+                val isAdult = candidate.birthdate == null
+                val div = if (isAdult) "Adult"
+                    else candidate.birthdate?.let { Session.season.divisionForBirthdate(it)?.displayName } ?: "—"
+                child("span", text = "${candidate.name} — $div" + (candidate.lastSeasonYear?.let { " · last $it" } ?: ""))
+                val shirt = adminShirtSelect(this, candidate.lastShirtSize)
+                // Youth pick a team (or the unassigned pool); adults enroll as individuals (no team).
+                val teamSel = if (!isAdult && teams.isNotEmpty()) {
+                    val sel = child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
+                    (sel.child("option", text = "— Unassigned —") as HTMLOptionElement).value = ""
+                    teams.forEach { (sel.child("option", text = it.name) as HTMLOptionElement).value = it.id }
+                    sel
+                } else null
+                child("button", "btn btn-sm btn-primary", "Add") {
+                    setAttribute("type", "button")
+                    onClick {
+                        deskEnroll(row.congregation.id, candidate.contestantId) {
+                            Session.api.enrollContestant(
+                                row.congregation.id, candidate.contestantId,
+                                ShirtSize.valueOf(shirt.value), teamSel?.value?.ifEmpty { null },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun adminShirtSelect(parent: Element, selected: ShirtSize?): HTMLSelectElement {
+        val select = parent.child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
+        ShirtSize.entries.forEach { size ->
+            val option = select.child("option", text = size.displayName) as HTMLOptionElement
+            option.value = size.name
+            if (size == selected) option.selected = true
+        }
+        return select
+    }
+
+    /** Enrolls a returning candidate and drops it from the row's candidate list (roster refreshes too). */
+    private fun deskEnroll(congregationId: String, contestantId: String, call: suspend () -> RegistrationDto) {
+        message = null
+        Shell.scope.launch {
+            try {
+                val updated = call()
+                data = data?.let { desk ->
+                    desk.copy(rows = desk.rows.map { row ->
+                        if (row.congregation.id == congregationId) row.copy(
+                            registration = updated,
+                            returningCandidates = row.returningCandidates.filterNot { it.contestantId == contestantId },
+                        ) else row
+                    })
+                }
+            } catch (e: Throwable) {
+                message = "Could not enroll: ${e.message}"
+            }
+            renderContent()
         }
     }
 

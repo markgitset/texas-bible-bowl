@@ -23,6 +23,7 @@ import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
@@ -36,7 +37,9 @@ import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.server.data.DEFAULT_SEASON
+import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
+import net.markdrew.biblebowl.server.data.InMemoryRegistrationRepository
 import net.markdrew.biblebowl.server.data.InMemorySeasonRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.data.UserRepository
@@ -246,6 +249,43 @@ class AdminRegistrationRoutesTest {
                 setBody(AssignMemberTeamRequest(null))
             }.status,
         )
+    }
+
+    @Test
+    fun deskSurfacesReturningCandidatesAndRegistrarCanEnroll() = testApplication {
+        val users = InMemoryUserRepository()
+        val congregations = InMemoryCongregationRepository()
+        val registrations = InMemoryRegistrationRepository(congregations)
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason), congregations = congregations, registrations = registrations)
+        }
+        val api = jsonClient()
+        val (_, cong) = api.coachWithCongregation("coach@tbb.org", "Return Church")
+        // Seed a prior season (2026) so the person is a returning candidate for the current season (2027).
+        val oldTeam = registrations.addTeam(cong.id, "2026", "Old Team")!!
+        registrations.addMember(oldTeam.id, UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE))
+
+        val registrar = api.signUp("registrar@tbb.org", "Reg Istrar")
+        users.addRoleGrant(registrar.user.id, RoleGrant(Role.REGISTRAR))
+        fun io.ktor.client.request.HttpRequestBuilder.asRegistrar() =
+            header(HttpHeaders.Authorization, "Bearer ${registrar.token}")
+
+        // The desk row surfaces Timothy as a returning candidate.
+        val desk: RegistrationDeskResponse = api.get("/admin/registrations") { asRegistrar() }.body()
+        val candidates = desk.rows.single { it.congregation.id == cong.id }.returningCandidates
+        assertEquals(listOf("Timothy"), candidates.map { it.name })
+        val contestantId = candidates.single().contestantId
+
+        // The registrar enrolls him (unassigned) — it lands on this season's roster.
+        val enrolled: RegistrationDto = api.post("/registration/${cong.id}/contestants/$contestantId/enroll") {
+            asRegistrar(); setBody(EnrollContestantRequest(ShirtSize.YL))
+        }.body()
+        assertEquals(listOf("Timothy"), enrolled.unassigned.map { it.name })
+
+        // He's no longer offered as a candidate on the desk.
+        val desk2: RegistrationDeskResponse = api.get("/admin/registrations") { asRegistrar() }.body()
+        assertTrue(desk2.rows.single { it.congregation.id == cong.id }.returningCandidates.isEmpty())
     }
 
     @Test

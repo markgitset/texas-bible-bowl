@@ -13,6 +13,7 @@ import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDeskRowDto
 import net.markdrew.biblebowl.api.SetPaidRequest
+import net.markdrew.biblebowl.api.isEligibleReturningCandidate
 import net.markdrew.biblebowl.server.data.CongregationRepository
 import net.markdrew.biblebowl.server.data.RegistrationRepository
 import net.markdrew.biblebowl.server.data.SeasonRepository
@@ -51,6 +52,8 @@ fun Route.adminRegistrationRoutes(
                             registration = regsByCongregation[cong.id]?.withTotal(seasons),
                             coaches = coaches[cong.id].orEmpty()
                                 .map { CoachContactDto(it.displayName, it.email) },
+                            returningCandidates = registrations.returningContestants(cong.id, season.eventYear)
+                                .filter { season.isEligibleReturningCandidate(it.birthdate) },
                         )
                     },
                 )
