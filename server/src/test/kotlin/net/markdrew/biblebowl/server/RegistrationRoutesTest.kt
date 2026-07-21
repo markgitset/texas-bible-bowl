@@ -24,6 +24,7 @@ import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CongregationDto
+import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.Gender
@@ -36,6 +37,7 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
+import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
@@ -444,6 +446,69 @@ class RegistrationRoutesTest {
         assertEquals(0, afterAdultDelete.individuals.size)
         assertEquals(3 * 8500, afterAdultDelete.totalCents)
         assertEquals(HttpStatusCode.OK, api.post("/registration/${congregation.id}/submit") { asCoach() }.status)
+    }
+
+    @Test
+    fun guestsRegisterAndPayButAreNotContestants() = testApplication {
+        val users = InMemoryUserRepository()
+        // Guest fees: adults/volunteers $40, children (3–8) $25.
+        val season = openSeason.copy(priceVolunteerCents = 4000, priceChildCents = 2500)
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(season))
+        }
+        val api = jsonClient()
+        val coach = api.signUp("coach@tbb.org", "Carol Coach")
+        fun io.ktor.client.request.HttpRequestBuilder.asCoach() =
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+
+        val cong: CongregationDto = api.post("/congregations") {
+            asCoach(); setBody(congregationRequest("Guest Church", "Waco"))
+        }.body()
+
+        // A guest-only registration is billable: guests pay even though they aren't contestants.
+        val blank = api.post("/registration/${cong.id}/guests") {
+            asCoach(); setBody(UpsertGuestRequest("  ", ShirtSize.AM))
+        }
+        assertEquals(HttpStatusCode.BadRequest, blank.status)
+        val withVolunteer: RegistrationDto = api.post("/registration/${cong.id}/guests") {
+            asCoach(); setBody(UpsertGuestRequest("Aunt Vol", ShirtSize.AM))
+        }.body()
+        val volunteer = withVolunteer.guests.single()
+        assertFalse(volunteer.child)
+        assertEquals(0, withVolunteer.contestantCount, "guests are not contestants")
+        assertEquals(4000, withVolunteer.totalCents, "adult guest at the volunteer fee")
+
+        // A contestant plus a child guest: contestant + volunteer + child fees.
+        val teamId = api.post("/registration/${cong.id}/teams") {
+            asCoach(); setBody(UpsertTeamRequest("Team A"))
+        }.body<RegistrationDto>().teams.single().id
+        api.post("/registration/teams/$teamId/members") {
+            asCoach(); setBody(UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE))
+        }
+        val withChild: RegistrationDto = api.post("/registration/${cong.id}/guests") {
+            asCoach(); setBody(UpsertGuestRequest("Little Sib", ShirtSize.YS, child = true))
+        }.body()
+        assertEquals(1, withChild.contestantCount)
+        assertEquals(8500 + 4000 + 2500, withChild.totalCents)
+
+        // Edit and delete round-trip, and the total follows.
+        val edited: RegistrationDto = api.put("/registration/guests/${volunteer.id}") {
+            asCoach(); setBody(UpsertGuestRequest("Aunt V.", ShirtSize.AL))
+        }.body()
+        assertEquals("Aunt V.", edited.guests.first { it.id == volunteer.id }.name)
+        val afterDelete: RegistrationDto = api.delete("/registration/guests/${volunteer.id}") { asCoach() }.body()
+        assertEquals(8500 + 2500, afterDelete.totalCents)
+        val missing = api.delete("/registration/guests/${volunteer.id}") { asCoach() }
+        assertEquals(HttpStatusCode.NotFound, missing.status)
+
+        // Only the congregation's own coach (or an event-wide manager) may touch its guests.
+        val stranger = api.signUp("other@tbb.org", "Other Adult")
+        val forbidden = api.post("/registration/${cong.id}/guests") {
+            header(HttpHeaders.Authorization, "Bearer ${stranger.token}")
+            setBody(UpsertGuestRequest("Party Crasher", ShirtSize.AM))
+        }
+        assertEquals(HttpStatusCode.Forbidden, forbidden.status)
     }
 
     @Test

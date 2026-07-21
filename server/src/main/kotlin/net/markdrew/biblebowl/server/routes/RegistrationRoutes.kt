@@ -23,11 +23,11 @@ import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
+import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.api.coachedCongregationIds
-import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.gradeForBirthdate
 import net.markdrew.biblebowl.api.isEligibleReturningCandidate
 import net.markdrew.biblebowl.api.hasEventWidePermission
@@ -395,6 +395,51 @@ fun Route.registrationRoutes(
             call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
         }
 
+        // Registered guests — attendees (mostly volunteers) who must register and pay but are not
+        // contestants: never on a team, no division, no claim code. Billed at the volunteer fee,
+        // or the child fee when marked as a child (ages 3–8).
+        post("/registration/{congregationId}/guests") {
+            val user = currentUser(users) ?: return@post
+            if (!requireRegistrationFeature(user, seasons)) return@post
+            val congregationId = call.parameters["congregationId"]!!
+            if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@post
+            if (!requireWindowOpen(user, seasons)) return@post
+            val req = call.receive<UpsertGuestRequest>()
+            if (req.name.isBlank()) {
+                return@post call.respond(HttpStatusCode.BadRequest, ApiError("invalid_guest", "Name is required"))
+            }
+            registrations.addGuest(congregationId, seasons.current().eventYear, req)
+            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+        }
+
+        put("/registration/guests/{guestId}") {
+            val user = currentUser(users) ?: return@put
+            if (!requireRegistrationFeature(user, seasons)) return@put
+            val guestId = call.parameters["guestId"]!!
+            val congregationId = registrations.congregationIdForGuest(guestId)
+                ?: return@put call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such guest"))
+            if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@put
+            if (!requireWindowOpen(user, seasons)) return@put
+            val req = call.receive<UpsertGuestRequest>()
+            if (req.name.isBlank()) {
+                return@put call.respond(HttpStatusCode.BadRequest, ApiError("invalid_guest", "Name is required"))
+            }
+            registrations.updateGuest(guestId, req)
+            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+        }
+
+        delete("/registration/guests/{guestId}") {
+            val user = currentUser(users) ?: return@delete
+            if (!requireRegistrationFeature(user, seasons)) return@delete
+            val guestId = call.parameters["guestId"]!!
+            val congregationId = registrations.congregationIdForGuest(guestId)
+                ?: return@delete call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such guest"))
+            if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@delete
+            if (!requireWindowOpen(user, seasons)) return@delete
+            registrations.deleteGuest(guestId)
+            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+        }
+
         // Claiming a roster entry (docs/gui-redesign.md, owner-account model): a contestant/parent
         // account redeems the coach-shared code, linking the entry to the account — that link is
         // what My Scores' owner scoping keys off. No window gating: claiming happens any time,
@@ -469,9 +514,9 @@ private fun UpdateCongregationRequest.isValid(): Boolean =
         state.trim().length == 2 && state.trim().all { it.isLetter() } &&
         zip.trim().matches(ZIP_REGEX)
 
-/** Decorates a registration with the contestant total computed from the current season's fees. */
+/** Decorates a registration with its total (contestants + guests) from the current season's fees. */
 internal fun RegistrationDto.withTotal(seasons: SeasonRepository): RegistrationDto =
-    copy(totalCents = registrationTotalCents(seasons.current(), contestantCount))
+    copy(totalCents = registrationTotalCents(seasons.current(), this))
 
 /**
  * Passes when the caller may edit [congregationId]'s teams/roster: an event-wide REGISTRATION_MANAGE

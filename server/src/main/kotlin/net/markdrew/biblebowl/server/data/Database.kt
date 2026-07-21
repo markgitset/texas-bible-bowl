@@ -156,6 +156,20 @@ object IndividualsTable : Table("individual_contestants") {
 }
 
 /**
+ * A registered guest (most are volunteers) — attends and pays (volunteer fee, or the child fee for
+ * ages 3–8) but is not a contestant: no team, no division, no claim code, no durable-contestant
+ * link. Attached straight to the per-season registration, like individual contestants.
+ */
+object RegistrationGuestsTable : Table("registration_guests") {
+    val id = varchar("id", 36)
+    val registrationId = varchar("registration_id", 36).references(RegistrationsTable.id)
+    val name = varchar("name", 120)
+    val shirtSize = varchar("shirt_size", 8)
+    val isChild = bool("is_child").default(false)
+    override val primaryKey = PrimaryKey(id)
+}
+
+/**
  * One entered score cell: a contestant's points in one round. [rosterEntryId] references either
  * a team_members or an individual_contestants row (no FK — the id spaces are disjoint UUIDs),
  * which also keys the score to a season, since rosters hang off a per-season registration.
@@ -273,7 +287,7 @@ object DatabaseFactory {
                 UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable, EsvChaptersTable,
                 TextAnnotationsTable, GeneratedPdfsTable, SeasonsTable,
                 CongregationsTable, RegistrationsTable, TeamsTable, ContestantsTable, TeamMembersTable,
-                IndividualsTable, ScoresTable, ScoreReleasesTable,
+                IndividualsTable, RegistrationGuestsTable, ScoresTable, ScoreReleasesTable,
             )
             // SchemaUtils.create only creates missing *tables* — columns added after a table
             // first shipped need explicit (idempotent) ALTERs for existing databases.

@@ -92,7 +92,7 @@ object AdminRegistrationsScreen {
                     child("tr") {
                         listOf(
                             "Congregation", "Code", "Status", "Teams", "Contestants", "Individuals",
-                            "Total due", "Submitted", "Paid", "Coaches",
+                            "Guests", "Total due", "Submitted", "Paid", "Coaches",
                         ).forEach { child("th", text = it) }
                     }
                 }
@@ -125,6 +125,7 @@ object AdminRegistrationsScreen {
             child("td", text = reg?.teams?.size?.toString() ?: "—")
             child("td", text = reg?.contestantCount?.toString() ?: "—")
             child("td", text = reg?.individuals?.size?.toString() ?: "—")
+            child("td", text = reg?.guests?.size?.toString() ?: "—")
             child("td", text = reg?.let { formatCents(it.totalCents) } ?: "—")
             child("td", text = reg?.submittedAt?.take(10) ?: "—")
             val paidCell = child("td")
@@ -152,7 +153,7 @@ object AdminRegistrationsScreen {
         if (row.congregation.id in expanded) {
             tbody.child("tr") {
                 child("td", "bg-light") {
-                    setAttribute("colspan", "10")
+                    setAttribute("colspan", "11")
                     renderDetail(this, row)
                 }
             }
@@ -250,6 +251,13 @@ object AdminRegistrationsScreen {
                 parent.child("h6", "mt-2", "Individual contestants (adults)")
                 reg.individuals.forEach { entry ->
                     parent.child("div", "small", "${entry.name} — shirt ${entry.shirtSize.name}")
+                }
+            }
+            if (reg.guests.isNotEmpty()) {
+                parent.child("h6", "mt-2", "Guests & volunteers")
+                reg.guests.forEach { guest ->
+                    val bracket = if (guest.child) "child (3–8)" else "adult"
+                    parent.child("div", "small", "${guest.name} — $bracket, shirt ${guest.shirtSize.name}")
                 }
             }
         }
@@ -429,6 +437,7 @@ object AdminRegistrationsScreen {
             append(
                 "${regs.size} of ${desk.rows.size} congregations registered · " +
                     "${regs.sumOf { it.contestantCount }} contestants · " +
+                    "${regs.sumOf { it.guests.size }} guests · " +
                     "${formatCents(dueCents)} total due · " +
                     "${regs.count { it.paidAt != null }} paid",
             )
@@ -440,7 +449,7 @@ object AdminRegistrationsScreen {
     private fun deskCsv(desk: RegistrationDeskResponse): String {
         val header = listOf(
             "Congregation", "Code", "City", "State", "Status", "Teams", "Contestants", "Individuals",
-            "Total Due", "Submitted", "Paid", "Coach Names", "Coach Emails",
+            "Guests", "Total Due", "Submitted", "Paid", "Coach Names", "Coach Emails",
         )
         val rows = desk.rows.map { row ->
             val reg = row.registration
@@ -453,6 +462,7 @@ object AdminRegistrationsScreen {
                 reg?.teams?.size?.toString() ?: "",
                 reg?.contestantCount?.toString() ?: "",
                 reg?.individuals?.size?.toString() ?: "",
+                reg?.guests?.size?.toString() ?: "",
                 reg?.totalCents?.let { formatCents(it) } ?: "",
                 reg?.submittedAt?.take(10) ?: "",
                 reg?.paidAt?.take(10) ?: "",
