@@ -29,7 +29,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 1 | C4 | Adult 3XL shirt size | done |
 | 2 | C5 | Congregation phone number | not started |
 | 3 | C3 | Elementary contestants can't join teams | not started |
-| 4 | C2 | Individual standings in own bracket, not the team's | not started |
+| 4 | C2 | Individual standings in own bracket, not the team's | done |
 | 5 | C1 | Combo (cross-congregation) teams | not started |
 | 6 | F6 | Event locations (multi-site seasons) | not started |
 | 7 | F1 | Guests & attendee types | not started |
