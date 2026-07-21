@@ -18,13 +18,18 @@ import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.api.AddCabinAssignmentRequest
 import net.markdrew.biblebowl.api.SeedMemberDto
 import net.markdrew.biblebowl.api.UpsertCabinRequest
+import net.markdrew.biblebowl.api.UpsertTribeRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
 import net.markdrew.biblebowl.server.data.CabinAssignmentsTable
 import net.markdrew.biblebowl.server.data.CabinResult
+import net.markdrew.biblebowl.server.data.TribeResult
 import net.markdrew.biblebowl.server.data.CabinsTable
 import net.markdrew.biblebowl.server.data.PendingCoachGrantsTable
 import net.markdrew.biblebowl.server.data.CheckoutDutiesTable
 import net.markdrew.biblebowl.server.data.PostgresHousingRepository
+import net.markdrew.biblebowl.server.data.PostgresTribeRepository
+import net.markdrew.biblebowl.server.data.TribeLeadersTable
+import net.markdrew.biblebowl.server.data.TribesTable
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.CongregationsTable
 import net.markdrew.biblebowl.server.data.ContestantsTable
@@ -97,6 +102,8 @@ class PostgresRepositoryTest {
             IndividualsTable.deleteAll()
             RegistrationGuestsTable.deleteAll()
             CabinAssignmentsTable.deleteAll()
+            TribeLeadersTable.deleteAll()
+            TribesTable.deleteAll()
             CabinsTable.deleteAll()
             CheckoutDutiesTable.deleteAll()
             PendingCoachGrantsTable.deleteAll()
@@ -687,5 +694,30 @@ class PostgresRepositoryTest {
         assertEquals(mapOf("coach@seed.org" to listOf(cong.id)), users.pendingCoachGrants())
         assertEquals(listOf(cong.id), users.consumePendingCoachGrants("COACH@seed.org"))
         assertTrue(users.consumePendingCoachGrants("coach@seed.org").isEmpty())
+    }
+
+    @Test
+    fun tribesAndLeadersRoundTrip() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val tribes = PostgresTribeRepository(db)
+
+        // Tribes: add, duplicate-name rejection (same season + site), rename, and season scoping.
+        val red = assertIs<TribeResult.Ok>(tribes.addTribe("2027", UpsertTribeRequest("Red"))).tribe
+        assertIs<TribeResult.NameTaken>(tribes.addTribe("2027", UpsertTribeRequest("red")))
+        assertIs<TribeResult.Ok>(tribes.addTribe("2028", UpsertTribeRequest("Red"))) // other season is fine
+        assertIs<TribeResult.Ok>(tribes.updateTribe(red.id, UpsertTribeRequest("Red and Yellow Swirl")))
+        assertEquals(listOf("Red and Yellow Swirl"), tribes.listTribes("2027").map { it.name })
+
+        // Leaders keep assignment order; delete one, then deleting the tribe cascades the rest.
+        val kisha = assertNotNull(tribes.addLeader(red.id, "Kisha Dearlove"))
+        assertNotNull(tribes.addLeader(red.id, "Taylor Jones"))
+        assertEquals(
+            listOf("Kisha Dearlove", "Taylor Jones"),
+            tribes.listTribes("2027").single().leaders.map { it.name },
+        )
+        assertTrue(tribes.deleteLeader(kisha.id))
+        assertEquals(listOf("Taylor Jones"), tribes.listTribes("2027").single().leaders.map { it.name })
+        assertTrue(tribes.deleteTribe(red.id))
+        assertTrue(tribes.listTribes("2027").isEmpty())
     }
 }

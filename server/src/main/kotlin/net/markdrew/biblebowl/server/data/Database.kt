@@ -274,6 +274,31 @@ object CheckoutDutiesTable : Table("checkout_duties") {
 }
 
 /**
+ * A tribe defined per season by the registrar (item 16, F10; 2026 used color names). [siteId] is
+ * a season EventSiteDto id on multi-site seasons; null on single-site seasons, like cabins.
+ */
+object TribesTable : Table("tribes") {
+    val id = varchar("id", 36)
+    val seasonYear = varchar("season_year", 8)
+    val siteId = varchar("site_id", 36).nullable()
+    val name = varchar("name", 120)
+    override val primaryKey = PrimaryKey(id)
+    init {
+        index(false, seasonYear)
+    }
+}
+
+/** One assigned tribe leader: a free-form adult name (like checkout_duties.adult_name). */
+object TribeLeadersTable : Table("tribe_leaders") {
+    val id = varchar("id", 36)
+    val tribeId = varchar("tribe_id", 36).references(TribesTable.id)
+    val name = varchar("name", 120)
+    // Leaders keep their assignment order (like cabin_assignments.sort_order).
+    val sortOrder = integer("sort_order").default(0)
+    override val primaryKey = PrimaryKey(id)
+}
+
+/**
  * A tester's assigned per-site sequential ID (registration backlog item 13, F7). Assigned lazily
  * and append-only — a number never changes or is reused once given (nametags print early), so
  * removals leave gaps, like the 2026 workbook. [rosterEntryId] references a team_members or
@@ -396,7 +421,7 @@ object DatabaseFactory {
                 CongregationsTable, RegistrationsTable, TeamsTable, ContestantsTable, TeamMembersTable,
                 IndividualsTable, RegistrationGuestsTable, ScoresTable, ScoreReleasesTable,
                 CabinsTable, CabinAssignmentsTable, CheckoutDutiesTable, TesterIdsTable,
-                PendingCoachGrantsTable,
+                TribesTable, TribeLeadersTable, PendingCoachGrantsTable,
             )
             // SchemaUtils.create only creates missing *tables* — columns added after a table
             // first shipped need explicit (idempotent) ALTERs for existing databases.
