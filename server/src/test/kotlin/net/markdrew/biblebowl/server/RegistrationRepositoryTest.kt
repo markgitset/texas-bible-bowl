@@ -79,6 +79,7 @@ class RegistrationRepositoryTest {
     fun updatingACongregationEditsFieldsAndEnforcesUniqueness() {
         val cong = newCongregation("First Church", "Austin")!!
         val other = newCongregation("Second Church", "Dallas", "u2")!!
+        assertEquals("", cong.phone, "phone is optional and defaults to blank")
 
         // Name, city, and state are all freely editable; state and code are stored uppercased.
         val updated = assertIs<UpdateCongregationResult.Updated>(
@@ -86,7 +87,7 @@ class RegistrationRepositoryTest {
                 cong.id,
                 UpdateCongregationRequest(
                     "First Christian Church", "Round Rock", state = "ok",
-                    mailingAddress = "456 Oak Ave", zip = "78664", code = "fc",
+                    mailingAddress = "456 Oak Ave", zip = "78664", phone = " 512-555-0100 ", code = "fc",
                 ),
             ),
         ).congregation
@@ -95,6 +96,7 @@ class RegistrationRepositoryTest {
         assertEquals("OK", updated.state, "state is editable and normalized to uppercase")
         assertEquals("456 Oak Ave", updated.mailingAddress)
         assertEquals("78664", updated.zip)
+        assertEquals("512-555-0100", updated.phone, "phone is stored trimmed")
         assertEquals("FC", updated.code, "code is stored uppercased")
         assertEquals(updated, congregations.findById(cong.id))
 

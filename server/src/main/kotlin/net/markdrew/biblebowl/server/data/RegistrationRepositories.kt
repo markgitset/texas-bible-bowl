@@ -201,6 +201,7 @@ class InMemoryCongregationRepository : CongregationRepository {
                 state = req.state.trim().uppercase(),
                 mailingAddress = req.mailingAddress.trim(),
                 zip = req.zip.trim(),
+                phone = req.phone.trim(),
                 code = code,
             )
             byId[dto.id] = dto
@@ -230,6 +231,7 @@ class InMemoryCongregationRepository : CongregationRepository {
             state = req.state.trim().uppercase(),
             mailingAddress = req.mailingAddress.trim(),
             zip = req.zip.trim(),
+            phone = req.phone.trim(),
             code = code,
         )
         byId[id] = updated
@@ -749,12 +751,13 @@ class PostgresCongregationRepository(private val db: Database) : CongregationRep
             it[CongregationsTable.state] = state
             it[mailingAddress] = req.mailingAddress.trim()
             it[zip] = req.zip.trim()
+            it[phone] = req.phone.trim()
             it[CongregationsTable.code] = code
             it[CongregationsTable.createdByUserId] = createdByUserId
             it[createdAtEpochMs] = System.currentTimeMillis()
         }
         CreateCongregationResult.Created(
-            CongregationDto(newId, n, c, state, req.mailingAddress.trim(), req.zip.trim(), code),
+            CongregationDto(newId, n, c, state, req.mailingAddress.trim(), req.zip.trim(), req.phone.trim(), code),
         )
     }
 
@@ -791,6 +794,7 @@ class PostgresCongregationRepository(private val db: Database) : CongregationRep
             it[state] = req.state.trim().uppercase()
             it[mailingAddress] = req.mailingAddress.trim()
             it[zip] = req.zip.trim()
+            it[phone] = req.phone.trim()
             it[CongregationsTable.code] = code
         }
         UpdateCongregationResult.Updated(
@@ -827,6 +831,7 @@ class PostgresCongregationRepository(private val db: Database) : CongregationRep
         state = this[CongregationsTable.state],
         mailingAddress = this[CongregationsTable.mailingAddress],
         zip = this[CongregationsTable.zip],
+        phone = this[CongregationsTable.phone],
         code = this[CongregationsTable.code],
     )
 }
@@ -1419,6 +1424,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 state = cong?.get(CongregationsTable.state) ?: "",
                 mailingAddress = cong?.get(CongregationsTable.mailingAddress) ?: "",
                 zip = cong?.get(CongregationsTable.zip) ?: "",
+                phone = cong?.get(CongregationsTable.phone) ?: "",
                 code = cong?.get(CongregationsTable.code) ?: "",
             ),
             seasonYear = this[RegistrationsTable.seasonYear],
