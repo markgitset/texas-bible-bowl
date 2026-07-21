@@ -112,11 +112,16 @@ private class WorkbookSeeder(
                 }
             } ?: cong.id
 
-        // Teams + youth testers. addTeam returns null on an existing name — re-look it up instead.
+        // Create any missing teams first (addTeam returns null on an existing name), then load the
+        // registration ONCE and match everything against that snapshot. Re-runs used to re-load the
+        // full registration graph per seeded item, which ground a real Postgres to a timeout; the
+        // input's names are unique within a congregation, so a start-of-pass snapshot matches
+        // exactly what a per-item lookup would.
+        sc.teams.forEach { registrations.addTeam(cong.id, seasonYear, it.name) }
+        val snapshot = registrations.find(cong.id, seasonYear)
+
         sc.teams.forEach { st ->
-            registrations.addTeam(cong.id, seasonYear, st.name)
-            val teamId = registrations.find(cong.id, seasonYear)
-                ?.teams?.firstOrNull { it.name.equals(st.name.trim(), ignoreCase = true) }?.id
+            val teamId = snapshot?.teams?.firstOrNull { it.name.equals(st.name.trim(), ignoreCase = true) }?.id
             if (teamId == null) {
                 warnings += "${cong.name}: could not create team \"${st.name}\""
                 return@forEach
@@ -131,7 +136,7 @@ private class WorkbookSeeder(
                 ?: warnings.add("${cong.name}: could not seed ${m.name}")
         }
 
-        // Adult individual contestants — matched by name within the registration.
+        // Adult individual contestants — matched by name against the snapshot.
         sc.individuals.forEach { si ->
             val gender = si.gender
             if (gender == null) {
@@ -139,20 +144,18 @@ private class WorkbookSeeder(
                 return@forEach
             }
             val req = UpsertIndividualRequest(si.name, si.shirtSize, gender, si.tribeLeaderWilling)
-            val existing = registrations.find(cong.id, seasonYear)
-                ?.individuals?.firstOrNull { it.name.equals(si.name.trim(), ignoreCase = true) }
+            val existing = snapshot?.individuals?.firstOrNull { it.name.equals(si.name.trim(), ignoreCase = true) }
             if (existing == null) registrations.addIndividual(cong.id, seasonYear, req)
             else registrations.updateIndividual(existing.id, req)
         }
 
-        // Guests (volunteers, families, coach-typed attendees) — matched by name.
+        // Guests (volunteers, families, coach-typed attendees) — matched by name against the snapshot.
         sc.guests.forEach { sg ->
             val req = UpsertGuestRequest(
                 name = sg.name, shirtSize = sg.shirtSize, birthdate = null, gender = sg.gender,
                 positions = sg.positions, tribeLeaderWilling = sg.tribeLeaderWilling, contact = sg.contact,
             )
-            val existing = registrations.find(cong.id, seasonYear)
-                ?.guests?.firstOrNull { it.name.equals(sg.name.trim(), ignoreCase = true) }
+            val existing = snapshot?.guests?.firstOrNull { it.name.equals(sg.name.trim(), ignoreCase = true) }
             if (existing == null) registrations.addGuest(cong.id, seasonYear, req)
             else registrations.updateGuest(existing.id, req)
         }
