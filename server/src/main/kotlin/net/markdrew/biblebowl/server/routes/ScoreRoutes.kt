@@ -173,12 +173,14 @@ private suspend fun RoutingContext.requireGradingFeature(user: UserRecord, seaso
 private data class RowSeed(val congregationId: String, val teamId: String?, val row: ScoreRowDto)
 
 /**
- * One row per contestant registered this season, in desk order (congregation, team — individuals
- * last, contestant). Each contestant carries their OWN division and experience (individual rounds
- * and placement always use these), plus the team's possibly-elevated bracket for the team round —
- * a Junior on a Senior team tests and ranks as a Junior individually while the team competes
- * Senior. Scores are attached separately (see [withScores]) so save-validation can reuse the
- * seeds without a scores fetch.
+ * One row per contestant registered this season, in desk order (congregation, team — teamless
+ * contestants last, contestant). Each contestant carries their OWN division and experience
+ * (individual rounds and placement always use these), plus the team's possibly-elevated bracket
+ * for the team round — a Junior on a Senior team tests and ranks as a Junior individually while
+ * the team competes Senior. Unassigned (teamless) youths compete individually in their own
+ * bracket — the normal case for elementary contestants, since there are no Elementary teams.
+ * Scores are attached separately (see [withScores]) so save-validation can reuse the seeds
+ * without a scores fetch.
  */
 private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): List<RowSeed> =
     registrations.listForSeason(season.eventYear)
@@ -216,7 +218,21 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
                     ),
                 )
             }
-            teamRows + individualRows
+            val unassignedRows = reg.unassigned.map { entry ->
+                RowSeed(
+                    reg.congregation.id,
+                    null,
+                    ScoreRowDto(
+                        rosterEntryId = entry.id,
+                        contestantName = entry.name,
+                        congregationName = reg.congregation.name,
+                        teamName = null,
+                        division = entry.division(season),
+                        inexperienced = entry.isInexperienced(season.eventYear),
+                    ),
+                )
+            }
+            teamRows + individualRows + unassignedRows
         }
         .sortedWith(
             compareBy(

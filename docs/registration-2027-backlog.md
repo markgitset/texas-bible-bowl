@@ -28,7 +28,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 |---|-------|------|--------|
 | 1 | C4 | Adult 3XL shirt size | done |
 | 2 | C5 | Congregation phone number | done |
-| 3 | C3 | Elementary contestants can't join teams | not started |
+| 3 | C3 | No Elementary teams (elementary may play up) | done |
 | 4 | C2 | Individual standings in own bracket, not the team's | done |
 | 5 | C1 | Combo (cross-congregation) teams | not started |
 | 6 | F6 | Event locations (multi-site seasons) | not started |
@@ -66,22 +66,24 @@ address the app already stores. `CongregationDto` has no phone field.
   source of truth, making this redundant? Mark approved building it; keep it optional.
 - **Dependencies:** none.
 
-## 3. (C3) Elementary contestants can't join teams
+## 3. (C3) No Elementary teams (elementary may play up)
 
 The workbook's team-category lookup has **no elementary option** — "Elementary (no teams)
-[ENT]" — and every grade 3–6 contestant in 2026 was team-less. The app currently accepts
-grades 3–12 onto teams (`RegistrationRoutes` birthdate validation) and `TeamDto.division`
-even computes an ELEMENTARY team division.
+[ENT]" — and every grade 3–6 contestant in 2026 was team-less. The app used to compute an
+ELEMENTARY team division for an all-elementary roster, and team-less contestants were
+invisible to scoring.
 
-- **Change:** restrict team placement to grades 7–12. Elementary contestants still register
-  (they land with the individuals/unassigned-style handling, compete individually, and keep
-  their Power Round exemption); team assignment endpoints reject them; the coach UI doesn't
-  offer them for teams. Sweep `TeamDto.division` and registrar-places-unassigned flows for
-  the assumption that any youth can be placed.
-- **Confirmed rule vs 2026 coincidence:** the category *name* reads like a rule; Mark
-  approved the correction. If an elementary team ever becomes legal, this is one validation
-  constant.
-- **Dependencies:** none, but do before combo teams (5) so team rules are settled once.
+- **Rule as refined (Mark, 2026-07-20):** there are no Elementary *teams*, but an elementary
+  contestant **may play up** onto a Junior or even Senior team — so team placement is NOT
+  restricted by grade (the original correction idea); instead the team division computation
+  changed.
+- **As built:** `TeamDto.division` is the highest member's division floored at Junior. Power
+  Round scores count only toward individual, non-Elementary placement — never toward team
+  totals — so an elementary contestant never takes it, even when playing up (round
+  eligibility follows the contestant's own division, per item 4's bracket split). Unassigned
+  (team-less) contestants now appear on the grading sheet and in standings as individuals in
+  their own division and experience bracket — the normal home for elementary contestants.
+- **Dependencies:** none, but done before combo teams (5) so team rules are settled once.
 
 ## 4. (C2) Individual standings in own bracket, not the team's
 

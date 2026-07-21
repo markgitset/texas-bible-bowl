@@ -431,10 +431,12 @@ data class RegistrationDto(
     /** Individual (adult) contestants — never on a team, each competes in the Adult division. */
     val individuals: List<RosterEntryDto> = emptyList(),
     /**
-     * Eligible youth contestants (grades 3–12) not currently on any team — e.g. left behind when
-     * their team was deleted, since deleting a team frees its members rather than removing them.
-     * A coach can assign these to a team, a registration may still be submitted with some here, and
-     * a registrar places any leftovers before the event. Counted as contestants for fees.
+     * Eligible youth contestants (grades 3–12) not currently on any team. They compete
+     * individually in their own division and experience bracket — the normal home for elementary
+     * contestants, since there are no Elementary teams (one may still play up onto a Junior/Senior
+     * team). A coach can assign these to a team, a registration may still be submitted with some
+     * here, and a registrar places leftover Junior/Senior entries before the event. Counted as
+     * contestants for fees.
      */
     val unassigned: List<RosterEntryDto> = emptyList(),
     /** Registered guests (mostly volunteers) — they pay too, but aren't contestants (see [GuestDto]). */

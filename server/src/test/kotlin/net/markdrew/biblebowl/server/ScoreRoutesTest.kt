@@ -19,6 +19,7 @@ import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
+import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ClaimEntryRequest
 import net.markdrew.biblebowl.api.CongregationDto
@@ -200,9 +201,17 @@ class ScoreRoutesTest {
             individualName = "Deacon Dan",
         )
         val mixedElemKid = mixedReg.teams.single().members.single { it.birthdate == elementaryBirthdate }
-        // A separate all-elementary team: its members do NOT take the Power Round.
-        val (_, _, elemReg) = api.coachWithTeam("elem@tbb.org", "Elementary Church", listOf(elementaryBirthdate))
-        val elemKid = elemReg.teams.single().members.single()
+        // An elementary congregation: one kid stays on the team — there are no Elementary teams,
+        // so an all-elementary roster plays up as Junior — and one is unassigned, competing
+        // individually as Elementary (the normal case). Neither takes the Power Round.
+        val (elemCoach, _, elemReg) = api.coachWithTeam(
+            "elem@tbb.org", "Elementary Church", listOf(elementaryBirthdate, elementaryBirthdate),
+        )
+        val (elemKid, soloKid) = elemReg.teams.single().members
+        api.put("/registration/members/${soloKid.id}/team") {
+            header(HttpHeaders.Authorization, "Bearer ${elemCoach.token}")
+            setBody(AssignMemberTeamRequest(null))
+        }
 
         val grader = api.grader(users)
         val sheet: GradingSheetResponse = api.get("/admin/scores") {
@@ -211,18 +220,28 @@ class ScoreRoutesTest {
 
         assertEquals(openSeason.eventYear, sheet.seasonYear)
         assertNull(sheet.releasedAt)
-        assertEquals(4, sheet.rows.size)
+        assertEquals(5, sheet.rows.size)
         // Each Mixed Church member keeps their OWN division; the team's (Junior) rides alongside.
         sheet.rows.filter { it.teamName == "Team A" && it.congregationName == "Mixed Church" }.also { team ->
             assertEquals(2, team.size)
             assertEquals(setOf(Division.JUNIOR, Division.ELEMENTARY), team.map { it.division }.toSet())
             assertTrue(team.all { it.teamDivision == Division.JUNIOR })
         }
-        val individual = sheet.rows.single { it.teamName == null }
-        assertEquals("Deacon Dan", individual.contestantName)
+        val individual = sheet.rows.single { it.contestantName == "Deacon Dan" }
+        assertNull(individual.teamName)
         assertEquals(Division.ADULT, individual.division)
         assertNull(individual.teamDivision)
-        assertEquals(Division.ELEMENTARY, sheet.rows.single { it.rosterEntryId == elemKid.id }.division)
+        // The all-elementary team plays up as Junior; its member is still Elementary individually.
+        sheet.rows.single { it.rosterEntryId == elemKid.id }.also { playUp ->
+            assertEquals(Division.ELEMENTARY, playUp.division)
+            assertEquals(Division.JUNIOR, playUp.teamDivision)
+        }
+        // The unassigned kid competes individually in her own division — no team bracket at all.
+        sheet.rows.single { it.rosterEntryId == soloKid.id }.also { solo ->
+            assertNull(solo.teamName)
+            assertEquals(Division.ELEMENTARY, solo.division)
+            assertNull(solo.teamDivision)
+        }
 
         // Valid save round-trips and comes back on the refreshed sheet.
         val junior = sheet.rows.first { it.division == Division.JUNIOR }
@@ -234,6 +253,7 @@ class ScoreRoutesTest {
                         ScoreEntryDto(junior.rosterEntryId, Round.FIND_THE_VERSE, 38),
                         ScoreEntryDto(junior.rosterEntryId, Round.POWER, 45),
                         ScoreEntryDto(elemKid.id, Round.EVENTS, 40),
+                        ScoreEntryDto(soloKid.id, Round.EVENTS, 35), // unassigned entries are gradeable
                     )
                 )
             )
@@ -319,6 +339,13 @@ class ScoreRoutesTest {
             "b@tbb.org", "Beta Church", listOf(juniorBirthdate), individualName = "Deacon Dan",
         )
         val memberB1 = regB.teams.single().members.single()
+        // Plus an unassigned elementary contestant, who competes individually in her own bracket.
+        val (coachG, _, regG) = api.coachWithTeam("g@tbb.org", "Gamma Church", listOf(elementaryBirthdate))
+        val soloElem = regG.teams.single().members.single()
+        api.put("/registration/members/${soloElem.id}/team") {
+            header(HttpHeaders.Authorization, "Bearer ${coachG.token}")
+            setBody(AssignMemberTeamRequest(null))
+        }
 
         // The tally is a cross-congregation surface: coaches get 403, graders pass.
         assertEquals(
@@ -343,6 +370,7 @@ class ScoreRoutesTest {
                         ScoreEntryDto(memberB1.id, Round.FIND_THE_VERSE, 35),
                         ScoreEntryDto(memberB1.id, Round.EVENTS, 35),
                         ScoreEntryDto(regB.individuals.single().id, Round.FIND_THE_VERSE, 40),
+                        ScoreEntryDto(soloElem.id, Round.QUOTES, 25),
                     )
                 )
             )
@@ -353,9 +381,19 @@ class ScoreRoutesTest {
         }.body()
         assertEquals(openSeason.eventYear, standings.seasonYear)
         assertNull(standings.releasedAt)
-        assertEquals(listOf(Division.JUNIOR, Division.ADULT), standings.divisions.map { it.division })
+        assertEquals(
+            listOf(Division.ELEMENTARY, Division.JUNIOR, Division.ADULT),
+            standings.divisions.map { it.division },
+        )
 
-        val junior = standings.divisions.first()
+        // The unassigned elementary contestant ranks in the Elementary bracket (max 200, no teams).
+        val elementary = standings.divisions.first()
+        assertEquals(listOf(soloElem.id), elementary.individuals.map { it.rosterEntryId })
+        assertEquals(listOf(25), elementary.individuals.map { it.points })
+        assertTrue(elementary.individuals.all { it.maxPoints == 200 })
+        assertTrue(elementary.teams.isEmpty(), "there are no Elementary teams")
+
+        val junior = standings.divisions[1]
         // Individuals rank by their full totals (Power included): 90, 70, 30.
         assertEquals(listOf(1, 2, 3), junior.individuals.map { it.rank })
         assertEquals(listOf(90, 70, 30), junior.individuals.map { it.points })
