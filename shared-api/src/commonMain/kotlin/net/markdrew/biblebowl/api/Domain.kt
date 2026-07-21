@@ -188,23 +188,76 @@ val RegistrationDto.contestantCount: Int
     get() = teams.sumOf { team -> team.members.count { it.congregationId == null } } +
         individuals.size + unassigned.size + awayMembers.size
 
+// ---------------------------------------------------------------------------
+// Age-tiered fees (the 2026 schedule: 9+ full fee, 3–8 child fee, under 3 free)
+// ---------------------------------------------------------------------------
+
+/** Fee-tier age boundaries: [ADULT_FEE_MIN_AGE]+ pays the full fee, [CHILD_FEE_MIN_AGE]+ the child fee, younger is free. */
+const val CHILD_FEE_MIN_AGE = 3
+const val ADULT_FEE_MIN_AGE = 9
+
 /**
- * The registration's total in cents: [contestantCount] × the season's contestant fee (one t-shirt
- * each included), plus every registered guest by age tier — 9+ at the volunteer fee, 3–8 at the
- * child fee (t-shirts included in both), under-3s free. Guests register and pay here like everyone
- * else; only extra t-shirts are still paid at the door/by mail. Null while the contestant fee, or
- * a fee for a guest tier actually in use, is TBD.
+ * The fee bracket implied by [birthdate] this season. Ages are computed on the season's
+ * [gradeCutoff] — the same date grades are mapped on — so a child's tier and a contestant's grade
+ * advance together, one age reference per season. Null (no birthdate collected: adult guests and
+ * individual contestants) and unparseable birthdates read as [AgeTier.AGE_9_PLUS].
  */
-fun registrationTotalCents(season: SeasonDto, registration: RegistrationDto): Int? {
-    val contestantTotal = season.priceContestantCents?.times(registration.contestantCount) ?: return null
-    val nineUpGuests = registration.guests.count { it.ageTier == GuestAgeTier.AGE_9_PLUS }
-    val childGuests = registration.guests.count { it.ageTier == GuestAgeTier.AGE_3_TO_8 }
-    val nineUpGuestTotal =
-        if (nineUpGuests == 0) 0 else season.priceVolunteerCents?.times(nineUpGuests) ?: return null
-    val childGuestTotal =
-        if (childGuests == 0) 0 else season.priceChildCents?.times(childGuests) ?: return null
-    return contestantTotal + nineUpGuestTotal + childGuestTotal // under-3 guests are free
+fun SeasonDto.ageTierFor(birthdate: String?): AgeTier {
+    val age = birthdate?.let { ageOn(it, gradeCutoff) } ?: return AgeTier.AGE_9_PLUS
+    return when {
+        age < CHILD_FEE_MIN_AGE -> AgeTier.UNDER_3
+        age < ADULT_FEE_MIN_AGE -> AgeTier.AGE_3_TO_8
+        else -> AgeTier.AGE_9_PLUS
+    }
 }
+
+/**
+ * The per-person fee for one attendee in [tier]: under-3s are always free, 3–8 pays the child
+ * fee, and 9+ pays the contestant or volunteer fee depending on whether they compete (the two
+ * were equal in 2026 but are configured separately). Null = that fee is still TBD.
+ */
+fun SeasonDto.feeCentsFor(tier: AgeTier, contestant: Boolean): Int? = when (tier) {
+    AgeTier.UNDER_3 -> 0
+    AgeTier.AGE_3_TO_8 -> priceChildCents
+    AgeTier.AGE_9_PLUS -> if (contestant) priceContestantCents else priceVolunteerCents
+}
+
+/**
+ * One line of a registration's invoice: [count] contestants or guests in [tier], at [eachCents]
+ * apiece ([eachCents] null = that fee is TBD, 0 = free). Only tiers actually in use produce lines.
+ */
+data class FeeLine(val tier: AgeTier, val contestant: Boolean, val count: Int, val eachCents: Int?) {
+    val totalCents: Int? get() = eachCents?.times(count)
+}
+
+/**
+ * The registration's invoice, tiered purely by age like the 2026 `Cost` tab: every contestant this
+ * congregation bills (home team members, unassigned, members away on combo teams, and adult
+ * individuals) plus every guest, each at their [ageTierFor] bracket's fee. An 8-year-old grade-3
+ * contestant pays the child fee, exactly as in 2026.
+ */
+fun registrationFeeLines(season: SeasonDto, registration: RegistrationDto): List<FeeLine> {
+    val contestants = registration.teams.flatMap { team -> team.members.filter { it.congregationId == null } } +
+        registration.unassigned + registration.awayMembers.map { it.entry } + registration.individuals
+    val contestantTiers = contestants.groupingBy { season.ageTierFor(it.birthdate) }.eachCount()
+    val guestTiers = registration.guests.groupingBy { season.ageTierFor(it.birthdate) }.eachCount()
+    fun lines(tiers: Map<AgeTier, Int>, contestant: Boolean): List<FeeLine> =
+        AgeTier.entries.mapNotNull { tier ->
+            tiers[tier]?.let { count -> FeeLine(tier, contestant, count, season.feeCentsFor(tier, contestant)) }
+        }
+    return lines(contestantTiers, contestant = true) + lines(guestTiers, contestant = false)
+}
+
+/**
+ * The registration's total in cents: the sum of its [registrationFeeLines] — every attendee
+ * (contestants and guests alike) billed by age tier, under-3s free, one t-shirt included for all
+ * but under-3s. Only extra t-shirts are still paid at the door/by mail. Null while a fee for a
+ * tier actually in use is TBD.
+ */
+fun registrationTotalCents(season: SeasonDto, registration: RegistrationDto): Int? =
+    registrationFeeLines(season, registration).fold(0) { sum: Int?, line ->
+        sum?.let { s -> line.totalCents?.plus(s) }
+    }
 
 /** Formats a claim code for display/sharing: "ABCD2345" → "ABCD-2345". */
 fun formatClaimCode(code: String): String =

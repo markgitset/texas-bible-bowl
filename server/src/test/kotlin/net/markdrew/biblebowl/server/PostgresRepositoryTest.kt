@@ -4,7 +4,6 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Gender
-import net.markdrew.biblebowl.api.GuestAgeTier
 import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.Role
@@ -310,7 +309,7 @@ class PostgresRepositoryTest {
             ),
         )
         assertEquals("Aunt Vol", volunteer.name)
-        assertEquals(GuestAgeTier.AGE_9_PLUS, volunteer.ageTier)
+        assertNull(volunteer.birthdate, "no birthdate collected for adult guests")
         assertEquals(listOf("Test Grader", "Kitchen Helper"), volunteer.positions)
         assertTrue(volunteer.tribeLeaderWilling)
         assertEquals(
@@ -319,9 +318,9 @@ class PostgresRepositoryTest {
             "positions and tribe-leader flag survive the read back",
         )
         val child = registrations.addGuest(
-            cong.id, "2027", UpsertGuestRequest("Little Sib", ShirtSize.YS, GuestAgeTier.AGE_3_TO_8, Gender.MALE))
+            cong.id, "2027", UpsertGuestRequest("Little Sib", ShirtSize.YS, birthdate = "2020-06-15", gender = Gender.MALE))
         val baby = registrations.addGuest(
-            cong.id, "2027", UpsertGuestRequest("Baby Sib", null, GuestAgeTier.UNDER_3, Gender.FEMALE))
+            cong.id, "2027", UpsertGuestRequest("Baby Sib", null, birthdate = "2025-06-15", gender = Gender.FEMALE))
         assertNull(baby.shirtSize, "under-3 guests carry no shirt")
         assertEquals(cong.id, registrations.congregationIdForGuest(volunteer.id))
         assertNull(registrations.congregationIdForGuest("nope"))
@@ -336,9 +335,9 @@ class PostgresRepositoryTest {
         val edited = assertNotNull(
             registrations.updateGuest(
                 child.id,
-                UpsertGuestRequest("Bigger Sib", ShirtSize.YM, GuestAgeTier.AGE_9_PLUS, Gender.MALE, contact = contact)))
+                UpsertGuestRequest("Bigger Sib", ShirtSize.YM, birthdate = null, gender = Gender.MALE, contact = contact)))
         assertEquals(
-            GuestDto(child.id, "Bigger Sib", ShirtSize.YM, GuestAgeTier.AGE_9_PLUS, Gender.MALE, contact = contact),
+            GuestDto(child.id, "Bigger Sib", ShirtSize.YM, null, Gender.MALE, contact = contact),
             edited)
         assertNull(registrations.updateGuest("nope", UpsertGuestRequest("X", ShirtSize.AM, gender = Gender.MALE)))
 

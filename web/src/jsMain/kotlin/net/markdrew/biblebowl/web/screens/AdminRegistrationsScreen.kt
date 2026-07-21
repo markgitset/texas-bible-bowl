@@ -17,6 +17,7 @@ import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.division
 import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.formatCents
+import net.markdrew.biblebowl.api.ageTierFor
 import net.markdrew.biblebowl.api.multiSite
 import net.markdrew.biblebowl.api.siteFor
 import net.markdrew.biblebowl.web.Session
@@ -365,7 +366,7 @@ object AdminRegistrationsScreen {
                 parent.child("h6", "mt-2", "Guests & volunteers")
                 reg.guests.forEach { guest ->
                     val details = listOfNotNull(
-                        guest.ageTier.displayName.lowercase(),
+                        Session.season.ageTierFor(guest.birthdate).displayName.lowercase(),
                         guest.gender?.displayName?.lowercase(),
                         guest.shirtSize?.let { "shirt ${it.name}" } ?: "no shirt",
                     )

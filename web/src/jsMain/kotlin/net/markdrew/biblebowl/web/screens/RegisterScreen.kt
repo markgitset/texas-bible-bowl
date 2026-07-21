@@ -8,7 +8,10 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Gender
-import net.markdrew.biblebowl.api.GuestAgeTier
+import net.markdrew.biblebowl.api.AgeTier
+import net.markdrew.biblebowl.api.ageTierFor
+import net.markdrew.biblebowl.api.feeCentsFor
+import net.markdrew.biblebowl.api.registrationFeeLines
 import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.RegistrationDto
@@ -619,41 +622,33 @@ object RegisterScreen {
         if (contestants > 0 || guests.isNotEmpty()) parent.nextButton("Continue to review", 4)
     }
 
-    /** "2 × $40 + 1 × $25 + 1 free" — the guests row's fee column, by age tier (under-3s are free). */
-    private fun guestFeeMath(guests: List<GuestDto>): String {
-        val vol = Session.season.priceVolunteerCents
-        val kid = Session.season.priceChildCents
-        val nineUp = guests.count { it.ageTier == GuestAgeTier.AGE_9_PLUS }
-        val children = guests.count { it.ageTier == GuestAgeTier.AGE_3_TO_8 }
-        val underThree = guests.count { it.ageTier == GuestAgeTier.UNDER_3 }
-        val parts = buildList {
-            if (nineUp > 0) add("$nineUp × ${formatCents(vol)}")
-            if (children > 0) add("$children × ${formatCents(kid)}")
-            if (underThree > 0) add("$underThree free")
+    /** "3 × $85 + 1 × $65 = $320" — one review row's fee column, tiered by age (under-3s are free). */
+    private fun tierFeeMath(birthdates: List<String?>, contestant: Boolean): String {
+        val season = Session.season
+        val tiers = birthdates.groupingBy { season.ageTierFor(it) }.eachCount()
+        val parts = AgeTier.entries.mapNotNull { tier ->
+            val n = tiers[tier] ?: return@mapNotNull null
+            if (tier == AgeTier.UNDER_3) "$n free" else "$n × ${formatCents(season.feeCentsFor(tier, contestant))}"
         }
-        val total = if ((nineUp > 0 && vol == null) || (children > 0 && kid == null)) null
-            else nineUp * (vol ?: 0) + children * (kid ?: 0)
+        val total = tiers.entries.fold(0 as Int?) { sum, (tier, n) ->
+            sum?.let { s -> season.feeCentsFor(tier, contestant)?.times(n)?.plus(s) }
+        }
         return "${parts.joinToString(" + ")} = ${formatCents(total)}"
     }
 
-    /** "2 contestants × $85 + 1 guest (9+) × $40 + 1 guest (3–8) × $25 + 1 under-3 free" — parts in use. */
+    /** "2 contestants (9+) × $85 + 1 guest (3–8) × $65 + 1 guest (under 3) free" — tiers in use. */
     private fun totalBreakdown(): String {
-        val season = Session.season
-        val nineUpGuests = guests.count { it.ageTier == GuestAgeTier.AGE_9_PLUS }
-        val childGuests = guests.count { it.ageTier == GuestAgeTier.AGE_3_TO_8 }
-        val underThreeGuests = guests.count { it.ageTier == GuestAgeTier.UNDER_3 }
-        return buildList {
-            add("$contestants contestant${if (contestants == 1) "" else "s"} × ${formatCents(season.priceContestantCents)}")
-            if (nineUpGuests > 0) {
-                add("$nineUpGuests guest${if (nineUpGuests == 1) "" else "s"} (9+) × ${formatCents(season.priceVolunteerCents)}")
+        val reg = registration ?: return ""
+        return registrationFeeLines(Session.season, reg).joinToString(" + ") { line ->
+            val noun = (if (line.contestant) "contestant" else "guest") + (if (line.count == 1) "" else "s")
+            val tierNote = when (line.tier) {
+                AgeTier.AGE_9_PLUS -> "(9+)"
+                AgeTier.AGE_3_TO_8 -> "(3\u20138)"
+                AgeTier.UNDER_3 -> "(under 3)"
             }
-            if (childGuests > 0) {
-                add("$childGuests guest${if (childGuests == 1) "" else "s"} (3–8) × ${formatCents(season.priceChildCents)}")
-            }
-            if (underThreeGuests > 0) {
-                add("$underThreeGuests under-3 free")
-            }
-        }.joinToString(" + ")
+            if (line.eachCents == 0) "${line.count} $noun $tierNote free"
+            else "${line.count} $noun $tierNote \u00d7 ${formatCents(line.eachCents)}"
+        }
     }
 
     /** Eligible youth not on a team (e.g. their team was deleted) — assign each, or a registrar will. */
@@ -871,26 +866,29 @@ object RegisterScreen {
                         name.value = guest.name
                         name.disabled = !canEdit
                         val gender = genderSelect(row, guest.gender)
-                        val tier = guestTierSelect(row, guest.ageTier)
+                        val birthdate = guestBirthdateInput(row, guest.birthdate)
                         val shirt = shirtSelect(row, guest.shirtSize ?: ShirtSize.AM)
+                        val hint = row.child("span", "text-muted small align-self-center")
 
                         // Optional contact details (item 9, F3) for adult (9+) guests, collapsed
                         // behind a toggle so the row stays tight.
                         val contactToggle = row.child(
                             "button", "btn btn-outline-secondary btn-sm",
-                            if (guest.contact != null) "Contact ✓" else "Contact",
+                            if (guest.contact != null) "Contact \u2713" else "Contact",
                         ) as HTMLButtonElement
                         contactToggle.setAttribute("type", "button")
                         contactToggle.setAttribute("title", "Contact info for event organizers (optional)")
-                        // Volunteer positions + tribe leading (item 8, F2): adult (age-9+) guests only.
+                        // Volunteer positions + tribe leading (item 8, F2): adult (age-9+ tier) guests only.
                         val (positionBoxes, tribeBox, volunteerLine) =
                             volunteerFields(this, guest.positions, guest.tribeLeaderWilling)
                         val contactPanel = child("div", "border rounded p-2 mt-1 ms-3 d-none")
                         contactToggle.onClick { contactPanel.classList.toggle("d-none") }
 
                         val sync = {
-                            shirt.classList.toggle("d-none", tier.value == GuestAgeTier.UNDER_3.name)
-                            val nineUp = tier.value == GuestAgeTier.AGE_9_PLUS.name
+                            val tier = Session.season.ageTierFor(birthdate.value.ifBlank { null })
+                            shirt.classList.toggle("d-none", tier == AgeTier.UNDER_3)
+                            hint.textContent = tierHint(tier)
+                            val nineUp = tier == AgeTier.AGE_9_PLUS
                             volunteerLine.classList.toggle("d-none", !nineUp)
                             contactToggle.classList.toggle("d-none", !nineUp)
                             if (!nineUp) contactPanel.classList.add("d-none")
@@ -904,8 +902,8 @@ object RegisterScreen {
                                     Session.api.updateGuest(
                                         guest.id,
                                         UpsertGuestRequest(
-                                            name.value, guestShirtOf(shirt, tier),
-                                            GuestAgeTier.valueOf(tier.value), chosenGender,
+                                            name.value, guestShirtOf(shirt, birthdate),
+                                            birthdate.value.ifBlank { null }, chosenGender,
                                             positions = positionBoxes.filter { it.second.checked }.map { it.first },
                                             tribeLeaderWilling = tribeBox.checked,
                                             contact = contactFields.value(),
@@ -918,7 +916,7 @@ object RegisterScreen {
 
                         sync()
                         val fields: List<HTMLElement> =
-                            listOf(name, gender, tier, shirt, tribeBox) + positionBoxes.map { it.second }
+                            listOf(name, gender, birthdate, shirt, tribeBox) + positionBoxes.map { it.second }
                         fields.forEach { el ->
                             el.addEventListener("change", { save() })
                             (el as? HTMLSelectElement)?.disabled = !canEdit
@@ -937,14 +935,17 @@ object RegisterScreen {
                         val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
                         name.setAttribute("placeholder", "Guest or volunteer name")
                         val gender = genderSelect(this, null)
-                        val tier = guestTierSelect(this, GuestAgeTier.AGE_9_PLUS)
+                        val birthdate = guestBirthdateInput(this, null)
                         val shirt = shirtSelect(this, ShirtSize.AM)
                         val addSlot = child("span")
+                        val hint = child("span", "text-muted small align-self-center")
                         val (positionBoxes, tribeBox, volunteerLine) =
                             volunteerFields(this, emptyList(), tribeLeaderWilling = false)
-                        tier.addEventListener("change", {
-                            shirt.classList.toggle("d-none", tier.value == GuestAgeTier.UNDER_3.name)
-                            volunteerLine.classList.toggle("d-none", tier.value != GuestAgeTier.AGE_9_PLUS.name)
+                        birthdate.addEventListener("input", {
+                            val tier = Session.season.ageTierFor(birthdate.value.ifBlank { null })
+                            shirt.classList.toggle("d-none", tier == AgeTier.UNDER_3)
+                            volunteerLine.classList.toggle("d-none", tier != AgeTier.AGE_9_PLUS)
+                            hint.textContent = tierHint(tier)
                         })
                         addSlot.child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
                         addEventListener("submit", { event ->
@@ -955,8 +956,8 @@ object RegisterScreen {
                                 Session.api.addGuest(
                                     cong.id,
                                     UpsertGuestRequest(
-                                        name.value, guestShirtOf(shirt, tier),
-                                        GuestAgeTier.valueOf(tier.value), chosenGender,
+                                        name.value, guestShirtOf(shirt, birthdate),
+                                        birthdate.value.ifBlank { null }, chosenGender,
                                         positions = positionBoxes.filter { it.second.checked }.map { it.first },
                                         tribeLeaderWilling = tribeBox.checked,
                                     ),
@@ -969,21 +970,29 @@ object RegisterScreen {
         }
     }
 
-    /** Age-tier select — picks the guest's fee bracket (9+ volunteer fee, 3–8 child fee, under 3 free). */
-    private fun guestTierSelect(parent: Element, selected: GuestAgeTier): HTMLSelectElement {
-        val select = parent.child("select", "form-select w-auto") as HTMLSelectElement
-        select.setAttribute("title", "Age at the event — 9+ pays the volunteer fee, 3–8 the child fee, under 3 is free")
-        GuestAgeTier.entries.forEach { tier ->
-            val option = select.child("option", text = tier.displayName) as HTMLOptionElement
-            option.value = tier.name
-            if (tier == selected) option.selected = true
-        }
-        return select
+    /** Optional birthdate for child guests — their fee tier derives from age; blank = adult (9+). */
+    private fun guestBirthdateInput(parent: Element, value: String?): HTMLInputElement {
+        val input = parent.child("input", "form-control w-auto") as HTMLInputElement
+        input.type = "date"
+        input.value = value ?: ""
+        input.setAttribute(
+            "title",
+            "Birthdate \u2014 needed for children under 9, whose fee goes by age; leave blank for adults",
+        )
+        return input
+    }
+
+    /** "Age 3\u20138 \u2014 $65" / "Under 3 \u2014 free" — the live fee hint beside a guest's birthdate. */
+    private fun tierHint(tier: AgeTier): String = when (tier) {
+        AgeTier.AGE_9_PLUS -> "" // the default; no callout needed
+        AgeTier.UNDER_3 -> "${tier.displayName} \u2014 free"
+        else -> "${tier.displayName} \u2014 ${formatCents(Session.season.feeCentsFor(tier, contestant = false))}"
     }
 
     /** The shirt selection for a guest — always null for under-3s, whose free entry includes no shirt. */
-    private fun guestShirtOf(shirt: HTMLSelectElement, tier: HTMLSelectElement): ShirtSize? =
-        if (tier.value == GuestAgeTier.UNDER_3.name) null else ShirtSize.valueOf(shirt.value)
+    private fun guestShirtOf(shirt: HTMLSelectElement, birthdate: HTMLInputElement): ShirtSize? =
+        if (Session.season.ageTierFor(birthdate.value.ifBlank { null }) == AgeTier.UNDER_3) null
+        else ShirtSize.valueOf(shirt.value)
 
     /** The contact inputs of one guest's collapsible panel; [value] snapshots them as a DTO. */
     private class GuestContactFields(
@@ -1334,9 +1343,6 @@ object RegisterScreen {
                 Session.season.siteFor(reg.siteId)?.let { site ->
                     child("p", "text-muted mb-2", "Event site: ${site.name}")
                 }
-                val price = Session.season.priceContestantCents
-                fun feeMath(count: Int): String =
-                    if (price == null) "TBD" else "$count × ${formatCents(price)} = ${formatCents(price * count)}"
                 child("table", "table mb-2") {
                     child("thead") {
                         child("tr") {
@@ -1356,7 +1362,9 @@ object RegisterScreen {
                                     it.name + (if (it.isInexperienced(seasonYear)) " (1st year)" else "") +
                                         (it.congregationName?.let { c -> " (from $c)" } ?: "")
                                 })
-                                child("td", "text-nowrap", feeMath(homeMembers))
+                                child("td", "text-nowrap",
+                                    tierFeeMath(team.members.filter { it.congregationId == null }.map { it.birthdate },
+                                        contestant = true))
                             }
                         }
                         if (reg.unassigned.isNotEmpty()) {
@@ -1364,7 +1372,7 @@ object RegisterScreen {
                                 child("td", text = "Unassigned")
                                 child("td", text = "—")
                                 child("td", text = reg.unassigned.joinToString { it.name })
-                                child("td", "text-nowrap", feeMath(reg.unassigned.size))
+                                child("td", "text-nowrap", tierFeeMath(reg.unassigned.map { it.birthdate }, contestant = true))
                             }
                         }
                         if (reg.awayMembers.isNotEmpty()) {
@@ -1374,7 +1382,8 @@ object RegisterScreen {
                                 child("td", text = reg.awayMembers.joinToString {
                                     "${it.entry.name} (${it.teamName}, ${it.congregationName})"
                                 })
-                                child("td", "text-nowrap", feeMath(reg.awayMembers.size))
+                                child("td", "text-nowrap",
+                                    tierFeeMath(reg.awayMembers.map { it.entry.birthdate }, contestant = true))
                             }
                         }
                         if (reg.individuals.isNotEmpty()) {
@@ -1382,7 +1391,7 @@ object RegisterScreen {
                                 child("td", text = "Individuals")
                                 child("td", text = "Adult")
                                 child("td", text = reg.individuals.joinToString { it.name })
-                                child("td", "text-nowrap", feeMath(reg.individuals.size))
+                                child("td", "text-nowrap", tierFeeMath(reg.individuals.map { it.birthdate }, contestant = true))
                             }
                         }
                         if (reg.guests.isNotEmpty()) {
@@ -1390,13 +1399,13 @@ object RegisterScreen {
                                 child("td", text = "Guests")
                                 child("td", text = "—")
                                 child("td", text = reg.guests.joinToString {
-                                    it.name + when (it.ageTier) {
-                                        GuestAgeTier.AGE_9_PLUS -> ""
-                                        GuestAgeTier.AGE_3_TO_8 -> " (3–8)"
-                                        GuestAgeTier.UNDER_3 -> " (under 3)"
+                                    it.name + when (Session.season.ageTierFor(it.birthdate)) {
+                                        AgeTier.AGE_9_PLUS -> ""
+                                        AgeTier.AGE_3_TO_8 -> " (3\u20138)"
+                                        AgeTier.UNDER_3 -> " (under 3)"
                                     }
                                 })
-                                child("td", "text-nowrap", guestFeeMath(reg.guests))
+                                child("td", "text-nowrap", tierFeeMath(reg.guests.map { it.birthdate }, contestant = false))
                             }
                         }
                     }
@@ -1413,9 +1422,9 @@ object RegisterScreen {
                 }
                 child(
                     "p", "text-muted small mb-1",
-                    "Fee per contestant: ${formatCents(price)}. Guests and volunteers age 9+: " +
-                        "${formatCents(Session.season.priceVolunteerCents)}; ages 3–8: " +
-                        "${formatCents(Session.season.priceChildCents)}; under 3: free. One t-shirt " +
+                    "Everyone pays by age: 9+ ${formatCents(Session.season.priceContestantCents)} " +
+                        "(volunteers ${formatCents(Session.season.priceVolunteerCents)}), ages 3\u20138 " +
+                        "${formatCents(Session.season.priceChildCents)}, under 3 free. One t-shirt " +
                         "included for everyone but under-3s; extra shirts are paid at the door.",
                 )
                 Session.season.feesNote.takeIf { it.isNotEmpty() }?.let { child("p", "text-muted small mb-0", it) }

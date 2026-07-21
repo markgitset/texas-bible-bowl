@@ -6,7 +6,6 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Gender
-import net.markdrew.biblebowl.api.GuestAgeTier
 import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.congregationCodeCandidates
 import net.markdrew.biblebowl.api.RegistrationDto
@@ -549,7 +548,7 @@ class InMemoryRegistrationRepository(
         synchronized(lock) {
             val reg = regFor(congregationId, seasonYear)
             val guest = GuestDto(
-                UUID.randomUUID().toString(), req.name.trim(), req.shirtSize, req.ageTier, req.gender,
+                UUID.randomUUID().toString(), req.name.trim(), req.shirtSize, req.birthdate, req.gender,
                 positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling, contact = req.contact,
             )
             guests[guest.id] = guest
@@ -560,7 +559,7 @@ class InMemoryRegistrationRepository(
     override fun updateGuest(guestId: String, req: UpsertGuestRequest): GuestDto? = synchronized(lock) {
         val guest = guests[guestId] ?: return null
         guests[guestId] = guest.copy(
-            name = req.name.trim(), shirtSize = req.shirtSize, ageTier = req.ageTier, gender = req.gender,
+            name = req.name.trim(), shirtSize = req.shirtSize, birthdate = req.birthdate, gender = req.gender,
             positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling, contact = req.contact,
         )
         guests[guestId]
@@ -1208,7 +1207,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 it[registrationId] = regId
                 it[name] = req.name.trim()
                 it[shirtSize] = req.shirtSize?.name
-                it[ageTier] = req.ageTier.name
+                it[birthdate] = req.birthdate
                 it[gender] = req.gender?.name
                 it[positions] = encodePositions(req.positions)
                 it[tribeLeader] = req.tribeLeaderWilling
@@ -1222,7 +1221,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             }
             touch(regId)
             GuestDto(
-                guestId, req.name.trim(), req.shirtSize, req.ageTier, req.gender,
+                guestId, req.name.trim(), req.shirtSize, req.birthdate, req.gender,
                 positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling, contact = req.contact,
             )
         }
@@ -1231,7 +1230,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         val updated = RegistrationGuestsTable.update({ RegistrationGuestsTable.id eq guestId }) {
             it[name] = req.name.trim()
             it[shirtSize] = req.shirtSize?.name
-            it[ageTier] = req.ageTier.name
+            it[birthdate] = req.birthdate
             it[gender] = req.gender?.name
             it[positions] = encodePositions(req.positions)
             it[tribeLeader] = req.tribeLeaderWilling
@@ -1518,7 +1517,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         id = this[RegistrationGuestsTable.id],
         name = this[RegistrationGuestsTable.name],
         shirtSize = this[RegistrationGuestsTable.shirtSize]?.let { ShirtSize.valueOf(it) },
-        ageTier = GuestAgeTier.valueOf(this[RegistrationGuestsTable.ageTier]),
+        birthdate = this[RegistrationGuestsTable.birthdate],
         gender = this[RegistrationGuestsTable.gender]?.let { Gender.valueOf(it) },
         positions = decodePositions(this[RegistrationGuestsTable.positions]),
         tribeLeaderWilling = this[RegistrationGuestsTable.tribeLeader],
