@@ -35,6 +35,7 @@ import net.markdrew.biblebowl.api.schoolYear
 @Composable
 fun EventScreen(
     user: UserDto?,
+    onOpenRegister: () -> Unit,
     onOpenMyScores: () -> Unit,
     onOpenGrading: () -> Unit,
     onOpenStandings: () -> Unit,
@@ -129,12 +130,25 @@ fun EventScreen(
                     Text(season.feesNote, style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text(
-                    "Locations and team registration are on texasbiblebowl.org for now. " +
-                        "Registration moves into the app in an upcoming season.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                val registrationVisible =
+                    season.registrationEnabled || (user != null && isGlobalAdmin(user.roles))
+                if (registrationVisible) {
+                    if (!season.registrationEnabled) {
+                        Text(
+                            "Hidden until launch — visible to you as a global admin.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
+                    Button(onClick = onOpenRegister) { Text("Register my teams") }
+                } else {
+                    Text(
+                        "Locations and team registration are on texasbiblebowl.org for now. " +
+                            "Registration moves into the app in an upcoming season.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
