@@ -38,7 +38,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 10 | F5 | Age-tiered fee schedule | done |
 | 11 | F11 | Registration counts dashboard | done |
 | 12 | F12 | Shirt-order report | done |
-| 13 | F7 | Tester IDs + ZipGrade export | not started |
+| 13 | F7 | Tester IDs + ZipGrade export | done |
 | 14 | F8 | Nametag PDF generation | not started |
 | 15 | F9 | Housing / cabin assignments | done |
 | 16 | F10 | Tribes & tribe leaders | not started |
@@ -272,10 +272,21 @@ code, exported to ZipGrade for scan grading.
 
 - **Change:** auto-assign stable per-site tester IDs; generate the external ID; ZipGrade
   CSV export per site.
-- **Open question (resolve during refinement):** the app now has its own grading desk — is
-  ZipGrade still in the 2027 loop, or is only the human-readable tester ID (nametags,
-  seating) worth keeping? Mark approved the item; confirm the export half before building
-  it.
+- **Open question (resolved, Mark 2026-07-21):** ZipGrade **is still the primary 2027
+  scan-grading path** (the app's grading desk is secondary), so the export half was built.
+- **As built (2026-07):** IDs assign **lazily and append-only** — the first registrar/grader
+  view of `#admin/testers` (`GET /admin/testers`; event-wide REGISTRATION_MANAGE *or*
+  SCORE_ENTER) numbers everyone in desk order, later additions take the next number, and an
+  assigned number never changes (nametags can print early; removals leave gaps, like 2026's
+  Bandina 4–142). Sites number in disjoint 200-blocks in season order (site 1 from 1, site 2
+  from 201 — mirroring 2026); testers of an unpinned congregation stay un-numbered (flagged
+  on-screen) until the site is chosen. External IDs match the workbook exactly:
+  `{IndCat}-{CongCode}-{TeamCatTeamName or ANT/ENT}-{testerId}` with the contestant's OWN
+  bracket as IndCat (a JI on a JE team stays JI…), `JNT`/`SNT` extending the no-teams codes
+  for unplaced youth, and `??` standing in for a missing congregation code. The screen's
+  per-site ZipGrade CSV is the workbook's ZipGrade-tab columns verbatim (Zip Grade ID,
+  external id, First Name, Last Name, Class = congregation code). Derivations live in
+  shared-api `TesterIds.kt`; assignments in the `tester_ids` table.
 - **Dependencies:** 6; 5 (team identity settled); IDs feed 14.
 
 ## 14. (F8) Nametag PDF generation

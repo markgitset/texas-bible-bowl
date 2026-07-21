@@ -10,6 +10,7 @@ import net.markdrew.biblebowl.web.screens.AdminCountsScreen
 import net.markdrew.biblebowl.web.screens.AdminHousingScreen
 import net.markdrew.biblebowl.web.screens.AdminRegistrationsScreen
 import net.markdrew.biblebowl.web.screens.AdminSeasonScreen
+import net.markdrew.biblebowl.web.screens.AdminTestersScreen
 import net.markdrew.biblebowl.web.screens.AdminUsersScreen
 import net.markdrew.biblebowl.web.screens.AuthScreen
 import net.markdrew.biblebowl.web.screens.ContributeScreen
@@ -209,6 +210,12 @@ object Shell {
                     AdminHousingScreen.render(container)
                 }
             }
+            // Registrars prep tester IDs/nametags; graders need the ZipGrade export — either works.
+            Routes.ADMIN_TESTERS -> feature(container, Session.registrationVisible) {
+                gatedEventWideAny(
+                    container, Permission.REGISTRATION_MANAGE, Permission.SCORE_ENTER,
+                ) { AdminTestersScreen.render(container) }
+            }
             Routes.ADMIN_USERS -> gated(container, Permission.USER_MANAGE) {
                 AdminUsersScreen.render(container)
             }
@@ -287,6 +294,13 @@ object Shell {
     private fun gatedEventWide(container: HTMLElement, permission: Permission, render: () -> Unit) {
         val user = Session.user
         if (user != null && hasEventWidePermission(user.roles, permission)) render()
+        else AuthScreen.render(container)
+    }
+
+    /** Like [gatedEventWide], but any one of [permissions] suffices. */
+    private fun gatedEventWideAny(container: HTMLElement, vararg permissions: Permission, render: () -> Unit) {
+        val user = Session.user
+        if (user != null && permissions.any { hasEventWidePermission(user.roles, it) }) render()
         else AuthScreen.render(container)
     }
 

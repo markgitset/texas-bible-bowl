@@ -257,6 +257,23 @@ object CheckoutDutiesTable : Table("checkout_duties") {
     override val primaryKey = PrimaryKey(seasonYear, congregationId)
 }
 
+/**
+ * A tester's assigned per-site sequential ID (registration backlog item 13, F7). Assigned lazily
+ * and append-only — a number never changes or is reused once given (nametags print early), so
+ * removals leave gaps, like the 2026 workbook. [rosterEntryId] references a team_members or
+ * individual_contestants row (no FK — disjoint UUID spaces), same convention as [ScoresTable].
+ */
+object TesterIdsTable : Table("tester_ids") {
+    val seasonYear = varchar("season_year", 8)
+    val rosterEntryId = varchar("roster_entry_id", 36)
+    val testerId = integer("tester_id")
+    val assignedAtEpochMs = long("assigned_at_epoch_ms")
+    override val primaryKey = PrimaryKey(seasonYear, rosterEntryId)
+    init {
+        uniqueIndex(seasonYear, testerId)
+    }
+}
+
 /** A season's score release — present while released; retracting deletes the row. */
 object ScoreReleasesTable : Table("score_releases") {
     val seasonYear = varchar("season_year", 8)
@@ -362,7 +379,7 @@ object DatabaseFactory {
                 TextAnnotationsTable, GeneratedPdfsTable, SeasonsTable,
                 CongregationsTable, RegistrationsTable, TeamsTable, ContestantsTable, TeamMembersTable,
                 IndividualsTable, RegistrationGuestsTable, ScoresTable, ScoreReleasesTable,
-                CabinsTable, CabinAssignmentsTable, CheckoutDutiesTable,
+                CabinsTable, CabinAssignmentsTable, CheckoutDutiesTable, TesterIdsTable,
             )
             // SchemaUtils.create only creates missing *tables* — columns added after a table
             // first shipped need explicit (idempotent) ALTERs for existing databases.

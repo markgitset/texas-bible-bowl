@@ -34,6 +34,8 @@ import net.markdrew.biblebowl.server.data.PostgresCongregationRepository
 import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
 import net.markdrew.biblebowl.server.data.PostgresRegistrationRepository
 import net.markdrew.biblebowl.server.data.PostgresScoreRepository
+import net.markdrew.biblebowl.server.data.PostgresTesterIdRepository
+import net.markdrew.biblebowl.server.data.TesterIdsTable
 import net.markdrew.biblebowl.server.data.PostgresUserRepository
 import net.markdrew.biblebowl.server.data.QuestionVotesTable
 import net.markdrew.biblebowl.server.data.QuestionsTable
@@ -88,6 +90,7 @@ class PostgresRepositoryTest {
             QuestionsTable.deleteAll()
             ScoresTable.deleteAll()
             ScoreReleasesTable.deleteAll()
+            TesterIdsTable.deleteAll()
             TeamMembersTable.deleteAll()
             IndividualsTable.deleteAll()
             RegistrationGuestsTable.deleteAll()
@@ -162,6 +165,22 @@ class PostgresRepositoryTest {
         assertTrue(listed.any { it.id == q.id })
         assertEquals("Timothy", listed.first { it.id == q.id }.authorName)
         assertTrue(questions.list(QuestionStatus.APPROVED, chapter = 3).none { it.id == q.id })
+    }
+
+    @Test
+    fun testerIdsAssignOnceAndReadBack() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val testerIds = PostgresTesterIdRepository(db)
+
+        testerIds.assign("2027", "entry-1", 1)
+        testerIds.assign("2027", "entry-2", 2)
+        testerIds.assign("2028", "entry-1", 5) // seasons are independent
+        assertEquals(mapOf("entry-1" to 1, "entry-2" to 2), testerIds.forSeason("2027"))
+        assertEquals(mapOf("entry-1" to 5), testerIds.forSeason("2028"))
+
+        // Assignments are permanent: a re-assign of the same entry is ignored.
+        testerIds.assign("2027", "entry-1", 99)
+        assertEquals(1, testerIds.forSeason("2027")["entry-1"])
     }
 
     @Test

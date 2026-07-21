@@ -52,6 +52,7 @@ import net.markdrew.biblebowl.api.SetRegistrationSiteRequest
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
 import net.markdrew.biblebowl.api.StandingsResponse
+import net.markdrew.biblebowl.api.TesterListResponse
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UpsertGuestRequest
@@ -448,6 +449,14 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     /** The full registration desk for the current season. Requires event-wide REGISTRATION_MANAGE. */
     suspend fun registrationDesk(): RegistrationDeskResponse =
         client.get("$baseUrl/admin/registrations") { authorize() }.bodyOrThrow()
+
+    /**
+     * Every tester this season with per-site tester IDs and ZipGrade external IDs; fetching lazily
+     * assigns numbers to the not-yet-numbered (append-only — assigned IDs never change). Requires
+     * event-wide REGISTRATION_MANAGE or SCORE_ENTER.
+     */
+    suspend fun adminTesters(): TesterListResponse =
+        client.get("$baseUrl/admin/testers") { authorize() }.bodyOrThrow()
 
     /** Marks a registration's payment received, or clears it. Requires event-wide REGISTRATION_MANAGE. */
     suspend fun setRegistrationPaid(registrationId: String, paid: Boolean): RegistrationDto =

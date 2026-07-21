@@ -38,6 +38,7 @@ import net.markdrew.biblebowl.server.data.HousingRepository
 import net.markdrew.biblebowl.server.data.InMemoryHousingRepository
 import net.markdrew.biblebowl.server.data.InMemoryScoreRepository
 import net.markdrew.biblebowl.server.data.InMemorySeasonRepository
+import net.markdrew.biblebowl.server.data.InMemoryTesterIdRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.data.PostgresCongregationRepository
 import net.markdrew.biblebowl.server.data.PostgresHousingRepository
@@ -45,11 +46,13 @@ import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
 import net.markdrew.biblebowl.server.data.PostgresRegistrationRepository
 import net.markdrew.biblebowl.server.data.PostgresScoreRepository
 import net.markdrew.biblebowl.server.data.PostgresSeasonRepository
+import net.markdrew.biblebowl.server.data.PostgresTesterIdRepository
 import net.markdrew.biblebowl.server.data.PostgresUserRepository
 import net.markdrew.biblebowl.server.data.QuestionRepository
 import net.markdrew.biblebowl.server.data.RegistrationRepository
 import net.markdrew.biblebowl.server.data.ScoreRepository
 import net.markdrew.biblebowl.server.data.SeasonRepository
+import net.markdrew.biblebowl.server.data.TesterIdRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.esv.EsvPassageService
 import net.markdrew.biblebowl.server.esv.FileEsvCache
@@ -65,6 +68,7 @@ import net.markdrew.biblebowl.server.routes.registrationRoutes
 import net.markdrew.biblebowl.server.routes.scoreRoutes
 import net.markdrew.biblebowl.server.routes.seasonRoutes
 import net.markdrew.biblebowl.server.routes.studyRoutes
+import net.markdrew.biblebowl.server.routes.testerRoutes
 import net.markdrew.biblebowl.server.routes.userRoutes
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
@@ -85,6 +89,7 @@ fun main() {
     val registrations = db?.let(::PostgresRegistrationRepository) ?: InMemoryRegistrationRepository(congregations)
     val scores = db?.let(::PostgresScoreRepository) ?: InMemoryScoreRepository()
     val housing = db?.let(::PostgresHousingRepository) ?: InMemoryHousingRepository()
+    val testerIds = db?.let(::PostgresTesterIdRepository) ?: InMemoryTesterIdRepository()
     // Prod uses the Postgres cache; local dev (no DATABASE_URL) uses a persisted on-disk cache so repeated
     // runs never re-hit the ESV API — only a first run (cache miss) or ESV_CACHE_REFRESH re-fetches. It
     // lives under the user's home (~/.cache/texas-bible-bowl/esv) so it survives git cleans and fresh clones.
@@ -106,6 +111,7 @@ fun main() {
             users, questions, esv = esv, study = study, seasons = seasons, pdfCache = pdfCache,
             congregations = congregations, registrations = registrations, scores = scores,
             housing = housing,
+            testerIds = testerIds,
         )
     }.start(wait = true)
 }
@@ -126,6 +132,7 @@ fun Application.module(
     registrations: RegistrationRepository = InMemoryRegistrationRepository(congregations),
     scores: ScoreRepository = InMemoryScoreRepository(),
     housing: HousingRepository = InMemoryHousingRepository(),
+    testerIds: TesterIdRepository = InMemoryTesterIdRepository(),
 ) {
     seedAdminFromEnv(users)
 
@@ -195,6 +202,7 @@ fun Application.module(
         adminRegistrationRoutes(users, seasons, congregations, registrations)
         housingRoutes(users, seasons, congregations, housing)
         scoreRoutes(users, seasons, registrations, scores)
+        testerRoutes(users, seasons, registrations, testerIds)
         userRoutes(users, congregations)
     }
 
