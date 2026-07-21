@@ -23,6 +23,8 @@ import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
+import net.markdrew.biblebowl.api.ContactInfoDto
+import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.CreateCongregationRequest
@@ -568,11 +570,19 @@ class RegistrationRoutesTest {
         assertEquals(8500 + 4000 + 2500, withBaby.totalCents, "under-3 guests bill nothing")
         assertNull(withBaby.guests.first { it.name == "Baby Sib" }.shirtSize, "under-3s get no shirt")
 
-        // Edit and delete round-trip, and the total follows.
+        // Edit and delete round-trip, and the total follows. Contact info (item 9, F3) rides along:
+        // stored when provided, collapsed to none when all-blank.
+        val contact = ContactInfoDto(phone = "555-0100", email = "aunt@vol.org", preference = ContactPreference.PHONE)
         val edited: RegistrationDto = api.put("/registration/guests/${volunteer.id}") {
-            asCoach(); setBody(UpsertGuestRequest("Aunt V.", ShirtSize.AL, gender = Gender.FEMALE))
+            asCoach(); setBody(UpsertGuestRequest("Aunt V.", ShirtSize.AL, gender = Gender.FEMALE, contact = contact))
         }.body()
         assertEquals("Aunt V.", edited.guests.first { it.id == volunteer.id }.name)
+        assertEquals(contact, edited.guests.first { it.id == volunteer.id }.contact)
+        val contactCleared: RegistrationDto = api.put("/registration/guests/${volunteer.id}") {
+            asCoach()
+            setBody(UpsertGuestRequest("Aunt V.", ShirtSize.AL, gender = Gender.FEMALE, contact = ContactInfoDto()))
+        }.body()
+        assertNull(contactCleared.guests.first { it.id == volunteer.id }.contact, "all-blank contact collapses")
         val afterDelete: RegistrationDto = api.delete("/registration/guests/${volunteer.id}") { asCoach() }.body()
         assertEquals(8500 + 2500, afterDelete.totalCents)
         val missing = api.delete("/registration/guests/${volunteer.id}") { asCoach() }

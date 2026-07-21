@@ -34,7 +34,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 6 | F6 | Event locations (multi-site seasons) | done |
 | 7 | F1 | Guests & attendee types | done |
 | 8 | F2 | Volunteer positions & tribe-leader willingness | done |
-| 9 | F3 | Adult contact info & communication preference | not started |
+| 9 | F3 | Adult contact info & communication preference | done |
 | 10 | F5 | Age-tiered fee schedule | not started |
 | 11 | F11 | Registration counts dashboard | not started |
 | 12 | F12 | Shirt-order report | not started |
@@ -194,8 +194,16 @@ The workbook collects address/city/state/zip/phone/email and a preferred-contact
 column for coaches and some adults.
 
 - **Change:** optional contact fields + communication preference on adult attendees.
-- **Open question (resolve during refinement):** how much is actually used vs the coach's
-  account contact? Collect the minimum that event ops really consumed in 2026.
+- **Open question (resolved, Mark 2026-07-21):** collect the **full workbook set** —
+  address/city/state/zip/phone/email + preferred method — not just a minimum.
+- **As built (2026-07):** shared `ContactInfoDto` (+ `ContactPreference`: email / phone
+  call / text), everything optional and free-form. Coaches (and any adult account) edit
+  theirs on the **account profile** (#account, durable across seasons; email comes from
+  the account so it isn't re-collected; `PUT /auth/me` leaves contact unchanged when the
+  field is omitted, so the not-yet-updated Compose app can't wipe it). Adult (9+) guests
+  get the same fields **plus email** (no account) on a collapsible per-guest Contact panel
+  on the register screen. Registrars see both on the desk detail: a contact summary line
+  under each guest and a "Coach contact info" block per congregation.
 - **Dependencies:** 7.
 
 ## 10. (F5) Age-tiered fee schedule

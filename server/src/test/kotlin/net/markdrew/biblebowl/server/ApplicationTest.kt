@@ -16,6 +16,8 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
 import net.markdrew.biblebowl.api.AuthResponse
+import net.markdrew.biblebowl.api.ContactInfoDto
+import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.Permission
@@ -427,6 +429,37 @@ class ApplicationTest {
         )
         assertTrue(adultMe.adult)
         assertEquals(null, adultMe.birthdate)
+
+        // Contact info (item 9, F3): saved when sent, kept when omitted (older clients), cleared when
+        // sent empty.
+        val contact = ContactInfoDto(
+            address = "1 Main St", city = "Waco", state = "TX", zip = "76701",
+            phone = "555-0100", preference = ContactPreference.TEXT,
+        )
+        api.put("/auth/me") {
+            header(HttpHeaders.Authorization, "Bearer ${auth.token}")
+            setBody(UpdateProfileRequest("Tim of Lystra", adult = true, contact = contact))
+        }
+        val withContact: UserDto = json.decodeFromString(
+            api.get("/auth/me") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }.bodyAsText()
+        )
+        assertEquals(contact, withContact.contact)
+        api.put("/auth/me") {
+            header(HttpHeaders.Authorization, "Bearer ${auth.token}")
+            setBody(UpdateProfileRequest("Tim of Lystra", adult = true)) // no contact field at all
+        }
+        val stillContact: UserDto = json.decodeFromString(
+            api.get("/auth/me") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }.bodyAsText()
+        )
+        assertEquals(contact, stillContact.contact, "omitted contact leaves the stored value alone")
+        api.put("/auth/me") {
+            header(HttpHeaders.Authorization, "Bearer ${auth.token}")
+            setBody(UpdateProfileRequest("Tim of Lystra", adult = true, contact = ContactInfoDto()))
+        }
+        val cleared: UserDto = json.decodeFromString(
+            api.get("/auth/me") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }.bodyAsText()
+        )
+        assertEquals(null, cleared.contact, "an all-blank contact clears it")
     }
 
     @Test

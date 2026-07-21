@@ -3,6 +3,8 @@ package net.markdrew.biblebowl.server.data
 import net.markdrew.biblebowl.api.AwayMemberDto
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.ContactInfoDto
+import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.GuestAgeTier
 import net.markdrew.biblebowl.api.GuestDto
@@ -548,7 +550,7 @@ class InMemoryRegistrationRepository(
             val reg = regFor(congregationId, seasonYear)
             val guest = GuestDto(
                 UUID.randomUUID().toString(), req.name.trim(), req.shirtSize, req.ageTier, req.gender,
-                positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling,
+                positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling, contact = req.contact,
             )
             guests[guest.id] = guest
             guestReg[guest.id] = reg.id
@@ -559,7 +561,7 @@ class InMemoryRegistrationRepository(
         val guest = guests[guestId] ?: return null
         guests[guestId] = guest.copy(
             name = req.name.trim(), shirtSize = req.shirtSize, ageTier = req.ageTier, gender = req.gender,
-            positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling,
+            positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling, contact = req.contact,
         )
         guests[guestId]
     }
@@ -1210,11 +1212,18 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 it[gender] = req.gender?.name
                 it[positions] = encodePositions(req.positions)
                 it[tribeLeader] = req.tribeLeaderWilling
+                it[contactAddress] = req.contact?.address?.trim() ?: ""
+                it[contactCity] = req.contact?.city?.trim() ?: ""
+                it[contactState] = req.contact?.state?.trim() ?: ""
+                it[contactZip] = req.contact?.zip?.trim() ?: ""
+                it[contactPhone] = req.contact?.phone?.trim() ?: ""
+                it[contactEmail] = req.contact?.email?.trim() ?: ""
+                it[contactPreference] = req.contact?.preference?.name
             }
             touch(regId)
             GuestDto(
                 guestId, req.name.trim(), req.shirtSize, req.ageTier, req.gender,
-                positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling,
+                positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling, contact = req.contact,
             )
         }
 
@@ -1226,6 +1235,13 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             it[gender] = req.gender?.name
             it[positions] = encodePositions(req.positions)
             it[tribeLeader] = req.tribeLeaderWilling
+            it[contactAddress] = req.contact?.address?.trim() ?: ""
+            it[contactCity] = req.contact?.city?.trim() ?: ""
+            it[contactState] = req.contact?.state?.trim() ?: ""
+            it[contactZip] = req.contact?.zip?.trim() ?: ""
+            it[contactPhone] = req.contact?.phone?.trim() ?: ""
+            it[contactEmail] = req.contact?.email?.trim() ?: ""
+            it[contactPreference] = req.contact?.preference?.name
         }
         if (updated == 0) null
         else RegistrationGuestsTable.selectAll().where { RegistrationGuestsTable.id eq guestId }.single().toGuest()
@@ -1506,6 +1522,15 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         gender = this[RegistrationGuestsTable.gender]?.let { Gender.valueOf(it) },
         positions = decodePositions(this[RegistrationGuestsTable.positions]),
         tribeLeaderWilling = this[RegistrationGuestsTable.tribeLeader],
+        contact = ContactInfoDto(
+            address = this[RegistrationGuestsTable.contactAddress],
+            city = this[RegistrationGuestsTable.contactCity],
+            state = this[RegistrationGuestsTable.contactState],
+            zip = this[RegistrationGuestsTable.contactZip],
+            phone = this[RegistrationGuestsTable.contactPhone],
+            email = this[RegistrationGuestsTable.contactEmail],
+            preference = this[RegistrationGuestsTable.contactPreference]?.let { ContactPreference.valueOf(it) },
+        ).takeUnless { it.isEmpty() },
     )
 
     /** Builds an individual entry from a row that joins [IndividualsTable] to its [ContestantsTable]. */

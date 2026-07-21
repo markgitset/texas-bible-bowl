@@ -23,6 +23,7 @@ fun UserRecord.toDto(): UserDto = UserDto(
     displayName = displayName,
     birthdate = birthdate,
     adult = adult,
+    contact = contact,
     roles = roles,
     permissions = permissionsFor(roles.map { it.role }),
 )

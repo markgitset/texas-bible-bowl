@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.web.screens
 
 import kotlinx.browser.document
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDeskRowDto
 import net.markdrew.biblebowl.api.RegistrationDto
@@ -372,8 +373,16 @@ object AdminRegistrationsScreen {
                         append("${guest.name} — ${details.joinToString(", ")}")
                         guest.positions.forEach { child("span", "badge text-bg-secondary ms-1", it) }
                         if (guest.tribeLeaderWilling) child("span", "badge text-bg-success ms-1", "tribe leader")
+                        guest.contact?.let { child("div", "text-muted ms-3", contactSummary(it)) }
                     }
                 }
+            }
+        }
+        // Coach contact info (item 9, F3) — collected on their accounts; shown where a registrar acts on it.
+        row.coaches.filter { it.contact != null }.takeIf { it.isNotEmpty() }?.let { withContact ->
+            parent.child("h6", "mt-2", "Coach contact info")
+            withContact.forEach { coach ->
+                parent.child("div", "small", "${coach.displayName} — ${contactSummary(coach.contact!!)}")
             }
         }
         renderReturningCandidatesAdmin(parent, row)
@@ -644,6 +653,18 @@ object AdminRegistrationsScreen {
             )
         }
         return (listOf(header) + rows).joinToString("\r\n") { line -> line.joinToString(",") { csvField(it) } }
+    }
+
+    /** "1 Main St, Waco, TX 76701 · 555-1234 · a@b.org · prefers text" — only the parts provided. */
+    private fun contactSummary(contact: ContactInfoDto): String {
+        val stateZip = listOf(contact.state, contact.zip).filter { it.isNotBlank() }.joinToString(" ")
+        val postal = listOf(contact.address, contact.city, stateZip).filter { it.isNotBlank() }.joinToString(", ")
+        return listOfNotNull(
+            postal.takeIf { it.isNotBlank() },
+            contact.phone.takeIf { it.isNotBlank() },
+            contact.email.takeIf { it.isNotBlank() },
+            contact.preference?.let { "prefers ${it.displayName.lowercase()}" },
+        ).joinToString(" · ")
     }
 
     /** Quote-escapes a CSV field, guarding user-entered text against spreadsheet formula injection. */

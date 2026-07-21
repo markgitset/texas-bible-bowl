@@ -1,6 +1,8 @@
 package net.markdrew.biblebowl.web.screens
 
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.ContactInfoDto
+import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.division
@@ -16,6 +18,8 @@ import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.HTMLOptionElement
+import org.w3c.dom.HTMLSelectElement
 
 /**
  * Account screen (docs/gui-redesign.md §5H): editable profile (display name + the birthdate/adult
@@ -110,6 +114,48 @@ object AccountScreen {
                 }
                 val divisionHint = form.child("p", "form-text mt-n2 mb-3", "")
 
+                // Contact info (adults): optional event-communication details for registrars.
+                fun contactInput(parent: Element, label: String, initial: String, autocomplete: String, cls: String = "") =
+                    (parent.child("div", cls.ifEmpty { "flex-grow-1" }) {
+                        child("label", "form-label", label)
+                    }.let { wrap ->
+                        wrap.child("input", "form-control") as HTMLInputElement
+                    }).apply {
+                        value = initial
+                        setAttribute("autocomplete", autocomplete)
+                    }
+                val storedContact = user.contact ?: ContactInfoDto()
+                lateinit var address: HTMLInputElement
+                lateinit var city: HTMLInputElement
+                lateinit var state: HTMLInputElement
+                lateinit var zip: HTMLInputElement
+                lateinit var phone: HTMLInputElement
+                lateinit var preference: HTMLSelectElement
+                val contactRows = form.child("div", "mb-3") {
+                    child("h6", "mt-2", "Contact info")
+                    child("p", "form-text mt-0",
+                        "Optional — how event organizers can reach you (only registrars see it).")
+                    address = contactInput(this, "Street address", storedContact.address, "street-address", "mb-2")
+                    child("div", "d-flex flex-wrap gap-2 mb-2") {
+                        city = contactInput(this, "City", storedContact.city, "address-level2")
+                        state = contactInput(this, "State", storedContact.state, "address-level1", "w-25")
+                        zip = contactInput(this, "Zip", storedContact.zip, "postal-code", "w-25")
+                    }
+                    child("div", "d-flex flex-wrap gap-2") {
+                        phone = contactInput(this, "Phone", storedContact.phone, "tel")
+                        child("div", "w-50") {
+                            child("label", "form-label", "Preferred contact method")
+                            preference = child("select", "form-select") as HTMLSelectElement
+                            (preference.child("option", text = "No preference") as HTMLOptionElement).value = ""
+                            ContactPreference.entries.forEach { pref ->
+                                val option = preference.child("option", text = pref.displayName) as HTMLOptionElement
+                                option.value = pref.name
+                                if (pref == storedContact.preference) option.selected = true
+                            }
+                        }
+                    }
+                }
+
                 val save = form.child("button", "btn btn-primary", "Save profile") {
                     setAttribute("type", "submit")
                 } as HTMLButtonElement
@@ -118,6 +164,7 @@ object AccountScreen {
                 fun refresh() {
                     val isAdult = adult.checked
                     birthdateRow.classList.toggle("d-none", isAdult)
+                    contactRows.classList.toggle("d-none", !isAdult)
                     divisionHint.textContent = when {
                         isAdult -> "Division: Adult"
                         else -> birthdate.value.takeIf { it.isNotBlank() }
@@ -143,6 +190,17 @@ object AccountScreen {
                                     birthdate = birthdate.value.takeIf { it.isNotBlank() }
                                         ?.takeUnless { adult.checked },
                                     adult = adult.checked,
+                                    // Always sent (empty clears); the server keeps stored contact
+                                    // only when the field is omitted entirely (older clients).
+                                    contact = ContactInfoDto(
+                                        address = address.value.trim(),
+                                        city = city.value.trim(),
+                                        state = state.value.trim(),
+                                        zip = zip.value.trim(),
+                                        phone = phone.value.trim(),
+                                        preference = preference.value.takeIf { it.isNotEmpty() }
+                                            ?.let { ContactPreference.valueOf(it) },
+                                    ),
                                 )
                             )
                             Session.profileSaved() // re-renders the screen with the fresh user

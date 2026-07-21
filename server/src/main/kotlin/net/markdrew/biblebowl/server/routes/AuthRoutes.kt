@@ -68,7 +68,7 @@ fun Route.authRoutes(users: UserRepository, jwt: JwtService) {
                 call.respond(user.toDto())
             }
 
-            /** Self-service profile edit: display name plus the birthdate/adult eligibility fields. */
+            /** Self-service profile edit: display name, birthdate/adult eligibility, contact info. */
             put("/me") {
                 val user = currentUser(users) ?: return@put
                 val req = call.receive<UpdateProfileRequest>()
@@ -85,6 +85,8 @@ fun Route.authRoutes(users: UserRepository, jwt: JwtService) {
                     displayName = req.displayName.trim(),
                     birthdate = req.birthdate.takeUnless { req.adult },
                     adult = req.adult,
+                    // Omitted contact (older clients) keeps what's stored; sent-but-empty clears it.
+                    contact = (req.contact ?: user.contact)?.takeUnless { it.isEmpty() },
                 ) ?: run {
                     call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such user"))
                     return@put

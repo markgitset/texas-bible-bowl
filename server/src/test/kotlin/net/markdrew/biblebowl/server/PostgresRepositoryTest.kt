@@ -1,6 +1,8 @@
 package net.markdrew.biblebowl.server
 
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.ContactInfoDto
+import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.GuestAgeTier
 import net.markdrew.biblebowl.api.GuestDto
@@ -110,6 +112,13 @@ class PostgresRepositoryTest {
         assertEquals(created.id, byEmail.id)
         assertEquals(setOf(Role.COACH, Role.CONTESTANT), byEmail.roles.map { it.role }.toSet())
         assertEquals(created.id, users.findById(created.id)?.id)
+
+        // Contact info (item 9, F3) persists via updateProfile and reads back; blank clears to null.
+        val contact = ContactInfoDto(phone = "555-0100", city = "Waco", preference = ContactPreference.PHONE)
+        users.updateProfile(created.id, "Coach Paul", null, adult = true, contact = contact)
+        assertEquals(contact, users.findById(created.id)?.contact)
+        users.updateProfile(created.id, "Coach Paul", null, adult = true, contact = null)
+        assertNull(users.findById(created.id)?.contact)
     }
 
     @Test
@@ -320,10 +329,17 @@ class PostgresRepositoryTest {
         val reg = assertNotNull(registrations.find(cong.id, "2027"))
         assertEquals(listOf(volunteer, baby, child), reg.guests, "name-sorted")
 
+        val contact = ContactInfoDto(
+            address = "1 Main St", city = "Waco", state = "TX", zip = "76701",
+            phone = "555-0100", email = "sib@fam.org", preference = ContactPreference.TEXT,
+        )
         val edited = assertNotNull(
             registrations.updateGuest(
-                child.id, UpsertGuestRequest("Bigger Sib", ShirtSize.YM, GuestAgeTier.AGE_9_PLUS, Gender.MALE)))
-        assertEquals(GuestDto(child.id, "Bigger Sib", ShirtSize.YM, GuestAgeTier.AGE_9_PLUS, Gender.MALE), edited)
+                child.id,
+                UpsertGuestRequest("Bigger Sib", ShirtSize.YM, GuestAgeTier.AGE_9_PLUS, Gender.MALE, contact = contact)))
+        assertEquals(
+            GuestDto(child.id, "Bigger Sib", ShirtSize.YM, GuestAgeTier.AGE_9_PLUS, Gender.MALE, contact = contact),
+            edited)
         assertNull(registrations.updateGuest("nope", UpsertGuestRequest("X", ShirtSize.AM, gender = Gender.MALE)))
 
         assertTrue(registrations.deleteGuest(volunteer.id))

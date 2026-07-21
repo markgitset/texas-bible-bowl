@@ -51,7 +51,7 @@ fun Route.adminRegistrationRoutes(
                             congregation = cong,
                             registration = regsByCongregation[cong.id]?.withTotal(seasons),
                             coaches = coaches[cong.id].orEmpty()
-                                .map { CoachContactDto(it.displayName, it.email) },
+                                .map { CoachContactDto(it.displayName, it.email, it.contact) },
                             returningCandidates = registrations.returningContestants(cong.id, season.eventYear)
                                 .filter { season.isEligibleReturningCandidate(it.birthdate) },
                         )

@@ -1,5 +1,6 @@
 package net.markdrew.biblebowl.server.data
 
+import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.Role
@@ -20,6 +21,8 @@ data class UserRecord(
     val adult: Boolean,
     val passwordHash: String,
     val roles: MutableList<RoleGrant>,
+    /** Optional contact details (item 9, F3); null when the user has never provided any. */
+    val contact: ContactInfoDto? = null,
 )
 
 interface UserRepository {
@@ -33,8 +36,17 @@ interface UserRepository {
     ): UserRecord
     fun findByEmail(email: String): UserRecord?
     fun findById(id: String): UserRecord?
-    /** Replaces the user's self-editable profile fields; null when the user doesn't exist. */
-    fun updateProfile(userId: String, displayName: String, birthdate: String?, adult: Boolean): UserRecord?
+    /**
+     * Replaces the user's self-editable profile fields ([contact] included — callers resolve
+     * keep-vs-clear before calling); null when the user doesn't exist.
+     */
+    fun updateProfile(
+        userId: String,
+        displayName: String,
+        birthdate: String?,
+        adult: Boolean,
+        contact: ContactInfoDto?,
+    ): UserRecord?
     /** Adds a role grant to an existing user (no-op if the identical grant is already held). */
     fun addRoleGrant(userId: String, grant: RoleGrant)
     /** Removes an exact grant (role + scopeType + scopeId). False if the user or grant wasn't found. */
@@ -79,9 +91,15 @@ class InMemoryUserRepository : UserRepository {
     override fun findByEmail(email: String): UserRecord? = idByEmail[email.lowercase()]?.let { byId[it] }
     override fun findById(id: String): UserRecord? = byId[id]
 
-    override fun updateProfile(userId: String, displayName: String, birthdate: String?, adult: Boolean): UserRecord? =
+    override fun updateProfile(
+        userId: String,
+        displayName: String,
+        birthdate: String?,
+        adult: Boolean,
+        contact: ContactInfoDto?,
+    ): UserRecord? =
         byId.computeIfPresent(userId) { _, record ->
-            record.copy(displayName = displayName, birthdate = birthdate, adult = adult)
+            record.copy(displayName = displayName, birthdate = birthdate, adult = adult, contact = contact)
         }
 
     override fun addRoleGrant(userId: String, grant: RoleGrant) {

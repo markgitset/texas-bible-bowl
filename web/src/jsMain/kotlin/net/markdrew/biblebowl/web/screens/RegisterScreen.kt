@@ -5,6 +5,8 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.AwayMemberDto
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.ContactInfoDto
+import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.GuestAgeTier
 import net.markdrew.biblebowl.api.GuestDto
@@ -863,24 +865,39 @@ object RegisterScreen {
                         "${formatCents(season.priceChildCents)}, under 3 free. T-shirt included " +
                         "(except under-3s). Guests aren't contestants and aren't placed on a team.")
                 guests.forEach { guest ->
-                    child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
-                        val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
+                    child("div", "mb-2") {
+                        val row = child("div", "d-flex flex-wrap align-items-center gap-2")
+                        val name = row.child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
                         name.value = guest.name
                         name.disabled = !canEdit
-                        val gender = genderSelect(this, guest.gender)
-                        val tier = guestTierSelect(this, guest.ageTier)
-                        val shirt = shirtSelect(this, guest.shirtSize ?: ShirtSize.AM)
-                        val removeSlot = child("span")
-                        // Volunteer positions + tribe leading: adult (age-9+) guests only.
+                        val gender = genderSelect(row, guest.gender)
+                        val tier = guestTierSelect(row, guest.ageTier)
+                        val shirt = shirtSelect(row, guest.shirtSize ?: ShirtSize.AM)
+
+                        // Optional contact details (item 9, F3) for adult (9+) guests, collapsed
+                        // behind a toggle so the row stays tight.
+                        val contactToggle = row.child(
+                            "button", "btn btn-outline-secondary btn-sm",
+                            if (guest.contact != null) "Contact ✓" else "Contact",
+                        ) as HTMLButtonElement
+                        contactToggle.setAttribute("type", "button")
+                        contactToggle.setAttribute("title", "Contact info for event organizers (optional)")
+                        // Volunteer positions + tribe leading (item 8, F2): adult (age-9+) guests only.
                         val (positionBoxes, tribeBox, volunteerLine) =
                             volunteerFields(this, guest.positions, guest.tribeLeaderWilling)
-                        val syncTier = {
+                        val contactPanel = child("div", "border rounded p-2 mt-1 ms-3 d-none")
+                        contactToggle.onClick { contactPanel.classList.toggle("d-none") }
+
+                        val sync = {
                             shirt.classList.toggle("d-none", tier.value == GuestAgeTier.UNDER_3.name)
-                            volunteerLine.classList.toggle("d-none", tier.value != GuestAgeTier.AGE_9_PLUS.name)
+                            val nineUp = tier.value == GuestAgeTier.AGE_9_PLUS.name
+                            volunteerLine.classList.toggle("d-none", !nineUp)
+                            contactToggle.classList.toggle("d-none", !nineUp)
+                            if (!nineUp) contactPanel.classList.add("d-none")
                         }
-                        syncTier()
+                        lateinit var contactFields: GuestContactFields
                         val save = {
-                            syncTier()
+                            sync()
                             val chosenGender = genderOf(gender)
                             if (name.value.isNotBlank() && chosenGender != null) {
                                 mutate {
@@ -891,11 +908,15 @@ object RegisterScreen {
                                             GuestAgeTier.valueOf(tier.value), chosenGender,
                                             positions = positionBoxes.filter { it.second.checked }.map { it.first },
                                             tribeLeaderWilling = tribeBox.checked,
+                                            contact = contactFields.value(),
                                         ),
                                     )
                                 }
                             }
                         }
+                        contactFields = guestContactFields(contactPanel, guest.contact, save)
+
+                        sync()
                         val fields: List<HTMLElement> =
                             listOf(name, gender, tier, shirt, tribeBox) + positionBoxes.map { it.second }
                         fields.forEach { el ->
@@ -904,7 +925,7 @@ object RegisterScreen {
                             (el as? HTMLInputElement)?.disabled = !canEdit
                         }
                         if (canEdit) {
-                            removeSlot.child("button", "btn btn-outline-danger btn-sm", "Remove") {
+                            row.child("button", "btn btn-outline-danger btn-sm", "Remove") {
                                 setAttribute("type", "button")
                                 onClick { mutate { Session.api.deleteGuest(guest.id) } }
                             }
@@ -963,6 +984,76 @@ object RegisterScreen {
     /** The shirt selection for a guest — always null for under-3s, whose free entry includes no shirt. */
     private fun guestShirtOf(shirt: HTMLSelectElement, tier: HTMLSelectElement): ShirtSize? =
         if (tier.value == GuestAgeTier.UNDER_3.name) null else ShirtSize.valueOf(shirt.value)
+
+    /** The contact inputs of one guest's collapsible panel; [value] snapshots them as a DTO. */
+    private class GuestContactFields(
+        val address: HTMLInputElement,
+        val city: HTMLInputElement,
+        val state: HTMLInputElement,
+        val zip: HTMLInputElement,
+        val phone: HTMLInputElement,
+        val email: HTMLInputElement,
+        val preference: HTMLSelectElement,
+    ) {
+        /** The server collapses an all-blank DTO to "no contact info". */
+        fun value(): ContactInfoDto = ContactInfoDto(
+            address = address.value.trim(),
+            city = city.value.trim(),
+            state = state.value.trim(),
+            zip = zip.value.trim(),
+            phone = phone.value.trim(),
+            email = email.value.trim(),
+            preference = preference.value.takeIf { it.isNotEmpty() }?.let { ContactPreference.valueOf(it) },
+        )
+    }
+
+    /**
+     * Fills a guest's contact panel: optional address/phone/email/preference inputs (guests have no
+     * account, hence the email) plus a save button invoking [save] — contact isn't autosaved per
+     * keystroke because the re-render would collapse the panel between fields.
+     */
+    private fun guestContactFields(panel: Element, initial: ContactInfoDto?, save: () -> Unit): GuestContactFields {
+        val stored = initial ?: ContactInfoDto()
+        fun input(parent: Element, placeholder: String, value: String, cls: String = "") =
+            (parent.child("input", "form-control form-control-sm $cls") as HTMLInputElement).apply {
+                this.value = value
+                this.disabled = !canEdit
+                setAttribute("placeholder", placeholder)
+            }
+        panel.child("div", "small text-muted mb-1", "Contact info for event organizers (optional)")
+        lateinit var address: HTMLInputElement
+        lateinit var city: HTMLInputElement
+        lateinit var state: HTMLInputElement
+        lateinit var zip: HTMLInputElement
+        lateinit var phone: HTMLInputElement
+        lateinit var email: HTMLInputElement
+        lateinit var preference: HTMLSelectElement
+        panel.child("div", "d-flex flex-wrap gap-2 mb-2") {
+            address = input(this, "Street address", stored.address, "w-auto flex-grow-1")
+            city = input(this, "City", stored.city, "w-auto")
+            state = input(this, "State", stored.state, "w-auto") .also { it.setAttribute("size", "6") }
+            zip = input(this, "Zip", stored.zip, "w-auto").also { it.setAttribute("size", "8") }
+        }
+        panel.child("div", "d-flex flex-wrap gap-2") {
+            phone = input(this, "Phone", stored.phone, "w-auto")
+            email = input(this, "Email", stored.email, "w-auto flex-grow-1")
+            preference = child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
+            preference.disabled = !canEdit
+            (preference.child("option", text = "No preference") as HTMLOptionElement).value = ""
+            ContactPreference.entries.forEach { pref ->
+                val option = preference.child("option", text = pref.displayName) as HTMLOptionElement
+                option.value = pref.name
+                if (pref == stored.preference) option.selected = true
+            }
+            if (canEdit) {
+                child("button", "btn btn-primary btn-sm", "Save contact") {
+                    setAttribute("type", "button")
+                    onClick { save() }
+                }
+            }
+        }
+        return GuestContactFields(address, city, state, zip, phone, email, preference)
+    }
 
     private fun renderTeamRoster(parent: Element, team: TeamDto) {
         parent.child("div", "card section-card mb-3") {

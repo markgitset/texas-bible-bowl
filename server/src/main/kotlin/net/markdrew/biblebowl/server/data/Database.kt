@@ -19,6 +19,13 @@ object UsersTable : Table("users") {
     val displayName = varchar("display_name", 120)
     val birthdate = varchar("birthdate", 10).nullable() // ISO-8601; null for adults & legacy accounts
     val isAdult = bool("is_adult").default(false)
+    // Optional adult contact details (item 9, F3) — free-form, "" when not provided.
+    val contactAddress = varchar("contact_address", 200).default("")
+    val contactCity = varchar("contact_city", 100).default("")
+    val contactState = varchar("contact_state", 20).default("")
+    val contactZip = varchar("contact_zip", 10).default("")
+    val contactPhone = varchar("contact_phone", 30).default("")
+    val contactPreference = varchar("contact_preference", 8).nullable()
     val passwordHash = varchar("password_hash", 512)
     override val primaryKey = PrimaryKey(id)
 }
@@ -181,6 +188,14 @@ object RegistrationGuestsTable : Table("registration_guests") {
     val positions = text("positions").default("[]")
     // Willing to serve as a tribe leader; age-9+ guests only.
     val tribeLeader = bool("tribe_leader").default(false)
+    // Optional adult contact details (item 9, F3) — guests have no account, so email included.
+    val contactAddress = varchar("contact_address", 200).default("")
+    val contactCity = varchar("contact_city", 100).default("")
+    val contactState = varchar("contact_state", 20).default("")
+    val contactZip = varchar("contact_zip", 10).default("")
+    val contactPhone = varchar("contact_phone", 30).default("")
+    val contactEmail = varchar("contact_email", 255).default("")
+    val contactPreference = varchar("contact_preference", 8).nullable()
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -375,6 +390,21 @@ object DatabaseFactory {
             exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS positions TEXT NOT NULL DEFAULT '[]'")
             exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS tribe_leader BOOLEAN NOT NULL DEFAULT FALSE")
             exec("ALTER TABLE individual_contestants ADD COLUMN IF NOT EXISTS tribe_leader BOOLEAN NOT NULL DEFAULT FALSE")
+            // Adult contact info + communication preference (2026-07, registration backlog F3):
+            // optional per-adult contact on user accounts, and on guests (who have no account,
+            // hence the extra email column there).
+            for (col in listOf(
+                "contact_address VARCHAR(200) NOT NULL DEFAULT ''",
+                "contact_city VARCHAR(100) NOT NULL DEFAULT ''",
+                "contact_state VARCHAR(20) NOT NULL DEFAULT ''",
+                "contact_zip VARCHAR(10) NOT NULL DEFAULT ''",
+                "contact_phone VARCHAR(30) NOT NULL DEFAULT ''",
+                "contact_preference VARCHAR(8)",
+            )) {
+                exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS $col")
+                exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS $col")
+            }
+            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255) NOT NULL DEFAULT ''")
         }
         return db
     }
