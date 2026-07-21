@@ -37,7 +37,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 9 | F3 | Adult contact info & communication preference | done |
 | 10 | F5 | Age-tiered fee schedule | done |
 | 11 | F11 | Registration counts dashboard | not started |
-| 12 | F12 | Shirt-order report | not started |
+| 12 | F12 | Shirt-order report | done |
 | 13 | F7 | Tester IDs + ZipGrade export | not started |
 | 14 | F8 | Nametag PDF generation | not started |
 | 15 | F9 | Housing / cabin assignments | not started |
@@ -242,6 +242,15 @@ Replaces the `Congregations` shirt-order matrix: size × congregation per site, 
 totals by size. Likely one view + CSV/PDF export over the same data as item 11.
 
 - **Dependencies:** 6, 7 (guests get shirts too; 2026 ordered 220 shirts for 223 people).
+- **As built (2026-07):** built ahead of items 10–11 at Mark's direction (its dependencies 6
+  and 7 were already done). `RegistrationDto.shirtSizes` in `shared-api` is the single
+  counting rule — home team members + individuals + unassigned + away (combo) members +
+  shirted guests; visiting members count under their *own* congregation and under-3 guests
+  get no shirt (the 220-of-223 gap). The desk gains a "Shirt order" section (congregation ×
+  size matrix, grand totals by size, under-3 no-shirt note) that respects the site filter —
+  pick a site to get that site's vendor order — plus a CSV of the same matrix. Pure web
+  view over the existing desk response; no server change, so nothing new to feature-gate.
+  PDF export skipped: the CSV is what a shirt order actually needs.
 
 ## 13. (F7) Tester IDs + ZipGrade export
 

@@ -11,14 +11,15 @@ class RegistrationDomainTest {
     /** FALLBACK_SEASON is the 2027 event, so the default grade cutoff is 2026-09-01. */
     private val season = FALLBACK_SEASON
 
-    private fun entry(birthdate: String?, firstSeasonYear: String? = null) = RosterEntryDto(
-        id = "e$birthdate",
-        name = "Kid",
-        birthdate = birthdate,
-        shirtSize = ShirtSize.AM,
-        firstSeasonYear = firstSeasonYear,
-        claimCode = "AAAA2222",
-    )
+    private fun entry(birthdate: String?, firstSeasonYear: String? = null, shirtSize: ShirtSize = ShirtSize.AM) =
+        RosterEntryDto(
+            id = "e$birthdate",
+            name = "Kid",
+            birthdate = birthdate,
+            shirtSize = shirtSize,
+            firstSeasonYear = firstSeasonYear,
+            claimCode = "AAAA2222",
+        )
 
     @Test
     fun agesCountFullYearsWithBirthdayBoundaries() {
@@ -129,6 +130,39 @@ class RegistrationDomainTest {
             0,
             reg.copy(teams = emptyList(), individuals = emptyList(), unassigned = emptyList()).contestantCount,
         )
+    }
+
+    @Test
+    fun shirtSizesCoverEveryAttendeeWithAShirt() {
+        // A visiting (combo-team) member on this registration's team: their own congregation orders their shirt.
+        val visiting = entry("2013-05-01", shirtSize = ShirtSize.YL)
+            .copy(congregationId = "other", congregationName = "Other Church")
+        val reg = RegistrationDto(
+            id = "r",
+            congregation = CongregationDto("c", "First Church", "Austin"),
+            seasonYear = "2027",
+            status = RegistrationStatus.DRAFT,
+            teams = listOf(TeamDto("t", "Team A", listOf(entry("2018-05-01", shirtSize = ShirtSize.YM), visiting))),
+            individuals = listOf(entry(null, shirtSize = ShirtSize.AL)),
+            unassigned = listOf(entry("2014-05-01", shirtSize = ShirtSize.YM)),
+            awayMembers = listOf(
+                AwayMemberDto(entry("2012-05-01", shirtSize = ShirtSize.AS), "t2", "Away Team", "Other Church"),
+            ),
+            guests = listOf(
+                GuestDto("g1", "Helpful Aunt", ShirtSize.AM, gender = Gender.FEMALE),
+                GuestDto("g2", "Baby Sibling", null, birthdate = "2025-06-15", gender = Gender.FEMALE),
+            ),
+        )
+        assertEquals(
+            listOf(ShirtSize.YM, ShirtSize.AL, ShirtSize.YM, ShirtSize.AS, ShirtSize.AM),
+            reg.shirtSizes,
+            "home team member + individual + unassigned + away member + shirted guest; " +
+                "no shirt for the visiting member or the under-3 guest",
+        )
+        assertEquals(emptyList(), reg.copy(
+            teams = emptyList(), individuals = emptyList(), unassigned = emptyList(),
+            awayMembers = emptyList(), guests = emptyList(),
+        ).shirtSizes)
     }
 
     @Test

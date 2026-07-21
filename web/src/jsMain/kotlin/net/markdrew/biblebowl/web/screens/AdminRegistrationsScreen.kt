@@ -19,6 +19,7 @@ import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.formatCents
 import net.markdrew.biblebowl.api.ageTierFor
 import net.markdrew.biblebowl.api.multiSite
+import net.markdrew.biblebowl.api.shirtSizes
 import net.markdrew.biblebowl.api.siteFor
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
@@ -120,6 +121,7 @@ object AdminRegistrationsScreen {
 
         renderSummary(content, desk.copy(rows = rows))
         renderVolunteers(content, rows)
+        renderShirtOrder(content, rows)
     }
 
     /** A volunteer or willing tribe leader, labeled with their congregation. */
@@ -168,6 +170,82 @@ object AdminRegistrationsScreen {
                 parent.child("div", "small", "${it.name} — ${it.congregation}")
             }
         }
+    }
+
+    /**
+     * The shirt-order matrix (replaces the workbook's `Congregations` shirt-order tab): size counts
+     * per congregation with grand totals by size, over every attendee whose fee includes a shirt
+     * (see [shirtSizes] — under-3 guests get none, and a combo-team member counts under their own
+     * congregation). [rows] is already site-filtered, so picking a site yields the per-site order
+     * that actually goes to the vendor; the CSV downloads the same matrix.
+     */
+    private fun renderShirtOrder(parent: Element, rows: List<RegistrationDeskRowDto>) {
+        val counts: List<Pair<String, Map<ShirtSize, Int>>> = rows.mapNotNull { row ->
+            val sizes = row.registration?.shirtSizes.orEmpty()
+            if (sizes.isEmpty()) null else row.congregation.name to sizes.groupingBy { it }.eachCount()
+        }
+        if (counts.isEmpty()) return
+        val totals: Map<ShirtSize, Int> =
+            ShirtSize.entries.associateWith { size -> counts.sumOf { (_, bySize) -> bySize[size] ?: 0 } }
+        val noShirt = rows.sumOf { row -> row.registration?.guests?.count { it.shirtSize == null } ?: 0 }
+
+        parent.child("div", "d-flex flex-wrap align-items-center gap-3 mt-4 mb-2") {
+            child("h4", "mb-0") {
+                append("Shirt order ")
+                child("span", "badge text-bg-secondary", totals.values.sum().toString())
+            }
+            child("button", "btn btn-outline-primary btn-sm", "Download CSV") {
+                setAttribute("type", "button")
+                val site = siteFilter?.let { Session.season.siteFor(it) }
+                val suffix = site?.let { "-" + it.name.lowercase().replace(Regex("[^a-z0-9]+"), "-") } ?: ""
+                onClick { downloadCsv("tbb-shirt-order-${data?.seasonYear}$suffix.csv", shirtCsv(counts, totals)) }
+            }
+        }
+        parent.child("div", "table-responsive") {
+            child("table", "table table-sm table-hover align-middle w-auto") {
+                child("thead") {
+                    child("tr") {
+                        child("th", text = "Congregation")
+                        ShirtSize.entries.forEach { child("th", "text-end", it.displayName) }
+                        child("th", "text-end", "Total")
+                    }
+                }
+                child("tbody") {
+                    counts.forEach { (congregation, bySize) ->
+                        child("tr") {
+                            child("td", text = congregation)
+                            ShirtSize.entries.forEach { size ->
+                                child("td", "text-end", bySize[size]?.toString() ?: "")
+                            }
+                            child("td", "text-end fw-semibold", bySize.values.sum().toString())
+                        }
+                    }
+                }
+                child("tfoot") {
+                    child("tr", "fw-semibold") {
+                        child("td", text = "Total")
+                        ShirtSize.entries.forEach { child("td", "text-end", totals.getValue(it).toString()) }
+                        child("td", "text-end", totals.values.sum().toString())
+                    }
+                }
+            }
+        }
+        if (noShirt > 0) {
+            parent.child("p", "text-muted small", "Plus $noShirt under-3 guest(s) with no included shirt.")
+        }
+    }
+
+    /** The shirt-order matrix as CSV — same rows and totals the table shows. */
+    private fun shirtCsv(counts: List<Pair<String, Map<ShirtSize, Int>>>, totals: Map<ShirtSize, Int>): String {
+        val header = listOf("Congregation") + ShirtSize.entries.map { it.displayName } + "Total"
+        val rows = counts.map { (congregation, bySize) ->
+            listOf(congregation) + ShirtSize.entries.map { (bySize[it] ?: 0).toString() } +
+                bySize.values.sum().toString()
+        }
+        val totalRow = listOf("Total") + ShirtSize.entries.map { totals.getValue(it).toString() } +
+            totals.values.sum().toString()
+        return (listOf(header) + rows + listOf(totalRow))
+            .joinToString("\r\n") { line -> line.joinToString(",") { csvField(it) } }
     }
 
     private fun columnHeaders(): List<String> = buildList {
