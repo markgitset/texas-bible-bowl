@@ -17,6 +17,7 @@ import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
+import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.isNull
@@ -36,6 +37,14 @@ import java.util.concurrent.ConcurrentHashMap
 
 /** The maximum contestants per team (competition rule; enforced at the repository layer). */
 const val MAX_TEAM_SIZE = 4
+
+/** JSON codec for the guests' volunteer-position lists (stored as a JSON array of strings). */
+private val positionsJson = Json { ignoreUnknownKeys = true }
+
+internal fun encodePositions(positions: List<String>): String = positionsJson.encodeToString(positions)
+
+internal fun decodePositions(raw: String): List<String> =
+    runCatching { positionsJson.decodeFromString<List<String>>(raw) }.getOrDefault(emptyList())
 
 /**
  * Outcome of creating a congregation: the two uniqueness constraints (name+city, and the two-letter
@@ -480,6 +489,7 @@ class InMemoryRegistrationRepository(
             shirtSize = req.shirtSize,
             gender = req.gender,
             claimCode = code,
+            tribeLeaderWilling = req.tribeLeaderWilling,
         )
         individuals[entry.id] = entry
         individualReg[entry.id] = reg.id
@@ -509,7 +519,10 @@ class InMemoryRegistrationRepository(
     override fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RosterEntryDto? =
         synchronized(lock) {
             val entry = individuals[individualId] ?: return null
-            individuals[individualId] = entry.copy(name = req.name.trim(), shirtSize = req.shirtSize, gender = req.gender)
+            individuals[individualId] = entry.copy(
+                name = req.name.trim(), shirtSize = req.shirtSize, gender = req.gender,
+                tribeLeaderWilling = req.tribeLeaderWilling,
+            )
             val congregationId = congregationIdForIndividual(individualId)
             if (congregationId != null) {
                 val previous = individualContestant[individualId]
@@ -533,7 +546,10 @@ class InMemoryRegistrationRepository(
     override fun addGuest(congregationId: String, seasonYear: String, req: UpsertGuestRequest): GuestDto =
         synchronized(lock) {
             val reg = regFor(congregationId, seasonYear)
-            val guest = GuestDto(UUID.randomUUID().toString(), req.name.trim(), req.shirtSize, req.ageTier, req.gender)
+            val guest = GuestDto(
+                UUID.randomUUID().toString(), req.name.trim(), req.shirtSize, req.ageTier, req.gender,
+                positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling,
+            )
             guests[guest.id] = guest
             guestReg[guest.id] = reg.id
             guest
@@ -541,8 +557,10 @@ class InMemoryRegistrationRepository(
 
     override fun updateGuest(guestId: String, req: UpsertGuestRequest): GuestDto? = synchronized(lock) {
         val guest = guests[guestId] ?: return null
-        guests[guestId] =
-            guest.copy(name = req.name.trim(), shirtSize = req.shirtSize, ageTier = req.ageTier, gender = req.gender)
+        guests[guestId] = guest.copy(
+            name = req.name.trim(), shirtSize = req.shirtSize, ageTier = req.ageTier, gender = req.gender,
+            positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling,
+        )
         guests[guestId]
     }
 
@@ -1141,11 +1159,13 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             it[claimCode] = code
             // A returning adult re-added by name inherits their existing owner (claim persists).
             it[ownerUserId] = inheritedOwner
+            it[tribeLeader] = req.tribeLeaderWilling
         }
         touch(regId)
         RosterEntryDto(
             individualId, req.name.trim(), birthdate = null,
             shirtSize = req.shirtSize, gender = req.gender, claimCode = code, claimed = inheritedOwner != null,
+            tribeLeaderWilling = req.tribeLeaderWilling,
         )
     }
 
@@ -1158,6 +1178,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             IndividualsTable.update({ IndividualsTable.id eq individualId }) {
                 it[shirtSize] = req.shirtSize.name
                 it[IndividualsTable.contestantId] = contestant
+                it[tribeLeader] = req.tribeLeaderWilling
             }
             if (previousContestant != null && previousContestant != contestant) pruneContestantIfOrphaned(previousContestant)
             individualEntry(individualId)
@@ -1187,9 +1208,14 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 it[shirtSize] = req.shirtSize?.name
                 it[ageTier] = req.ageTier.name
                 it[gender] = req.gender?.name
+                it[positions] = encodePositions(req.positions)
+                it[tribeLeader] = req.tribeLeaderWilling
             }
             touch(regId)
-            GuestDto(guestId, req.name.trim(), req.shirtSize, req.ageTier, req.gender)
+            GuestDto(
+                guestId, req.name.trim(), req.shirtSize, req.ageTier, req.gender,
+                positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling,
+            )
         }
 
     override fun updateGuest(guestId: String, req: UpsertGuestRequest): GuestDto? = transaction(db) {
@@ -1198,6 +1224,8 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             it[shirtSize] = req.shirtSize?.name
             it[ageTier] = req.ageTier.name
             it[gender] = req.gender?.name
+            it[positions] = encodePositions(req.positions)
+            it[tribeLeader] = req.tribeLeaderWilling
         }
         if (updated == 0) null
         else RegistrationGuestsTable.selectAll().where { RegistrationGuestsTable.id eq guestId }.single().toGuest()
@@ -1476,6 +1504,8 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         shirtSize = this[RegistrationGuestsTable.shirtSize]?.let { ShirtSize.valueOf(it) },
         ageTier = GuestAgeTier.valueOf(this[RegistrationGuestsTable.ageTier]),
         gender = this[RegistrationGuestsTable.gender]?.let { Gender.valueOf(it) },
+        positions = decodePositions(this[RegistrationGuestsTable.positions]),
+        tribeLeaderWilling = this[RegistrationGuestsTable.tribeLeader],
     )
 
     /** Builds an individual entry from a row that joins [IndividualsTable] to its [ContestantsTable]. */
@@ -1487,6 +1517,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         gender = this[ContestantsTable.gender]?.let { Gender.valueOf(it) },
         claimCode = this[IndividualsTable.claimCode],
         claimed = this[IndividualsTable.ownerUserId] != null,
+        tribeLeaderWilling = this[IndividualsTable.tribeLeader],
     )
 
     private fun ResultRow.toDto(): RegistrationDto {

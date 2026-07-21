@@ -773,18 +773,23 @@ object RegisterScreen {
                         shirt.disabled = !canEdit
                         val gender = genderSelect(this, member.gender)
                         gender.disabled = !canEdit
+                        val tribe = tribeLeaderCheck(this, member.tribeLeaderWilling)
+                        tribe.disabled = !canEdit
                         val save = {
                             val chosenGender = genderOf(gender)
                             if (name.value.isNotBlank() && chosenGender != null) {
                                 mutate {
                                     Session.api.updateIndividual(
                                         member.id,
-                                        UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value), chosenGender),
+                                        UpsertIndividualRequest(
+                                            name.value, ShirtSize.valueOf(shirt.value), chosenGender,
+                                            tribeLeaderWilling = tribe.checked,
+                                        ),
                                     )
                                 }
                             }
                         }
-                        listOf<HTMLElement>(name, shirt, gender).forEach { it.addEventListener("change", { save() }) }
+                        listOf<HTMLElement>(name, shirt, gender, tribe).forEach { it.addEventListener("change", { save() }) }
                         claimCodeChip(this, member.claimCode)
                         if (canEdit) {
                             child("button", "btn btn-outline-danger btn-sm", "Remove") {
@@ -823,6 +828,7 @@ object RegisterScreen {
                         name.setAttribute("placeholder", "Adult contestant name")
                         val shirt = shirtSelect(this, ShirtSize.AM)
                         val gender = genderSelect(this, null)
+                        val tribe = tribeLeaderCheck(this, false)
                         child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
                         addEventListener("submit", { event ->
                             event.preventDefault()
@@ -831,7 +837,10 @@ object RegisterScreen {
                             mutate {
                                 Session.api.addIndividual(
                                     cong.id,
-                                    UpsertIndividualRequest(name.value, ShirtSize.valueOf(shirt.value), chosenGender),
+                                    UpsertIndividualRequest(
+                                        name.value, ShirtSize.valueOf(shirt.value), chosenGender,
+                                        tribeLeaderWilling = tribe.checked,
+                                    ),
                                 )
                             }
                         })
@@ -861,10 +870,17 @@ object RegisterScreen {
                         val gender = genderSelect(this, guest.gender)
                         val tier = guestTierSelect(this, guest.ageTier)
                         val shirt = shirtSelect(this, guest.shirtSize ?: ShirtSize.AM)
-                        val syncShirt = { shirt.classList.toggle("d-none", tier.value == GuestAgeTier.UNDER_3.name) }
-                        syncShirt()
+                        val removeSlot = child("span")
+                        // Volunteer positions + tribe leading: adult (age-9+) guests only.
+                        val (positionBoxes, tribeBox, volunteerLine) =
+                            volunteerFields(this, guest.positions, guest.tribeLeaderWilling)
+                        val syncTier = {
+                            shirt.classList.toggle("d-none", tier.value == GuestAgeTier.UNDER_3.name)
+                            volunteerLine.classList.toggle("d-none", tier.value != GuestAgeTier.AGE_9_PLUS.name)
+                        }
+                        syncTier()
                         val save = {
-                            syncShirt()
+                            syncTier()
                             val chosenGender = genderOf(gender)
                             if (name.value.isNotBlank() && chosenGender != null) {
                                 mutate {
@@ -873,18 +889,22 @@ object RegisterScreen {
                                         UpsertGuestRequest(
                                             name.value, guestShirtOf(shirt, tier),
                                             GuestAgeTier.valueOf(tier.value), chosenGender,
+                                            positions = positionBoxes.filter { it.second.checked }.map { it.first },
+                                            tribeLeaderWilling = tribeBox.checked,
                                         ),
                                     )
                                 }
                             }
                         }
-                        listOf<HTMLElement>(name, gender, tier, shirt).forEach { el ->
+                        val fields: List<HTMLElement> =
+                            listOf(name, gender, tier, shirt, tribeBox) + positionBoxes.map { it.second }
+                        fields.forEach { el ->
                             el.addEventListener("change", { save() })
                             (el as? HTMLSelectElement)?.disabled = !canEdit
                             (el as? HTMLInputElement)?.disabled = !canEdit
                         }
                         if (canEdit) {
-                            child("button", "btn btn-outline-danger btn-sm", "Remove") {
+                            removeSlot.child("button", "btn btn-outline-danger btn-sm", "Remove") {
                                 setAttribute("type", "button")
                                 onClick { mutate { Session.api.deleteGuest(guest.id) } }
                             }
@@ -898,10 +918,14 @@ object RegisterScreen {
                         val gender = genderSelect(this, null)
                         val tier = guestTierSelect(this, GuestAgeTier.AGE_9_PLUS)
                         val shirt = shirtSelect(this, ShirtSize.AM)
+                        val addSlot = child("span")
+                        val (positionBoxes, tribeBox, volunteerLine) =
+                            volunteerFields(this, emptyList(), tribeLeaderWilling = false)
                         tier.addEventListener("change", {
                             shirt.classList.toggle("d-none", tier.value == GuestAgeTier.UNDER_3.name)
+                            volunteerLine.classList.toggle("d-none", tier.value != GuestAgeTier.AGE_9_PLUS.name)
                         })
-                        child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
+                        addSlot.child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
                         addEventListener("submit", { event ->
                             event.preventDefault()
                             val chosenGender = genderOf(gender)
@@ -912,6 +936,8 @@ object RegisterScreen {
                                     UpsertGuestRequest(
                                         name.value, guestShirtOf(shirt, tier),
                                         GuestAgeTier.valueOf(tier.value), chosenGender,
+                                        positions = positionBoxes.filter { it.second.checked }.map { it.first },
+                                        tribeLeaderWilling = tribeBox.checked,
                                     ),
                                 )
                             }
@@ -1129,6 +1155,53 @@ object RegisterScreen {
 
     private fun genderOf(select: HTMLSelectElement): Gender? =
         select.value.takeIf { it.isNotEmpty() }?.let { Gender.valueOf(it) }
+
+    private var volunteerSeq = 0
+
+    /** "Tribe leader?" checkbox — willingness to serve as a tribe leader (any adult can). */
+    private fun tribeLeaderCheck(parent: Element, checked: Boolean): HTMLInputElement {
+        lateinit var box: HTMLInputElement
+        parent.child("div", "form-check align-self-center text-nowrap") {
+            setAttribute("title", "Willing to serve as a tribe leader")
+            box = child("input", "form-check-input") as HTMLInputElement
+            box.type = "checkbox"
+            box.checked = checked
+            box.id = "tribe-leader-${++volunteerSeq}"
+            child("label", "form-check-label", "Tribe leader?") { setAttribute("for", box.id) }
+        }
+        return box
+    }
+
+    /**
+     * The volunteer questions for an adult (age-9+) guest: one checkbox per season-configured
+     * position plus the tribe-leader checkbox, on a full-width line under the guest's fields.
+     * Returns the position boxes (paired with their position label), the tribe box, and the
+     * container — callers toggle the container with the age tier (children don't volunteer).
+     */
+    private fun volunteerFields(
+        parent: Element,
+        positions: List<String>,
+        tribeLeaderWilling: Boolean,
+    ): Triple<List<Pair<String, HTMLInputElement>>, HTMLInputElement, HTMLElement> {
+        lateinit var boxes: List<Pair<String, HTMLInputElement>>
+        lateinit var tribe: HTMLInputElement
+        val container = parent.child("div", "w-100 d-flex flex-wrap align-items-center gap-3 small") {
+            child("span", "text-muted", "Volunteer:")
+            boxes = Session.season.volunteerPositions.map { position ->
+                lateinit var box: HTMLInputElement
+                child("div", "form-check form-check-inline m-0 text-nowrap") {
+                    box = child("input", "form-check-input") as HTMLInputElement
+                    box.type = "checkbox"
+                    box.checked = position in positions
+                    box.id = "volunteer-${++volunteerSeq}"
+                    child("label", "form-check-label", position) { setAttribute("for", box.id) }
+                }
+                position to box
+            }
+            tribe = tribeLeaderCheck(this, tribeLeaderWilling)
+        } as HTMLElement
+        return Triple(boxes, tribe, container)
+    }
 
     private var firstYearSeq = 0
 

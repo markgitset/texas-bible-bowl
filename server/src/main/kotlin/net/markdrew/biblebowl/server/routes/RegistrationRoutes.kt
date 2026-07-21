@@ -440,7 +440,7 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@post
             if (!requireWindowOpen(user, seasons)) return@post
             val req = call.receive<UpsertGuestRequest>()
-            guestError(req)?.let { return@post call.respond(HttpStatusCode.BadRequest, it) }
+            guestError(req, seasons.current())?.let { return@post call.respond(HttpStatusCode.BadRequest, it) }
             registrations.addGuest(congregationId, seasons.current().eventYear, req.normalized())
             call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
         }
@@ -454,7 +454,7 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@put
             if (!requireWindowOpen(user, seasons)) return@put
             val req = call.receive<UpsertGuestRequest>()
-            guestError(req)?.let { return@put call.respond(HttpStatusCode.BadRequest, it) }
+            guestError(req, seasons.current())?.let { return@put call.respond(HttpStatusCode.BadRequest, it) }
             registrations.updateGuest(guestId, req.normalized())
             call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
         }
@@ -559,17 +559,28 @@ internal fun RegistrationDto.withTotal(seasons: SeasonRepository): RegistrationD
     copy(totalCents = registrationTotalCents(seasons.current(), this))
 
 /** Guest field rules shared by add and edit; null when the request is valid. */
-private fun guestError(req: UpsertGuestRequest): ApiError? = when {
+private fun guestError(req: UpsertGuestRequest, season: SeasonDto): ApiError? = when {
     req.name.isBlank() -> ApiError("invalid_guest", "Name is required")
     req.gender == null -> ApiError("invalid_guest", "Gender is required")
     req.ageTier != GuestAgeTier.UNDER_3 && req.shirtSize == null ->
         ApiError("invalid_guest", "Shirt size is required")
+    // Positions come from checkboxes generated off the season's list — anything else is a stale
+    // or hand-rolled client.
+    !season.volunteerPositions.containsAll(req.positions) ->
+        ApiError("invalid_position", "Unknown volunteer position — reload and try again")
     else -> null
 }
 
-/** Under-3 guests attend free with no included t-shirt — drop any stray shirt selection. */
-private fun UpsertGuestRequest.normalized(): UpsertGuestRequest =
-    if (ageTier == GuestAgeTier.UNDER_3) copy(shirtSize = null) else this
+/**
+ * Under-3 guests attend free with no included t-shirt — drop any stray shirt selection. Only
+ * adult (age-9+) guests volunteer or lead tribes — clear both for the child tiers.
+ */
+private fun UpsertGuestRequest.normalized(): UpsertGuestRequest = when {
+    ageTier == GuestAgeTier.UNDER_3 ->
+        copy(shirtSize = null, positions = emptyList(), tribeLeaderWilling = false)
+    ageTier == GuestAgeTier.AGE_3_TO_8 -> copy(positions = emptyList(), tribeLeaderWilling = false)
+    else -> copy(positions = positions.distinct())
+}
 
 /**
  * Passes when the caller may edit [congregationId]'s teams/roster: an event-wide REGISTRATION_MANAGE

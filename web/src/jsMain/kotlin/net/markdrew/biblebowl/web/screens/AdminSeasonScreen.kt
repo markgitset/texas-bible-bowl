@@ -48,6 +48,13 @@ object AdminSeasonScreen {
         form.field("Theme (TBD hides it)", draft.eventTheme) { draft = draft.copy(eventTheme = it) }
         form.studySetSelect()
         form.sitesEditor()
+        // The volunteer positions adult guests can sign up for during registration (backlog F2).
+        form.field(
+            "Volunteer positions, comma-separated (offered to adult guests during registration)",
+            draft.volunteerPositions.joinToString(", "),
+        ) {
+            draft = draft.copy(volunteerPositions = it.split(",").map(String::trim).filter(String::isNotEmpty))
+        }
         form.dateField("Registration opens (blank = not announced)", draft.registrationOpensOn) {
             draft = draft.copy(registrationOpensOn = it)
         }

@@ -117,6 +117,55 @@ object AdminRegistrationsScreen {
         }
 
         renderSummary(content, desk.copy(rows = rows))
+        renderVolunteers(content, rows)
+    }
+
+    /** A volunteer or willing tribe leader, labeled with their congregation. */
+    private data class Volunteer(val name: String, val congregation: String)
+
+    /**
+     * The volunteers roll-up (replaces the workbook's Volunteers tab): every adult guest's
+     * positions across the listed congregations grouped by position, plus the willing tribe
+     * leaders — adult guests and individual (adult) contestants alike. [rows] is already
+     * site-filtered, so picking a site gives the per-site grouping event ops works from.
+     */
+    private fun renderVolunteers(parent: Element, rows: List<RegistrationDeskRowDto>) {
+        val byPosition = linkedMapOf<String, MutableList<Volunteer>>()
+        Session.season.volunteerPositions.forEach { byPosition[it] = mutableListOf() }
+        val tribeLeaders = mutableListOf<Volunteer>()
+        rows.forEach { row ->
+            val reg = row.registration ?: return@forEach
+            reg.guests.forEach { guest ->
+                guest.positions.forEach { position ->
+                    // getOrPut keeps volunteers whose position was later removed from the season list.
+                    byPosition.getOrPut(position) { mutableListOf() } += Volunteer(guest.name, row.congregation.name)
+                }
+                if (guest.tribeLeaderWilling) tribeLeaders += Volunteer(guest.name, row.congregation.name)
+            }
+            reg.individuals.filter { it.tribeLeaderWilling }
+                .forEach { tribeLeaders += Volunteer(it.name, row.congregation.name) }
+        }
+        if (byPosition.values.all { it.isEmpty() } && tribeLeaders.isEmpty()) return
+
+        parent.child("h4", "mt-4", "Volunteers")
+        byPosition.filterValues { it.isNotEmpty() }.forEach { (position, volunteers) ->
+            parent.child("h6", "mt-2") {
+                append("$position ")
+                child("span", "badge text-bg-secondary", volunteers.size.toString())
+            }
+            volunteers.sortedBy { it.name.lowercase() }.forEach {
+                parent.child("div", "small", "${it.name} — ${it.congregation}")
+            }
+        }
+        if (tribeLeaders.isNotEmpty()) {
+            parent.child("h6", "mt-2") {
+                append("Willing tribe leaders ")
+                child("span", "badge text-bg-success", tribeLeaders.size.toString())
+            }
+            tribeLeaders.sortedBy { it.name.lowercase() }.forEach {
+                parent.child("div", "small", "${it.name} — ${it.congregation}")
+            }
+        }
     }
 
     private fun columnHeaders(): List<String> = buildList {
@@ -305,7 +354,10 @@ object AdminRegistrationsScreen {
             if (reg.individuals.isNotEmpty()) {
                 parent.child("h6", "mt-2", "Individual contestants (adults)")
                 reg.individuals.forEach { entry ->
-                    parent.child("div", "small", "${entry.name} — shirt ${entry.shirtSize.name}")
+                    parent.child("div", "small") {
+                        append("${entry.name} — shirt ${entry.shirtSize.name}")
+                        if (entry.tribeLeaderWilling) child("span", "badge text-bg-success ms-1", "tribe leader")
+                    }
                 }
             }
             if (reg.guests.isNotEmpty()) {
@@ -316,7 +368,11 @@ object AdminRegistrationsScreen {
                         guest.gender?.displayName?.lowercase(),
                         guest.shirtSize?.let { "shirt ${it.name}" } ?: "no shirt",
                     )
-                    parent.child("div", "small", "${guest.name} — ${details.joinToString(", ")}")
+                    parent.child("div", "small") {
+                        append("${guest.name} — ${details.joinToString(", ")}")
+                        guest.positions.forEach { child("span", "badge text-bg-secondary ms-1", it) }
+                        if (guest.tribeLeaderWilling) child("span", "badge text-bg-success ms-1", "tribe leader")
+                    }
                 }
             }
         }
