@@ -155,6 +155,19 @@ data class IndexRefDto(
 // ---------------------------------------------------------------------------
 
 /**
+ * One of the season's event locations (2026 ran two: Bandina and White River Youth Camp). [id] is
+ * the stable key registrations pin to — generated when the site is added and unchanged by renames,
+ * so an admin can fix a site's name without unpinning every congregation.
+ */
+@Serializable
+data class EventSiteDto(
+    val id: String,
+    val name: String,
+    /** Optional address or location note, shown to coaches picking a site; "" when not provided. */
+    val address: String = "",
+)
+
+/**
  * The season parameters shared by the static site and the app (docs/gui-redesign.md §3): the exact
  * field set of the Hugo site's `[params]`, plus [bookCode]/[chapterCount] for the app's study
  * scoping. Served publicly at `GET /seasons/current`; edited in-app by SEASON_MANAGE holders.
@@ -215,6 +228,12 @@ data class SeasonDto(
     val registrationEnabled: Boolean = false,
     /** Feature toggle like [registrationEnabled] for scoring: grading desk, standings, score release, My Scores. */
     val gradingEnabled: Boolean = false,
+    /**
+     * The season's event location(s). Empty or a single site = the frictionless single-site path
+     * (nothing to pick); two or more = each congregation's registration must pin to one site
+     * (see [RegistrationDto.siteId]) and the event-ops views break down per site.
+     */
+    val sites: List<EventSiteDto> = emptyList(),
     val tbbScholarshipAmount: String,
     val maryOrbisonAmount: String,
     val paulHendricksonAmount: String,
@@ -427,6 +446,12 @@ data class RegistrationDto(
     val congregation: CongregationDto,
     val seasonYear: String,
     val status: RegistrationStatus,
+    /**
+     * The [EventSiteDto.id] of the event site this congregation attends. Null while unchosen —
+     * which is the permanent (and fine) state for a single-site season, where [SeasonDto.siteFor]
+     * resolves the lone site regardless; a multi-site season requires a choice before submit.
+     */
+    val siteId: String? = null,
     val teams: List<TeamDto> = emptyList(),
     /** Individual (adult) contestants — never on a team, each competes in the Adult division. */
     val individuals: List<RosterEntryDto> = emptyList(),
@@ -448,6 +473,13 @@ data class RegistrationDto(
     /** ISO-8601 instant when payment was marked received at the registration desk, or null. */
     val paidAt: String? = null,
 )
+
+/**
+ * Pins a congregation's registration to one of the season's event sites
+ * (`PUT /registration/{congregationId}/site`); [siteId] must be a current [SeasonDto.sites] id.
+ */
+@Serializable
+data class SetRegistrationSiteRequest(val siteId: String)
 
 /** Everything the register screen needs to resume: who I coach, my current-season registration, window state. */
 @Serializable

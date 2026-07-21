@@ -1,12 +1,14 @@
 package net.markdrew.biblebowl.web.screens
 
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.clear
+import net.markdrew.biblebowl.web.onClick
 import net.markdrew.biblebowl.web.ui.optionSwitch
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
@@ -45,6 +47,7 @@ object AdminSeasonScreen {
         form.field("Event dates (e.g. April 2–4)", draft.eventDateRange) { draft = draft.copy(eventDateRange = it) }
         form.field("Theme (TBD hides it)", draft.eventTheme) { draft = draft.copy(eventTheme = it) }
         form.studySetSelect()
+        form.sitesEditor()
         form.dateField("Registration opens (blank = not announced)", draft.registrationOpensOn) {
             draft = draft.copy(registrationOpensOn = it)
         }
@@ -198,6 +201,64 @@ object AdminSeasonScreen {
             })
         }
     }
+
+    /**
+     * Event locations editor (item F6). A site's id is generated once and survives renames, so
+     * registrations stay pinned when an admin fixes a name; removing a site un-pins any
+     * congregation that chose it (they're asked to pick again before submitting).
+     */
+    private fun Element.sitesEditor() {
+        child("div", "mb-3") {
+            child("label", "form-label", "Event sites")
+            child(
+                "div", "form-text mb-2",
+                "With one site there's nothing to pick during registration; with two or more, each " +
+                    "congregation chooses its site. Removing a site un-pins congregations that chose it.",
+            )
+            val list = child("div")
+            fun renderSites() {
+                list.clear()
+                draft.sites.forEachIndexed { i, site ->
+                    list.child("div", "d-flex flex-wrap gap-2 mb-2") {
+                        val name = child("input", "form-control w-auto") as HTMLInputElement
+                        name.value = site.name
+                        name.setAttribute("placeholder", "Site name")
+                        name.addEventListener("input", {
+                            draft = draft.copy(
+                                sites = draft.sites.mapIndexed { j, s -> if (j == i) s.copy(name = name.value) else s },
+                            )
+                        })
+                        val address = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
+                        address.value = site.address
+                        address.setAttribute("placeholder", "Address (optional)")
+                        address.addEventListener("input", {
+                            draft = draft.copy(
+                                sites = draft.sites.mapIndexed { j, s -> if (j == i) s.copy(address = address.value) else s },
+                            )
+                        })
+                        child("button", "btn btn-outline-danger", "Remove") {
+                            setAttribute("type", "button")
+                            onClick {
+                                draft = draft.copy(sites = draft.sites.filterIndexed { j, _ -> j != i })
+                                renderSites()
+                            }
+                        }
+                    }
+                }
+                list.child("button", "btn btn-outline-primary btn-sm", "Add site") {
+                    setAttribute("type", "button")
+                    onClick {
+                        draft = draft.copy(sites = draft.sites + EventSiteDto(newSiteId(), ""))
+                        renderSites()
+                    }
+                }
+            }
+            renderSites()
+        }
+    }
+
+    private fun newSiteId(): String =
+        "site-" + (1..8).map { "abcdefghijklmnopqrstuvwxyz0123456789".random() }.joinToString("")
 
     /** Dropdown over the standard 10-year rotation; shows each set's name and chapter count. */
     private fun Element.studySetSelect() {

@@ -31,7 +31,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 3 | C3 | No Elementary teams (elementary may play up) | done |
 | 4 | C2 | Individual standings in own bracket, not the team's | done |
 | 5 | C1 | Combo (cross-congregation) teams | not started |
-| 6 | F6 | Event locations (multi-site seasons) | not started |
+| 6 | F6 | Event locations (multi-site seasons) | done |
 | 7 | F1 | Guests & attendee types | not started |
 | 8 | F2 | Volunteer positions & tribe-leader willingness | not started |
 | 9 | F3 | Adult contact info & communication preference | not started |
@@ -128,6 +128,13 @@ The app has no notion of a site.
 - **Change:** season defines its site(s) (name, maybe address); each congregation's
   registration pins to one site (default when the season has a single site — keep the
   single-site path frictionless). Downstream views (11–16) filter by site.
+- **As built:** `SeasonDto.sites` (`EventSiteDto(id, name, address)`) edited in Season settings —
+  a site's id is generated once and survives renames, so fixing a name doesn't unpin anyone.
+  `RegistrationDto.siteId` pins the registration: chosen on the register flow's congregation step
+  (radio card, rendered only when the season has ≥2 sites), required before submit
+  (409 `site_required`), and settable by a registrar from the desk's detail row. The desk gains a
+  Site column plus a site filter that the table, summary, and CSV all follow. Single-site seasons
+  never surface any of it: `siteFor` resolves a lone site regardless of what's stored.
 - **Dependencies:** none hard, but must precede items 11–16, which are all per-site.
 
 ## 7. (F1) Guests & attendee types

@@ -27,6 +27,7 @@ import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.EnrollContestantRequest
+import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
@@ -35,6 +36,7 @@ import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
+import net.markdrew.biblebowl.api.SetRegistrationSiteRequest
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertGuestRequest
@@ -448,6 +450,63 @@ class RegistrationRoutesTest {
         assertEquals(0, afterAdultDelete.individuals.size)
         assertEquals(3 * 8500, afterAdultDelete.totalCents)
         assertEquals(HttpStatusCode.OK, api.post("/registration/${congregation.id}/submit") { asCoach() }.status)
+    }
+
+    @Test
+    fun multiSiteSeasonsRequireASiteChoiceBeforeSubmit() = testApplication {
+        val users = InMemoryUserRepository()
+        val bandina = EventSiteDto("bandina", "Bandina")
+        val whiteRiver = EventSiteDto("white-river", "White River Youth Camp")
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason.copy(sites = listOf(bandina, whiteRiver))))
+        }
+        val api = jsonClient()
+        val coach = api.signUp("coach@tbb.org", "Carol Coach")
+        fun io.ktor.client.request.HttpRequestBuilder.asCoach() =
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+
+        val congregation: CongregationDto = api.post("/congregations") {
+            asCoach(); setBody(congregationRequest("Site Church", "Bandera"))
+        }.body()
+        api.post("/registration/${congregation.id}/teams") { asCoach(); setBody(UpsertTeamRequest("Team A")) }
+        val reg: MyRegistrationResponse = api.get("/registration/mine") { asCoach() }.body()
+        assertNull(reg.registration?.siteId, "no site chosen yet")
+
+        // Submit is blocked until the congregation picks its site.
+        val blocked = api.post("/registration/${congregation.id}/submit") { asCoach() }
+        assertEquals(HttpStatusCode.Conflict, blocked.status)
+        assertEquals("site_required", blocked.body<ApiError>().code)
+
+        // Only a real current-season site id is accepted.
+        val unknown = api.put("/registration/${congregation.id}/site") {
+            asCoach(); setBody(SetRegistrationSiteRequest("mars"))
+        }
+        assertEquals(HttpStatusCode.BadRequest, unknown.status)
+        assertEquals("unknown_site", unknown.body<ApiError>().code)
+
+        val pinned: RegistrationDto = api.put("/registration/${congregation.id}/site") {
+            asCoach(); setBody(SetRegistrationSiteRequest(whiteRiver.id))
+        }.body()
+        assertEquals(whiteRiver.id, pinned.siteId)
+
+        val submitted = api.post("/registration/${congregation.id}/submit") { asCoach() }
+        assertEquals(HttpStatusCode.OK, submitted.status)
+        assertEquals(whiteRiver.id, submitted.body<RegistrationDto>().siteId)
+
+        // Picking a site is part of the congregation step: for a fresh congregation it creates the
+        // draft registration itself, before any team exists.
+        val coach2 = api.signUp("coach2@tbb.org", "Chris Coach")
+        fun io.ktor.client.request.HttpRequestBuilder.asCoach2() =
+            header(HttpHeaders.Authorization, "Bearer ${coach2.token}")
+        val cong2: CongregationDto = api.post("/congregations") {
+            asCoach2(); setBody(congregationRequest("Early Church", "Ephesus"))
+        }.body()
+        val early: RegistrationDto = api.put("/registration/${cong2.id}/site") {
+            asCoach2(); setBody(SetRegistrationSiteRequest(bandina.id))
+        }.body()
+        assertEquals(RegistrationStatus.DRAFT, early.status)
+        assertEquals(bandina.id, early.siteId)
     }
 
     @Test
