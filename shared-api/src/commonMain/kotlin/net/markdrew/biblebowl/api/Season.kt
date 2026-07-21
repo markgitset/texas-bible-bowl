@@ -57,6 +57,19 @@ fun formatIsoDate(iso: String?): String {
     return "${MONTH_NAMES[month - 1]} $day, ${parts[0]}"
 }
 
+/** True when this season runs at two or more event sites, so registrations must pick one. */
+val SeasonDto.multiSite: Boolean
+    get() = sites.size > 1
+
+/**
+ * Resolves the event site a registration's [siteId] points at. A single-site season resolves to
+ * its lone site no matter what (nothing to choose, so a null or stale id doesn't matter); a
+ * multi-site season resolves only a valid current site id — null means "not chosen yet" (or the
+ * chosen site was since removed), which blocks submit.
+ */
+fun SeasonDto.siteFor(siteId: String?): EventSiteDto? =
+    sites.singleOrNull() ?: sites.firstOrNull { it.id == siteId }
+
 /** A note to show near prices while [SeasonDto.feesTentative] is set; empty otherwise. */
 val SeasonDto.feesNote: String
     get() = if (feesTentative) "Prices are tentative and subject to change." else ""

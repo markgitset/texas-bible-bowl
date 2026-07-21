@@ -42,6 +42,21 @@ class RegistrationRepositoryTest {
         ) as? CreateCongregationResult.Created)?.congregation
 
     @Test
+    fun setSitePinsTheRegistrationCreatingTheDraftIfNeeded() {
+        val cong = newCongregation("Site Church", "Bandera")!!
+        // No registration yet — pinning the site creates the draft (site choice is step 1).
+        val pinned = repo.setSite(cong.id, "2027", "bandina")
+        assertEquals("bandina", pinned.siteId)
+        assertEquals(RegistrationStatus.DRAFT, pinned.status)
+        // Round-trips through find and survives other mutations.
+        assertEquals("bandina", repo.find(cong.id, "2027")?.siteId)
+        repo.addTeam(cong.id, "2027", "Team A")
+        assertEquals("bandina", repo.find(cong.id, "2027")?.siteId)
+        // Re-pinning moves it (a coach fixing their choice).
+        assertEquals("white-river", repo.setSite(cong.id, "2027", "white-river").siteId)
+    }
+
+    @Test
     fun congregationNamesAreUniquePerCity() {
         assertNotNull(newCongregation("First Church", "Austin"))
         assertNull(newCongregation("  first church ", "AUSTIN", "u2"), "case/space-insensitive dupe")

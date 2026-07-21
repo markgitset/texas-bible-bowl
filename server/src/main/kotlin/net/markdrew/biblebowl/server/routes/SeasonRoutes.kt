@@ -73,6 +73,17 @@ fun Route.seasonRoutes(users: UserRepository, seasons: SeasonRepository) {
                     ApiError("invalid_dates", "registrationClosesOn must not be before registrationOpensOn"),
                 )
             }
+            // Event sites: registrations pin to a site by its id, so every site needs a stable
+            // non-blank id, and names must be distinct for the pickers to make sense.
+            if (season.sites.any { it.id.isBlank() || it.name.isBlank() } ||
+                season.sites.distinctBy { it.id }.size != season.sites.size ||
+                season.sites.distinctBy { it.name.trim().lowercase() }.size != season.sites.size
+            ) {
+                return@put call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("invalid_sites", "Every event site needs an id and a name, and both must be unique"),
+                )
+            }
             call.respond(seasons.update(season))
         }
     }

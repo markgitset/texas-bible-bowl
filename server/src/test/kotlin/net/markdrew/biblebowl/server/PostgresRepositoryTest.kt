@@ -56,12 +56,7 @@ import kotlin.test.assertTrue
  */
 class PostgresRepositoryTest {
 
-    private val available: Boolean get() = Companion.available
-
     companion object {
-        // Shared across every test: JUnit instantiates the class per test, and a connection pool
-        // per test (never closed until JVM exit) piles up enough connections that late tests fail
-        // the reachability probe and silently skip.
         private val available: Boolean by lazy {
             runCatching {
                 DriverManager.getConnection(
@@ -69,13 +64,16 @@ class PostgresRepositoryTest {
                 ).close()
             }.isSuccess
         }
-        private val sharedDb by lazy { DatabaseFactory.connect() }
+
+        // One pool for the whole suite: every DatabaseFactory.connect() builds a fresh Hikari pool
+        // (5 eager connections) that nothing ever closes, so per-test connects leak pools until
+        // Postgres's connection cap — CI died with "FATAL: sorry, too many clients already".
+        private val db by lazy { DatabaseFactory.connect() }
     }
 
     @BeforeTest
     fun cleanTables() {
         if (!available) return
-        val db = sharedDb
         transaction(db) {
             QuestionVotesTable.deleteAll()
             QuestionsTable.deleteAll()
@@ -96,7 +94,6 @@ class PostgresRepositoryTest {
     @Test
     fun userRoundTripsWithRoleGrants() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
 
         val created = users.create(
@@ -117,7 +114,6 @@ class PostgresRepositoryTest {
     @Test
     fun questionLifecycleSubmitVoteModerate() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
         val questions = PostgresQuestionRepository(db)
 
@@ -152,7 +148,6 @@ class PostgresRepositoryTest {
     @Test
     fun scoreCellsUpsertClearAndReleaseToggle() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
         val scores = PostgresScoreRepository(db)
 
@@ -187,7 +182,6 @@ class PostgresRepositoryTest {
     @Test
     fun updatingACongregationPersistsFieldsAndEnforcesCodeUniqueness() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
 
@@ -225,7 +219,6 @@ class PostgresRepositoryTest {
     @Test
     fun claimLinksARosterEntryToItsOwnerAccount() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -261,9 +254,31 @@ class PostgresRepositoryTest {
     }
 
     @Test
+    fun siteChoicePersistsOnTheRegistration() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val db = DatabaseFactory.connect()
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val coach = users.create("scoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Site Church", "Bandera", state = "TX", mailingAddress = "1 Main St", zip = "78003"),
+            coach.id,
+        )).congregation
+
+        // Pinning the site creates the draft registration, like teams and guests do.
+        val pinned = registrations.setSite(cong.id, "2027", "bandina")
+        assertEquals("bandina", pinned.siteId)
+        assertEquals("bandina", assertNotNull(registrations.find(cong.id, "2027")).siteId)
+        // Re-pinning moves it.
+        assertEquals("white-river", registrations.setSite(cong.id, "2027", "white-river").siteId)
+    }
+
+    @Test
     fun guestsRoundTripOnTheRegistration() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -298,7 +313,6 @@ class PostgresRepositoryTest {
     @Test
     fun durableContestantsLinkAndReuseAcrossSeasons() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -338,7 +352,6 @@ class PostgresRepositoryTest {
     @Test
     fun comboTeamAssignmentCrossesCongregationsWithinASeason() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -391,7 +404,6 @@ class PostgresRepositoryTest {
     @Test
     fun returningContestantsAndEnrollAcrossSeasons() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -427,7 +439,6 @@ class PostgresRepositoryTest {
     @Test
     fun returningAdultsEnrollAsIndividuals() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -456,7 +467,6 @@ class PostgresRepositoryTest {
     @Test
     fun claimingPersistsAcrossSeasons() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
@@ -490,7 +500,6 @@ class PostgresRepositoryTest {
     @Test
     fun claimingAnAdultPersistsAcrossSeasons() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = sharedDb
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)

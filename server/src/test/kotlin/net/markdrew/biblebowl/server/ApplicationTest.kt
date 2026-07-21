@@ -16,6 +16,7 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
 import net.markdrew.biblebowl.api.AuthResponse
+import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionDto
@@ -301,6 +302,30 @@ class ApplicationTest {
         val pricedBack: SeasonDto = json.decodeFromString(api.get("/seasons/current").bodyAsText())
         assertEquals(8500, pricedBack.priceContestantCents)
         assertEquals("2027-03-15", pricedBack.registrationClosesOn)
+
+        // Event sites need non-blank unique ids and names (registrations pin to the id).
+        val blankSite = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(updated.copy(sites = listOf(EventSiteDto("s1", " "))))
+        }
+        assertEquals(HttpStatusCode.BadRequest, blankSite.status)
+        val dupeSiteId = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(updated.copy(sites = listOf(EventSiteDto("s1", "Bandina"), EventSiteDto("s1", "White River"))))
+        }
+        assertEquals(HttpStatusCode.BadRequest, dupeSiteId.status)
+        val dupeSiteName = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(updated.copy(sites = listOf(EventSiteDto("s1", "Bandina"), EventSiteDto("s2", "bandina "))))
+        }
+        assertEquals(HttpStatusCode.BadRequest, dupeSiteName.status)
+        val sited = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(updated.copy(sites = listOf(EventSiteDto("s1", "Bandina"), EventSiteDto("s2", "White River Youth Camp"))))
+        }
+        assertEquals(HttpStatusCode.OK, sited.status)
+        val sitedBack: SeasonDto = json.decodeFromString(api.get("/seasons/current").bodyAsText())
+        assertEquals(listOf("Bandina", "White River Youth Camp"), sitedBack.sites.map { it.name })
     }
 
     @Test
