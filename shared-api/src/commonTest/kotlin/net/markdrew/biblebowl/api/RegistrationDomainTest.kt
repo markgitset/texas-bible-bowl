@@ -132,7 +132,18 @@ class RegistrationDomainTest {
     }
 
     @Test
-    fun registrationTotalBillsContestantsAndGuests() {
+    fun ageTiersDeriveFromBirthdatesOnTheGradeCutoff() {
+        // FALLBACK_SEASON is the 2027 event: ages are computed on the 2026-09-01 grade cutoff.
+        assertEquals(AgeTier.AGE_9_PLUS, season.ageTierFor(null), "no birthdate = adult")
+        assertEquals(AgeTier.UNDER_3, season.ageTierFor("2024-06-01")) // age 2
+        assertEquals(AgeTier.AGE_3_TO_8, season.ageTierFor("2023-09-01"), "turns 3 on the cutoff")
+        assertEquals(AgeTier.AGE_3_TO_8, season.ageTierFor("2018-05-01"), "8 — a grade-3 contestant")
+        assertEquals(AgeTier.AGE_9_PLUS, season.ageTierFor("2017-09-01"), "turns 9 on the cutoff")
+        assertEquals(AgeTier.AGE_9_PLUS, season.ageTierFor("not-a-date"), "unparseable reads as adult")
+    }
+
+    @Test
+    fun registrationTotalBillsEveryAttendeeByAgeTier() {
         val season = FALLBACK_SEASON.copy(
             priceContestantCents = 8500,
             priceVolunteerCents = 4000,
@@ -146,37 +157,57 @@ class RegistrationDomainTest {
             teams = listOf(TeamDto("t", "Team A", listOf(entry("2018-05-01"), entry("2013-05-01")))),
             individuals = listOf(entry(null)),
         )
-        assertEquals(25500, registrationTotalCents(season, threeContestants))
+        assertEquals(
+            2500 + 8500 + 8500, registrationTotalCents(season, threeContestants),
+            "an 8-year-old grade-3 contestant pays the child fee, like every attendee aged 3\u20138",
+        )
         assertEquals(0, registrationTotalCents(season, threeContestants.copy(teams = emptyList(), individuals = emptyList())))
-        assertNull(registrationTotalCents(FALLBACK_SEASON, threeContestants), "TBD contestant fee → no total")
+        assertNull(registrationTotalCents(FALLBACK_SEASON, threeContestants), "TBD fees \u2192 no total")
 
         val guests = listOf(
             GuestDto("g1", "Helpful Aunt", ShirtSize.AM, gender = Gender.FEMALE),
             GuestDto("g2", "Volunteer Uncle", ShirtSize.AL, gender = Gender.MALE),
-            GuestDto("g3", "Little Sibling", ShirtSize.YS, GuestAgeTier.AGE_3_TO_8, Gender.MALE),
-            GuestDto("g4", "Baby Sibling", null, GuestAgeTier.UNDER_3, Gender.FEMALE),
+            GuestDto("g3", "Little Sibling", ShirtSize.YS, birthdate = "2020-06-15", gender = Gender.MALE),
+            GuestDto("g4", "Baby Sibling", null, birthdate = "2025-06-15", gender = Gender.FEMALE),
         )
         assertEquals(
-            25500 + 2 * 4000 + 2500,
+            19500 + 2 * 4000 + 2500,
             registrationTotalCents(season, threeContestants.copy(guests = guests)),
-            "9+ guests at the volunteer fee, 3–8 at the child fee, under-3s free",
+            "9+ guests at the volunteer fee, 3\u20138 at the child fee, under-3s free",
+        )
+        assertEquals(
+            listOf(
+                FeeLine(AgeTier.AGE_9_PLUS, contestant = true, count = 2, eachCents = 8500),
+                FeeLine(AgeTier.AGE_3_TO_8, contestant = true, count = 1, eachCents = 2500),
+                FeeLine(AgeTier.AGE_9_PLUS, contestant = false, count = 2, eachCents = 4000),
+                FeeLine(AgeTier.AGE_3_TO_8, contestant = false, count = 1, eachCents = 2500),
+                FeeLine(AgeTier.UNDER_3, contestant = false, count = 1, eachCents = 0),
+            ),
+            registrationFeeLines(season, threeContestants.copy(guests = guests)),
+            "the invoice lines group every attendee by tier",
         )
         assertNull(
             registrationTotalCents(season.copy(priceChildCents = null), threeContestants.copy(guests = guests)),
-            "TBD fee for a guest tier in use → no total",
+            "TBD fee for a tier in use \u2192 no total",
+        )
+
+        // A registration with only 9+ attendees isn't blocked by TBD child/volunteer fees…
+        val nineUpOnly = threeContestants.copy(
+            teams = listOf(TeamDto("t", "Team A", listOf(entry("2013-05-01")))),
         )
         assertEquals(
-            25500,
-            registrationTotalCents(season.copy(priceVolunteerCents = null, priceChildCents = null), threeContestants),
-            "TBD guest fees don't block a guest-less registration",
+            2 * 8500,
+            registrationTotalCents(season.copy(priceVolunteerCents = null, priceChildCents = null), nineUpOnly),
+            "TBD fees for unused tiers don't block the total",
         )
+        // …and under-3 guests are free, so they never need a price either.
         assertEquals(
-            25500,
+            2 * 8500,
             registrationTotalCents(
                 season.copy(priceVolunteerCents = null, priceChildCents = null),
-                threeContestants.copy(guests = listOf(GuestDto("g4", "Baby Sibling", null, GuestAgeTier.UNDER_3))),
+                nineUpOnly.copy(guests = listOf(GuestDto("g4", "Baby Sibling", null, birthdate = "2025-06-15"))),
             ),
-            "under-3 guests are free, so TBD guest fees don't block them either",
+            "under-3 guests are free, so TBD fees don't block them either",
         )
     }
 

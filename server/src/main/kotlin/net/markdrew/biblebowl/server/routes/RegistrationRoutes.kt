@@ -15,7 +15,7 @@ import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.EnrollContestantRequest
-import net.markdrew.biblebowl.api.GuestAgeTier
+import net.markdrew.biblebowl.api.AgeTier
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.RegistrationDto
@@ -29,8 +29,10 @@ import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
+import net.markdrew.biblebowl.api.ageTierFor
 import net.markdrew.biblebowl.api.coachedCongregationIds
 import net.markdrew.biblebowl.api.gradeForBirthdate
+import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.api.isEligibleReturningCandidate
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.multiSite
@@ -441,7 +443,7 @@ fun Route.registrationRoutes(
             if (!requireWindowOpen(user, seasons)) return@post
             val req = call.receive<UpsertGuestRequest>()
             guestError(req, seasons.current())?.let { return@post call.respond(HttpStatusCode.BadRequest, it) }
-            registrations.addGuest(congregationId, seasons.current().eventYear, req.normalized())
+            registrations.addGuest(congregationId, seasons.current().eventYear, req.normalized(seasons.current()))
             call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
         }
 
@@ -455,7 +457,7 @@ fun Route.registrationRoutes(
             if (!requireWindowOpen(user, seasons)) return@put
             val req = call.receive<UpsertGuestRequest>()
             guestError(req, seasons.current())?.let { return@put call.respond(HttpStatusCode.BadRequest, it) }
-            registrations.updateGuest(guestId, req.normalized())
+            registrations.updateGuest(guestId, req.normalized(seasons.current()))
             call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
         }
 
@@ -562,7 +564,9 @@ internal fun RegistrationDto.withTotal(seasons: SeasonRepository): RegistrationD
 private fun guestError(req: UpsertGuestRequest, season: SeasonDto): ApiError? = when {
     req.name.isBlank() -> ApiError("invalid_guest", "Name is required")
     req.gender == null -> ApiError("invalid_guest", "Gender is required")
-    req.ageTier != GuestAgeTier.UNDER_3 && req.shirtSize == null ->
+    req.birthdate?.let { !isValidBirthdate(it) } == true ->
+        ApiError("invalid_guest", "Birthdate must be a real date (YYYY-MM-DD) — leave it blank for adults")
+    season.ageTierFor(req.birthdate) != AgeTier.UNDER_3 && req.shirtSize == null ->
         ApiError("invalid_guest", "Shirt size is required")
     // Positions come from checkboxes generated off the season's list — anything else is a stale
     // or hand-rolled client.
@@ -573,15 +577,15 @@ private fun guestError(req: UpsertGuestRequest, season: SeasonDto): ApiError? = 
 
 /**
  * Under-3 guests attend free with no included t-shirt — drop any stray shirt selection. Only
- * adult (age-9+) guests volunteer or lead tribes — clear both for the child tiers. All-blank
- * contact info collapses to none.
+ * adult (age-9+ tier) guests volunteer or lead tribes — clear both for the child tiers (the
+ * tier derives from the birthdate). All-blank contact info collapses to none.
  */
-private fun UpsertGuestRequest.normalized(): UpsertGuestRequest = when {
-    ageTier == GuestAgeTier.UNDER_3 ->
-        copy(shirtSize = null, positions = emptyList(), tribeLeaderWilling = false)
-    ageTier == GuestAgeTier.AGE_3_TO_8 -> copy(positions = emptyList(), tribeLeaderWilling = false)
-    else -> copy(positions = positions.distinct())
-}.copy(contact = contact?.takeUnless { it.isEmpty() })
+private fun UpsertGuestRequest.normalized(season: SeasonDto): UpsertGuestRequest =
+    when (season.ageTierFor(birthdate)) {
+        AgeTier.UNDER_3 -> copy(shirtSize = null, positions = emptyList(), tribeLeaderWilling = false)
+        AgeTier.AGE_3_TO_8 -> copy(positions = emptyList(), tribeLeaderWilling = false)
+        AgeTier.AGE_9_PLUS -> copy(positions = positions.distinct())
+    }.copy(contact = contact?.takeUnless { it.isEmpty() })
 
 /**
  * Passes when the caller may edit [congregationId]'s teams/roster: an event-wide REGISTRATION_MANAGE

@@ -181,7 +181,9 @@ object RegistrationGuestsTable : Table("registration_guests") {
     val name = varchar("name", 120)
     // Null = no included t-shirt (under-3 guests).
     val shirtSize = varchar("shirt_size", 8).nullable()
-    val ageTier = varchar("age_tier", 12).default("AGE_9_PLUS")
+    // ISO-8601 birthdate, collected for children (under 9) so the fee tier derives from age each
+    // season; null = adult guest (age 9+).
+    val birthdate = varchar("birthdate", 10).nullable()
     // Null only on guests created before gender was collected.
     val gender = varchar("gender", 8).nullable()
     // Volunteer positions (JSON array of strings from the season's list); age-9+ guests only.
@@ -371,14 +373,17 @@ object DatabaseFactory {
             // shirt (2026-07, registration backlog F1): under-3s attend free with no included
             // shirt. The old boolean is converted in place, then dropped — guarded so the
             // backfill only runs while the legacy column still exists.
-            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS age_tier VARCHAR(12) NOT NULL DEFAULT 'AGE_9_PLUS'")
             exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS gender VARCHAR(8)")
             exec("ALTER TABLE registration_guests ALTER COLUMN shirt_size DROP NOT NULL")
+            // The transient age_tier column only materializes while legacy is_child data still
+            // needs converting — F5's birthdate migration below then folds it into a birthdate.
             exec(
                 """
                 DO ${'$'}${'$'} BEGIN
                     IF EXISTS (SELECT 1 FROM information_schema.columns
                                WHERE table_name = 'registration_guests' AND column_name = 'is_child') THEN
+                        ALTER TABLE registration_guests
+                            ADD COLUMN IF NOT EXISTS age_tier VARCHAR(12) NOT NULL DEFAULT 'AGE_9_PLUS';
                         UPDATE registration_guests SET age_tier = 'AGE_3_TO_8' WHERE is_child;
                         ALTER TABLE registration_guests DROP COLUMN is_child;
                     END IF;
@@ -405,6 +410,26 @@ object DatabaseFactory {
                 exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS $col")
             }
             exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255) NOT NULL DEFAULT ''")
+            // Child guests now carry a birthdate and the fee tier derives from age (2026-07,
+            // registration backlog F5) — the stored tier is dropped. Pre-birthdate child rows
+            // (admin test data; the feature deploys dark) get an approximate birthdate that lands
+            // in the same tier for the 2027 season, guarded so this runs only while the legacy
+            // column still exists.
+            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS birthdate VARCHAR(10)")
+            exec(
+                """
+                DO ${'$'}${'$'} BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'registration_guests' AND column_name = 'age_tier') THEN
+                        UPDATE registration_guests SET birthdate = '2020-06-15'
+                            WHERE birthdate IS NULL AND age_tier = 'AGE_3_TO_8';
+                        UPDATE registration_guests SET birthdate = '2025-06-15'
+                            WHERE birthdate IS NULL AND age_tier = 'UNDER_3';
+                        ALTER TABLE registration_guests DROP COLUMN age_tier;
+                    END IF;
+                END ${'$'}${'$'}
+                """.trimIndent()
+            )
         }
         return db
     }

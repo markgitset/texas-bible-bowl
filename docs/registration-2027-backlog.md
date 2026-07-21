@@ -35,7 +35,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 7 | F1 | Guests & attendee types | done |
 | 8 | F2 | Volunteer positions & tribe-leader willingness | done |
 | 9 | F3 | Adult contact info & communication preference | done |
-| 10 | F5 | Age-tiered fee schedule | not started |
+| 10 | F5 | Age-tiered fee schedule | done |
 | 11 | F11 | Registration counts dashboard | not started |
 | 12 | F12 | Shirt-order report | not started |
 | 13 | F7 | Tester IDs + ZipGrade export | not started |
@@ -215,6 +215,17 @@ column for coaches and some adults.
 - **Change:** season-configurable fee tiers by age; totals cover all attendees; register
   screen and desk show the per-congregation invoice; per-site roll-up for admins. Existing
   `paidAt` desk flow unchanged.
+- **As built (with Mark's refinement):** child guests carry a **birthdate**, not a stored
+  tier — `AgeTier` is derived (`ageTierFor`) from age on the season's grade-cutoff date, so
+  a returning child's bracket advances on its own (supersedes item 7's stored enum; the
+  legacy `age_tier` column is folded into an approximate birthdate and dropped). *Every*
+  attendee is billed by tier via `registrationFeeLines`: an 8-year-old grade-3 contestant
+  pays the child fee, exactly like the workbook. Prices stay the three season fields
+  (contestant 9+/volunteer 9+/ages 3–8; under-3s free, no shirt); the 3/9 boundaries are
+  named constants. The register flow shows a live tier + fee hint beside the birthdate,
+  tier-aware fee math on every review row, and a per-tier total breakdown; the desk derives
+  tiers for display and its site filter (item 6) already gives the per-site roll-up.
+  `paidAt` flow untouched.
 - **Dependencies:** 7 (guests must exist to be billed).
 
 ## 11. (F11) Registration counts dashboard

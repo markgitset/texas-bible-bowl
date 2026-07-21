@@ -65,13 +65,13 @@ object AdminSeasonScreen {
             draft = draft.copy(gradeCutoffDate = it)
         }
         form.field("Scholarship deadline", draft.scholarshipDeadline) { draft = draft.copy(scholarshipDeadline = it) }
-        form.dollarField("Fee — contestant (t-shirt included)", draft.priceContestantCents) {
+        form.dollarField("Fee — contestant age 9+ (t-shirt included)", draft.priceContestantCents) {
             draft = draft.copy(priceContestantCents = it)
         }
-        form.dollarField("Fee — volunteer/adult (t-shirt included)", draft.priceVolunteerCents) {
+        form.dollarField("Fee — guest/volunteer age 9+ (t-shirt included)", draft.priceVolunteerCents) {
             draft = draft.copy(priceVolunteerCents = it)
         }
-        form.dollarField("Fee — child ages 3–8", draft.priceChildCents) { draft = draft.copy(priceChildCents = it) }
+        form.dollarField("Fee — ages 3–8, contestant or guest (under-3s attend free)", draft.priceChildCents) { draft = draft.copy(priceChildCents = it) }
         form.dollarField("Fee — extra t-shirt", draft.priceTshirtCents) { draft = draft.copy(priceTshirtCents = it) }
         form.optionSwitch("Fees are tentative (shows a \"subject to change\" note)", draft.feesTentative) {
             draft = draft.copy(feesTentative = it)

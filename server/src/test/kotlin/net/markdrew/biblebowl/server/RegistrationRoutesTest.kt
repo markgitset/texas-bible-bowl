@@ -31,7 +31,6 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.api.Gender
-import net.markdrew.biblebowl.api.GuestAgeTier
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.RegisterRequest
@@ -547,7 +546,7 @@ class RegistrationRoutesTest {
             asCoach(); setBody(UpsertGuestRequest("Aunt Vol", ShirtSize.AM, gender = Gender.FEMALE))
         }.body()
         val volunteer = withVolunteer.guests.single()
-        assertEquals(GuestAgeTier.AGE_9_PLUS, volunteer.ageTier)
+        assertNull(volunteer.birthdate, "no birthdate collected for adult guests")
         assertEquals(Gender.FEMALE, volunteer.gender)
         assertEquals(0, withVolunteer.contestantCount, "guests are not contestants")
         assertEquals(4000, withVolunteer.totalCents, "9+ guest at the volunteer fee")
@@ -560,11 +559,15 @@ class RegistrationRoutesTest {
         api.post("/registration/teams/$teamId/members") {
             asCoach(); setBody(UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE))
         }
+        val badDate = api.post("/registration/${cong.id}/guests") {
+            asCoach(); setBody(UpsertGuestRequest("Little Sib", ShirtSize.YS, birthdate = "June 2020", gender = Gender.MALE))
+        }
+        assertEquals(HttpStatusCode.BadRequest, badDate.status, "a child birthdate must be a real ISO date")
         api.post("/registration/${cong.id}/guests") {
-            asCoach(); setBody(UpsertGuestRequest("Little Sib", ShirtSize.YS, GuestAgeTier.AGE_3_TO_8, Gender.MALE))
+            asCoach(); setBody(UpsertGuestRequest("Little Sib", ShirtSize.YS, birthdate = "2020-06-15", gender = Gender.MALE))
         }
         val withBaby: RegistrationDto = api.post("/registration/${cong.id}/guests") {
-            asCoach(); setBody(UpsertGuestRequest("Baby Sib", ShirtSize.YS, GuestAgeTier.UNDER_3, Gender.FEMALE))
+            asCoach(); setBody(UpsertGuestRequest("Baby Sib", ShirtSize.YS, birthdate = "2025-06-15", gender = Gender.FEMALE))
         }.body()
         assertEquals(1, withBaby.contestantCount)
         assertEquals(8500 + 4000 + 2500, withBaby.totalCents, "under-3 guests bill nothing")
@@ -980,7 +983,7 @@ class RegistrationRoutesTest {
         val withChild: RegistrationDto = api.post("/registration/${cong.id}/guests") {
             asCoach()
             setBody(UpsertGuestRequest(
-                "Little Sib", ShirtSize.YS, GuestAgeTier.AGE_3_TO_8, Gender.MALE,
+                "Little Sib", ShirtSize.YS, birthdate = "2020-06-15", gender = Gender.MALE,
                 positions = listOf("Test Grader"), tribeLeaderWilling = true,
             ))
         }.body()

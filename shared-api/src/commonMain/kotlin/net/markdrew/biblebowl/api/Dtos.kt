@@ -468,20 +468,21 @@ data class UpsertIndividualRequest(
 )
 
 /**
- * A guest's fee bracket by age at the event — the 2026 schedule, which tiered *every* attendee
- * purely by age: 9 and up pays the volunteer fee, 3–8 the child fee, and under-3s attend free
- * (with no included t-shirt).
+ * An attendee's fee bracket by age — the 2026 schedule, which tiered *every* attendee (testers,
+ * coaches, guests) purely by age: 9 and up pays the full fee, 3–8 the child fee, and under-3s
+ * attend free (with no included t-shirt). Never stored: derived from a birthdate via
+ * [ageTierFor], so a returning child's bracket advances on its own season over season.
  */
 @Serializable
-enum class GuestAgeTier(val displayName: String) {
+enum class AgeTier(val displayName: String) {
     AGE_9_PLUS("Age 9+"), AGE_3_TO_8("Age 3–8"), UNDER_3("Under 3"),
 }
 
 /**
  * A registered guest — an attendee who is not a contestant (most are volunteers). Guests must
  * register and pay like everyone else, but they are never placed on a team, compete in no
- * division, and get no claim code. [ageTier] picks the fee bracket (see [GuestAgeTier]). The
- * age-9+ and 3–8 fees include a t-shirt, hence [shirtSize].
+ * division, and get no claim code. The fee bracket derives from [birthdate] (see [ageTierFor]);
+ * the age-9+ and 3–8 fees include a t-shirt, hence [shirtSize].
  *
  * Adult (age-9+ tier) guests are the event's volunteer pool: [positions] holds the volunteer
  * positions they signed up for (drawn from [SeasonDto.volunteerPositions], select all that
@@ -494,7 +495,11 @@ data class GuestDto(
     val name: String,
     /** Null for an under-3 guest (no included t-shirt). */
     val shirtSize: ShirtSize? = null,
-    val ageTier: GuestAgeTier = GuestAgeTier.AGE_9_PLUS,
+    /**
+     * ISO-8601 birthdate, collected for children (under 9) so their fee tier falls out of their
+     * age each season; null = an adult guest (age 9+), whose exact birthdate isn't needed.
+     */
+    val birthdate: String? = null,
     /** Null only on guests created before gender was collected. */
     val gender: Gender? = null,
     /** Volunteer positions (from [SeasonDto.volunteerPositions]); age-9+ guests only. */
@@ -507,16 +512,16 @@ data class GuestDto(
 
 /**
  * Adds or edits a registered guest (see [GuestDto]). [gender] is required (nullable only for a
- * friendlier server-side error); [shirtSize] is required except for under-3s, who get no shirt.
- * [positions] must come from the season's volunteer-position list; the server clears positions
- * and [tribeLeaderWilling] for the child tiers.
- * [contact] fully replaces the guest's stored contact info (null or empty clears it).
+ * friendlier server-side error); [shirtSize] is required except for under-3s, who get no shirt;
+ * [birthdate] is collected for children (blank/null = adult, age 9+). [positions] must come from
+ * the season's volunteer-position list; the server clears positions and [tribeLeaderWilling] for
+ * the child tiers. [contact] fully replaces the guest's stored contact info (null or empty clears it).
  */
 @Serializable
 data class UpsertGuestRequest(
     val name: String,
     val shirtSize: ShirtSize? = null,
-    val ageTier: GuestAgeTier = GuestAgeTier.AGE_9_PLUS,
+    val birthdate: String? = null,
     val gender: Gender? = null,
     val positions: List<String> = emptyList(),
     val tribeLeaderWilling: Boolean = false,
