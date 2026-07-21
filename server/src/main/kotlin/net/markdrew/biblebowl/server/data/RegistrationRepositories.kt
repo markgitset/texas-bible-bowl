@@ -1046,9 +1046,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             it[id] = individualId
             it[registrationId] = regId
             it[IndividualsTable.contestantId] = contestant
-            it[name] = req.name.trim()
             it[shirtSize] = req.shirtSize.name
-            it[gender] = req.gender.name
             it[claimCode] = code
             // A returning adult re-added by name inherits their existing owner (claim persists).
             it[ownerUserId] = inheritedOwner
@@ -1067,14 +1065,17 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             val previousContestant = row[IndividualsTable.contestantId]
             val contestant = findOrCreateAdultContestant(congregationIdFor(row[IndividualsTable.registrationId]), req)
             IndividualsTable.update({ IndividualsTable.id eq individualId }) {
-                it[name] = req.name.trim()
                 it[shirtSize] = req.shirtSize.name
-                it[gender] = req.gender.name
                 it[IndividualsTable.contestantId] = contestant
             }
             if (previousContestant != null && previousContestant != contestant) pruneContestantIfOrphaned(previousContestant)
-            IndividualsTable.selectAll().where { IndividualsTable.id eq individualId }.single().toIndividual()
+            individualEntry(individualId)
         }
+
+    /** Reads one individual as a [RosterEntryDto], joining the contestant for its identity. */
+    private fun individualEntry(individualId: String): RosterEntryDto? =
+        (IndividualsTable innerJoin ContestantsTable).selectAll()
+            .where { IndividualsTable.id eq individualId }.singleOrNull()?.toIndividual()
 
     override fun deleteIndividual(individualId: String): Boolean = transaction(db) {
         val contestantId = IndividualsTable.selectAll().where { IndividualsTable.id eq individualId }
@@ -1183,9 +1184,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 it[id] = UUID.randomUUID().toString()
                 it[registrationId] = regId
                 it[IndividualsTable.contestantId] = contestantId
-                it[name] = contestant[ContestantsTable.name]
                 it[IndividualsTable.shirtSize] = shirtSize.name
-                it[gender] = contestant[ContestantsTable.gender]
                 it[claimCode] = code
                 it[ownerUserId] = ownerForContestant(contestantId)
             }
@@ -1262,10 +1261,9 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             val target = if (contestantId != null) IndividualsTable.contestantId eq contestantId
                 else IndividualsTable.id eq row[IndividualsTable.id]
             IndividualsTable.update({ target }) { it[ownerUserId] = userId }
-            return@transaction ClaimResult.Claimed(
-                IndividualsTable.selectAll().where { IndividualsTable.id eq row[IndividualsTable.id] }
-                    .single().toIndividual().copy(claimed = true),
-            )
+            // Read back through the contestant join (toIndividual sources identity there) — now owned.
+            return@transaction individualEntry(row[IndividualsTable.id])?.let { ClaimResult.Claimed(it) }
+                ?: ClaimResult.NotFound
         }
         ClaimResult.NotFound
     }
@@ -1318,12 +1316,13 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         claimed = this[TeamMembersTable.ownerUserId] != null,
     )
 
+    /** Builds an individual entry from a row that joins [IndividualsTable] to its [ContestantsTable]. */
     private fun ResultRow.toIndividual() = RosterEntryDto(
         id = this[IndividualsTable.id],
-        name = this[IndividualsTable.name],
+        name = this[ContestantsTable.name],
         birthdate = null,
         shirtSize = ShirtSize.valueOf(this[IndividualsTable.shirtSize]),
-        gender = this[IndividualsTable.gender]?.let { Gender.valueOf(it) },
+        gender = this[ContestantsTable.gender]?.let { Gender.valueOf(it) },
         claimCode = this[IndividualsTable.claimCode],
         claimed = this[IndividualsTable.ownerUserId] != null,
     )
@@ -1349,9 +1348,9 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 .where { TeamsTable.registrationId eq regId }
                 .orderBy(TeamsTable.sortOrder)
                 .map { row -> teamDto(row[TeamsTable.id])!! },
-            individuals = IndividualsTable.selectAll()
+            individuals = (IndividualsTable innerJoin ContestantsTable).selectAll()
                 .where { IndividualsTable.registrationId eq regId }
-                .orderBy(IndividualsTable.name)
+                .orderBy(ContestantsTable.name)
                 .map { it.toIndividual() },
             unassigned = (TeamMembersTable innerJoin ContestantsTable).selectAll()
                 .where { (TeamMembersTable.registrationId eq regId) and TeamMembersTable.teamId.isNull() }
