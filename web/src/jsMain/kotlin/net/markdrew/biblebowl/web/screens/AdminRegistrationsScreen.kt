@@ -86,6 +86,9 @@ object AdminRegistrationsScreen {
             child("a", "btn btn-outline-secondary btn-sm", "Counts dashboard") {
                 setAttribute("href", "#${Routes.ADMIN_COUNTS}")
             }
+            child("a", "btn btn-outline-secondary btn-sm", "Housing") {
+                setAttribute("href", "#${Routes.ADMIN_HOUSING}")
+            }
             child("button", "btn btn-outline-primary btn-sm", "Download CSV") {
                 setAttribute("type", "button")
                 onClick { downloadCsv("tbb-registrations-${desk.seasonYear}.csv", deskCsv(desk)) }

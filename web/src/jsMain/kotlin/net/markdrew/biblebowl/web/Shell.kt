@@ -7,6 +7,7 @@ import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.web.screens.AccountScreen
 import net.markdrew.biblebowl.web.screens.AdminCountsScreen
+import net.markdrew.biblebowl.web.screens.AdminHousingScreen
 import net.markdrew.biblebowl.web.screens.AdminRegistrationsScreen
 import net.markdrew.biblebowl.web.screens.AdminSeasonScreen
 import net.markdrew.biblebowl.web.screens.AdminUsersScreen
@@ -201,6 +202,11 @@ object Shell {
             Routes.ADMIN_COUNTS -> feature(container, Session.registrationVisible) {
                 gatedEventWide(container, Permission.REGISTRATION_MANAGE) {
                     AdminCountsScreen.render(container)
+                }
+            }
+            Routes.ADMIN_HOUSING -> feature(container, Session.registrationVisible) {
+                gatedEventWide(container, Permission.REGISTRATION_MANAGE) {
+                    AdminHousingScreen.render(container)
                 }
             }
             Routes.ADMIN_USERS -> gated(container, Permission.USER_MANAGE) {

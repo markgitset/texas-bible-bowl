@@ -215,6 +215,48 @@ object ScoresTable : Table("scores") {
     override val primaryKey = PrimaryKey(rosterEntryId, round)
 }
 
+/**
+ * A cabin (or other sleeping quarters — RV site, duplex) defined per season by the registrar
+ * (item 15, F9). [siteId] is a season EventSiteDto id on multi-site seasons; null on single-site
+ * seasons, mirroring registrations.site_id.
+ */
+object CabinsTable : Table("cabins") {
+    val id = varchar("id", 36)
+    val seasonYear = varchar("season_year", 8)
+    val siteId = varchar("site_id", 36).nullable()
+    val name = varchar("name", 120)
+    // Optional bed count, shown beside the derived occupancy; null = unknown.
+    val capacity = integer("capacity").nullable()
+    override val primaryKey = PrimaryKey(id)
+    init {
+        index(false, seasonYear)
+    }
+}
+
+/**
+ * One free-form assignment row on a cabin: a congregation × gender group (gender null = the whole
+ * congregation), an ad-hoc label-only row (families/staff), or a group row with a label as a note.
+ * Occupant counts are always derived from the season's registrations, never stored.
+ */
+object CabinAssignmentsTable : Table("cabin_assignments") {
+    val id = varchar("id", 36)
+    val cabinId = varchar("cabin_id", 36).references(CabinsTable.id)
+    val congregationId = varchar("congregation_id", 36).references(CongregationsTable.id).nullable()
+    val gender = varchar("gender", 6).nullable()
+    val label = varchar("label", 200).default("")
+    // Rows keep their creation order in the grid (like teams.sort_order).
+    val sortOrder = integer("sort_order").default(0)
+    override val primaryKey = PrimaryKey(id)
+}
+
+/** Per-congregation cabin check-out duty: the one adult responsible at departure (free-form name). */
+object CheckoutDutiesTable : Table("checkout_duties") {
+    val seasonYear = varchar("season_year", 8)
+    val congregationId = varchar("congregation_id", 36).references(CongregationsTable.id)
+    val adultName = varchar("adult_name", 120)
+    override val primaryKey = PrimaryKey(seasonYear, congregationId)
+}
+
 /** A season's score release — present while released; retracting deletes the row. */
 object ScoreReleasesTable : Table("score_releases") {
     val seasonYear = varchar("season_year", 8)
@@ -320,6 +362,7 @@ object DatabaseFactory {
                 TextAnnotationsTable, GeneratedPdfsTable, SeasonsTable,
                 CongregationsTable, RegistrationsTable, TeamsTable, ContestantsTable, TeamMembersTable,
                 IndividualsTable, RegistrationGuestsTable, ScoresTable, ScoreReleasesTable,
+                CabinsTable, CabinAssignmentsTable, CheckoutDutiesTable,
             )
             // SchemaUtils.create only creates missing *tables* — columns added after a table
             // first shipped need explicit (idempotent) ALTERs for existing databases.

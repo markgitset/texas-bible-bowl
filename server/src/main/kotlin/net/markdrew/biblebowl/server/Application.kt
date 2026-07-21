@@ -34,10 +34,13 @@ import net.markdrew.biblebowl.server.data.DatabaseFactory
 import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryRegistrationRepository
+import net.markdrew.biblebowl.server.data.HousingRepository
+import net.markdrew.biblebowl.server.data.InMemoryHousingRepository
 import net.markdrew.biblebowl.server.data.InMemoryScoreRepository
 import net.markdrew.biblebowl.server.data.InMemorySeasonRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.data.PostgresCongregationRepository
+import net.markdrew.biblebowl.server.data.PostgresHousingRepository
 import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
 import net.markdrew.biblebowl.server.data.PostgresRegistrationRepository
 import net.markdrew.biblebowl.server.data.PostgresScoreRepository
@@ -56,6 +59,7 @@ import net.markdrew.biblebowl.server.routes.adminRegistrationRoutes
 import net.markdrew.biblebowl.server.routes.authRoutes
 import net.markdrew.biblebowl.server.routes.bibleRoutes
 import net.markdrew.biblebowl.server.routes.generateRoutes
+import net.markdrew.biblebowl.server.routes.housingRoutes
 import net.markdrew.biblebowl.server.routes.questionRoutes
 import net.markdrew.biblebowl.server.routes.registrationRoutes
 import net.markdrew.biblebowl.server.routes.scoreRoutes
@@ -80,6 +84,7 @@ fun main() {
     val congregations = db?.let(::PostgresCongregationRepository) ?: InMemoryCongregationRepository()
     val registrations = db?.let(::PostgresRegistrationRepository) ?: InMemoryRegistrationRepository(congregations)
     val scores = db?.let(::PostgresScoreRepository) ?: InMemoryScoreRepository()
+    val housing = db?.let(::PostgresHousingRepository) ?: InMemoryHousingRepository()
     // Prod uses the Postgres cache; local dev (no DATABASE_URL) uses a persisted on-disk cache so repeated
     // runs never re-hit the ESV API — only a first run (cache miss) or ESV_CACHE_REFRESH re-fetches. It
     // lives under the user's home (~/.cache/texas-bible-bowl/esv) so it survives git cleans and fresh clones.
@@ -100,6 +105,7 @@ fun main() {
         module(
             users, questions, esv = esv, study = study, seasons = seasons, pdfCache = pdfCache,
             congregations = congregations, registrations = registrations, scores = scores,
+            housing = housing,
         )
     }.start(wait = true)
 }
@@ -119,6 +125,7 @@ fun Application.module(
     congregations: CongregationRepository = InMemoryCongregationRepository(),
     registrations: RegistrationRepository = InMemoryRegistrationRepository(congregations),
     scores: ScoreRepository = InMemoryScoreRepository(),
+    housing: HousingRepository = InMemoryHousingRepository(),
 ) {
     seedAdminFromEnv(users)
 
@@ -186,6 +193,7 @@ fun Application.module(
         seasonRoutes(users, seasons)
         registrationRoutes(users, seasons, congregations, registrations)
         adminRegistrationRoutes(users, seasons, congregations, registrations)
+        housingRoutes(users, seasons, congregations, housing)
         scoreRoutes(users, seasons, registrations, scores)
         userRoutes(users, congregations)
     }

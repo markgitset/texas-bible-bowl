@@ -40,7 +40,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 12 | F12 | Shirt-order report | done |
 | 13 | F7 | Tester IDs + ZipGrade export | not started |
 | 14 | F8 | Nametag PDF generation | not started |
-| 15 | F9 | Housing / cabin assignments | not started |
+| 15 | F9 | Housing / cabin assignments | done |
 | 16 | F10 | Tribes & tribe leaders | not started |
 | 17 | F13 | Seed the database from the 2026 workbook | not started |
 
@@ -297,6 +297,16 @@ roster (one adult per congregation).
 - **Scope note:** event-ops rather than registration proper; approved, but keep it a thin
   admin tool — free-form assignment grid, not an optimizer.
 - **Dependencies:** 6, 7 (needs guests + genders per site).
+- **As built (2026-07):** `#admin/housing` (linked from the desk; gated like it — event-wide
+  REGISTRATION_MANAGE + the registration feature toggle). Cabins are per-season rows (name
+  unique per season+site, optional bed count; site required on multi-site seasons); each
+  carries free-form assignment rows — congregation × gender group (gender optional =
+  everyone) and/or a free-text label for families/staff. Occupant counts are derived
+  client-side from the desk payload (never stored, shown beside capacity with an
+  over-capacity badge), plus a "not yet housed" hint listing registered congregations with
+  no row anywhere. Check-out duty is a per-congregation free-form adult name (blank
+  clears). One CSV exports the grid + duty roster. Server: `cabins`/`cabin_assignments`/
+  `checkout_duties` tables, `/admin/housing` routes.
 
 ## 16. (F10) Tribes & tribe leaders
 

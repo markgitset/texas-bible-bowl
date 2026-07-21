@@ -15,7 +15,14 @@ import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
+import net.markdrew.biblebowl.api.AddCabinAssignmentRequest
+import net.markdrew.biblebowl.api.UpsertCabinRequest
 import net.markdrew.biblebowl.server.data.AddMemberResult
+import net.markdrew.biblebowl.server.data.CabinAssignmentsTable
+import net.markdrew.biblebowl.server.data.CabinResult
+import net.markdrew.biblebowl.server.data.CabinsTable
+import net.markdrew.biblebowl.server.data.CheckoutDutiesTable
+import net.markdrew.biblebowl.server.data.PostgresHousingRepository
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.CongregationsTable
 import net.markdrew.biblebowl.server.data.ContestantsTable
@@ -84,6 +91,9 @@ class PostgresRepositoryTest {
             TeamMembersTable.deleteAll()
             IndividualsTable.deleteAll()
             RegistrationGuestsTable.deleteAll()
+            CabinAssignmentsTable.deleteAll()
+            CabinsTable.deleteAll()
+            CheckoutDutiesTable.deleteAll()
             ContestantsTable.deleteAll() // after team_members + individuals (both FK-reference it)
             TeamsTable.deleteAll()
             RegistrationsTable.deleteAll()
@@ -565,5 +575,48 @@ class PostgresRepositoryTest {
         val a2028 = registrations.addIndividual(cong.id, "2028", UpsertIndividualRequest("Pat Adult", ShirtSize.AL, Gender.FEMALE))
         assertTrue(a2028.claimed, "the new season's adult entry inherits the durable owner")
         assertEquals(setOf(a2027.id, a2028.id), registrations.entryIdsOwnedBy(pat.id))
+    }
+
+    @Test
+    fun housingCabinsAssignmentsAndDutiesRoundTrip() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val housing = PostgresHousingRepository(db)
+
+        val coach = users.create("hcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Housing Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+
+        // Cabins: add, duplicate-name rejection (same season + site), rename, and season scoping.
+        val cabin = assertIs<CabinResult.Ok>(housing.addCabin("2027", UpsertCabinRequest("Bluebonnet", capacity = 12))).cabin
+        assertIs<CabinResult.NameTaken>(housing.addCabin("2027", UpsertCabinRequest("bluebonnet")))
+        assertIs<CabinResult.Ok>(housing.addCabin("2028", UpsertCabinRequest("Bluebonnet"))) // other season is fine
+        val renamed = assertIs<CabinResult.Ok>(housing.updateCabin(cabin.id, UpsertCabinRequest("Bluebonnet Lodge", capacity = 10))).cabin
+        assertEquals(10, renamed.capacity)
+        assertEquals(listOf("Bluebonnet Lodge"), housing.listCabins("2027").map { it.name })
+
+        // Assignments: a congregation × gender group and an ad-hoc label row, ordered by creation.
+        val group = assertNotNull(housing.addAssignment(cabin.id, AddCabinAssignmentRequest(congregationId = cong.id, gender = Gender.MALE)))
+        assertNotNull(housing.addAssignment(cabin.id, AddCabinAssignmentRequest(label = "Smith family — RV 3")))
+        val rows = housing.listCabins("2027").single().assignments
+        assertEquals(listOf(cong.id, null), rows.map { it.congregationId })
+        assertEquals(listOf(Gender.MALE, null), rows.map { it.gender })
+        assertTrue(housing.deleteAssignment(group.id))
+
+        // Deleting the cabin cascades its remaining assignment rows.
+        assertTrue(housing.deleteCabin(cabin.id))
+        assertTrue(housing.listCabins("2027").isEmpty())
+
+        // Check-out duty: upsert replaces, blank clears, seasons are independent.
+        housing.setDuty("2027", cong.id, "Jane Smith")
+        housing.setDuty("2027", cong.id, "John Doe")
+        assertEquals(listOf("John Doe"), housing.listDuties("2027").map { it.adultName })
+        assertTrue(housing.listDuties("2028").isEmpty())
+        housing.setDuty("2027", cong.id, "  ")
+        assertTrue(housing.listDuties("2027").isEmpty())
     }
 }
