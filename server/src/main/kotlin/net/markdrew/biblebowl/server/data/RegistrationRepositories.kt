@@ -12,6 +12,8 @@ import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.ReturningContestantDto
 import net.markdrew.biblebowl.api.RosterEntryDto
+import net.markdrew.biblebowl.api.SeedMemberDto
+import net.markdrew.biblebowl.api.graduationYearFor
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
@@ -21,6 +23,7 @@ import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.isNotNull
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.isNull
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.neq
 import org.jetbrains.exposed.v1.core.and
@@ -121,6 +124,8 @@ sealed interface EnrollResult {
     /** The target team doesn't exist or belongs to another registration. */
     data object TeamNotFound : EnrollResult
     data object RosterFull : EnrollResult
+    /** A workbook-seeded youth (grade, no birthdate) needs a birthdate at first enrollment. */
+    data object BirthdateRequired : EnrollResult
 }
 
 /** Outcome of claiming a roster entry by its coach-shared code. */
@@ -181,14 +186,28 @@ interface RegistrationRepository {
      * caller's, since it needs the season; here they're returned name-sorted with last-seen details.
      */
     fun returningContestants(congregationId: String, seasonYear: String): List<ReturningContestantDto>
-    /** Creates [seasonYear]'s roster entry for an existing contestant (on [teamId], else unassigned). */
+    /**
+     * Creates [seasonYear]'s roster entry for an existing contestant (on [teamId], else unassigned).
+     * [birthdate] is for workbook-seeded youth (grade but no birthdate): required for them —
+     * [EnrollResult.BirthdateRequired] otherwise — and written onto the durable contestant, who is
+     * a normal birthdate-carrying youth from then on. Ignored for everyone else.
+     */
     fun enrollContestant(
         congregationId: String,
         seasonYear: String,
         contestantId: String,
         shirtSize: ShirtSize,
         teamId: String?,
+        birthdate: String? = null,
     ): EnrollResult
+    /**
+     * Workbook seed (item 17, F13): upserts the durable contestant for `(congregationId, name)` —
+     * grade-seeded, no birthdate ([SeedMemberDto.grade] becomes a graduation year) — plus their
+     * [seasonYear] enrollment on [teamId] (null = unassigned). Idempotent: an existing enrollment
+     * is updated (shirt size, team) rather than duplicated, and a contestant who already carries a
+     * birthdate keeps it (the seed only fills identity gaps). Null when the team doesn't exist.
+     */
+    fun seedMember(congregationId: String, seasonYear: String, teamId: String?, member: SeedMemberDto): RosterEntryDto?
     /** Every registration for [seasonYear], with full teams/rosters (registration desk). */
     fun listForSeason(seasonYear: String): List<RegistrationDto>
     /** Sets (non-null) or clears (null) payment received. Null return = no such registration. */
@@ -298,9 +317,13 @@ class InMemoryRegistrationRepository(
         val id: String,
         val congregationId: String,
         var name: String,
-        val birthdate: String?,
+        // Mutable for exactly one transition: a workbook-seeded youth gets their real birthdate
+        // at first enrollment (see RegistrationRepository.enrollContestant).
+        var birthdate: String?,
         var gender: Gender?,
         var firstSeasonYear: String?,
+        /** Seeded grade as a graduation year (see [ContestantsTable.graduationYear]); birthdate wins. */
+        var graduationYear: Int? = null,
     )
 
     private val regs = mutableMapOf<String, Reg>() // key = "$congregationId|$seasonYear"
@@ -400,7 +423,12 @@ class InMemoryRegistrationRepository(
             it.congregationId == congregationId &&
                 it.name.equals(trimmed, ignoreCase = true) &&
                 it.birthdate == req.birthdate
-        }
+        } ?: contestants.values.firstOrNull {
+            // A workbook-seeded youth (no birthdate yet) re-added by name WITH a birthdate is the
+            // same person — adopt the birthdate instead of creating a duplicate.
+            it.congregationId == congregationId && it.name.equals(trimmed, ignoreCase = true) &&
+                it.birthdate == null && it.graduationYear != null
+        }?.also { it.birthdate = req.birthdate }
         if (existing != null) {
             val firstYear = if (contestantHasPriorSeason(existing.id, seasonYear)) existing.firstSeasonYear
                 else seasonYear.takeIf { req.inexperienced }
@@ -505,7 +533,10 @@ class InMemoryRegistrationRepository(
     private fun findOrCreateAdultContestant(congregationId: String, req: UpsertIndividualRequest): String {
         val trimmed = req.name.trim()
         val existing = contestants.values.firstOrNull {
-            it.congregationId == congregationId && it.name.equals(trimmed, ignoreCase = true) && it.birthdate == null
+            // graduationYear == null: a workbook-seeded youth is also birthdate-less but is NOT
+            // this adult (the seed marks youth with a graduation year).
+            it.congregationId == congregationId && it.name.equals(trimmed, ignoreCase = true) &&
+                it.birthdate == null && it.graduationYear == null
         }
         if (existing != null) {
             existing.name = trimmed
@@ -630,6 +661,7 @@ class InMemoryRegistrationRepository(
                         lastSeasonYear = recent?.first,
                         lastShirtSize = recent?.second,
                         firstSeasonYear = contestant.firstSeasonYear,
+                        graduationYear = contestant.graduationYear,
                     )
                 }
         }
@@ -640,9 +672,14 @@ class InMemoryRegistrationRepository(
         contestantId: String,
         shirtSize: ShirtSize,
         teamId: String?,
+        birthdate: String?,
     ): EnrollResult = synchronized(lock) {
         val contestant = contestants[contestantId]?.takeIf { it.congregationId == congregationId }
             ?: return EnrollResult.ContestantNotFound
+        // A workbook-seeded youth finally gets their real birthdate here (route validates the grade).
+        if (contestant.birthdate == null && contestant.graduationYear != null) {
+            contestant.birthdate = birthdate ?: return EnrollResult.BirthdateRequired
+        }
         val reg = regFor(congregationId, seasonYear)
         val code = generateSequence { ClaimCodes.generate() }.first { usedCodes.add(it) }
         // Adults (birthdate-less) enroll as individuals; youth as team members (optionally on a team).
@@ -683,6 +720,59 @@ class InMemoryRegistrationRepository(
             team.memberIds += entry.id
         }
         EnrollResult.Enrolled
+    }
+
+    override fun seedMember(
+        congregationId: String,
+        seasonYear: String,
+        teamId: String?,
+        member: SeedMemberDto,
+    ): RosterEntryDto? = synchronized(lock) {
+        val reg = regFor(congregationId, seasonYear)
+        // Combo rule (item 5): the team may belong to another congregation's same-season
+        // registration — the member stays registered (and billed) by their own congregation.
+        val team = teamId?.let {
+            teams[it]?.takeIf { t -> regs.values.firstOrNull { r -> r.id == t.regId }?.seasonYear == seasonYear }
+                ?: return null
+        }
+        val trimmed = member.name.trim()
+        val contestant = contestants.values.firstOrNull {
+            it.congregationId == congregationId && it.name.equals(trimmed, ignoreCase = true)
+        } ?: Contestant(UUID.randomUUID().toString(), congregationId, trimmed, null, member.gender, null)
+            .also { contestants[it.id] = it }
+        // The seed fills identity gaps but never overwrites curated data: birthdate wins over the
+        // seeded grade, and an inexperienced seed can only pull the first season earlier.
+        if (contestant.gender == null) contestant.gender = member.gender
+        if (contestant.birthdate == null) contestant.graduationYear = graduationYearFor(seasonYear, member.grade)
+        if (member.inexperienced) {
+            contestant.firstSeasonYear = listOfNotNull(contestant.firstSeasonYear, seasonYear).min()
+        }
+        val existingId = memberContestant.entries
+            .firstOrNull { (mid, cid) -> cid == contestant.id && memberReg[mid] == reg.id }?.key
+        val entryId: String
+        if (existingId == null) {
+            entryId = UUID.randomUUID().toString()
+            val code = generateSequence { ClaimCodes.generate() }.first { usedCodes.add(it) }
+            members[entryId] = RosterEntryDto(
+                id = entryId, name = trimmed, birthdate = contestant.birthdate,
+                shirtSize = member.shirtSize, gender = contestant.gender,
+                firstSeasonYear = contestant.firstSeasonYear, claimCode = code,
+            )
+            memberReg[entryId] = reg.id
+            memberContestant[entryId] = contestant.id
+        } else {
+            entryId = existingId
+            members[entryId] = members[entryId]!!
+                .copy(shirtSize = member.shirtSize, firstSeasonYear = contestant.firstSeasonYear)
+        }
+        // (Re)place on the team when there's room; a full team leaves the entry unassigned.
+        val current = memberTeam[entryId]
+        if (team != null && current != team.id && team.memberIds.size < MAX_TEAM_SIZE) {
+            current?.let { teams[it]?.memberIds?.remove(entryId) }
+            team.memberIds += entryId
+            memberTeam[entryId] = team.id
+        }
+        memberDto(entryId)
     }
 
     override fun listForSeason(seasonYear: String): List<RegistrationDto> = synchronized(lock) {
@@ -1016,6 +1106,20 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                     (req.birthdate?.let { ContestantsTable.birthdate eq it } ?: ContestantsTable.birthdate.isNull())
             }
             .firstOrNull()
+            ?: ContestantsTable.selectAll()
+                .where {
+                    // A workbook-seeded youth (no birthdate yet) re-added by name WITH a birthdate
+                    // is the same person — adopt the birthdate instead of creating a duplicate.
+                    (ContestantsTable.congregationId eq congregationId) and
+                        (ContestantsTable.name.lowerCase() eq trimmed.lowercase()) and
+                        ContestantsTable.birthdate.isNull() and ContestantsTable.graduationYear.isNotNull()
+                }
+                .firstOrNull()
+                ?.also { seeded ->
+                    ContestantsTable.update({ ContestantsTable.id eq seeded[ContestantsTable.id] }) {
+                        it[birthdate] = req.birthdate
+                    }
+                }
         if (existing != null) {
             val existingId = existing[ContestantsTable.id]
             val hasPriorSeason = (TeamMembersTable innerJoin RegistrationsTable).selectAll()
@@ -1065,9 +1169,11 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         val trimmed = req.name.trim()
         val existing = ContestantsTable.selectAll()
             .where {
+                // graduation_year null: a workbook-seeded youth is also birthdate-less but is NOT
+                // this adult (the seed marks youth with a graduation year).
                 (ContestantsTable.congregationId eq congregationId) and
                     (ContestantsTable.name.lowerCase() eq trimmed.lowercase()) and
-                    ContestantsTable.birthdate.isNull()
+                    ContestantsTable.birthdate.isNull() and ContestantsTable.graduationYear.isNull()
             }
             .firstOrNull()
         if (existing != null) {
@@ -1339,6 +1445,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                         lastSeasonYear = recent?.first,
                         lastShirtSize = recent?.second?.let { ShirtSize.valueOf(it) },
                         firstSeasonYear = row[ContestantsTable.firstSeasonYear],
+                        graduationYear = row[ContestantsTable.graduationYear],
                     )
                 }
         }
@@ -1349,15 +1456,24 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         contestantId: String,
         shirtSize: ShirtSize,
         teamId: String?,
+        birthdate: String?,
     ): EnrollResult = transaction(db) {
         // The contestant must exist and belong to this congregation.
         val contestant = ContestantsTable.selectAll().where { ContestantsTable.id eq contestantId }.singleOrNull()
             ?.takeIf { it[ContestantsTable.congregationId] == congregationId }
             ?: return@transaction EnrollResult.ContestantNotFound
+        // A workbook-seeded youth finally gets their real birthdate here (route validates the grade).
+        var storedBirthdate = contestant[ContestantsTable.birthdate]
+        if (storedBirthdate == null && contestant[ContestantsTable.graduationYear] != null) {
+            storedBirthdate = birthdate ?: return@transaction EnrollResult.BirthdateRequired
+            ContestantsTable.update({ ContestantsTable.id eq contestantId }) {
+                it[ContestantsTable.birthdate] = storedBirthdate
+            }
+        }
         val regId = regIdFor(congregationId, seasonYear)
         val code = freshClaimCode()
         // Adults (birthdate-less) enroll as individuals; youth as team members (optionally on a team).
-        if (contestant[ContestantsTable.birthdate] == null) {
+        if (storedBirthdate == null) {
             val already = IndividualsTable.selectAll()
                 .where { (IndividualsTable.contestantId eq contestantId) and (IndividualsTable.registrationId eq regId) }
                 .any()
@@ -1397,6 +1513,87 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         }
         touch(regId)
         EnrollResult.Enrolled
+    }
+
+    override fun seedMember(
+        congregationId: String,
+        seasonYear: String,
+        teamId: String?,
+        member: SeedMemberDto,
+    ): RosterEntryDto? = transaction(db) {
+        val regId = regIdFor(congregationId, seasonYear)
+        if (teamId != null) {
+            // Combo rule (item 5): the team may belong to another congregation's same-season
+            // registration — the member stays registered (and billed) by their own congregation.
+            val teamRegId = TeamsTable.selectAll().where { TeamsTable.id eq teamId }.singleOrNull()
+                ?.get(TeamsTable.registrationId) ?: return@transaction null
+            val teamSeason = RegistrationsTable.selectAll().where { RegistrationsTable.id eq teamRegId }
+                .singleOrNull()?.get(RegistrationsTable.seasonYear)
+            if (teamSeason != seasonYear) return@transaction null
+        }
+        val trimmed = member.name.trim()
+        val existing = ContestantsTable.selectAll()
+            .where {
+                (ContestantsTable.congregationId eq congregationId) and
+                    (ContestantsTable.name.lowerCase() eq trimmed.lowercase())
+            }
+            .firstOrNull()
+        val contestantId = existing?.get(ContestantsTable.id) ?: UUID.randomUUID().toString()
+        // The seed fills identity gaps but never overwrites curated data: birthdate wins over the
+        // seeded grade, and an inexperienced seed can only pull the first season earlier.
+        val firstSeason =
+            if (member.inexperienced) {
+                listOfNotNull(existing?.get(ContestantsTable.firstSeasonYear), seasonYear).min()
+            } else existing?.get(ContestantsTable.firstSeasonYear)
+        if (existing == null) {
+            ContestantsTable.insert {
+                it[id] = contestantId
+                it[ContestantsTable.congregationId] = congregationId
+                it[name] = trimmed
+                it[gender] = member.gender?.name
+                it[firstSeasonYear] = firstSeason
+                it[graduationYear] = graduationYearFor(seasonYear, member.grade)
+            }
+        } else {
+            ContestantsTable.update({ ContestantsTable.id eq contestantId }) {
+                if (existing[ContestantsTable.gender] == null) it[gender] = member.gender?.name
+                if (existing[ContestantsTable.birthdate] == null) {
+                    it[graduationYear] = graduationYearFor(seasonYear, member.grade)
+                }
+                it[firstSeasonYear] = firstSeason
+            }
+        }
+        val enrollment = TeamMembersTable.selectAll()
+            .where { (TeamMembersTable.contestantId eq contestantId) and (TeamMembersTable.registrationId eq regId) }
+            .firstOrNull()
+        val entryId: String
+        if (enrollment == null) {
+            entryId = UUID.randomUUID().toString()
+            val code = freshClaimCode()
+            TeamMembersTable.insert {
+                it[id] = entryId
+                it[TeamMembersTable.teamId] = null
+                it[registrationId] = regId
+                it[TeamMembersTable.contestantId] = contestantId
+                it[shirtSize] = member.shirtSize.name
+                it[claimCode] = code
+                it[ownerUserId] = ownerForContestant(contestantId)
+            }
+        } else {
+            entryId = enrollment[TeamMembersTable.id]
+            TeamMembersTable.update({ TeamMembersTable.id eq entryId }) {
+                it[shirtSize] = member.shirtSize.name
+            }
+        }
+        // (Re)place on the team when there's room; a full team leaves the entry unassigned.
+        if (teamId != null && enrollment?.get(TeamMembersTable.teamId) != teamId) {
+            val size = TeamMembersTable.selectAll().where { TeamMembersTable.teamId eq teamId }.count()
+            if (size < MAX_TEAM_SIZE) {
+                TeamMembersTable.update({ TeamMembersTable.id eq entryId }) { it[TeamMembersTable.teamId] = teamId }
+            }
+        }
+        touch(regId)
+        memberEntry(entryId)
     }
 
     override fun listForSeason(seasonYear: String): List<RegistrationDto> = transaction(db) {

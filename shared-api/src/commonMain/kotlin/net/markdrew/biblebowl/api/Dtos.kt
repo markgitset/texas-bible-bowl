@@ -538,7 +538,10 @@ data class UpsertGuestRequest(
 data class ReturningContestantDto(
     val contestantId: String,
     val name: String,
-    /** ISO-8601 birthdate (drives the division this season); youth always have one. */
+    /**
+     * ISO-8601 birthdate (drives the division this season); null for adults and for
+     * workbook-seeded youth, who carry [graduationYear] instead until first enrollment.
+     */
     val birthdate: String? = null,
     val gender: Gender? = null,
     /** The most recent season this contestant competed, for display ("last competed 2027"). */
@@ -547,7 +550,19 @@ data class ReturningContestantDto(
     val lastShirtSize: ShirtSize? = null,
     /** The season this contestant first competed, if known (drives the inexperienced bracket). */
     val firstSeasonYear: String? = null,
+    /**
+     * The event year this contestant finishes grade 12, derived from a seeded school grade (the
+     * 2026 workbook import has grades but no birthdates — item 17, F13). Non-null marks a *seeded
+     * youth*: treated as youth despite the null [birthdate], with the real birthdate collected the
+     * first time a coach enrolls them (see [EnrollContestantRequest.birthdate]). Stable across
+     * seasons where a stored grade would go stale: grade this season = 12 − ([graduationYear] −
+     * event year).
+     */
+    val graduationYear: Int? = null,
 )
+
+/** True for a workbook-seeded youth candidate: no birthdate yet, treated as youth by seeded grade. */
+val ReturningContestantDto.isSeededYouth: Boolean get() = birthdate == null && graduationYear != null
 
 /**
  * Enrolls a returning [ReturningContestantDto] into the current season — creating that season's
@@ -558,6 +573,13 @@ data class ReturningContestantDto(
 data class EnrollContestantRequest(
     val shirtSize: ShirtSize,
     val teamId: String? = null,
+    /**
+     * ISO-8601 birthdate, required (server-enforced) when enrolling a seeded youth
+     * ([ReturningContestantDto.isSeededYouth]) — the workbook import seeded a grade, not a
+     * birthdate, and enrollment is where the real one is finally collected (it must imply a
+     * school grade of 3–12, like [UpsertRosterEntryRequest.birthdate]). Ignored otherwise.
+     */
+    val birthdate: String? = null,
 )
 
 /** A congregation's registration for one season; unique per (congregation, seasonYear). */
@@ -695,6 +717,114 @@ data class TesterListResponse(
  */
 @Serializable
 data class ClaimEntryRequest(val code: String)
+
+// ---------------------------------------------------------------------------
+// Seed import from the 2026 workbook (item 17, F13) — one-time, idempotent
+// ---------------------------------------------------------------------------
+
+/**
+ * A youth tester from the workbook: a school grade instead of a birthdate (the workbook never
+ * collected birthdates). Seeds a durable contestant whose [ReturningContestantDto.graduationYear]
+ * derives from [grade] + the seed season; the real birthdate arrives at first enrollment.
+ */
+@Serializable
+data class SeedMemberDto(
+    val name: String,
+    val gender: Gender? = null,
+    val shirtSize: ShirtSize,
+    /** School grade 3–12 in the seed season. */
+    val grade: Int,
+    /** True when the workbook's Ind Category was an Inexperienced bracket (first year = seed season). */
+    val inexperienced: Boolean = false,
+    /**
+     * The member's OWN congregation when it differs from the team's host — a 2026 combo-team
+     * visiting member (e.g. the League City members of MRLC-Combo). Null = belongs to the
+     * surrounding [SeedCongregationDto]. Matched by congregation name.
+     */
+    val congregationName: String? = null,
+)
+
+/** An adult individual contestant from the workbook (Ind Category "Adult"). */
+@Serializable
+data class SeedIndividualDto(
+    val name: String,
+    val gender: Gender? = null,
+    val shirtSize: ShirtSize,
+    val tribeLeaderWilling: Boolean = false,
+)
+
+/**
+ * A guest from the workbook — non-tester attendees, including coach-typed rows (coach *accounts*
+ * are not created by the import; see [SeedCongregationDto.coachEmails]). Child guests arrive with
+ * a null [birthdate] like adults — the workbook only had age groups, and per the no-fake-birthdates
+ * decision none are synthesized.
+ */
+@Serializable
+data class SeedGuestDto(
+    val name: String,
+    val gender: Gender? = null,
+    /** Null for an under-3 guest (no included shirt). */
+    val shirtSize: ShirtSize? = null,
+    val positions: List<String> = emptyList(),
+    val tribeLeaderWilling: Boolean = false,
+    val contact: ContactInfoDto? = null,
+)
+
+@Serializable
+data class SeedTeamDto(val name: String, val members: List<SeedMemberDto> = emptyList())
+
+/**
+ * One congregation's complete seed: identity + address, its seed-season registration (teams,
+ * team-less youth, adult individuals, guests), and its coaches' emails. [coachEmails] become
+ * *pending coach grants*: when someone later signs up with that email, they're granted the
+ * congregation-scoped COACH role automatically (no accounts are created by the import).
+ */
+@Serializable
+data class SeedCongregationDto(
+    val name: String,
+    val city: String = "",
+    val state: String = "",
+    val mailingAddress: String = "",
+    val zip: String = "",
+    val phone: String = "",
+    /** Two-letter congregation code, e.g. "BH"; blank leaves it unset. */
+    val code: String = "",
+    /** Site id recorded on the seed-season registration (e.g. "bandina"); null = single site. */
+    val siteId: String? = null,
+    val coachEmails: List<String> = emptyList(),
+    val teams: List<SeedTeamDto> = emptyList(),
+    /** Youth testers with no team in the seed season (elementary contestants, mostly). */
+    val unassigned: List<SeedMemberDto> = emptyList(),
+    val individuals: List<SeedIndividualDto> = emptyList(),
+    val guests: List<SeedGuestDto> = emptyList(),
+)
+
+/**
+ * The full workbook seed (`POST /admin/seed`, global admins only). Idempotent: congregations,
+ * contestants, teams, and rows are matched by natural keys (name+city, congregation+name, …), so
+ * re-running updates in place instead of duplicating. [seasonYear] is the *historical* season the
+ * registrations land in ("2026") — not the current season; its registrations are marked submitted
+ * and paid so the history reads as settled.
+ */
+@Serializable
+data class SeedRequest(
+    val seasonYear: String,
+    val congregations: List<SeedCongregationDto> = emptyList(),
+)
+
+/** What `POST /admin/seed` did — counts are totals present after the run, not deltas. */
+@Serializable
+data class SeedSummary(
+    val seasonYear: String,
+    val congregations: Int = 0,
+    val teams: Int = 0,
+    val members: Int = 0,
+    val individuals: Int = 0,
+    val guests: Int = 0,
+    val pendingCoachGrants: Int = 0,
+    /** Non-fatal oddities worth a human look (e.g. a division/grade mismatch in the source). */
+    val warnings: List<String> = emptyList(),
+)
 
 // ---------------------------------------------------------------------------
 // Housing / cabin assignments (item 15, F9) — thin event-ops assignment grid

@@ -88,6 +88,29 @@ fun SeasonDto.isEligibleReturningCandidate(birthdate: String?): Boolean =
     birthdate == null || divisionForBirthdate(birthdate).let { it != null && it != Division.ADULT }
 
 /**
+ * [isEligibleReturningCandidate] for a full candidate, which may be a workbook-seeded youth
+ * (grade seeded, no birthdate — [ReturningContestantDto.graduationYear]): such a youth stays
+ * eligible through their grade-12 season and ages out after it; seeded grades start at 3, so
+ * there is no too-young end. Adults (neither field) are always offerable.
+ */
+fun SeasonDto.isEligibleReturningCandidate(candidate: ReturningContestantDto): Boolean = when {
+    candidate.birthdate != null -> isEligibleReturningCandidate(candidate.birthdate)
+    candidate.graduationYear != null -> (eventYear.toIntOrNull() ?: 0) <= candidate.graduationYear
+    else -> true
+}
+
+/**
+ * The school grade this season implied by a seeded [ReturningContestantDto.graduationYear]
+ * (12 in the graduation-year season, one less per season before it). May exceed 12 for an
+ * aged-out candidate; callers filter with [isEligibleReturningCandidate] first.
+ */
+fun SeasonDto.gradeForGraduationYear(graduationYear: Int): Int =
+    12 - (graduationYear - (eventYear.toIntOrNull() ?: 0))
+
+/** The event year a student in [grade] during [seasonYear] finishes grade 12 (the seed's stable form). */
+fun graduationYearFor(seasonYear: String, grade: Int): Int = (seasonYear.toIntOrNull() ?: 0) + (12 - grade)
+
+/**
  * A user's division this [season]: [Division.ADULT] for self-attested adults, computed from the
  * birthdate otherwise, and null while the profile has neither (legacy account) or is too young.
  */

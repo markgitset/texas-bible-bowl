@@ -14,7 +14,10 @@ import net.markdrew.biblebowl.api.TeamDto
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.division
+import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.divisionForBirthdate
+import net.markdrew.biblebowl.api.gradeForGraduationYear
+import net.markdrew.biblebowl.api.isSeededYouth
 import net.markdrew.biblebowl.api.formatCents
 import net.markdrew.biblebowl.api.ageTierFor
 import net.markdrew.biblebowl.api.multiSite
@@ -501,10 +504,24 @@ object AdminRegistrationsScreen {
         }
         candidates.forEach { candidate ->
             parent.child("div", "d-flex flex-wrap align-items-center gap-2 small mb-1") {
-                val isAdult = candidate.birthdate == null
-                val div = if (isAdult) "Adult"
-                    else candidate.birthdate?.let { Session.season.divisionForBirthdate(it)?.displayName } ?: "—"
+                val isAdult = candidate.birthdate == null && !candidate.isSeededYouth
+                val div = when {
+                    isAdult -> "Adult"
+                    candidate.birthdate != null ->
+                        Session.season.divisionForBirthdate(candidate.birthdate!!)?.displayName ?: "—"
+                    // Workbook-seeded youth: division from the seeded grade until a birthdate exists.
+                    else -> candidate.graduationYear
+                        ?.let { Division.forGrade(Session.season.gradeForGraduationYear(it))?.displayName }
+                        ?.plus(" (seeded)") ?: "—"
+                }
                 child("span", text = "${candidate.name} — $div" + (candidate.lastSeasonYear?.let { " · last $it" } ?: ""))
+                // A seeded youth's first enrollment records their real birthdate.
+                val birthdate = if (candidate.isSeededYouth) {
+                    val input = child("input", "form-control form-control-sm w-auto") as HTMLInputElement
+                    input.type = "date"
+                    input.setAttribute("title", "Birthdate (first enrollment records it)")
+                    input
+                } else null
                 val shirt = adminShirtSelect(this, candidate.lastShirtSize)
                 // Youth pick a team (or the unassigned pool); adults enroll as individuals (no team).
                 val teamSel = if (!isAdult && teams.isNotEmpty()) {
@@ -516,10 +533,16 @@ object AdminRegistrationsScreen {
                 child("button", "btn btn-sm btn-primary", "Add") {
                     setAttribute("type", "button")
                     onClick {
+                        if (birthdate != null && birthdate.value.isBlank()) {
+                            message = "${candidate.name} needs a birthdate — the workbook only had a school grade"
+                            renderContent()
+                            return@onClick
+                        }
                         deskEnroll(row.congregation.id, candidate.contestantId) {
                             Session.api.enrollContestant(
                                 row.congregation.id, candidate.contestantId,
                                 ShirtSize.valueOf(shirt.value), teamSel?.value?.ifEmpty { null },
+                                birthdate?.value,
                             )
                         }
                     }

@@ -15,6 +15,7 @@ import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
+import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.server.data.UserRepository
@@ -47,6 +48,11 @@ fun Route.authRoutes(users: UserRepository, jwt: JwtService) {
                 passwordHash = Passwords.hash(req.password),
                 roles = listOf(RoleGrant(Role.CONTESTANT)), // everyone starts as a contestant
             )
+            // A coach email known from the workbook seed (item 17, F13) gets its congregation-scoped
+            // COACH role the moment the account exists — no admin hand-granting for returning coaches.
+            users.consumePendingCoachGrants(user.email).forEach { congregationId ->
+                users.addRoleGrant(user.id, RoleGrant(Role.COACH, ScopeType.CONGREGATION, congregationId))
+            }
             val token = jwt.issue(user.id, user.email)
             call.respond(HttpStatusCode.Created, AuthResponse(token, user.toDto()))
         }

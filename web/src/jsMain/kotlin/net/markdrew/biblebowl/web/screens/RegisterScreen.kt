@@ -28,7 +28,10 @@ import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.contestantCount
 import net.markdrew.biblebowl.api.division
+import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.divisionForBirthdate
+import net.markdrew.biblebowl.api.gradeForGraduationYear
+import net.markdrew.biblebowl.api.isSeededYouth
 import net.markdrew.biblebowl.api.divisionLabel
 import net.markdrew.biblebowl.api.feesNote
 import net.markdrew.biblebowl.api.isInexperienced
@@ -701,7 +704,8 @@ object RegisterScreen {
      */
     private fun renderReturningCard(parent: Element) {
         // Youth candidates go on a team here; returning adults are offered in the individuals card.
-        val candidates = loaded?.returningCandidates.orEmpty().filter { it.birthdate != null }
+        // Workbook-seeded youth (grade but no birthdate yet) count as youth: enrolling collects it.
+        val candidates = loaded?.returningCandidates.orEmpty().filter { it.birthdate != null || it.isSeededYouth }
         if (candidates.isEmpty() || !canEdit) return
         val cong = congregation ?: return
         parent.child("div", "card section-card border-info mb-3") {
@@ -723,12 +727,24 @@ object RegisterScreen {
             child("span", "flex-grow-1") {
                 append("${candidate.name} ")
                 val division = candidate.birthdate?.let { Session.season.divisionForBirthdate(it) }
+                    ?: candidate.graduationYear
+                        ?.let { Division.forGrade(Session.season.gradeForGraduationYear(it)) }
                 child(
                     "span", "badge " + (if (division == null) "text-bg-secondary" else "text-bg-primary"),
                     division?.displayName ?: "—",
                 )
+                candidate.graduationYear?.takeIf { candidate.isSeededYouth }?.let {
+                    child("span", "text-muted small ms-2", "~grade ${Session.season.gradeForGraduationYear(it)}")
+                }
                 candidate.lastSeasonYear?.let { child("span", "text-muted small ms-2", "last competed $it") }
             }
+            // A workbook-seeded youth has no birthdate on file yet — collect it at first enrollment.
+            val birthdate = if (candidate.isSeededYouth) {
+                val input = child("input", "form-control form-control-sm w-auto") as HTMLInputElement
+                input.type = "date"
+                input.setAttribute("title", "Birthdate (first enrollment records it)")
+                input
+            } else null
             val shirt = shirtSelect(this, candidate.lastShirtSize ?: ShirtSize.YM)
             val teamSel = child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
             teamSel.setAttribute("title", "Team")
@@ -739,10 +755,16 @@ object RegisterScreen {
             child("button", "btn btn-sm btn-primary", "Add") {
                 setAttribute("type", "button")
                 onClick {
+                    if (birthdate != null && birthdate.value.isBlank()) {
+                        error = "${candidate.name} needs a birthdate — the workbook only had a school grade"
+                        renderContent()
+                        return@onClick
+                    }
                     enroll {
                         Session.api.enrollContestant(
                             congregationId, candidate.contestantId,
                             ShirtSize.valueOf(shirt.value), teamSel.value.ifEmpty { null },
+                            birthdate?.value,
                         )
                     }
                 }
@@ -797,7 +819,8 @@ object RegisterScreen {
                     }
                 }
                 // Returning adults: competed here before but not on this year's roster — one-click add.
-                val returningAdults = loaded?.returningCandidates.orEmpty().filter { it.birthdate == null }
+                val returningAdults = loaded?.returningCandidates.orEmpty()
+                    .filter { it.birthdate == null && !it.isSeededYouth }
                 if (canEdit && returningAdults.isNotEmpty()) {
                     child("p", "text-info small mb-1 mt-2", "Returning adults — add each to this year's roster:")
                     returningAdults.forEach { candidate ->

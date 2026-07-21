@@ -65,6 +65,7 @@ import net.markdrew.biblebowl.server.routes.generateRoutes
 import net.markdrew.biblebowl.server.routes.housingRoutes
 import net.markdrew.biblebowl.server.routes.questionRoutes
 import net.markdrew.biblebowl.server.routes.registrationRoutes
+import net.markdrew.biblebowl.server.routes.seedRoutes
 import net.markdrew.biblebowl.server.routes.scoreRoutes
 import net.markdrew.biblebowl.server.routes.seasonRoutes
 import net.markdrew.biblebowl.server.routes.studyRoutes
@@ -200,6 +201,7 @@ fun Application.module(
         seasonRoutes(users, seasons)
         registrationRoutes(users, seasons, congregations, registrations)
         adminRegistrationRoutes(users, seasons, congregations, registrations)
+        seedRoutes(users, congregations, registrations)
         housingRoutes(users, seasons, congregations, housing)
         scoreRoutes(users, seasons, registrations, scores)
         testerRoutes(users, seasons, registrations, testerIds)

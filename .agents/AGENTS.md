@@ -90,6 +90,13 @@ the `web-dist` + `backend` configs in `.claude/launch.json` (backend is in-memor
 503 without the token — expected). Stop the local backend before `:app:desktopTest`: a
 live :8080 un-skips `EndToEndFlowTest`, which expects the Postgres stack.
 
+## Seeding from the 2026 workbook (item 17, F13)
+Two stages, PII never in git: `python3 tools/seed/convert_registration_xlsx.py` reads
+`~/Downloads/Registration.xlsx` and writes `~/Downloads/tbb-seed-2026.json`; then
+`POST /admin/seed` (global admin JWT) ingests it — idempotent, safe to re-run, returns a
+summary with warnings. Grade-only seeded youth carry `contestants.graduation_year` and get
+their real birthdate at first enrollment; seeded coach emails auto-grant COACH at signup.
+
 ## Verifying generated PDFs locally (no ESV token needed)
 Typst is installed at `/home/mark/bin/typst` (v0.14.2); the server shells out to it.
 To eyeball a PDF feature without the ESV token: write a throwaway jvmTest that builds

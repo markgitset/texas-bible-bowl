@@ -190,7 +190,7 @@ fun Route.registrationRoutes(
             val registration = congregation?.let { registrations.find(it.id, season.eventYear) }?.withTotal(seasons)
             val candidates = congregation
                 ?.let { registrations.returningContestants(it.id, season.eventYear) }
-                ?.filter { season.isEligibleReturningCandidate(it.birthdate) }
+                ?.filter { season.isEligibleReturningCandidate(it) }
                 ?: emptyList()
             call.respond(
                 MyRegistrationResponse(
@@ -367,7 +367,7 @@ fun Route.registrationRoutes(
             if (!requireCongregationEditor(user, congregationId, seasons)) return@post
             val season = seasons.current()
             val eligible = registrations.returningContestants(congregationId, season.eventYear)
-                .any { it.contestantId == contestantId && season.isEligibleReturningCandidate(it.birthdate) }
+                .any { it.contestantId == contestantId && season.isEligibleReturningCandidate(it) }
             if (!eligible) {
                 return@post call.respond(
                     HttpStatusCode.Conflict,
@@ -375,7 +375,17 @@ fun Route.registrationRoutes(
                 )
             }
             val req = call.receive<EnrollContestantRequest>()
-            when (registrations.enrollContestant(congregationId, season.eventYear, contestantId, req.shirtSize, req.teamId)) {
+            // A seeded youth's first enrollment supplies the real birthdate — validate it like any
+            // new roster entry's (grades 3–12); the repository requires it when the seed lacks one.
+            if (req.birthdate != null && (season.gradeForBirthdate(req.birthdate!!) ?: -1) !in 3..12) {
+                return@post call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("invalid_birthdate", "The birthdate (YYYY-MM-DD) must land in grades 3–12"),
+                )
+            }
+            when (registrations.enrollContestant(
+                congregationId, season.eventYear, contestantId, req.shirtSize, req.teamId, req.birthdate,
+            )) {
                 EnrollResult.Enrolled ->
                     call.respond(registrations.find(congregationId, season.eventYear)!!.withTotal(seasons))
                 EnrollResult.RosterFull ->
@@ -386,6 +396,11 @@ fun Route.registrationRoutes(
                     call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such contestant"))
                 EnrollResult.AlreadyEnrolled ->
                     call.respond(HttpStatusCode.Conflict, ApiError("already_enrolled", "That contestant is already on this season's roster"))
+                EnrollResult.BirthdateRequired ->
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        ApiError("birthdate_required", "This contestant was seeded without a birthdate — provide one to enroll them"),
+                    )
             }
         }
 
