@@ -298,8 +298,12 @@ object AdminRegistrationsScreen {
             if (reg.guests.isNotEmpty()) {
                 parent.child("h6", "mt-2", "Guests & volunteers")
                 reg.guests.forEach { guest ->
-                    val bracket = if (guest.child) "child (3–8)" else "adult"
-                    parent.child("div", "small", "${guest.name} — $bracket, shirt ${guest.shirtSize.name}")
+                    val details = listOfNotNull(
+                        guest.ageTier.displayName.lowercase(),
+                        guest.gender?.displayName?.lowercase(),
+                        guest.shirtSize?.let { "shirt ${it.name}" } ?: "no shirt",
+                    )
+                    parent.child("div", "small", "${guest.name} — ${details.joinToString(", ")}")
                 }
             }
         }

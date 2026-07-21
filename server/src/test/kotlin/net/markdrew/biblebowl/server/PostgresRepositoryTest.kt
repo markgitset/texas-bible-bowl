@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.server
 
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
+import net.markdrew.biblebowl.api.GuestAgeTier
 import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.Role
@@ -291,23 +292,30 @@ class PostgresRepositoryTest {
         )).congregation
 
         // Adding a guest creates the draft registration, like teams and individuals do.
-        val volunteer = registrations.addGuest(cong.id, "2027", UpsertGuestRequest(" Aunt Vol ", ShirtSize.AM))
+        val volunteer = registrations.addGuest(
+            cong.id, "2027", UpsertGuestRequest(" Aunt Vol ", ShirtSize.AM, gender = Gender.FEMALE))
         assertEquals("Aunt Vol", volunteer.name)
-        val child = registrations.addGuest(cong.id, "2027", UpsertGuestRequest("Little Sib", ShirtSize.YS, child = true))
+        assertEquals(GuestAgeTier.AGE_9_PLUS, volunteer.ageTier)
+        val child = registrations.addGuest(
+            cong.id, "2027", UpsertGuestRequest("Little Sib", ShirtSize.YS, GuestAgeTier.AGE_3_TO_8, Gender.MALE))
+        val baby = registrations.addGuest(
+            cong.id, "2027", UpsertGuestRequest("Baby Sib", null, GuestAgeTier.UNDER_3, Gender.FEMALE))
+        assertNull(baby.shirtSize, "under-3 guests carry no shirt")
         assertEquals(cong.id, registrations.congregationIdForGuest(volunteer.id))
         assertNull(registrations.congregationIdForGuest("nope"))
 
         val reg = assertNotNull(registrations.find(cong.id, "2027"))
-        assertEquals(listOf(volunteer, child), reg.guests, "name-sorted")
+        assertEquals(listOf(volunteer, baby, child), reg.guests, "name-sorted")
 
         val edited = assertNotNull(
-            registrations.updateGuest(child.id, UpsertGuestRequest("Bigger Sib", ShirtSize.YM, child = false)))
-        assertEquals(GuestDto(child.id, "Bigger Sib", ShirtSize.YM, child = false), edited)
-        assertNull(registrations.updateGuest("nope", UpsertGuestRequest("X", ShirtSize.AM)))
+            registrations.updateGuest(
+                child.id, UpsertGuestRequest("Bigger Sib", ShirtSize.YM, GuestAgeTier.AGE_9_PLUS, Gender.MALE)))
+        assertEquals(GuestDto(child.id, "Bigger Sib", ShirtSize.YM, GuestAgeTier.AGE_9_PLUS, Gender.MALE), edited)
+        assertNull(registrations.updateGuest("nope", UpsertGuestRequest("X", ShirtSize.AM, gender = Gender.MALE)))
 
         assertTrue(registrations.deleteGuest(volunteer.id))
         assertTrue(!registrations.deleteGuest(volunteer.id))
-        assertEquals(listOf(edited), assertNotNull(registrations.find(cong.id, "2027")).guests)
+        assertEquals(listOf(baby, edited), assertNotNull(registrations.find(cong.id, "2027")).guests)
     }
 
     @Test

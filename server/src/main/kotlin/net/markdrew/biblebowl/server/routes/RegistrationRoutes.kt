@@ -15,6 +15,7 @@ import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.EnrollContestantRequest
+import net.markdrew.biblebowl.api.GuestAgeTier
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.RegistrationDto
@@ -418,8 +419,8 @@ fun Route.registrationRoutes(
         }
 
         // Registered guests — attendees (mostly volunteers) who must register and pay but are not
-        // contestants: never on a team, no division, no claim code. Billed at the volunteer fee,
-        // or the child fee when marked as a child (ages 3–8).
+        // contestants: never on a team, no division, no claim code. Billed by age tier: 9+ at the
+        // volunteer fee, 3–8 at the child fee, under-3s free (and without an included t-shirt).
         post("/registration/{congregationId}/guests") {
             val user = currentUser(users) ?: return@post
             if (!requireRegistrationFeature(user, seasons)) return@post
@@ -427,10 +428,8 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@post
             if (!requireWindowOpen(user, seasons)) return@post
             val req = call.receive<UpsertGuestRequest>()
-            if (req.name.isBlank()) {
-                return@post call.respond(HttpStatusCode.BadRequest, ApiError("invalid_guest", "Name is required"))
-            }
-            registrations.addGuest(congregationId, seasons.current().eventYear, req)
+            guestError(req)?.let { return@post call.respond(HttpStatusCode.BadRequest, it) }
+            registrations.addGuest(congregationId, seasons.current().eventYear, req.normalized())
             call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
         }
 
@@ -443,10 +442,8 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@put
             if (!requireWindowOpen(user, seasons)) return@put
             val req = call.receive<UpsertGuestRequest>()
-            if (req.name.isBlank()) {
-                return@put call.respond(HttpStatusCode.BadRequest, ApiError("invalid_guest", "Name is required"))
-            }
-            registrations.updateGuest(guestId, req)
+            guestError(req)?.let { return@put call.respond(HttpStatusCode.BadRequest, it) }
+            registrations.updateGuest(guestId, req.normalized())
             call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
         }
 
@@ -548,6 +545,19 @@ private fun UpdateCongregationRequest.isValid(): Boolean =
 /** Decorates a registration with its total (contestants + guests) from the current season's fees. */
 internal fun RegistrationDto.withTotal(seasons: SeasonRepository): RegistrationDto =
     copy(totalCents = registrationTotalCents(seasons.current(), this))
+
+/** Guest field rules shared by add and edit; null when the request is valid. */
+private fun guestError(req: UpsertGuestRequest): ApiError? = when {
+    req.name.isBlank() -> ApiError("invalid_guest", "Name is required")
+    req.gender == null -> ApiError("invalid_guest", "Gender is required")
+    req.ageTier != GuestAgeTier.UNDER_3 && req.shirtSize == null ->
+        ApiError("invalid_guest", "Shirt size is required")
+    else -> null
+}
+
+/** Under-3 guests attend free with no included t-shirt — drop any stray shirt selection. */
+private fun UpsertGuestRequest.normalized(): UpsertGuestRequest =
+    if (ageTier == GuestAgeTier.UNDER_3) copy(shirtSize = null) else this
 
 /**
  * Passes when the caller may edit [congregationId]'s teams/roster: an event-wide REGISTRATION_MANAGE

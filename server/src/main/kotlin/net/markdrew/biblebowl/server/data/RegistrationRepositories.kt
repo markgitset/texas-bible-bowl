@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.server.data
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
+import net.markdrew.biblebowl.api.GuestAgeTier
 import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.congregationCodeCandidates
 import net.markdrew.biblebowl.api.RegistrationDto
@@ -522,7 +523,7 @@ class InMemoryRegistrationRepository(
     override fun addGuest(congregationId: String, seasonYear: String, req: UpsertGuestRequest): GuestDto =
         synchronized(lock) {
             val reg = regFor(congregationId, seasonYear)
-            val guest = GuestDto(UUID.randomUUID().toString(), req.name.trim(), req.shirtSize, req.child)
+            val guest = GuestDto(UUID.randomUUID().toString(), req.name.trim(), req.shirtSize, req.ageTier, req.gender)
             guests[guest.id] = guest
             guestReg[guest.id] = reg.id
             guest
@@ -530,7 +531,8 @@ class InMemoryRegistrationRepository(
 
     override fun updateGuest(guestId: String, req: UpsertGuestRequest): GuestDto? = synchronized(lock) {
         val guest = guests[guestId] ?: return null
-        guests[guestId] = guest.copy(name = req.name.trim(), shirtSize = req.shirtSize, child = req.child)
+        guests[guestId] =
+            guest.copy(name = req.name.trim(), shirtSize = req.shirtSize, ageTier = req.ageTier, gender = req.gender)
         guests[guestId]
     }
 
@@ -1149,18 +1151,20 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 it[id] = guestId
                 it[registrationId] = regId
                 it[name] = req.name.trim()
-                it[shirtSize] = req.shirtSize.name
-                it[isChild] = req.child
+                it[shirtSize] = req.shirtSize?.name
+                it[ageTier] = req.ageTier.name
+                it[gender] = req.gender?.name
             }
             touch(regId)
-            GuestDto(guestId, req.name.trim(), req.shirtSize, req.child)
+            GuestDto(guestId, req.name.trim(), req.shirtSize, req.ageTier, req.gender)
         }
 
     override fun updateGuest(guestId: String, req: UpsertGuestRequest): GuestDto? = transaction(db) {
         val updated = RegistrationGuestsTable.update({ RegistrationGuestsTable.id eq guestId }) {
             it[name] = req.name.trim()
-            it[shirtSize] = req.shirtSize.name
-            it[isChild] = req.child
+            it[shirtSize] = req.shirtSize?.name
+            it[ageTier] = req.ageTier.name
+            it[gender] = req.gender?.name
         }
         if (updated == 0) null
         else RegistrationGuestsTable.selectAll().where { RegistrationGuestsTable.id eq guestId }.single().toGuest()
@@ -1421,8 +1425,9 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
     private fun ResultRow.toGuest() = GuestDto(
         id = this[RegistrationGuestsTable.id],
         name = this[RegistrationGuestsTable.name],
-        shirtSize = ShirtSize.valueOf(this[RegistrationGuestsTable.shirtSize]),
-        child = this[RegistrationGuestsTable.isChild],
+        shirtSize = this[RegistrationGuestsTable.shirtSize]?.let { ShirtSize.valueOf(it) },
+        ageTier = GuestAgeTier.valueOf(this[RegistrationGuestsTable.ageTier]),
+        gender = this[RegistrationGuestsTable.gender]?.let { Gender.valueOf(it) },
     )
 
     /** Builds an individual entry from a row that joins [IndividualsTable] to its [ContestantsTable]. */

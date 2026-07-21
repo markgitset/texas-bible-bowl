@@ -389,7 +389,7 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun deleteIndividual(individualId: String): RegistrationDto =
         client.delete("$baseUrl/registration/individuals/$individualId") { authorize() }.bodyOrThrow()
 
-    /** Adds a registered guest — pays (volunteer or child fee) but is not a contestant. */
+    /** Adds a registered guest — pays by age tier (9+ volunteer, 3–8 child, under-3 free) but is not a contestant. */
     suspend fun addGuest(congregationId: String, req: UpsertGuestRequest): RegistrationDto =
         client.post("$baseUrl/registration/$congregationId/guests") {
             authorize(); contentType(ContentType.Application.Json); setBody(req)
