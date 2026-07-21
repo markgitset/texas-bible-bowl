@@ -51,6 +51,7 @@ fun buildNavMenu(user: UserDto, season: SeasonDto): NavMenu {
         }
         if (registrationVisible && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
             add(NavItem("Registration Desk", Routes.ADMIN_REGISTRATIONS, badge = !season.registrationEnabled))
+            add(NavItem("Registration Counts", Routes.ADMIN_COUNTS, badge = !season.registrationEnabled))
         }
     }
     val admin = buildList {

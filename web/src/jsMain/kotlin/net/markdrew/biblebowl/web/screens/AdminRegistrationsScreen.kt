@@ -1,6 +1,5 @@
 package net.markdrew.biblebowl.web.screens
 
-import kotlinx.browser.document
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.RegistrationDeskResponse
@@ -21,22 +20,21 @@ import net.markdrew.biblebowl.api.ageTierFor
 import net.markdrew.biblebowl.api.multiSite
 import net.markdrew.biblebowl.api.shirtSizes
 import net.markdrew.biblebowl.api.siteFor
+import net.markdrew.biblebowl.web.Routes
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.clear
+import net.markdrew.biblebowl.web.csvText
+import net.markdrew.biblebowl.web.downloadCsv
 import net.markdrew.biblebowl.web.errorLine
 import net.markdrew.biblebowl.web.onClick
 import net.markdrew.biblebowl.web.spinner
 import org.w3c.dom.Element
-import org.w3c.dom.HTMLAnchorElement
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLOptionElement
 import org.w3c.dom.HTMLSelectElement
-import org.w3c.dom.url.URL
-import org.w3c.files.Blob
-import org.w3c.files.BlobPropertyBag
 
 /**
  * Registration desk (docs/gui-redesign.md §5E): every congregation's current-season registration —
@@ -85,6 +83,9 @@ object AdminRegistrationsScreen {
         content.child("div", "d-flex flex-wrap align-items-center gap-3 mb-3") {
             child("span", "text-muted", "Season ${desk.seasonYear} — click a row for its roster.")
             if (multiSite) siteFilterSelect(this)
+            child("a", "btn btn-outline-secondary btn-sm", "Counts dashboard") {
+                setAttribute("href", "#${Routes.ADMIN_COUNTS}")
+            }
             child("button", "btn btn-outline-primary btn-sm", "Download CSV") {
                 setAttribute("type", "button")
                 onClick { downloadCsv("tbb-registrations-${desk.seasonYear}.csv", deskCsv(desk)) }
@@ -244,8 +245,7 @@ object AdminRegistrationsScreen {
         }
         val totalRow = listOf("Total") + ShirtSize.entries.map { totals.getValue(it).toString() } +
             totals.values.sum().toString()
-        return (listOf(header) + rows + listOf(totalRow))
-            .joinToString("\r\n") { line -> line.joinToString(",") { csvField(it) } }
+        return csvText(listOf(header) + rows + listOf(totalRow))
     }
 
     private fun columnHeaders(): List<String> = buildList {
@@ -731,7 +731,7 @@ object AdminRegistrationsScreen {
                 row.coaches.joinToString("; ") { it.email },
             )
         }
-        return (listOf(header) + rows).joinToString("\r\n") { line -> line.joinToString(",") { csvField(it) } }
+        return csvText(listOf(header) + rows)
     }
 
     /** "1 Main St, Waco, TX 76701 · 555-1234 · a@b.org · prefers text" — only the parts provided. */
@@ -744,24 +744,5 @@ object AdminRegistrationsScreen {
             contact.email.takeIf { it.isNotBlank() },
             contact.preference?.let { "prefers ${it.displayName.lowercase()}" },
         ).joinToString(" · ")
-    }
-
-    /** Quote-escapes a CSV field, guarding user-entered text against spreadsheet formula injection. */
-    private fun csvField(raw: String): String {
-        val guarded = if (raw.firstOrNull() in listOf('=', '+', '-', '@')) "'$raw" else raw
-        return "\"" + guarded.replace("\"", "\"\"") + "\""
-    }
-
-    private fun downloadCsv(fileName: String, csv: String) {
-        // BOM so Excel detects UTF-8.
-        val blob = Blob(arrayOf<dynamic>("\uFEFF$csv"), BlobPropertyBag(type = "text/csv;charset=utf-8"))
-        val url = URL.createObjectURL(blob)
-        val a = document.createElement("a") as HTMLAnchorElement
-        a.href = url
-        a.download = fileName
-        document.body?.appendChild(a)
-        a.click()
-        a.remove()
-        URL.revokeObjectURL(url)
     }
 }

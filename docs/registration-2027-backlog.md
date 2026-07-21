@@ -36,7 +36,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 8 | F2 | Volunteer positions & tribe-leader willingness | done |
 | 9 | F3 | Adult contact info & communication preference | done |
 | 10 | F5 | Age-tiered fee schedule | done |
-| 11 | F11 | Registration counts dashboard | not started |
+| 11 | F11 | Registration counts dashboard | done |
 | 12 | F12 | Shirt-order report | done |
 | 13 | F7 | Tester IDs + ZipGrade export | not started |
 | 14 | F8 | Nametag PDF generation | not started |
@@ -235,6 +235,18 @@ type, gender, grade/age group, division + experience category, plus a graduating
 list (derivable from grade 12 — no stored flag).
 
 - **Dependencies:** 6, 7 (and 4 for correct category tallies).
+- **As built (2026-07):** a read-only `#admin/counts` web screen (nav: "Registration Counts",
+  same event-wide REGISTRATION_MANAGE gate and site filter as the desk, cross-linked both
+  ways), computed client-side from the same `GET /admin/registrations` payload — no new
+  endpoint. The flattening lives in `shared-api` (`Attendees.kt`: `deskAttendees` →
+  `AttendeeRow`, one row per registered person by the `contestantCount` convention, visiting
+  combo-team members counted at home) for reuse by downstream event-ops reports (item 12's
+  shirt report, built first, follows the same convention via its own `shirtSizes` rule).
+  Sections: headline totals (coach accounts shown *beside* the attendee total, never summed —
+  types overlap), a by-congregation matrix with division columns + CSV export, gender,
+  testers by grade / guests by age tier, division × experience for testers and for teams,
+  and the graduating-seniors list (grade 12, derived). Testers count in their *own* division
+  and bracket (item 4), and an 8-year-old contestant tallies in the child age tier (item 10).
 
 ## 12. (F12) Shirt-order report
 
