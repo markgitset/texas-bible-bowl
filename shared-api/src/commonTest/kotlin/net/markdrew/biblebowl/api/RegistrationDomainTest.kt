@@ -71,6 +71,15 @@ class RegistrationDomainTest {
         assertNull(TeamDto("t", "Empty").division(season))
         val mixed = TeamDto("t", "Mixed", listOf(entry("2018-05-01"), entry("2013-05-01")))
         assertEquals(Division.JUNIOR, mixed.division(season))
+        val playUp = TeamDto("t", "PlayUp", listOf(entry("2018-05-01"), entry("2009-05-01")))
+        assertEquals(Division.SENIOR, playUp.division(season))
+    }
+
+    @Test
+    fun thereAreNoElementaryTeams() {
+        // Elementary contestants may play up onto a team, but a team never competes below Junior.
+        val allElementary = TeamDto("t", "Little Lions", listOf(entry("2018-05-01"), entry("2018-05-01")))
+        assertEquals(Division.JUNIOR, allElementary.division(season))
     }
 
     @Test

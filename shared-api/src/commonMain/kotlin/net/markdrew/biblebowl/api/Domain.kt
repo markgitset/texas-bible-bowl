@@ -6,9 +6,10 @@ import net.markdrew.biblebowl.model.Round
 /**
  * Texas Bible Bowl competition divisions, by school grade. Grades are derived from birthdates
  * (see [SeasonDto.divisionForBirthdate]) rather than self-reported, so eligibility advances
- * automatically season over season. A team contestant competes at the highest division of any
- * team member (never below their own grade/experience level). Adults are never placed on a team —
- * they compete only as individuals, in [ADULT].
+ * automatically season over season. A team competes at the highest division of any team member,
+ * but teams exist only in Junior and Senior: elementary contestants normally compete
+ * individually, and one who joins a team plays up (see `TeamDto.division`). Adults are never
+ * placed on a team — they compete only as individuals, in [ADULT].
  */
 @Serializable
 enum class Division(val displayName: String, val gradeRange: IntRange?, val hasPowerRound: Boolean) {
@@ -106,10 +107,13 @@ fun RosterEntryDto.division(season: SeasonDto): Division? =
 
 /**
  * The division a team competes in — that of its highest member (declaration order of [Division]
- * ascends ELEMENTARY → SENIOR; adults can't be on teams). Null for an empty roster.
+ * ascends ELEMENTARY → SENIOR; adults can't be on teams), but never below [Division.JUNIOR]:
+ * there are no Elementary teams, so an elementary member always plays up onto a Junior or Senior
+ * team (individually they still test and rank in their own division — see `ScoreRowDto`). Null
+ * for an empty roster.
  */
 fun TeamDto.division(season: SeasonDto): Division? =
-    members.mapNotNull { it.division(season) }.maxOrNull()
+    members.mapNotNull { it.division(season) }.maxOrNull()?.coerceAtLeast(Division.JUNIOR)
 
 /** True when [seasonYear] is this contestant's first — their inexperienced season. */
 fun RosterEntryDto.isInexperienced(seasonYear: String): Boolean = firstSeasonYear == seasonYear
