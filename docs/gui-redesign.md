@@ -159,6 +159,8 @@ Typst compile.
   "This season: {book}" header, plus a **"Read {book} online"** card of external links (ESV.org,
   YouVersion, BibleGateway — deep-linked to the season book). No in-app reading view (per Mark):
   reading is better served by dedicated apps, and not hosting one keeps ESV text off the client.
+  *(Superseded on the web, 2026-07-20: the hub is now the Hugo page `/study-resources/` and
+  `#study` redirects there — see the nav-redesign addendum. Still accurate for the Compose app.)*
 - **`#/study/indices/{names|numbers}`.** Current `IndexScreen` behavior (search, alpha/frequency);
   PDF button delegates to the download center.
 - **`#/study/headings`.** Headings list (R5 material) with a flip-to-test self-check mode — the
@@ -208,7 +210,9 @@ Typst compile.
 
 ### H. Account
 **`#/signin`** (abstract, return-to). **`#/account`** — profile, **claim a roster entry** (enter
-coach-shared code → account becomes the entry's owner), roles held, sign out.
+coach-shared code → account becomes the entry's owner), roles held, sign out. *(On the web,
+role-gated destinations are reached from the navbar user menu, not from this page — see the
+2026-07-20 nav-redesign addendum.)*
 
 ## 6. Design system
 
@@ -291,3 +295,39 @@ plain Kotlin/JS rendering real DOM, styled by Bootstrap + the site's own `custom
 public-first gating, same download-center card design, same seasons endpoint — and the
 Compose app remains the UI for Android/desktop/iOS. `TbbApi` moved to `:client` so both
 UIs share one backend client; `QuizEngine` and the DTOs were already shared.
+
+## Addendum (2026-07-20): navigation redesign — one study hub, grouped user menu
+
+The merged site+app chrome had accumulated two overlapping study hubs (the Hugo
+`/study-resources/` overview page and the web app's `#study` screen), duplicate names for
+the same destinations, and a flat pile of role-gated links on the account page. The web
+navigation was reorganized (PR #39); the Compose app's five-tab nav, including its own
+Study hub screen, is unchanged.
+
+**One study hub — the Hugo page.** `/study-resources/` is now the single study landing:
+season line, one canonical card per destination (Downloads with the "Start here" badge,
+Read {book} Online external links, Quiz Me, Names & Numbers Indices, Chapter Headings,
+Community Questions, Study Games — template `site/layouts/study-resources/list.html`).
+The web app's StudyHubScreen was deleted; `#study`, a blank hash, and unknown routes
+`location.replace(...)` to the hub (the dev standalone shell renders a plain tool list
+instead, keyed on `window.TBB_STANDALONE`). The Study Resources dropdown lists the six
+tools with names matching the cards exactly — no "Study Hub" entry; the dropdown's
+auto-generated "overview" item and the navbar's yellow Study button (plus the homepage
+hero and footer) are the hub links. §5C's hub-screen spec is superseded for the web.
+
+**Grouped user menu replaces the account-page link pile.** The signed-in account button
+is a Bootstrap dropdown with sections rendered only when the user qualifies — Personal
+(Account, My Scores), Coach (Register My Teams), Event Staff (Grading Desk, Standings,
+Registration Desk), Admin (Season Settings, User Management), then Sign out — with the
+"hidden until launch" badges preserved for admin preview of dark features. The gating
+logic lives once in `web/.../NavMenu.kt`; `Shell.updateNav` renders it live in-app, and
+`Session` caches the model as JSON under the localStorage key `tbb.nav` (replacing the
+old `tbb.user-name` name swap) so the site's `params.js` renders the identical menu on
+static pages, including working sign-out. The cache can lag a server-side role/toggle
+change until the next app visit — cosmetic only; route gates and the server enforce.
+This supersedes §2.3's "role-aware Event-hub cards" for the web (the web app has no
+Event season hub; the Hugo event pages serve that role) and trims §5H: the account page
+keeps profile, claim, roles, and sign out, while Clear PDF cache moved to Season
+Settings. Breadcrumbs: study-family routes read Home › Study Resources › {screen}
+(the hub crumb is a real page link out of the app); account/event/admin routes, entered
+from the user menu, read Home › {screen}.
