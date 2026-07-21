@@ -188,6 +188,21 @@ val RegistrationDto.contestantCount: Int
     get() = teams.sumOf { team -> team.members.count { it.congregationId == null } } +
         individuals.size + unassigned.size + awayMembers.size
 
+/**
+ * Every t-shirt this registration orders, one [ShirtSize] per shirt: home team members,
+ * individuals, unassigned contestants, and members away on combo teams (all registered and billed
+ * here — visiting members on this registration's teams are excluded, exactly like
+ * [contestantCount]), plus guests whose fee includes a shirt (under-3 guests get none). Each
+ * roster/guest entry is one person, so a coach who also competes appears once, via their single
+ * contestant entry.
+ */
+val RegistrationDto.shirtSizes: List<ShirtSize>
+    get() = teams.flatMap { team -> team.members.filter { it.congregationId == null } }.map { it.shirtSize } +
+        individuals.map { it.shirtSize } +
+        unassigned.map { it.shirtSize } +
+        awayMembers.map { it.entry.shirtSize } +
+        guests.mapNotNull { it.shirtSize }
+
 // ---------------------------------------------------------------------------
 // Age-tiered fees (the 2026 schedule: 9+ full fee, 3–8 child fee, under 3 free)
 // ---------------------------------------------------------------------------
