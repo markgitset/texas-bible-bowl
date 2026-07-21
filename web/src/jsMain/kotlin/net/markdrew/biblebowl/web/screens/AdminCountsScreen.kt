@@ -131,8 +131,8 @@ object AdminCountsScreen {
         )
     }
 
-    /** A small counts table: [headers], one or more [rows] of (label, cell values), optional total row. */
-    private fun countsTable(parent: Element, headers: List<String>, rows: List<Pair<String, List<Int>>>) {
+    /** A small counts table: [headers] and one or more [rows] of (label, cell values). */
+    private fun countsTable(parent: Element, headers: List<String>, rows: List<Pair<String, List<Any>>>) {
         parent.child("div", "table-responsive") {
             child("table", "table table-sm w-auto align-middle") {
                 child("thead") {
@@ -264,7 +264,7 @@ object AdminCountsScreen {
                     inDivision.count { it.inexperienced },
                     inDivision.size,
                 )
-            } + ("Adult" to listOf(0, 0, testers.count { it.division == Division.ADULT })),
+            } + ("Adult" to listOf("—", "—", testers.count { it.division == Division.ADULT })),
         )
 
         val seasonYear = data?.seasonYear ?: return

@@ -245,8 +245,7 @@ object AdminRegistrationsScreen {
         }
         val totalRow = listOf("Total") + ShirtSize.entries.map { totals.getValue(it).toString() } +
             totals.values.sum().toString()
-        return (listOf(header) + rows + listOf(totalRow))
-            .joinToString("\r\n") { line -> line.joinToString(",") { csvField(it) } }
+        return csvText(listOf(header) + rows + listOf(totalRow))
     }
 
     private fun columnHeaders(): List<String> = buildList {
