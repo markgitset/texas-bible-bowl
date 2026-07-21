@@ -106,7 +106,7 @@ object AdminUsersScreen {
     private fun renderGrantLine(parent: Element, user: UserDto, grant: RoleGrant) {
         parent.child("div", "d-flex align-items-center gap-2 mb-1") {
             child("span", "badge text-bg-primary", grant.role.displayName)
-            child("span", "text-muted small", grantScopeLabel(grant))
+            child("span", "text-muted small", grantScopeLabel(user, grant))
             // Mirror of the server's lockout guard: no revoking your own GLOBAL ADMIN.
             val isOwnAdmin = user.id == Session.user?.id &&
                 grant.role == Role.ADMIN && grant.scopeType == ScopeType.GLOBAL
@@ -131,12 +131,13 @@ object AdminUsersScreen {
         }
     }
 
-    private fun grantScopeLabel(grant: RoleGrant): String = when (grant.scopeType) {
+    private fun grantScopeLabel(user: UserDto, grant: RoleGrant): String = when (grant.scopeType) {
         ScopeType.GLOBAL -> "everywhere"
         ScopeType.SELF -> "self"
-        // Congregation names aren't resolved here (not worth an API round-trip per grant);
-        // the short id is enough for an admin to disambiguate.
-        else -> grant.scopeType.name.lowercase() + (grant.scopeId?.let { " ${it.take(8)}" } ?: "")
+        // The server resolves congregation names into UserDto.congregationNames; the short-id
+        // fallback covers a grant whose congregation no longer exists.
+        else -> grant.scopeType.name.lowercase() +
+            (grant.scopeId?.let { " ${user.congregationNames[it] ?: it.take(8)}" } ?: "")
     }
 
     /** Role select + (for COACH) a congregation typeahead + Grant button. */

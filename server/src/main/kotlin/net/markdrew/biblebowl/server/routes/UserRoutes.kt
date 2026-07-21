@@ -13,7 +13,9 @@ import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
+import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.server.data.CongregationRepository
+import net.markdrew.biblebowl.server.data.UserRecord
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.currentUser
 import net.markdrew.biblebowl.server.security.requirePermission
@@ -31,7 +33,7 @@ fun Route.userRoutes(users: UserRepository, congregations: CongregationRepositor
             val user = currentUser(users) ?: return@get
             if (!requirePermission(user, Permission.USER_MANAGE)) return@get
             val query = call.request.queryParameters["query"] ?: ""
-            call.respond(users.search(query).map { it.toDto() })
+            call.respond(users.search(query).toDtosWithCongregationNames(congregations))
         }
 
         post("/users/{userId}/roles") {
@@ -49,7 +51,7 @@ fun Route.userRoutes(users: UserRepository, congregations: CongregationRepositor
             // Read-before-insert: the unique index treats NULL scopeIds as distinct, so
             // insertIgnore alone would duplicate GLOBAL/EVENT grants on a repeat request.
             if (grant !in target.roles) users.addRoleGrant(userId, grant)
-            call.respond(users.findById(userId)!!.toDto())
+            call.respond(users.findById(userId)!!.toDtoWithCongregationNames(congregations))
         }
 
         delete("/users/{userId}/roles") {
@@ -82,10 +84,32 @@ fun Route.userRoutes(users: UserRepository, congregations: CongregationRepositor
                     ApiError("grant_not_found", "The user doesn't hold that grant"),
                 )
             }
-            call.respond(users.findById(userId)!!.toDto())
+            call.respond(users.findById(userId)!!.toDtoWithCongregationNames(congregations))
         }
     }
 }
+
+/**
+ * Maps records to DTOs with [UserDto.congregationNames] resolved (one batch lookup) so the manage-
+ * users UI can label CONGREGATION-scoped grants by name instead of UUID. Ids with no surviving
+ * congregation are simply absent from the map.
+ */
+private fun List<UserRecord>.toDtosWithCongregationNames(
+    congregations: CongregationRepository,
+): List<UserDto> {
+    val ids = flatMap { record ->
+        record.roles.filter { it.scopeType == ScopeType.CONGREGATION }.mapNotNull { it.scopeId }
+    }.toSet()
+    if (ids.isEmpty()) return map { it.toDto() }
+    val names = congregations.findByIds(ids).associate { it.id to it.name }
+    return map { record ->
+        val mine = record.roles.mapNotNull { grant -> grant.scopeId?.let { id -> names[id]?.let { id to it } } }
+        record.toDto().copy(congregationNames = mine.toMap())
+    }
+}
+
+private fun UserRecord.toDtoWithCongregationNames(congregations: CongregationRepository): UserDto =
+    listOf(this).toDtosWithCongregationNames(congregations).single()
 
 /** Returns the 400 error for an ill-formed grant, or null when it's valid. */
 private fun validateGrant(grant: RoleGrant, congregations: CongregationRepository): ApiError? = when {

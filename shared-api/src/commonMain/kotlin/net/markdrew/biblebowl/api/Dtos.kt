@@ -48,6 +48,13 @@ data class UserDto(
     val adult: Boolean = false,
     val roles: List<RoleGrant> = emptyList(),
     val permissions: Set<Permission> = emptySet(),
+    /**
+     * Display names for the congregations the CONGREGATION-scoped grants in [roles] point at,
+     * keyed by [RoleGrant.scopeId]. Populated only by the user-management endpoints (so admins see
+     * "First Church", not a UUID); empty elsewhere. Lives beside [roles] rather than inside
+     * [RoleGrant] because grants are matched by data-class equality.
+     */
+    val congregationNames: Map<String, String> = emptyMap(),
 )
 
 // ---------------------------------------------------------------------------

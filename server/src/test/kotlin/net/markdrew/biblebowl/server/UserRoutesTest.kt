@@ -149,6 +149,14 @@ class UserRoutesTest {
         val coachGrant = RoleGrant(Role.COACH, ScopeType.CONGREGATION, cong.id)
         val granted: UserDto = grant(target.user.id, coachGrant).body()
         assertTrue(coachGrant in granted.roles)
+        // The manage-users UI labels the grant by congregation name, not UUID.
+        assertEquals("First Church", granted.congregationNames[cong.id])
+
+        val found: List<UserDto> = api.get("/users") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            parameter("query", "newcoach")
+        }.body()
+        assertEquals("First Church", found.single().congregationNames[cong.id], "search resolves names too")
 
         // The target's own session now carries the coach permissions.
         val me: UserDto = api.get("/auth/me") {
