@@ -58,6 +58,7 @@ import net.markdrew.biblebowl.app.screens.HeadingsScreen
 import net.markdrew.biblebowl.app.screens.IndexScreen
 import net.markdrew.biblebowl.app.screens.ModerateScreen
 import net.markdrew.biblebowl.app.screens.MyScoresScreen
+import net.markdrew.biblebowl.app.screens.RegisterScreen
 import net.markdrew.biblebowl.app.screens.StandingsScreen
 import net.markdrew.biblebowl.app.screens.QuestionsScreen
 import net.markdrew.biblebowl.app.screens.QuizScreen
@@ -271,30 +272,40 @@ private fun AppNavHost(
         composable(Routes.EVENT) {
             EventScreen(
                 user = user,
+                onOpenRegister = { navController.navigate(Routes.REGISTER) },
                 onOpenMyScores = { navController.navigate(Routes.MY_SCORES) },
                 onOpenGrading = { navController.navigate(Routes.GRADING) },
                 onOpenStandings = { navController.navigate(Routes.STANDINGS) },
             )
         }
-        // Scoring routes deploy dark behind the season's gradingEnabled toggle (global admins
-        // preview them); permission gates render the sign-in screen in place, mirroring the web
-        // shell's feature()/gatedEventWide() — the server enforces both regardless.
+        // Registration/scoring routes deploy dark behind the season's launch toggles (global
+        // admins preview them); permission gates render the sign-in screen in place, mirroring
+        // the web shell's feature()/gatedEventWide() — the server enforces both regardless.
+        composable(Routes.REGISTER) {
+            // Sign-in only, no permission: step 1 is where a signed-in user *becomes* a coach
+            // (self-serve congregation creation); a TEAM_MANAGE gate would lock them out of it.
+            // The server scope-checks every mutation regardless.
+            FeatureGate(LocalSeason.current.registrationEnabled, user) {
+                if (user != null) RegisterScreen(api, user)
+                else AuthScreen(api, onSignedIn = onUserChange)
+            }
+        }
         composable(Routes.MY_SCORES) {
-            GradingFeature(user) {
+            FeatureGate(LocalSeason.current.gradingEnabled, user) {
                 // Sign-in only: the server scopes the response (owned entries + coached rosters).
                 if (user != null) MyScoresScreen(api)
                 else AuthScreen(api, onSignedIn = onUserChange)
             }
         }
         composable(Routes.GRADING) {
-            GradingFeature(user) {
+            FeatureGate(LocalSeason.current.gradingEnabled, user) {
                 if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_ENTER)) {
                     GradingScreen(api, user, onOpenStandings = { navController.navigate(Routes.STANDINGS) })
                 } else AuthScreen(api, onSignedIn = onUserChange)
             }
         }
         composable(Routes.STANDINGS) {
-            GradingFeature(user) {
+            FeatureGate(LocalSeason.current.gradingEnabled, user) {
                 if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
                     StandingsScreen(api, onOpenGrading = { navController.navigate(Routes.GRADING) })
                 } else AuthScreen(api, onSignedIn = onUserChange)
@@ -331,14 +342,13 @@ private fun AppNavHost(
 }
 
 /**
- * Renders [content] only while the season's grading feature is visible — the launch toggle is on,
- * or the signed-in user is a global admin previewing the dark-deployed feature. A dark feature
- * shows a launch notice instead, mirroring the web shell's feature() gate.
+ * Renders [content] only while a season feature is visible — its launch toggle [enabled], or the
+ * signed-in user is a global admin previewing the dark-deployed feature. A dark feature shows a
+ * launch notice instead, mirroring the web shell's feature() gate.
  */
 @Composable
-private fun GradingFeature(user: UserDto?, content: @Composable () -> Unit) {
-    val season = LocalSeason.current
-    if (season.gradingEnabled || (user != null && isGlobalAdmin(user.roles))) {
+private fun FeatureGate(enabled: Boolean, user: UserDto?, content: @Composable () -> Unit) {
+    if (enabled || (user != null && isGlobalAdmin(user.roles))) {
         content()
     } else {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

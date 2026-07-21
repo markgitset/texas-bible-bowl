@@ -23,6 +23,7 @@ object Routes {
     const val QUESTIONS_MODERATE = "questions/moderate"
     const val DOWNLOADS = "downloads"
     const val EVENT = "event"
+    const val REGISTER = "event/register"
     const val MY_SCORES = "event/my-scores"
     const val GRADING = "event/grading"
     const val STANDINGS = "event/standings"
