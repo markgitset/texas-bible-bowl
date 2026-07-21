@@ -224,11 +224,11 @@ data class SeasonDto(
 // Registration (congregations, teams, rosters) — docs/gui-redesign.md §5E
 // ---------------------------------------------------------------------------
 
-/** T-shirt sizes collected per roster entry (youth S–L, adult S–2XL). */
+/** T-shirt sizes collected per roster entry (youth S–L, adult S–3XL). */
 @Serializable
 enum class ShirtSize(val displayName: String) {
     YS("Youth S"), YM("Youth M"), YL("Youth L"),
-    AS("Adult S"), AM("Adult M"), AL("Adult L"), AXL("Adult XL"), AXXL("Adult 2XL"),
+    AS("Adult S"), AM("Adult M"), AL("Adult L"), AXL("Adult XL"), AXXL("Adult 2XL"), AXXXL("Adult 3XL"),
 }
 
 /** Contestant gender, collected per roster entry. */
