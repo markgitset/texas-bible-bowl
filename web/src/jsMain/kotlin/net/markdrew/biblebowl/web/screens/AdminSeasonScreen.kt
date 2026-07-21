@@ -117,6 +117,47 @@ object AdminSeasonScreen {
                 }
             }
         })
+
+        maintenanceCard(container)
+    }
+
+    private fun maintenanceCard(container: Element) {
+        container.child("div", "card section-card mt-4") {
+            child("div", "card-body") {
+                child("h5", "card-title", "Maintenance")
+                child(
+                    "p", "text-muted",
+                    "Drops the server's compiled-PDF cache so every study document regenerates on its " +
+                        "next download — for after a generation-code change (season and word-list " +
+                        "changes invalidate on their own).",
+                )
+                clearPdfCacheButton(this)
+            }
+        }
+    }
+
+    private fun clearPdfCacheButton(container: Element) {
+        val button = container.child("button", "btn btn-outline-primary", "Clear PDF cache") {
+            setAttribute("type", "button")
+        } as HTMLButtonElement
+        val messageSlot = container.child("div")
+        button.addEventListener("click", {
+            button.disabled = true
+            messageSlot.clear()
+            Shell.scope.launch {
+                try {
+                    val cleared = Session.api.clearPdfCache().cleared
+                    messageSlot.child(
+                        "p", "tbb-gold fw-semibold mt-2 mb-0",
+                        "Cleared $cleared cached PDF(s) — next downloads regenerate.",
+                    )
+                } catch (e: Throwable) {
+                    messageSlot.child("p", "text-danger mt-2 mb-0", "Clear failed: ${e.message}")
+                } finally {
+                    button.disabled = false
+                }
+            }
+        })
     }
 
     private fun Element.field(label: String, value: String, onChange: (String) -> Unit) {

@@ -40,10 +40,13 @@
               <a class="btn btn-outline-light btn-sm fw-bold px-3" href="{{ .URL }}">{{ .Name }}</a>
             </li>
             <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
-              <a class="btn btn-warning btn-sm fw-bold px-3" href="{{ $.Site.BaseURL }}app/#study">Study</a>
+              {{/* Primary CTA: the single study hub. Dropdown parents only toggle (data-bs-toggle),
+                   so this is the one always-visible one-click path to /study-resources/. */}}
+              <a class="btn btn-warning btn-sm fw-bold px-3" href="{{ $.Site.BaseURL }}study-resources/">Study</a>
             </li>
-            {{/* Site-wide account slot: params.js swaps in the cached signed-in name; on /app/
-                 the Shell owns it. Keep the id/markup in sync with web/.../Shell.updateNav. */}}
+            {{/* Site-wide account slot: params.js swaps in the cached signed-in user menu
+                 (localStorage "tbb.nav"); on /app/ the Shell owns it. Keep the id/markup in
+                 sync with web/.../Shell.updateNav and the params.js renderer. */}}
             <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center" id="accountSlot">
               <a class="btn btn-outline-light btn-sm px-3" href="{{ $.Site.BaseURL }}app/#signin">Sign in</a>
             </li>

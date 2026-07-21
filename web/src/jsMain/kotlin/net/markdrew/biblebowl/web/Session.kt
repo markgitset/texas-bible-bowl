@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.web
 import kotlinx.browser.localStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.FALLBACK_SEASON
 import net.markdrew.biblebowl.api.SeasonDto
@@ -14,8 +15,16 @@ import net.markdrew.biblebowl.client.TbbApi
 object Session {
     private const val TOKEN_KEY = "tbb.token"
 
-    /** The site's params.js reads this to show the signed-in name on static pages' navbars. */
-    private const val NAME_KEY = "tbb.user-name"
+    /**
+     * The signed-in user menu as JSON ([NavMenu]); the site's params.js renders it on static
+     * pages' navbars. Refreshed on every auth/season change here, so it can lag a server-side
+     * role/toggle change until the next app visit — cosmetic only, all access is enforced by
+     * the Shell's route gates and the server.
+     */
+    private const val NAV_KEY = "tbb.nav"
+
+    /** Pre-user-menu cache of the display name; purge so old params.js data can't linger. */
+    private const val LEGACY_NAME_KEY = "tbb.user-name"
 
     val api = TbbApi()
 
@@ -46,45 +55,51 @@ object Session {
                 // An invalid/expired token is dropped; a transient failure keeps it for the next load.
                 runCatching { api.restoreSession(saved) }
                     .onSuccess { if (it == null) localStorage.removeItem(TOKEN_KEY) }
-                cacheDisplayName()
+                cacheNavState()
                 if (user != null) onChange()
             }
         }
         scope.launch {
-            runCatching { api.currentSeason() }.onSuccess { season = it; onChange() }
+            runCatching { api.currentSeason() }.onSuccess {
+                season = it
+                cacheNavState() // feature toggles change which menu items exist
+                onChange()
+            }
         }
     }
 
     /** Records a fresh sign-in (TbbApi already holds the token/user after login/register). */
     fun signedIn(auth: AuthResponse) {
         localStorage.setItem(TOKEN_KEY, auth.token)
-        cacheDisplayName()
+        cacheNavState()
         onChange()
     }
 
     fun signOut() {
         api.signOut()
         localStorage.removeItem(TOKEN_KEY)
-        cacheDisplayName()
+        cacheNavState()
         onChange()
     }
 
-    /** Mirrors the signed-in display name into localStorage for the static pages' navbar. */
-    private fun cacheDisplayName() {
-        val name = user?.displayName
-        if (name.isNullOrBlank()) localStorage.removeItem(NAME_KEY)
-        else localStorage.setItem(NAME_KEY, name)
+    /** Mirrors the signed-in user menu into localStorage for the static pages' navbar. */
+    private fun cacheNavState() {
+        val u = user
+        if (u == null) localStorage.removeItem(NAV_KEY)
+        else localStorage.setItem(NAV_KEY, Json.encodeToString(buildNavMenu(u, season)))
+        localStorage.removeItem(LEGACY_NAME_KEY)
     }
 
     /** Adopts an admin's just-saved season so every screen sees the new values immediately. */
     fun seasonSaved(updated: SeasonDto) {
         season = updated
+        cacheNavState()
         onChange()
     }
 
     /** Re-renders after a profile edit ([api] already holds the updated user). */
     fun profileSaved() {
-        cacheDisplayName()
+        cacheNavState()
         onChange()
     }
 }

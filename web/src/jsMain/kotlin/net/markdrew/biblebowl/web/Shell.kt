@@ -21,7 +21,6 @@ import net.markdrew.biblebowl.web.screens.QuestionsScreen
 import net.markdrew.biblebowl.web.screens.QuizScreen
 import net.markdrew.biblebowl.web.screens.RegisterScreen
 import net.markdrew.biblebowl.web.screens.StandingsScreen
-import net.markdrew.biblebowl.web.screens.StudyHubScreen
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.asList
 
@@ -33,6 +32,12 @@ object Shell {
     val scope = MainScope()
     private lateinit var app: HTMLElement
 
+    /** The Hugo study hub page, sibling of /app/ — resolves correctly under the GH Pages subpath. */
+    private const val STUDY_OVERVIEW_HREF = "../study-resources/"
+
+    /** True only under the dev-only web/index.html shell, where no Hugo site surrounds the app. */
+    private val standalone: Boolean get() = window.asDynamic().TBB_STANDALONE == true
+
     fun start() {
         app = document.getElementById("app") as HTMLElement
         Session.onChange = { render() }
@@ -41,7 +46,10 @@ object Shell {
         render()
     }
 
-    /** The route encoded in the URL hash; a blank/unknown hash falls back to the study hub. */
+    /**
+     * The route encoded in the URL hash; a blank hash falls back to [Routes.STUDY], which
+     * (like any unknown route) redirects to the site's study hub page.
+     */
     private fun currentRoute(): String =
         window.location.hash.substringAfter('#', "").ifBlank { Routes.STUDY }
 
@@ -62,22 +70,26 @@ object Shell {
     }
 
     /**
-     * Site-style breadcrumb trail (Home › Study Hub › …) — the app shares the site's navbar,
-     * so in-app wayfinding rides on breadcrumbs and the hub cards instead of a tab row.
+     * Site-style breadcrumb trail — the app shares the site's navbar, so in-app wayfinding
+     * rides on breadcrumbs instead of a tab row. Study-family routes trace back through the
+     * site's hub page (Home › Study Resources › …); account/event/admin routes are entered
+     * from the user menu, so they get just Home › {label}.
      */
     private fun breadcrumbs(route: String) {
-        if (route == Routes.STUDY) return // the hub is the app's landing page
+        if (route == Routes.STUDY) return // redirecting to the site's hub page
         app.child("nav") {
             setAttribute("aria-label", "breadcrumb")
             child("ol", "breadcrumb small mb-3") {
                 child("li", "breadcrumb-item") {
                     child("a", text = "Home") { setAttribute("href", "../") }
                 }
-                child("li", "breadcrumb-item") {
-                    child("a", text = "Study Hub") { setAttribute("href", "#${Routes.STUDY}") }
-                }
                 val top = topDestinationOf(route)
-                if (top != null && top != TopDestination.STUDY && top.route != route) {
+                if (top != null || route.startsWith("study/")) {
+                    child("li", "breadcrumb-item") {
+                        child("a", text = "Study Resources") { setAttribute("href", STUDY_OVERVIEW_HREF) }
+                    }
+                }
+                if (top != null && top.route != route) {
                     child("li", "breadcrumb-item") {
                         child("a", text = top.label) { setAttribute("href", "#${top.route}") }
                     }
@@ -103,22 +115,51 @@ object Shell {
         val slot = document.getElementById("accountSlot") as HTMLElement
         slot.clear()
         val user = Session.user
+        slot.classList.toggle("dropdown", user != null)
         if (user == null) {
             slot.child("a", "btn btn-warning btn-sm fw-bold px-3", "Sign in") {
                 setAttribute("href", "#${Routes.SIGN_IN}")
             }
         } else {
-            slot.child("a", "btn btn-outline-light btn-sm px-3") {
+            // Grouped user menu — params.js renders the same markup on static pages from the
+            // tbb.nav cache (Session), so keep the two renderers' DOM identical.
+            val menu = buildNavMenu(user, Session.season)
+            slot.child("a", "btn btn-outline-light btn-sm px-3 dropdown-toggle") {
                 setAttribute("href", "#${Routes.ACCOUNT}")
+                setAttribute("role", "button")
+                setAttribute("data-bs-toggle", "dropdown")
+                setAttribute("aria-expanded", "false")
                 child("i", "bi bi-person-circle me-1")
-                append(user.displayName.ifBlank { "Account" })
+                append(menu.name)
+            }
+            slot.child("ul", "dropdown-menu dropdown-menu-end") {
+                menu.sections.forEachIndexed { i, section ->
+                    if (i > 0) child("li") { child("hr", "dropdown-divider") }
+                    child("li") { child("h6", "dropdown-header", section.label) }
+                    section.items.forEach { item ->
+                        child("li") {
+                            child("a", "dropdown-item") {
+                                setAttribute("href", "#${item.route}")
+                                append(item.label)
+                                if (item.badge) child("span", "badge text-bg-warning ms-2", "hidden until launch")
+                            }
+                        }
+                    }
+                }
+                child("li") { child("hr", "dropdown-divider") }
+                child("li") {
+                    child("button", "dropdown-item", "Sign out") {
+                        setAttribute("type", "button")
+                        onClick { Session.signOut() }
+                    }
+                }
             }
         }
     }
 
     private fun renderScreen(route: String, container: HTMLElement) {
         when (route) {
-            Routes.STUDY -> StudyHubScreen.render(container)
+            Routes.STUDY -> studyOverview(container)
             Routes.STUDY_INDICES -> IndexScreen.render(container)
             Routes.STUDY_HEADINGS -> HeadingsScreen.render(container)
             Routes.QUIZ -> QuizScreen.render(container)
@@ -159,7 +200,37 @@ object Shell {
             Routes.ADMIN_USERS -> gated(container, Permission.USER_MANAGE) {
                 AdminUsersScreen.render(container)
             }
-            else -> StudyHubScreen.render(container) // unknown deep link → hub, same as the wasm app
+            else -> studyOverview(container) // unknown deep link → the site's hub page
+        }
+    }
+
+    /**
+     * The study hub is the site's /study-resources/ page since the nav redesign — legacy
+     * `#study` links, a blank hash, and unknown routes all land there. The dev shell has no
+     * site around it, so it renders a plain tool list instead of redirecting into a 404.
+     */
+    private fun studyOverview(container: HTMLElement) {
+        if (!standalone) {
+            window.location.replace(STUDY_OVERVIEW_HREF) // replace: Back skips the bounce
+            return
+        }
+        container.child("h1", "page-title", "Study tools")
+        container.child(
+            "p", "text-muted",
+            "Dev shell only — in production this route redirects to the site's Study Resources page.",
+        )
+        container.child("div", "list-group") {
+            listOf(
+                Routes.DOWNLOADS to "Downloads",
+                Routes.QUIZ to "Quiz Me",
+                Routes.STUDY_INDICES to "Names & Numbers Indices",
+                Routes.STUDY_HEADINGS to "Chapter Headings",
+                Routes.QUESTIONS to "Community Questions",
+            ).forEach { (route, label) ->
+                child("a", "list-group-item list-group-item-action", label) {
+                    setAttribute("href", "#$route")
+                }
+            }
         }
     }
 

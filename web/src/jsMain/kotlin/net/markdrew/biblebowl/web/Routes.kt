@@ -25,14 +25,13 @@ object Routes {
 }
 
 /**
- * The four top-level app destinations (matches the Compose app's TopDestination). Since the
- * merged-navbar redesign these are dropdown items under "Study Resources" rather than tabs,
- * but they still anchor breadcrumb grouping and active-state matching.
+ * The top-level app destinations (dropdown items under "Study Resources" in the merged
+ * navbar); they anchor breadcrumb grouping and active-state matching. The study hub itself
+ * is the Hugo overview page (/study-resources/), not an app route.
  */
 enum class TopDestination(val route: String, val label: String) {
-    STUDY(Routes.STUDY, "Study Hub"),
-    QUIZ(Routes.QUIZ, "Quiz"),
-    QUESTIONS(Routes.QUESTIONS, "Questions"),
+    QUIZ(Routes.QUIZ, "Quiz Me"),
+    QUESTIONS(Routes.QUESTIONS, "Community Questions"),
     DOWNLOADS(Routes.DOWNLOADS, "Downloads"),
 }
 
@@ -42,11 +41,11 @@ fun topDestinationOf(route: String): TopDestination? =
 
 /** Human label for [route], used for breadcrumbs and the document title. */
 fun routeLabel(route: String): String = when (route) {
-    Routes.STUDY -> "Study Hub"
+    Routes.STUDY -> "Study Resources" // legacy hash; redirects to the site overview page
     Routes.STUDY_INDICES -> "Names & Numbers"
     Routes.STUDY_HEADINGS -> "Chapter Headings"
-    Routes.QUIZ -> "Quiz"
-    Routes.QUESTIONS -> "Questions"
+    Routes.QUIZ -> "Quiz Me"
+    Routes.QUESTIONS -> "Community Questions"
     Routes.QUESTIONS_NEW -> "Submit a Question"
     Routes.QUESTIONS_MODERATE -> "Moderate Questions"
     Routes.DOWNLOADS -> "Downloads"
@@ -59,5 +58,5 @@ fun routeLabel(route: String): String = when (route) {
     Routes.ADMIN_SEASON -> "Season Settings"
     Routes.ADMIN_REGISTRATIONS -> "Registrations"
     Routes.ADMIN_USERS -> "Users"
-    else -> "Study Hub"
+    else -> "Study Resources"
 }

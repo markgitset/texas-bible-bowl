@@ -1,12 +1,10 @@
 package net.markdrew.biblebowl.web.screens
 
 import kotlinx.coroutines.launch
-import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.division
 import net.markdrew.biblebowl.api.divisionForBirthdate
-import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.web.Routes
 import net.markdrew.biblebowl.web.Session
@@ -22,7 +20,7 @@ import org.w3c.dom.HTMLInputElement
 /**
  * Account screen (docs/gui-redesign.md §5H): editable profile (display name + the birthdate/adult
  * fields that drive division eligibility), claiming a roster entry by coach-shared code, roles
- * held, role-gated links (My Scores, registration desk, grading, admin), sign out.
+ * held, sign out. Role-gated destinations live in the navbar user menu (NavMenu), not here.
  */
 object AccountScreen {
 
@@ -62,37 +60,11 @@ object AccountScreen {
         }
 
         container.child("div", "d-grid gap-2") {
-            if (Session.gradingVisible) {
-                featureLink(this, "My scores", Routes.MY_SCORES, live = Session.season.gradingEnabled)
-            }
-            if (Session.registrationVisible) {
-                featureLink(this, "Register my teams", Routes.REGISTER, live = Session.season.registrationEnabled)
-            }
-            if (Session.registrationVisible && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
-                featureLink(this, "Registration desk", Routes.ADMIN_REGISTRATIONS, live = Session.season.registrationEnabled)
-            }
-            if (Session.gradingVisible && hasEventWidePermission(user.roles, Permission.SCORE_ENTER)) {
-                featureLink(this, "Grading", Routes.GRADING, live = Session.season.gradingEnabled)
-            }
-            if (Session.gradingVisible && hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
-                featureLink(this, "Standings", Routes.STANDINGS, live = Session.season.gradingEnabled)
-            }
-            if (Permission.USER_MANAGE in user.permissions) {
-                child("a", "btn btn-outline-primary", "Manage users") {
-                    setAttribute("href", "#${Routes.ADMIN_USERS}")
-                }
-            }
-            if (Permission.SEASON_MANAGE in user.permissions) {
-                child("a", "btn btn-outline-primary", "Season settings") {
-                    setAttribute("href", "#${Routes.ADMIN_SEASON}")
-                }
-                clearPdfCacheButton(this)
-            }
             child("button", "btn btn-outline-primary", "Sign out") {
                 setAttribute("type", "button")
                 onClick {
                     Session.signOut()
-                    Shell.navigate(Routes.STUDY)
+                    Shell.navigate(Routes.STUDY) // → redirects to the site's study hub page
                 }
             }
         }
@@ -232,42 +204,4 @@ object AccountScreen {
         }
     }
 
-    /**
-     * A feature-area link. When the feature toggle is off the link only renders for admins (the
-     * preview bypass), with a badge reminding them the public can't see it yet.
-     */
-    private fun featureLink(container: Element, label: String, route: String, live: Boolean) {
-        container.child("a", "btn btn-outline-primary", label) {
-            setAttribute("href", "#$route")
-            if (!live) child("span", "badge text-bg-warning ms-2", "hidden until launch")
-        }
-    }
-
-    /**
-     * Admin: drops the server's compiled-PDF cache so every study document regenerates on its next
-     * download — for after a generation-code change (season/word-list changes invalidate on their own).
-     */
-    private fun clearPdfCacheButton(container: Element) {
-        val button = container.child("button", "btn btn-outline-primary", "Clear PDF cache") {
-            setAttribute("type", "button")
-        } as HTMLButtonElement
-        val messageSlot = container.child("div")
-        button.onClick {
-            button.disabled = true
-            messageSlot.clear()
-            Shell.scope.launch {
-                try {
-                    val cleared = Session.api.clearPdfCache().cleared
-                    messageSlot.child(
-                        "p", "tbb-gold fw-semibold mb-0",
-                        "Cleared $cleared cached PDF(s) — next downloads regenerate.",
-                    )
-                } catch (e: Throwable) {
-                    messageSlot.child("p", "text-danger mb-0", "Clear failed: ${e.message}")
-                } finally {
-                    button.disabled = false
-                }
-            }
-        }
-    }
 }

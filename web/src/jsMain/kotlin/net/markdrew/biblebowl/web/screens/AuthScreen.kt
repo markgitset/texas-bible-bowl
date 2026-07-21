@@ -138,7 +138,7 @@ object AuthScreen {
                     }
                     // At #signin, return to where the user came from; a gated route re-renders in place.
                     if (window.location.hash.substringAfter('#') == Routes.SIGN_IN) {
-                        if (window.history.length > 1) window.history.back() else Shell.navigate(Routes.STUDY)
+                        if (window.history.length > 1) window.history.back() else Shell.navigate(Routes.ACCOUNT)
                     }
                     Session.signedIn(resp)
                 } catch (e: Throwable) {
