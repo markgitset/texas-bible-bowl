@@ -130,6 +130,16 @@ object GradingScreen {
                 } else {
                     child("span", "badge text-bg-primary", divisionLabel(division, row.inexperienced))
                 }
+                // A team can compete above a member's own bracket — surface the elevated one too.
+                val teamDivision = row.teamDivision
+                if (teamDivision != null &&
+                    (teamDivision != division || row.teamInexperienced != row.inexperienced)
+                ) {
+                    child(
+                        "span", "badge text-bg-secondary ms-1",
+                        "Team: ${divisionLabel(teamDivision, row.teamInexperienced)}",
+                    )
+                }
             }
             child("td") {
                 if (row.takes(round)) {

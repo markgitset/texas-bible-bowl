@@ -174,16 +174,18 @@ private data class RowSeed(val congregationId: String, val teamId: String?, val 
 
 /**
  * One row per contestant registered this season, in desk order (congregation, team — individuals
- * last, contestant), with each contestant's *competing* division: the team's division (its highest
- * member) and the team's experience bracket, or ADULT for an individual. Scores are attached
- * separately (see [withScores]) so save-validation can reuse the seeds without a scores fetch.
+ * last, contestant). Each contestant carries their OWN division and experience (individual rounds
+ * and placement always use these), plus the team's possibly-elevated bracket for the team round —
+ * a Junior on a Senior team tests and ranks as a Junior individually while the team competes
+ * Senior. Scores are attached separately (see [withScores]) so save-validation can reuse the
+ * seeds without a scores fetch.
  */
 private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): List<RowSeed> =
     registrations.listForSeason(season.eventYear)
         .flatMap { reg ->
             val teamRows = reg.teams.flatMap { team ->
-                val division = team.division(season)
-                val inexperienced = team.isInexperienced(season.eventYear)
+                val teamDivision = team.division(season)
+                val teamInexperienced = team.isInexperienced(season.eventYear)
                 team.members.map { member ->
                     RowSeed(
                         reg.congregation.id,
@@ -193,8 +195,10 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
                             contestantName = member.name,
                             congregationName = reg.congregation.name,
                             teamName = team.name,
-                            division = division,
-                            inexperienced = inexperienced,
+                            division = member.division(season),
+                            inexperienced = member.isInexperienced(season.eventYear),
+                            teamDivision = teamDivision,
+                            teamInexperienced = teamInexperienced,
                         ),
                     )
                 }
@@ -258,26 +262,27 @@ private class StandingsData(
 )
 
 /**
- * The division tally: contestants and teams grouped by (division, experience bracket) and ranked
- * by points — competition ranking, so ties share a rank and the next rank skips. Individual
- * totals span every eligible round; team totals are the members' rounds 1–5 only (the Power
- * Round never counts toward team scores — the published 800 team max is 4 × 200). Ungraded
- * rounds simply count 0, so the tally is meaningful mid-grading. Rows whose division is unknown
- * (legacy unparseable birthdates) can't be bracketed and are left out.
+ * The division tally, ranked by points — competition ranking, so ties share a rank and the next
+ * rank skips. A contestant's INDIVIDUAL placement is within their own (division, experience)
+ * bracket; their TEAM competes in the team's bracket — its highest member's division and
+ * most-experienced member's level — so the two can differ (a Junior on a Senior team ranks
+ * individually among Juniors). Individual totals span every eligible round; team totals are the
+ * members' rounds 1–5 only (the Power Round never counts toward team scores — the published 800
+ * team max is 4 × 200). Ungraded rounds simply count 0, so the tally is meaningful mid-grading.
+ * Rows whose division is unknown (legacy unparseable birthdates) can't be bracketed and are left
+ * out.
  */
 private fun computeStandings(seeds: List<RowSeed>, scores: ScoreRepository): StandingsData {
     val scored = seeds.zip(seeds.withScores(scores)) // RowSeed + its row with scores attached
     val individualRank = mutableMapOf<String, Placement>()
     val teamRank = mutableMapOf<String, TeamPlacement>()
 
-    val divisions = scored
+    val individualsByBracket: Map<BracketKey, List<StandingRowDto>> = scored
         .filter { (_, row) -> row.division != null }
         .groupBy { (_, row) -> BracketKey(row.division!!, row.inexperienced) }
-        .entries
-        .sortedWith(compareBy({ it.key.division.ordinal }, { it.key.inexperienced }))
-        .map { (key, entries) ->
+        .mapValues { (key, entries) ->
             val allPoints = entries.map { (_, row) -> row.totalPoints }
-            val individuals = entries
+            entries
                 .sortedWith(
                     compareByDescending<Pair<RowSeed, ScoreRowDto>> { it.second.totalPoints }
                         .thenBy { it.second.contestantName.lowercase() }
@@ -295,9 +300,13 @@ private fun computeStandings(seeds: List<RowSeed>, scores: ScoreRepository): Sta
                         maxPoints = key.division.maxScore,
                     )
                 }
+        }
 
+    val teamsByBracket: Map<BracketKey, List<StandingRowDto>> = scored
+        .filter { (seed, row) -> seed.teamId != null && row.teamDivision != null }
+        .groupBy { (_, row) -> BracketKey(row.teamDivision!!, row.teamInexperienced) }
+        .mapValues { (_, entries) ->
             val teamAggs = entries
-                .filter { (seed, _) -> seed.teamId != null }
                 .groupBy { (seed, _) -> seed.teamId!! }
                 .values
                 .map { members ->
@@ -305,7 +314,7 @@ private fun computeStandings(seeds: List<RowSeed>, scores: ScoreRepository): Sta
                     TeamAgg(rows, teamPoints(rows.map { it.scores }))
                 }
             val allTeamPoints = teamAggs.map { it.points }
-            val teams = teamAggs
+            teamAggs
                 .sortedWith(
                     compareByDescending<TeamAgg> { it.points }
                         .thenBy { it.members.first().teamName?.lowercase() ?: "" }
@@ -325,8 +334,17 @@ private fun computeStandings(seeds: List<RowSeed>, scores: ScoreRepository): Sta
                         maxPoints = TEAM_MEMBER_MAX_POINTS * agg.members.size,
                     )
                 }
+        }
 
-            DivisionStandingsDto(key.division, key.inexperienced, individuals, teams)
+    val divisions = (individualsByBracket.keys + teamsByBracket.keys)
+        .sortedWith(compareBy({ it.division.ordinal }, { it.inexperienced }))
+        .map { key ->
+            DivisionStandingsDto(
+                key.division,
+                key.inexperienced,
+                individualsByBracket[key].orEmpty(),
+                teamsByBracket[key].orEmpty(),
+            )
         }
 
     return StandingsData(divisions, individualRank, teamRank)

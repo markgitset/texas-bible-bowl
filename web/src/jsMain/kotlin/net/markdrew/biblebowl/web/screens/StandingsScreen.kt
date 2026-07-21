@@ -65,6 +65,8 @@ object StandingsScreen {
         content.child("h3", "mt-4", divisionLabel(bracket.division, bracket.inexperienced))
         content.child("div", "row g-4") {
             child("div", "col-lg-7") {
+                // A bracket can hold only teams (members individually bracketed lower) — skip then.
+                if (bracket.individuals.isEmpty()) return@child
                 standingsTable(
                     this, "Individuals",
                     headers = listOf("Place", "Contestant", "Congregation", "Team", "Points"),

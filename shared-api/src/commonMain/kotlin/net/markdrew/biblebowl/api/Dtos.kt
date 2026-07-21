@@ -513,10 +513,17 @@ data class ScoreRowDto(
     val congregationName: String,
     /** Team name, or null for an individual (adult) contestant. */
     val teamName: String? = null,
-    /** The division this contestant competes in: their team's division, or ADULT for an individual. */
+    /**
+     * The contestant's OWN division (from their birthdate; ADULT for an individual) — individual
+     * rounds, scores, and placement always use this, even when their team competes higher.
+     */
     val division: Division? = null,
-    /** The team's experience bracket (a team competes at its most-experienced member's level). */
+    /** The contestant's own experience bracket (their first season this year). */
     val inexperienced: Boolean = false,
+    /** The team's division (its highest member) — only the team round competes here; null off-team. */
+    val teamDivision: Division? = null,
+    /** The team's experience bracket (a team competes at its most-experienced member's level). */
+    val teamInexperienced: Boolean = false,
     /** Entered points keyed by round; rounds not yet graded are absent. */
     val scores: Map<Round, Int> = emptyMap(),
     /** Individual placement in the division bracket (competition ranking: ties share a rank). */

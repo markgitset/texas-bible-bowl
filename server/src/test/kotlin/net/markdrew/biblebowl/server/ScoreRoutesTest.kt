@@ -66,7 +66,9 @@ class ScoreRoutesTest {
         gradingEnabled = true,
     )
 
-    // Season 2027 → grade cutoff 2026-09-01: born 2013 = grade 8 (Junior), born 2017 = grade 4 (Elementary).
+    // Season 2027 → grade cutoff 2026-09-01: born 2011 = grade 10 (Senior), born 2013 = grade 8
+    // (Junior), born 2017 = grade 4 (Elementary).
+    private val seniorBirthdate = "2011-05-01"
     private val juniorBirthdate = "2013-05-01"
     private val elementaryBirthdate = "2017-05-01"
 
@@ -192,11 +194,12 @@ class ScoreRoutesTest {
         val api = jsonClient()
 
         // A junior + an elementary kid on one team (team competes Junior), plus an adult individual.
-        api.coachWithTeam(
+        val (_, _, mixedReg) = api.coachWithTeam(
             "coach@tbb.org", "Mixed Church",
             teamBirthdates = listOf(juniorBirthdate, elementaryBirthdate),
             individualName = "Deacon Dan",
         )
+        val mixedElemKid = mixedReg.teams.single().members.single { it.birthdate == elementaryBirthdate }
         // A separate all-elementary team: its members do NOT take the Power Round.
         val (_, _, elemReg) = api.coachWithTeam("elem@tbb.org", "Elementary Church", listOf(elementaryBirthdate))
         val elemKid = elemReg.teams.single().members.single()
@@ -209,14 +212,16 @@ class ScoreRoutesTest {
         assertEquals(openSeason.eventYear, sheet.seasonYear)
         assertNull(sheet.releasedAt)
         assertEquals(4, sheet.rows.size)
-        // Both Mixed Church team members compete at the team's division: Junior.
+        // Each Mixed Church member keeps their OWN division; the team's (Junior) rides alongside.
         sheet.rows.filter { it.teamName == "Team A" && it.congregationName == "Mixed Church" }.also { team ->
             assertEquals(2, team.size)
-            assertTrue(team.all { it.division == Division.JUNIOR })
+            assertEquals(setOf(Division.JUNIOR, Division.ELEMENTARY), team.map { it.division }.toSet())
+            assertTrue(team.all { it.teamDivision == Division.JUNIOR })
         }
         val individual = sheet.rows.single { it.teamName == null }
         assertEquals("Deacon Dan", individual.contestantName)
         assertEquals(Division.ADULT, individual.division)
+        assertNull(individual.teamDivision)
         assertEquals(Division.ELEMENTARY, sheet.rows.single { it.rosterEntryId == elemKid.id }.division)
 
         // Valid save round-trips and comes back on the refreshed sheet.
@@ -246,12 +251,20 @@ class ScoreRoutesTest {
             cleared.rows.single { it.rosterEntryId == junior.rosterEntryId }.scores,
         )
 
-        // Elementary contestants don't take the Power Round.
+        // Elementary contestants don't take the Power Round — even on a team competing Junior:
+        // rounds follow the contestant's OWN division, not the team's elevated one.
         assertEquals(
             HttpStatusCode.BadRequest,
             api.put("/admin/scores") {
                 header(HttpHeaders.Authorization, "Bearer ${grader.token}")
                 setBody(SaveScoresRequest(listOf(ScoreEntryDto(elemKid.id, Round.POWER, 10))))
+            }.status,
+        )
+        assertEquals(
+            HttpStatusCode.BadRequest,
+            api.put("/admin/scores") {
+                header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+                setBody(SaveScoresRequest(listOf(ScoreEntryDto(mixedElemKid.id, Round.POWER, 10))))
             }.status,
         )
         // Points above the round max (Find the Verse caps at 40) are rejected.
@@ -377,6 +390,95 @@ class ScoreRoutesTest {
         val a2 = coachView.rows.single { it.rosterEntryId == memberA2.id }
         assertEquals(3, a2.rank)
         assertEquals(70, a2.teamPoints)
+    }
+
+    @Test
+    fun individualsRankInTheirOwnBracketWhileTheTeamCompetesElevated() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+
+        // The 2026-workbook case: a senior + a junior (both experienced) and a first-year junior
+        // share one team. The team competes Senior-Experienced; each member's individual placement
+        // stays in their own bracket.
+        val (coach, _, reg) = api.coachWithTeam(
+            "coach@tbb.org", "Split Church", listOf(seniorBirthdate, juniorBirthdate),
+        )
+        var updated: RegistrationDto = api.post("/registration/teams/${reg.teams.single().id}/members") {
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+            setBody(
+                UpsertRosterEntryRequest(
+                    "First-Year Fran", birthdate = juniorBirthdate,
+                    shirtSize = ShirtSize.YL, gender = Gender.FEMALE, inexperienced = true,
+                )
+            )
+        }.body()
+        val members = updated.teams.single().members
+        val senior = members.single { it.birthdate == seniorBirthdate }
+        val juniorExp = members.single { it.birthdate == juniorBirthdate && it.firstSeasonYear == null }
+        val juniorNew = members.single { it.name == "First-Year Fran" }
+
+        val grader = api.grader(users)
+        // Individual totals: senior 20 + Power 50 = 70, junior 40, first-year 30.
+        // Team total (rounds 1–5 only): 20 + 40 + 30 = 90.
+        api.put("/admin/scores") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+            setBody(
+                SaveScoresRequest(
+                    listOf(
+                        ScoreEntryDto(senior.id, Round.FIND_THE_VERSE, 20),
+                        ScoreEntryDto(senior.id, Round.POWER, 50),
+                        ScoreEntryDto(juniorExp.id, Round.FIND_THE_VERSE, 40),
+                        ScoreEntryDto(juniorNew.id, Round.FIND_THE_VERSE, 30),
+                    )
+                )
+            )
+        }
+
+        val standings: StandingsResponse = api.get("/admin/scores/standings") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        // Three brackets: each member ranks individually in their own; the team only in Senior.
+        assertEquals(
+            listOf(
+                Division.JUNIOR to false,
+                Division.JUNIOR to true,
+                Division.SENIOR to false,
+            ),
+            standings.divisions.map { it.division to it.inexperienced },
+        )
+        val (juniorExpBracket, juniorNewBracket, seniorBracket) = standings.divisions
+        assertEquals(listOf(juniorExp.id), juniorExpBracket.individuals.map { it.rosterEntryId })
+        assertEquals(listOf(1), juniorExpBracket.individuals.map { it.rank })
+        assertTrue(juniorExpBracket.teams.isEmpty())
+        assertEquals(listOf(juniorNew.id), juniorNewBracket.individuals.map { it.rosterEntryId })
+        assertTrue(juniorNewBracket.teams.isEmpty())
+        assertEquals(listOf(senior.id), seniorBracket.individuals.map { it.rosterEntryId })
+        assertEquals(listOf(70), seniorBracket.individuals.map { it.points })
+        assertEquals(listOf(90), seniorBracket.teams.map { it.points })
+        assertEquals(listOf(600), seniorBracket.teams.map { it.maxPoints })
+
+        // My Scores: the junior's individual placement is in her own bracket (1 of 1), while her
+        // team placement reflects the elevated Senior bracket.
+        api.put("/admin/scores/release") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+            setBody(SetScoresReleasedRequest(released = true))
+        }
+        val coachView: MyScoresResponse = api.get("/scores/mine") {
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+        }.body()
+        val juniorRow = coachView.rows.single { it.rosterEntryId == juniorExp.id }
+        assertEquals(Division.JUNIOR, juniorRow.division)
+        assertEquals(false, juniorRow.inexperienced)
+        assertEquals(Division.SENIOR, juniorRow.teamDivision)
+        assertEquals(1, juniorRow.rank)
+        assertEquals(1, juniorRow.rankOf)
+        assertEquals(1, juniorRow.teamRank)
+        assertEquals(1, juniorRow.teamRankOf)
+        assertEquals(90, juniorRow.teamPoints)
     }
 
     @Test

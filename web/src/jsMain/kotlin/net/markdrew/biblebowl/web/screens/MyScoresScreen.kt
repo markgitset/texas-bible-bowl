@@ -119,9 +119,16 @@ object MyScoresScreen {
                     child("div", "fw-semibold", "${ordinal(rank)} of ${row.rankOf}")
                     val teamRank = row.teamRank
                     if (teamRank != null) {
+                        // The team may compete in a higher bracket than the contestant's own.
+                        val teamDivision = row.teamDivision
+                        val elevated = teamDivision != null &&
+                            (teamDivision != row.division || row.teamInexperienced != row.inexperienced)
+                        val teamLabel =
+                            if (elevated) "Team (${divisionLabel(teamDivision!!, row.teamInexperienced)})"
+                            else "Team"
                         child(
                             "div", "text-muted small",
-                            "Team: ${ordinal(teamRank)} of ${row.teamRankOf} · ${row.teamPoints} pts",
+                            "$teamLabel: ${ordinal(teamRank)} of ${row.teamRankOf} · ${row.teamPoints} pts",
                         )
                     }
                 }
