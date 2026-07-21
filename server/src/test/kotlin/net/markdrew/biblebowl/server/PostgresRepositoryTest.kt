@@ -358,6 +358,58 @@ class PostgresRepositoryTest {
     }
 
     @Test
+    fun comboTeamAssignmentCrossesCongregationsWithinASeason() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val coach = users.create("combo@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val home = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Home Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+        val host = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Host Church", "Waco", state = "TX", mailingAddress = "2 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+
+        val homeTeam = assertNotNull(registrations.addTeam(home.id, "2027", "Home Team"))
+        val member = assertIs<AddMemberResult.Added>(registrations.addMember(
+            homeTeam.id,
+            UpsertRosterEntryRequest("Betsy", birthdate = "2013-05-01", shirtSize = ShirtSize.YL, gender = Gender.FEMALE),
+        )).entry
+        val hostTeam = assertNotNull(registrations.addTeam(host.id, "2027", "Host Team"))
+
+        // A different season's team is off-limits; the same-season foreign team makes a combo team.
+        val lastYear = assertNotNull(registrations.addTeam(host.id, "2026", "Old Team"))
+        assertIs<net.markdrew.biblebowl.server.data.AssignResult.TeamNotFound>(
+            registrations.assignMemberToTeam(member.id, lastYear.id))
+        assertIs<net.markdrew.biblebowl.server.data.AssignResult.Assigned>(
+            registrations.assignMemberToTeam(member.id, hostTeam.id))
+
+        // Host view: a visiting member labeled with her own congregation.
+        val visiting = assertNotNull(registrations.find(host.id, "2027")).teams.single().members.single()
+        assertEquals("Betsy", visiting.name)
+        assertEquals(home.id, visiting.congregationId)
+        assertEquals("Home Church", visiting.congregationName)
+
+        // Home view: still on the books here, listed among the away members.
+        val homeReg = assertNotNull(registrations.find(home.id, "2027"))
+        val away = homeReg.awayMembers.single()
+        assertEquals("Betsy" to "Host Team", away.entry.name to away.teamName)
+        assertEquals("Host Church", away.congregationName)
+        assertTrue(homeReg.teams.single().members.isEmpty())
+        assertTrue(homeReg.unassigned.isEmpty())
+
+        // Unassigning pulls her back into the home pool.
+        assertIs<net.markdrew.biblebowl.server.data.AssignResult.Assigned>(
+            registrations.assignMemberToTeam(member.id, null))
+        assertEquals(listOf("Betsy"), assertNotNull(registrations.find(home.id, "2027")).unassigned.map { it.name })
+    }
+
+    @Test
     fun returningContestantsAndEnrollAcrossSeasons() {
         if (!available) { println("Postgres not reachable — skipping"); return }
         val users = PostgresUserRepository(db)

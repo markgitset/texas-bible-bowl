@@ -178,12 +178,15 @@ fun ordinal(n: Int): String {
 }
 
 /**
- * All contestants in a registration: every team member, every individual (adult) contestant, and
- * every unassigned (teamless-but-eligible) youth contestant — all three are being registered and
- * paid for.
+ * All contestants in a registration: every HOME team member, every individual (adult) contestant,
+ * every unassigned (teamless-but-eligible) youth contestant, and every member away on another
+ * congregation's combo team — all are registered and paid for here. Visiting members on this
+ * registration's teams (marked by [RosterEntryDto.congregationId]) are excluded: their own
+ * congregation counts and bills them.
  */
 val RegistrationDto.contestantCount: Int
-    get() = teams.sumOf { it.members.size } + individuals.size + unassigned.size
+    get() = teams.sumOf { team -> team.members.count { it.congregationId == null } } +
+        individuals.size + unassigned.size + awayMembers.size
 
 /**
  * The registration's total in cents: [contestantCount] × the season's contestant fee (one t-shirt

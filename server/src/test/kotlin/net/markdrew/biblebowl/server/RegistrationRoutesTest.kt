@@ -843,4 +843,89 @@ class RegistrationRoutesTest {
             api.get("/registration/mine") { header(HttpHeaders.Authorization, "Bearer ${admin.token}") }.status,
         )
     }
+
+    @Test
+    fun comboTeamPlacementIsRegistrarMediatedAndBilledAtHome() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+
+        // Alpha: one team with one member; Beta: an unassigned member (her team was deleted).
+        val alice = api.signUp("alice@tbb.org", "Alice")
+        fun io.ktor.client.request.HttpRequestBuilder.asAlice() =
+            header(HttpHeaders.Authorization, "Bearer ${alice.token}")
+        val congA: CongregationDto = api.post("/congregations") {
+            asAlice(); setBody(congregationRequest("Alpha Church", "Austin"))
+        }.body()
+        val teamA = api.post("/registration/${congA.id}/teams") {
+            asAlice(); setBody(UpsertTeamRequest("Alpha Team"))
+        }.body<RegistrationDto>().teams.single().id
+        api.post("/registration/teams/$teamA/members") {
+            asAlice(); setBody(UpsertRosterEntryRequest("Ann", "2013-05-01", ShirtSize.YM, Gender.FEMALE))
+        }
+
+        val bob = api.signUp("bob@tbb.org", "Bob")
+        fun io.ktor.client.request.HttpRequestBuilder.asBob() =
+            header(HttpHeaders.Authorization, "Bearer ${bob.token}")
+        val congB: CongregationDto = api.post("/congregations") {
+            asBob(); setBody(congregationRequest("Beta Church", "Dallas"))
+        }.body()
+        val teamB = api.post("/registration/${congB.id}/teams") {
+            asBob(); setBody(UpsertTeamRequest("Beta Team"))
+        }.body<RegistrationDto>().teams.single().id
+        val betsy = api.post("/registration/teams/$teamB/members") {
+            asBob(); setBody(UpsertRosterEntryRequest("Betsy", "2012-05-01", ShirtSize.YM, Gender.FEMALE))
+        }.body<RegistrationDto>().teams.single().members.single().id
+        api.delete("/registration/teams/$teamB") { asBob() }
+
+        // Neither coach may place Betsy on Alpha's team — combo placement is registrar-only.
+        val byHomeCoach = api.put("/registration/members/$betsy/team") {
+            asBob(); setBody(AssignMemberTeamRequest(teamA))
+        }
+        assertEquals(HttpStatusCode.Forbidden, byHomeCoach.status)
+        assertEquals("forbidden_scope", byHomeCoach.body<ApiError>().code)
+        val byHostCoach = api.put("/registration/members/$betsy/team") {
+            asAlice(); setBody(AssignMemberTeamRequest(teamA))
+        }
+        assertEquals(HttpStatusCode.Forbidden, byHostCoach.status)
+
+        // A registrar (event-wide REGISTRATION_MANAGE) makes the combo placement.
+        val registrar = api.signUp("registrar@tbb.org", "Reggie Registrar")
+        users.addRoleGrant(registrar.user.id, RoleGrant(Role.REGISTRAR))
+        val placed: RegistrationDto = api.put("/registration/members/$betsy/team") {
+            header(HttpHeaders.Authorization, "Bearer ${registrar.token}")
+            setBody(AssignMemberTeamRequest(teamA))
+        }.body()
+
+        // The response is Betsy's HOME registration: she left the pool for the away list, and
+        // Beta still bills her (she's Beta's one contestant).
+        assertTrue(placed.unassigned.isEmpty())
+        val away = placed.awayMembers.single()
+        assertEquals("Betsy", away.entry.name)
+        assertEquals("Alpha Team", away.teamName)
+        assertEquals("Alpha Church", away.congregationName)
+        assertEquals(1, placed.contestantCount)
+        assertEquals(8500, placed.totalCents)
+
+        // Alpha's view: the team hosts Betsy as a visiting member, but bills only Ann.
+        val alphaReg: MyRegistrationResponse = api.get("/registration/mine") { asAlice() }.body()
+        val alphaTeam = alphaReg.registration!!.teams.single()
+        assertEquals(listOf("Ann", "Betsy"), alphaTeam.members.map { it.name }.sorted())
+        val visiting = alphaTeam.members.single { it.name == "Betsy" }
+        assertEquals(congB.id, visiting.congregationId)
+        assertEquals("Beta Church", visiting.congregationName)
+        assertNull(alphaTeam.members.single { it.name == "Ann" }.congregationId)
+        assertEquals(1, alphaReg.registration!!.contestantCount)
+        assertEquals(8500, alphaReg.registration!!.totalCents)
+
+        // Betsy's home coach can pull her back to the unassigned pool.
+        val pulledBack: RegistrationDto = api.put("/registration/members/$betsy/team") {
+            asBob(); setBody(AssignMemberTeamRequest(null))
+        }.body()
+        assertEquals(listOf("Betsy"), pulledBack.unassigned.map { it.name })
+        assertTrue(pulledBack.awayMembers.isEmpty())
+    }
 }

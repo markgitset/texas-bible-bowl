@@ -506,7 +506,7 @@ class RegistrationRepositoryTest {
     }
 
     @Test
-    fun assignRejectsFullTeamsForeignTeamsAndUnknownMembers() {
+    fun assignRejectsFullTeamsCrossSeasonTeamsAndUnknownMembers() {
         val cong = newCongregation("Full Church", "Bryan")!!
         val full = repo.addTeam(cong.id, "2027", "Full Team")!!
         repeat(MAX_TEAM_SIZE) { repo.addMember(full.id, entry("Starter $it")) }
@@ -514,10 +514,48 @@ class RegistrationRepositoryTest {
         val member = assertIs<AddMemberResult.Added>(repo.addMember(loose.id, entry("Extra"))).entry
         assertIs<AssignResult.RosterFull>(repo.assignMemberToTeam(member.id, full.id))
 
-        // A team in another congregation's registration is off-limits.
-        val other = newCongregation("Other Church", "Georgetown", "u2")!!
-        val otherTeam = repo.addTeam(other.id, "2027", "Their Team")!!
-        assertIs<AssignResult.TeamNotFound>(repo.assignMemberToTeam(member.id, otherTeam.id))
+        // A team in another SEASON's registration is off-limits, even in the same congregation.
+        val lastYear = repo.addTeam(cong.id, "2026", "Last Year's Team")!!
+        assertIs<AssignResult.TeamNotFound>(repo.assignMemberToTeam(member.id, lastYear.id))
         assertIs<AssignResult.MemberNotFound>(repo.assignMemberToTeam("nope", loose.id))
+    }
+
+    @Test
+    fun assignAcrossCongregationsMakesAComboTeam() {
+        // Another congregation's same-season team IS assignable (a combo team) — the repository
+        // only enforces the season; the ROUTE restricts who may do it (registrar/admin).
+        val cong = newCongregation("Home Church", "Bryan")!!
+        val homeTeam = repo.addTeam(cong.id, "2027", "Home Team")!!
+        val member = assertIs<AddMemberResult.Added>(repo.addMember(homeTeam.id, entry("Extra"))).entry
+        val other = newCongregation("Host Church", "Georgetown", "u2")!!
+        val hostTeam = repo.addTeam(other.id, "2027", "Host Team")!!
+        assertIs<AssignResult.Assigned>(repo.assignMemberToTeam(member.id, hostTeam.id))
+
+        // The member appears on the host's team as a visiting member of their own congregation...
+        val hostReg = repo.find(other.id, "2027")!!
+        val visiting = hostReg.teams.single().members.single()
+        assertEquals("Extra", visiting.name)
+        assertEquals(cong.id, visiting.congregationId)
+        assertEquals("Home Church", visiting.congregationName)
+
+        // ...and stays on the HOME registration's books, listed under its away members.
+        val homeReg = repo.find(cong.id, "2027")!!
+        val away = homeReg.awayMembers.single()
+        assertEquals("Extra", away.entry.name)
+        assertEquals(hostTeam.id, away.teamId)
+        assertEquals("Host Team", away.teamName)
+        assertEquals("Host Church", away.congregationName)
+        assertTrue(homeReg.teams.single().members.isEmpty())
+        assertTrue(homeReg.unassigned.isEmpty())
+
+        // The visiting member counts toward the host team's cap.
+        repeat(MAX_TEAM_SIZE - 1) { repo.addMember(hostTeam.id, entry("Host Kid $it")) }
+        val overflow = assertIs<AddMemberResult.Added>(repo.addMember(homeTeam.id, entry("One Too Many"))).entry
+        assertIs<AssignResult.RosterFull>(repo.assignMemberToTeam(overflow.id, hostTeam.id))
+
+        // Unassigning pulls the member back to the home congregation's pool.
+        assertIs<AssignResult.Assigned>(repo.assignMemberToTeam(member.id, null))
+        assertEquals(listOf("Extra"), repo.find(cong.id, "2027")!!.unassigned.map { it.name })
+        assertTrue(repo.find(other.id, "2027")!!.teams.single().members.none { it.name == "Extra" })
     }
 }

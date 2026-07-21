@@ -53,6 +53,7 @@ import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.registrationWindowState
 import net.markdrew.biblebowl.server.security.currentUser
 import net.markdrew.biblebowl.server.security.isAdmin
+import net.markdrew.biblebowl.server.security.requireEventWidePermission
 import net.markdrew.biblebowl.server.security.requireFeatureEnabled
 import net.markdrew.biblebowl.server.security.requireScopedPermission
 
@@ -322,14 +323,25 @@ fun Route.registrationRoutes(
 
         // (Re)assign a youth contestant to a team, or free it to the unassigned pool (null teamId).
         // Coaches move their own contestants; a registrar places any left unassigned at submit time.
+        // Placing a contestant on ANOTHER congregation's team (a combo team) is registrar-mediated:
+        // it needs an event-wide REGISTRATION_MANAGE grant, not either side's coach grant. Pulling
+        // the member back (null teamId or a home team) stays a home-coach action.
         put("/registration/members/{memberId}/team") {
             val user = currentUser(users) ?: return@put
             if (!requireRegistrationFeature(user, seasons)) return@put
             val memberId = call.parameters["memberId"]!!
             val congregationId = registrations.congregationIdForMember(memberId)
                 ?: return@put call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such roster entry"))
-            if (!requireCongregationEditor(user, congregationId, seasons)) return@put
             val req = call.receive<AssignMemberTeamRequest>()
+            val teamCongregationId = req.teamId?.let {
+                registrations.congregationIdForTeam(it)
+                    ?: return@put call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such team"))
+            }
+            if (teamCongregationId != null && teamCongregationId != congregationId) {
+                if (!requireEventWidePermission(user, Permission.REGISTRATION_MANAGE)) return@put
+            } else {
+                if (!requireCongregationEditor(user, congregationId, seasons)) return@put
+            }
             when (registrations.assignMemberToTeam(memberId, req.teamId)) {
                 AssignResult.Assigned ->
                     call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))

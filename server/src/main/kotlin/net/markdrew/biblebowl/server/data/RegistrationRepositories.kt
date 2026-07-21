@@ -1,5 +1,6 @@
 package net.markdrew.biblebowl.server.data
 
+import net.markdrew.biblebowl.api.AwayMemberDto
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
@@ -19,6 +20,7 @@ import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.isNull
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.neq
 import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.core.or
@@ -94,7 +96,7 @@ sealed interface AddMemberResult {
 sealed interface AssignResult {
     data object Assigned : AssignResult
     data object RosterFull : AssignResult
-    /** No such team, or the team belongs to a different registration than the member. */
+    /** No such team, or the team belongs to a different season than the member's registration. */
     data object TeamNotFound : AssignResult
     data object MemberNotFound : AssignResult
 }
@@ -134,7 +136,11 @@ interface RegistrationRepository {
     fun addMember(teamId: String, req: UpsertRosterEntryRequest): AddMemberResult
     fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto?
     fun deleteMember(memberId: String): Boolean
-    /** Moves a member to [teamId] (same registration, ≤4), or frees it to the pool when null. */
+    /**
+     * Moves a member to [teamId] (≤4), or frees it to the pool when null. The team may belong to
+     * another congregation's registration in the same season (a combo team) — the ROUTE gates that
+     * on an event-wide grant; here only the season must match.
+     */
     fun assignMemberToTeam(memberId: String, teamId: String?): AssignResult
     /** Adds an individual (adult) contestant, creating the draft registration if needed. */
     fun addIndividual(congregationId: String, seasonYear: String, req: UpsertIndividualRequest): RosterEntryDto
@@ -408,7 +414,11 @@ class InMemoryRegistrationRepository(
             memberTeam.remove(memberId)
             return AssignResult.Assigned
         }
-        val team = teams[teamId]?.takeIf { it.regId == regId } ?: return AssignResult.TeamNotFound
+        // Combo teams: any team in the member's season qualifies, own congregation's or not.
+        val memberSeason = regs.values.firstOrNull { it.id == regId }?.seasonYear
+        val team = teams[teamId]
+            ?.takeIf { t -> regs.values.firstOrNull { it.id == t.regId }?.seasonYear == memberSeason }
+            ?: return AssignResult.TeamNotFound
         if (current == teamId) return AssignResult.Assigned // already there
         if (team.memberIds.size >= MAX_TEAM_SIZE) return AssignResult.RosterFull
         current?.let { teams[it]?.memberIds?.remove(memberId) }
@@ -716,7 +726,21 @@ class InMemoryRegistrationRepository(
         )
     }
 
-    private fun Team.toDto() = TeamDto(id, name, memberIds.mapNotNull { memberDto(it) })
+    /** The congregation a registration row belongs to, for labeling cross-congregation members. */
+    private fun congregationNameForReg(regId: String): String =
+        regs.values.firstOrNull { it.id == regId }?.let { congregations.findById(it.congregationId)?.name } ?: "?"
+
+    private fun Team.toDto() = TeamDto(id, name, memberIds.mapNotNull { mid ->
+        memberDto(mid)?.let { entry ->
+            val homeRegId = memberReg[mid]
+            // A visiting (combo-team) member carries their own congregation for display/billing.
+            if (homeRegId == null || homeRegId == regId) entry
+            else entry.copy(
+                congregationId = regs.values.firstOrNull { it.id == homeRegId }?.congregationId,
+                congregationName = congregationNameForReg(homeRegId),
+            )
+        }
+    })
 
     private fun Reg.toDto(): RegistrationDto = RegistrationDto(
         id = id,
@@ -731,6 +755,15 @@ class InMemoryRegistrationRepository(
             .filter { memberReg[it] == id && it !in memberTeam }
             .mapNotNull { memberDto(it) }
             .sortedBy { it.name.lowercase() },
+        awayMembers = members.keys
+            .filter { mid -> memberReg[mid] == id && memberTeam[mid]?.let { teams[it]?.regId != id } == true }
+            .mapNotNull { mid ->
+                val team = teams[memberTeam[mid]] ?: return@mapNotNull null
+                memberDto(mid)?.let {
+                    AwayMemberDto(it, team.id, team.name, congregationNameForReg(team.regId))
+                }
+            }
+            .sortedBy { it.entry.name.lowercase() },
         guests = guests.values
             .filter { guestReg[it.id] == id }
             .sortedBy { it.name.lowercase() },
@@ -1080,10 +1113,10 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         if (current == teamId) return@transaction AssignResult.Assigned // already there
         val team = TeamsTable.selectAll().where { TeamsTable.id eq teamId }.singleOrNull()
             ?: return@transaction AssignResult.TeamNotFound
-        // The team must belong to the member's own registration.
-        if (team[TeamsTable.registrationId] != member[TeamMembersTable.registrationId]) {
-            return@transaction AssignResult.TeamNotFound
-        }
+        // Combo teams: any team in the member's season qualifies, own congregation's or not.
+        val sameSeason = seasonYearForReg(team[TeamsTable.registrationId]) ==
+            seasonYearForReg(member[TeamMembersTable.registrationId])
+        if (!sameSeason) return@transaction AssignResult.TeamNotFound
         val size = TeamMembersTable.selectAll().where { TeamMembersTable.teamId eq teamId }.count()
         if (size >= MAX_TEAM_SIZE) return@transaction AssignResult.RosterFull
         TeamMembersTable.update({ TeamMembersTable.id eq memberId }) { it[TeamMembersTable.teamId] = teamId }
@@ -1398,14 +1431,29 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         }
     }
 
+    /** The name of a registration's congregation, for labeling cross-congregation (combo) members. */
+    private fun congregationNameForReg(regId: String): String =
+        CongregationsTable.selectAll().where { CongregationsTable.id eq congregationIdFor(regId) }
+            .singleOrNull()?.get(CongregationsTable.name) ?: "?"
+
     private fun teamDto(teamId: String): TeamDto? =
         TeamsTable.selectAll().where { TeamsTable.id eq teamId }.singleOrNull()?.let { row ->
+            val homeRegId = row[TeamsTable.registrationId]
             TeamDto(
                 id = row[TeamsTable.id],
                 name = row[TeamsTable.name],
                 members = (TeamMembersTable innerJoin ContestantsTable).selectAll()
                     .where { TeamMembersTable.teamId eq teamId }
-                    .map { it.toEntry() },
+                    .map { memberRow ->
+                        val entry = memberRow.toEntry()
+                        val memberRegId = memberRow[TeamMembersTable.registrationId]
+                        // A visiting (combo-team) member carries their own congregation.
+                        if (memberRegId == homeRegId) entry
+                        else entry.copy(
+                            congregationId = congregationIdFor(memberRegId),
+                            congregationName = congregationNameForReg(memberRegId),
+                        )
+                    },
             )
         }
 
@@ -1472,6 +1520,17 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 .where { (TeamMembersTable.registrationId eq regId) and TeamMembersTable.teamId.isNull() }
                 .orderBy(ContestantsTable.name)
                 .map { it.toEntry() },
+            awayMembers = (TeamMembersTable innerJoin ContestantsTable innerJoin TeamsTable).selectAll()
+                .where { (TeamMembersTable.registrationId eq regId) and (TeamsTable.registrationId neq regId) }
+                .orderBy(ContestantsTable.name)
+                .map { row ->
+                    AwayMemberDto(
+                        entry = row.toEntry(),
+                        teamId = row[TeamsTable.id],
+                        teamName = row[TeamsTable.name],
+                        congregationName = congregationNameForReg(row[TeamsTable.registrationId]),
+                    )
+                },
             guests = RegistrationGuestsTable.selectAll()
                 .where { RegistrationGuestsTable.registrationId eq regId }
                 .orderBy(RegistrationGuestsTable.name)

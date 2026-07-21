@@ -338,8 +338,24 @@ data class RosterEntryDto(
     val firstSeasonYear: String? = null,
     val claimCode: String,
     val claimed: Boolean = false,
+    /**
+     * The member's own congregation — set ONLY when it differs from the surrounding context, i.e.
+     * a visiting member on another congregation's (combo) team. Null = belongs to the context's
+     * congregation. Visiting members are registered, edited, and billed by their own congregation;
+     * only the team slot is borrowed.
+     */
+    val congregationId: String? = null,
+    /** Display name matching [congregationId]; null for a home member. */
+    val congregationName: String? = null,
 )
 
+/**
+ * A team, owned by its home congregation's registration. A *combo* team also hosts visiting
+ * members from other congregations' registrations (same season) — those members carry their own
+ * [RosterEntryDto.congregationId]/[RosterEntryDto.congregationName] and count toward the ≤4 cap
+ * and the team's division/experience bracket like anyone else, but stay registered and billed by
+ * their own congregation.
+ */
 @Serializable
 data class TeamDto(
     val id: String,
@@ -352,11 +368,27 @@ data class UpsertTeamRequest(val name: String)
 
 /**
  * (Re)assigns a youth roster entry to [teamId], or frees it to the unassigned pool when null. The
- * target team must belong to the same registration and have room (≤4). Used both by a coach moving
- * contestants between teams / off a team, and by a registrar placing leftover unassigned entries.
+ * target team must have room (≤4) and belong to the same registration — or, for an event-wide
+ * REGISTRATION_MANAGE holder (registrar/admin), to another congregation's registration in the same
+ * season (a combo team). Used by a coach moving contestants between their own teams / off a team,
+ * and by a registrar placing leftover unassigned entries, including across congregations.
  */
 @Serializable
 data class AssignMemberTeamRequest(val teamId: String? = null)
+
+/**
+ * The home registration's view of one of its members placed on another congregation's (combo)
+ * team: the entry stays registered/edited/billed here, while the hosting team and congregation are
+ * named for display and for the coach's team picker (unassigning pulls the member back home).
+ */
+@Serializable
+data class AwayMemberDto(
+    val entry: RosterEntryDto,
+    val teamId: String,
+    val teamName: String,
+    /** The hosting team's congregation (display). */
+    val congregationName: String,
+)
 
 /**
  * A team roster entry. Adults can't be placed on teams, so [birthdate] must land in grades 3–12.
@@ -481,6 +513,12 @@ data class RegistrationDto(
      * contestants for fees.
      */
     val unassigned: List<RosterEntryDto> = emptyList(),
+    /**
+     * This registration's members placed on other congregations' (combo) teams. Still registered,
+     * edited, and billed here — they appear in the hosting registration's [teams] as visiting
+     * members, so they are deliberately NOT in [teams]/[unassigned] above (see [AwayMemberDto]).
+     */
+    val awayMembers: List<AwayMemberDto> = emptyList(),
     /** Registered guests (mostly volunteers) — they pay too, but aren't contestants (see [GuestDto]). */
     val guests: List<GuestDto> = emptyList(),
     /** Computed total in cents (contestants + guests), or null while a needed fee is TBD. */
