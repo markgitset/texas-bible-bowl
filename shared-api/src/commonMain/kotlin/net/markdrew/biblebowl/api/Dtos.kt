@@ -395,6 +395,13 @@ data class RosterEntryDto(
      * any adult can lead a tribe, contestant or not; always false on youth roster entries.
      */
     val tribeLeaderWilling: Boolean = false,
+    /**
+     * Sequential per-site tester number (item 13, F7) — printed on nametags and used for test-day
+     * seating/scans. Null until assigned (assignment happens lazily when a registrar first
+     * generates nametags); once assigned it never changes, so late registrants extend the
+     * sequence rather than renumbering anyone.
+     */
+    val testerId: Int? = null,
 )
 
 /**

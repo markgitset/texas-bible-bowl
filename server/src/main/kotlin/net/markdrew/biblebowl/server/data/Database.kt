@@ -151,6 +151,8 @@ object TeamMembersTable : Table("team_members") {
     val shirtSize = varchar("shirt_size", 8)
     val claimCode = varchar("claim_code", 12).uniqueIndex()
     val ownerUserId = varchar("owner_user_id", 36).references(UsersTable.id).nullable()
+    // Sequential per-site tester number (item 13, F7); null until nametag/ID assignment runs.
+    val testerId = integer("tester_id").nullable()
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -166,6 +168,8 @@ object IndividualsTable : Table("individual_contestants") {
     val ownerUserId = varchar("owner_user_id", 36).references(UsersTable.id).nullable()
     // Willing to serve as a tribe leader — any adult can, contestant or not (per-season answer).
     val tribeLeader = bool("tribe_leader").default(false)
+    // Sequential per-site tester number (item 13, F7); null until nametag/ID assignment runs.
+    val testerId = integer("tester_id").nullable()
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -430,6 +434,10 @@ object DatabaseFactory {
                 END ${'$'}${'$'}
                 """.trimIndent()
             )
+            // Tester IDs (2026-07, registration backlog F7's ID half): sequential per-site numbers,
+            // assigned lazily when a registrar first generates nametags and stable thereafter.
+            exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS tester_id INT")
+            exec("ALTER TABLE individual_contestants ADD COLUMN IF NOT EXISTS tester_id INT")
         }
         return db
     }

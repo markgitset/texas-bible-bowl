@@ -442,6 +442,17 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     // --- Admin: registration desk & user management (docs/gui-redesign.md §5G) ---
 
     /** The full registration desk for the current season. Requires event-wide REGISTRATION_MANAGE. */
+    /**
+     * Printable per-site nametags (item 14, F8); generating also assigns any missing tester IDs.
+     * Registrar/admin only (attendee names include minors'), hence the authenticated fetch rather
+     * than a public /generate link. Null [siteId] = every site, one per-site stack per page run.
+     */
+    suspend fun nametagsPdf(siteId: String? = null): ByteArray =
+        client.get("$baseUrl/admin/registrations/nametags.pdf") {
+            authorize()
+            if (siteId != null) parameter("siteId", siteId)
+        }.bodyOrThrow()
+
     suspend fun registrationDesk(): RegistrationDeskResponse =
         client.get("$baseUrl/admin/registrations") { authorize() }.bodyOrThrow()
 

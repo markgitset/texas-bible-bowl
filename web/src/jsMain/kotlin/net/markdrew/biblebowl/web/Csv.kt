@@ -18,7 +18,11 @@ fun csvText(lines: List<List<String>>): String =
 
 fun downloadCsv(fileName: String, csv: String) {
     // BOM so Excel detects UTF-8.
-    val blob = Blob(arrayOf<dynamic>("\uFEFF$csv"), BlobPropertyBag(type = "text/csv;charset=utf-8"))
+    downloadBlob(Blob(arrayOf<dynamic>("\uFEFF$csv"), BlobPropertyBag(type = "text/csv;charset=utf-8")), fileName)
+}
+
+/** Saves [blob] via a synthetic download link \u2014 the blob half of [downloadCsv], reused for PDFs. */
+fun downloadBlob(blob: Blob, fileName: String) {
     val url = URL.createObjectURL(blob)
     val a = document.createElement("a") as HTMLAnchorElement
     a.href = url

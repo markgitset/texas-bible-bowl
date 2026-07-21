@@ -166,6 +166,52 @@ class RegistrationDomainTest {
     }
 
     @Test
+    fun missingTesterIdsRunPerSiteAndNeverRenumber() {
+        val twoSites = season.copy(
+            sites = listOf(EventSiteDto("s1", "Bandina"), EventSiteDto("s2", "White River")),
+        )
+        fun reg(id: String, congName: String, siteId: String?, entries: List<RosterEntryDto>) = RegistrationDto(
+            id = id,
+            congregation = CongregationDto(id, congName, "Austin"),
+            seasonYear = "2027",
+            status = RegistrationStatus.DRAFT,
+            siteId = siteId,
+            individuals = entries,
+        )
+        val alpha = reg(
+            "a", "Alpha Church", "s1",
+            listOf(
+                entry(null).copy(id = "a1", name = "Zeb"),
+                entry(null).copy(id = "a2", name = "Abe", testerId = 5), // already assigned — kept
+            ),
+        )
+        val beta = reg("b", "Beta Church", "s1", listOf(entry(null).copy(id = "b1", name = "Ann")))
+        val whiteRiver = reg("w", "Gamma Church", "s2", listOf(entry(null).copy(id = "w1", name = "Wes")))
+
+        val assigned = missingTesterIds(twoSites, listOf(alpha, beta, whiteRiver))
+        // Bandina continues after its max (5), numbering by (congregation, name); White River starts at 1.
+        assertEquals(mapOf("b1" to 7, "a1" to 6, "w1" to 1), assigned)
+        assertEquals(6, assigned["a1"], "Alpha sorts before Beta")
+
+        // A single-site season resolves every registration to the lone site, pinned or not.
+        val oneSite = season.copy(sites = listOf(EventSiteDto("s1", "Bandina")))
+        val mixed = listOf(
+            reg("a", "Alpha Church", null, listOf(entry(null).copy(id = "a1", name = "Zeb"))),
+            reg("b", "Beta Church", "s1", listOf(entry(null).copy(id = "b1", name = "Ann"))),
+        )
+        assertEquals(mapOf("a1" to 1, "b1" to 2), missingTesterIds(oneSite, mixed), "one shared sequence")
+
+        // A visiting (combo-team) member is numbered by their own congregation, not the host.
+        val visiting = entry("2013-05-01").copy(id = "v1", congregationId = "b", congregationName = "Beta Church")
+        val host = reg("a", "Alpha Church", "s1", emptyList())
+            .copy(teams = listOf(TeamDto("t", "Team A", listOf(entry("2013-05-01").copy(id = "h1"), visiting))))
+        val home = reg("b", "Beta Church", "s1", emptyList())
+            .copy(awayMembers = listOf(AwayMemberDto(entry("2013-05-01").copy(id = "v1"), "t", "Team A", "Alpha Church")))
+        val comboAssigned = missingTesterIds(twoSites, listOf(host, home))
+        assertEquals(setOf("h1", "v1"), comboAssigned.keys, "each entry numbered exactly once")
+    }
+
+    @Test
     fun ageTiersDeriveFromBirthdatesOnTheGradeCutoff() {
         // FALLBACK_SEASON is the 2027 event: ages are computed on the 2026-09-01 grade cutoff.
         assertEquals(AgeTier.AGE_9_PLUS, season.ageTierFor(null), "no birthdate = adult")

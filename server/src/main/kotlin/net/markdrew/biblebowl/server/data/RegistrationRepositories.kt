@@ -191,6 +191,12 @@ interface RegistrationRepository {
     ): EnrollResult
     /** Every registration for [seasonYear], with full teams/rosters (registration desk). */
     fun listForSeason(seasonYear: String): List<RegistrationDto>
+    /**
+     * Persists tester-ID assignments: roster entry id (team member or individual) → tester id.
+     * Unknown ids are skipped. The *choice* of ids lives in shared-api's `missingTesterIds`
+     * (per-site sequences, stable once assigned) — this just stores what it computed.
+     */
+    fun setTesterIds(ids: Map<String, Int>)
     /** Sets (non-null) or clears (null) payment received. Null return = no such registration. */
     fun setPaid(registrationId: String, paidAtEpochMs: Long?): RegistrationDto?
     /** Links the entry with claim code [code] to [userId]. Idempotent for the same account. */
@@ -687,6 +693,13 @@ class InMemoryRegistrationRepository(
 
     override fun listForSeason(seasonYear: String): List<RegistrationDto> = synchronized(lock) {
         regs.values.filter { it.seasonYear == seasonYear }.map { it.toDto() }
+    }
+
+    override fun setTesterIds(ids: Map<String, Int>): Unit = synchronized(lock) {
+        ids.forEach { (entryId, testerId) ->
+            members[entryId]?.let { members[entryId] = it.copy(testerId = testerId) }
+            individuals[entryId]?.let { individuals[entryId] = it.copy(testerId = testerId) }
+        }
     }
 
     override fun setPaid(registrationId: String, paidAtEpochMs: Long?): RegistrationDto? = synchronized(lock) {
@@ -1414,6 +1427,17 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         else RegistrationsTable.selectAll().where { RegistrationsTable.id eq registrationId }.single().toDto()
     }
 
+    override fun setTesterIds(ids: Map<String, Int>): Unit = transaction(db) {
+        ids.forEach { (entryId, testerId) ->
+            val updated = TeamMembersTable.update({ TeamMembersTable.id eq entryId }) {
+                it[TeamMembersTable.testerId] = testerId
+            }
+            if (updated == 0) IndividualsTable.update({ IndividualsTable.id eq entryId }) {
+                it[IndividualsTable.testerId] = testerId
+            }
+        }
+    }
+
     override fun claimEntry(code: String, userId: String): ClaimResult = transaction(db) {
         TeamMembersTable.selectAll().where { TeamMembersTable.claimCode eq code }.singleOrNull()?.let { row ->
             // Ownership is durable per person: claiming any of a youth contestant's entries owns them
@@ -1511,6 +1535,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         firstSeasonYear = this[ContestantsTable.firstSeasonYear],
         claimCode = this[TeamMembersTable.claimCode],
         claimed = this[TeamMembersTable.ownerUserId] != null,
+        testerId = this[TeamMembersTable.testerId],
     )
 
     private fun ResultRow.toGuest() = GuestDto(
@@ -1542,6 +1567,7 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         claimCode = this[IndividualsTable.claimCode],
         claimed = this[IndividualsTable.ownerUserId] != null,
         tribeLeaderWilling = this[IndividualsTable.tribeLeader],
+        testerId = this[IndividualsTable.testerId],
     )
 
     private fun ResultRow.toDto(): RegistrationDto {

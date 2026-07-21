@@ -38,8 +38,8 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 10 | F5 | Age-tiered fee schedule | done |
 | 11 | F11 | Registration counts dashboard | done |
 | 12 | F12 | Shirt-order report | done |
-| 13 | F7 | Tester IDs + ZipGrade export | not started |
-| 14 | F8 | Nametag PDF generation | not started |
+| 13 | F7 | Tester IDs + ZipGrade export | ID half done |
+| 14 | F8 | Nametag PDF generation | done |
 | 15 | F9 | Housing / cabin assignments | not started |
 | 16 | F10 | Tribes & tribe leaders | not started |
 | 17 | F13 | Seed the database from the 2026 workbook | not started |
@@ -277,6 +277,14 @@ code, exported to ZipGrade for scan grading.
   seating) worth keeping? Mark approved the item; confirm the export half before building
   it.
 - **Dependencies:** 6; 5 (team identity settled); IDs feed 14.
+- **ID half as built (2026-07, pulled forward with item 14 at Mark's direction):**
+  `RosterEntryDto.testerId` — sequential per site (like the workbook's per-site ZipGrade
+  sequences), assigned lazily the first time a registrar generates nametags and stable
+  thereafter: late registrants extend the sequence, nobody is ever renumbered. New IDs
+  number in (congregation, name) order; a combo member numbers with their own congregation
+  at its site (`missingTesterIds` in `shared-api`). Shown on the desk roster detail
+  ("tester #7"). **Still open:** the external ID (`{IndCat}-{CongregationCode}-…`) and the
+  ZipGrade CSV export — resolve the open question first.
 
 ## 14. (F8) Nametag PDF generation
 
@@ -285,6 +293,15 @@ for testers, optionally a photo. Build on the existing Typst pipeline (`:generat
 markup builders, server-side `typst` compile) like the other PDF endpoints.
 
 - **Dependencies:** 13 (tester IDs), 7 (guests get nametags too).
+- **As built (2026-07):** `GET /admin/registrations/nametags.pdf?siteId=` — authenticated
+  (names include minors', so deliberately NOT a public `/generate` link) and gated like the
+  rest of the desk (event-wide REGISTRATION_MANAGE + registration feature flag). 4×3in
+  badges, six per letter page with dashed cut guides (`nametagsTypst` in `:generation`);
+  each badge shows event+site heading, name, congregation, role at bottom-left (division
+  for testers, Volunteer/Guest for guests), and the tester ID big at bottom-right. Each
+  site starts a fresh page-stack; the desk's "Nametags PDF" button honors the site filter
+  and refreshes the desk so newly assigned tester IDs appear. Photos skipped — the app
+  stores none.
 
 ## 15. (F9) Housing / cabin assignments
 

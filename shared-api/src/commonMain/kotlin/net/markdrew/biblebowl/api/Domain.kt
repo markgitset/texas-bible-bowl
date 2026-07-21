@@ -189,19 +189,42 @@ val RegistrationDto.contestantCount: Int
         individuals.size + unassigned.size + awayMembers.size
 
 /**
- * Every t-shirt this registration orders, one [ShirtSize] per shirt: home team members,
- * individuals, unassigned contestants, and members away on combo teams (all registered and billed
- * here — visiting members on this registration's teams are excluded, exactly like
- * [contestantCount]), plus guests whose fee includes a shirt (under-3 guests get none). Each
- * roster/guest entry is one person, so a coach who also competes appears once, via their single
- * contestant entry.
+ * Every roster entry (tester) this registration owns: home team members, individuals, unassigned
+ * contestants, and members away on combo teams — the same population [contestantCount] counts.
+ * Visiting members on this registration's teams are excluded: their own congregation owns them.
+ */
+val RegistrationDto.ownEntries: List<RosterEntryDto>
+    get() = teams.flatMap { team -> team.members.filter { it.congregationId == null } } +
+        individuals + unassigned + awayMembers.map { it.entry }
+
+/**
+ * Every t-shirt this registration orders, one [ShirtSize] per shirt: every roster entry it owns
+ * (see [ownEntries] — a combo member's shirt counts under their own congregation), plus guests
+ * whose fee includes a shirt (under-3 guests get none). Each roster/guest entry is one person, so
+ * a coach who also competes appears once, via their single contestant entry.
  */
 val RegistrationDto.shirtSizes: List<ShirtSize>
-    get() = teams.flatMap { team -> team.members.filter { it.congregationId == null } }.map { it.shirtSize } +
-        individuals.map { it.shirtSize } +
-        unassigned.map { it.shirtSize } +
-        awayMembers.map { it.entry.shirtSize } +
-        guests.mapNotNull { it.shirtSize }
+    get() = ownEntries.map { it.shirtSize } + guests.mapNotNull { it.shirtSize }
+
+/**
+ * The tester-ID assignments a season's registrations still need: sequential per event site
+ * (matching the workbook, whose ZipGrade IDs restarted at each site), continuing after the
+ * highest ID already assigned at that site so existing assignments never change. New testers are
+ * numbered in (congregation, contestant name) order for a stable, predictable sequence. A combo
+ * member is numbered with their own congregation — [ownEntries] — at its site. Returns roster
+ * entry id → tester id for exactly the entries that have none yet.
+ */
+fun missingTesterIds(season: SeasonDto, registrations: List<RegistrationDto>): Map<String, Int> =
+    registrations
+        .groupBy { season.siteFor(it.siteId)?.id }
+        .values.flatMap { siteRegs ->
+            val entries = siteRegs.flatMap { reg -> reg.ownEntries.map { reg to it } }
+            var next = entries.mapNotNull { (_, entry) -> entry.testerId }.maxOrNull() ?: 0
+            entries.filter { (_, entry) -> entry.testerId == null }
+                .sortedWith(compareBy({ (reg, _) -> reg.congregation.name.lowercase() }, { (_, e) -> e.name.lowercase() }))
+                .map { (_, entry) -> entry.id to ++next }
+        }
+        .toMap()
 
 // ---------------------------------------------------------------------------
 // Age-tiered fees (the 2026 schedule: 9+ full fee, 3–8 child fee, under 3 free)

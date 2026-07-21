@@ -26,15 +26,19 @@ import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.clear
 import net.markdrew.biblebowl.web.csvText
+import net.markdrew.biblebowl.web.downloadBlob
 import net.markdrew.biblebowl.web.downloadCsv
 import net.markdrew.biblebowl.web.errorLine
 import net.markdrew.biblebowl.web.onClick
 import net.markdrew.biblebowl.web.spinner
 import org.w3c.dom.Element
+import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLOptionElement
 import org.w3c.dom.HTMLSelectElement
+import org.w3c.files.Blob
+import org.w3c.files.BlobPropertyBag
 
 /**
  * Registration desk (docs/gui-redesign.md §5E): every congregation's current-season registration —
@@ -89,6 +93,11 @@ object AdminRegistrationsScreen {
             child("button", "btn btn-outline-primary btn-sm", "Download CSV") {
                 setAttribute("type", "button")
                 onClick { downloadCsv("tbb-registrations-${desk.seasonYear}.csv", deskCsv(desk)) }
+            }
+            child("button", "btn btn-outline-primary btn-sm", "Nametags PDF") {
+                setAttribute("type", "button")
+                setAttribute("title", "Printable per-site nametags; assigns tester IDs on first run")
+                onClick { downloadNametags(this, desk.seasonYear) }
             }
         }
         message?.let { content.errorLine(it) }
@@ -436,6 +445,7 @@ object AdminRegistrationsScreen {
                 reg.individuals.forEach { entry ->
                     parent.child("div", "small") {
                         append("${entry.name} — shirt ${entry.shirtSize.name}")
+                        entry.testerId?.let { append(", tester #$it") }
                         if (entry.tribeLeaderWilling) child("span", "badge text-bg-success ms-1", "tribe leader")
                     }
                 }
@@ -684,6 +694,7 @@ object AdminRegistrationsScreen {
             val division = member.division(Session.season)?.displayName ?: "division unknown"
             parent.child("div", "small") {
                 append("${member.name} — $division, shirt ${member.shirtSize.name}")
+                member.testerId?.let { append(", tester #$it") }
                 // A visiting (combo-team) member — registered and paid for by their own congregation.
                 member.congregationName?.let { child("span", "badge text-bg-info ms-1", "from $it") }
             }
@@ -744,5 +755,30 @@ object AdminRegistrationsScreen {
             contact.email.takeIf { it.isNotBlank() },
             contact.preference?.let { "prefers ${it.displayName.lowercase()}" },
         ).joinToString(" · ")
+    }
+
+    /**
+     * Fetches the nametags PDF (item 14, F8) honoring the site filter \u2014 an authenticated fetch,
+     * not a public /generate link, because attendee names include minors' \u2014 then refreshes the
+     * desk: generating assigns any missing tester IDs, which the roster detail shows.
+     */
+    private fun downloadNametags(button: Element, seasonYear: String) {
+        (button as? HTMLButtonElement)?.disabled = true
+        message = null
+        Shell.scope.launch {
+            try {
+                val bytes = Session.api.nametagsPdf(siteFilter)
+                val site = siteFilter?.let { Session.season.siteFor(it) }
+                val suffix = site?.let { "-" + it.name.lowercase().replace(Regex("[^a-z0-9]+"), "-") } ?: ""
+                downloadBlob(
+                    Blob(arrayOf<dynamic>(bytes), BlobPropertyBag(type = "application/pdf")),
+                    "tbb-nametags-$seasonYear$suffix.pdf",
+                )
+                data = Session.api.registrationDesk()
+            } catch (e: Throwable) {
+                message = "Could not generate nametags: ${e.message}"
+            }
+            renderContent()
+        }
     }
 }

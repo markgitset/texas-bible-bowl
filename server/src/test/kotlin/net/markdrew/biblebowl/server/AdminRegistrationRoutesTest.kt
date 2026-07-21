@@ -11,6 +11,7 @@ import io.ktor.client.request.put
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.readRawBytes
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -34,6 +35,7 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.SetPaidRequest
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.server.data.DEFAULT_SEASON
@@ -45,6 +47,7 @@ import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
+import net.markdrew.biblebowl.server.typst.TypstCompiler
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -286,6 +289,62 @@ class AdminRegistrationRoutesTest {
         // He's no longer offered as a candidate on the desk.
         val desk2: RegistrationDeskResponse = api.get("/admin/registrations") { asRegistrar() }.body()
         assertTrue(desk2.rows.single { it.congregation.id == cong.id }.returningCandidates.isEmpty())
+    }
+
+    @Test
+    fun nametagsAssignStableTesterIdsAndAreEventWideGated() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+
+        val (coach, cong) = api.coachWithCongregation("coach@tbb.org", "Tag Church", memberCount = 2)
+        // A guest attends too — they get a nametag but never a tester ID.
+        api.post("/registration/${cong.id}/guests") {
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+            setBody(UpsertGuestRequest("Helpful Aunt", ShirtSize.AM, gender = Gender.FEMALE))
+        }
+
+        // The coach's congregation-scoped grant isn't enough.
+        assertEquals(
+            HttpStatusCode.Forbidden,
+            api.get("/admin/registrations/nametags.pdf") {
+                header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+            }.status,
+        )
+
+        if (!TypstCompiler.isAvailable) { println("typst not on PATH — skipping the compile half"); return@testApplication }
+
+        val admin = api.loginSeededAdmin(users)
+        val response = api.get("/admin/registrations/nametags.pdf") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+        }
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals("%PDF", response.readRawBytes().decodeToString(0, 4), "responds with a real PDF")
+
+        // Generating assigned sequential tester IDs, visible on the desk.
+        val desk: RegistrationDeskResponse = api.get("/admin/registrations") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+        }.body()
+        val members = assertNotNull(desk.rows.single().registration).teams.single().members
+        assertEquals(setOf(1, 2), members.mapNotNull { it.testerId }.toSet())
+
+        // A later addition extends the sequence; existing IDs never change.
+        val before = members.associate { it.name to it.testerId }
+        api.post("/registration/teams/${assertNotNull(desk.rows.single().registration).teams.single().id}/members") {
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+            setBody(UpsertRosterEntryRequest("Aaron Added", birthdate = "2013-06-01", shirtSize = ShirtSize.YM, gender = Gender.MALE))
+        }
+        api.get("/admin/registrations/nametags.pdf") { header(HttpHeaders.Authorization, "Bearer ${admin.token}") }
+        val after = api.get("/admin/registrations") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+        }.body<RegistrationDeskResponse>().rows.single().registration!!.teams.single().members
+        assertEquals(3, after.single { it.name == "Aaron Added" }.testerId, "new tester extends the sequence")
+        before.forEach { (name, id) ->
+            assertEquals(id, after.single { it.name == name }.testerId, "$name keeps their ID")
+        }
     }
 
     @Test
