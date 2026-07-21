@@ -33,7 +33,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 5 | C1 | Combo (cross-congregation) teams | done |
 | 6 | F6 | Event locations (multi-site seasons) | done |
 | 7 | F1 | Guests & attendee types | done |
-| 8 | F2 | Volunteer positions & tribe-leader willingness | not started |
+| 8 | F2 | Volunteer positions & tribe-leader willingness | done |
 | 9 | F3 | Adult contact info & communication preference | not started |
 | 10 | F5 | Age-tiered fee schedule | not started |
 | 11 | F11 | Registration counts dashboard | not started |
@@ -177,6 +177,15 @@ Leader" flag, then works from a `Volunteers` tab grouped by position.
 
 - **Change:** multi-select positions + tribe-leader checkbox on adult attendees (coaches
   and guests); admin view grouped by position per site.
+- **Rule as refined (Mark, 2026-07-21):** any adult can be a tribe leader, but only
+  non-contestant adults (adult guests) can hold volunteer positions (grader etc.).
+- **As built (2026-07):** `SeasonDto.volunteerPositions` (season-configurable in Season
+  settings, comma-separated; defaults to the 2026 list) drives position checkboxes +
+  tribe-leader checkbox on age-9+ guests in the coach flow; child-tier guests get both
+  cleared server-side, and off-list positions are rejected. Individual (adult) contestants
+  carry only `tribeLeaderWilling`. The desk gains a Volunteers section (grouped by
+  position, plus willing tribe leaders from guests and adult individuals) that respects
+  the site filter, and badges positions/tribe-leader in the roster detail.
 - **Dependencies:** 7 (adult guests exist). Feeds 16 (tribe leaders drawn from the willing).
 
 ## 9. (F3) Adult contact info & communication preference

@@ -928,4 +928,71 @@ class RegistrationRoutesTest {
         assertEquals(listOf("Betsy"), pulledBack.unassigned.map { it.name })
         assertTrue(pulledBack.awayMembers.isEmpty())
     }
+
+    @Test
+    fun volunteerPositionsAndTribeLeadersRoundTrip() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason.copy(priceVolunteerCents = 4000)))
+        }
+        val api = jsonClient()
+        val coach = api.signUp("coach@tbb.org", "Carol Coach")
+        fun io.ktor.client.request.HttpRequestBuilder.asCoach() =
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+        val cong: CongregationDto = api.post("/congregations") {
+            asCoach(); setBody(congregationRequest("Volunteer Church", "Tyler"))
+        }.body()
+
+        // An adult guest signs up for positions (from the season's list) and to lead a tribe.
+        val reg: RegistrationDto = api.post("/registration/${cong.id}/guests") {
+            asCoach()
+            setBody(UpsertGuestRequest(
+                "Aunt Vol", ShirtSize.AM, gender = Gender.FEMALE,
+                positions = listOf("Test Grader", "Kitchen Helper"), tribeLeaderWilling = true,
+            ))
+        }.body()
+        val guest = reg.guests.single()
+        assertEquals(listOf("Test Grader", "Kitchen Helper"), guest.positions)
+        assertTrue(guest.tribeLeaderWilling)
+
+        // A position outside the season's configured list is a 400 (stale client).
+        val unknown = api.post("/registration/${cong.id}/guests") {
+            asCoach()
+            setBody(UpsertGuestRequest(
+                "Rogue", ShirtSize.AM, gender = Gender.MALE, positions = listOf("Lion Tamer"),
+            ))
+        }
+        assertEquals(HttpStatusCode.BadRequest, unknown.status)
+        assertEquals("invalid_position", unknown.body<ApiError>().code)
+
+        // Child-tier guests can't volunteer or lead — stray flags are cleared, not rejected.
+        val withChild: RegistrationDto = api.post("/registration/${cong.id}/guests") {
+            asCoach()
+            setBody(UpsertGuestRequest(
+                "Little Sib", ShirtSize.YS, GuestAgeTier.AGE_3_TO_8, Gender.MALE,
+                positions = listOf("Test Grader"), tribeLeaderWilling = true,
+            ))
+        }.body()
+        val child = withChild.guests.single { it.name == "Little Sib" }
+        assertTrue(child.positions.isEmpty())
+        assertFalse(child.tribeLeaderWilling)
+
+        // Any adult can lead a tribe — an individual (adult) contestant carries the flag too.
+        val withIndividual: RegistrationDto = api.post("/registration/${cong.id}/individuals") {
+            asCoach()
+            setBody(UpsertIndividualRequest("Adult Ace", ShirtSize.AL, Gender.MALE, tribeLeaderWilling = true))
+        }.body()
+        assertTrue(withIndividual.individuals.single().tribeLeaderWilling)
+
+        // Editing keeps the volunteer answers editable (drop a position, keep leading).
+        val edited: RegistrationDto = api.put("/registration/guests/${guest.id}") {
+            asCoach()
+            setBody(UpsertGuestRequest(
+                "Aunt Vol", ShirtSize.AM, gender = Gender.FEMALE,
+                positions = listOf("Test Grader"), tribeLeaderWilling = true,
+            ))
+        }.body()
+        assertEquals(listOf("Test Grader"), edited.guests.single { it.name == "Aunt Vol" }.positions)
+    }
 }

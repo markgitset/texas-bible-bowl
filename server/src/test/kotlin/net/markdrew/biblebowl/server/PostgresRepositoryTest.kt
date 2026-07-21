@@ -291,11 +291,24 @@ class PostgresRepositoryTest {
             coach.id,
         )).congregation
 
-        // Adding a guest creates the draft registration, like teams and individuals do.
+        // Adding a guest creates the draft registration, like teams and individuals do. Adult
+        // guests carry their volunteer positions and tribe-leader willingness (backlog F2).
         val volunteer = registrations.addGuest(
-            cong.id, "2027", UpsertGuestRequest(" Aunt Vol ", ShirtSize.AM, gender = Gender.FEMALE))
+            cong.id, "2027",
+            UpsertGuestRequest(
+                " Aunt Vol ", ShirtSize.AM, gender = Gender.FEMALE,
+                positions = listOf("Test Grader", "Kitchen Helper"), tribeLeaderWilling = true,
+            ),
+        )
         assertEquals("Aunt Vol", volunteer.name)
         assertEquals(GuestAgeTier.AGE_9_PLUS, volunteer.ageTier)
+        assertEquals(listOf("Test Grader", "Kitchen Helper"), volunteer.positions)
+        assertTrue(volunteer.tribeLeaderWilling)
+        assertEquals(
+            volunteer,
+            assertNotNull(registrations.find(cong.id, "2027")).guests.single { it.id == volunteer.id },
+            "positions and tribe-leader flag survive the read back",
+        )
         val child = registrations.addGuest(
             cong.id, "2027", UpsertGuestRequest("Little Sib", ShirtSize.YS, GuestAgeTier.AGE_3_TO_8, Gender.MALE))
         val baby = registrations.addGuest(
@@ -316,6 +329,14 @@ class PostgresRepositoryTest {
         assertTrue(registrations.deleteGuest(volunteer.id))
         assertTrue(!registrations.deleteGuest(volunteer.id))
         assertEquals(listOf(baby, edited), assertNotNull(registrations.find(cong.id, "2027")).guests)
+
+        // Any adult can lead a tribe — the flag round-trips on individual (adult) contestants too.
+        val individual = registrations.addIndividual(
+            cong.id, "2027", UpsertIndividualRequest("Adult Ace", ShirtSize.AL, Gender.MALE, tribeLeaderWilling = true))
+        assertTrue(
+            assertNotNull(registrations.find(cong.id, "2027"))
+                .individuals.single { it.id == individual.id }.tribeLeaderWilling,
+        )
     }
 
     @Test

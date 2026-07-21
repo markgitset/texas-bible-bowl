@@ -234,10 +234,19 @@ data class SeasonDto(
      * (see [RegistrationDto.siteId]) and the event-ops views break down per site.
      */
     val sites: List<EventSiteDto> = emptyList(),
+    /**
+     * The volunteer positions adult (age-9+) guests may sign up for during registration, in
+     * display order — season-configurable in Season settings. Defaults to the 2026 list.
+     */
+    val volunteerPositions: List<String> = DEFAULT_VOLUNTEER_POSITIONS,
     val tbbScholarshipAmount: String,
     val maryOrbisonAmount: String,
     val paulHendricksonAmount: String,
 )
+
+/** The 2026 event's volunteer-position list — the default until a season customizes its own. */
+val DEFAULT_VOLUNTEER_POSITIONS: List<String> =
+    listOf("Sports Assistant", "Test Monitor", "Test Grader", "Kitchen Helper")
 
 // ---------------------------------------------------------------------------
 // Registration (congregations, teams, rosters) — docs/gui-redesign.md §5E
@@ -347,6 +356,11 @@ data class RosterEntryDto(
     val congregationId: String? = null,
     /** Display name matching [congregationId]; null for a home member. */
     val congregationName: String? = null,
+    /**
+     * Willing to serve as a tribe leader. Meaningful only for individual (adult) contestants —
+     * any adult can lead a tribe, contestant or not; always false on youth roster entries.
+     */
+    val tribeLeaderWilling: Boolean = false,
 )
 
 /**
@@ -415,6 +429,8 @@ data class UpsertIndividualRequest(
     val name: String,
     val shirtSize: ShirtSize,
     val gender: Gender,
+    /** Willing to serve as a tribe leader (any adult can, contestant or not). */
+    val tribeLeaderWilling: Boolean = false,
 )
 
 /**
@@ -432,6 +448,11 @@ enum class GuestAgeTier(val displayName: String) {
  * register and pay like everyone else, but they are never placed on a team, compete in no
  * division, and get no claim code. [ageTier] picks the fee bracket (see [GuestAgeTier]). The
  * age-9+ and 3–8 fees include a t-shirt, hence [shirtSize].
+ *
+ * Adult (age-9+ tier) guests are the event's volunteer pool: [positions] holds the volunteer
+ * positions they signed up for (drawn from [SeasonDto.volunteerPositions], select all that
+ * apply) and [tribeLeaderWilling] marks willingness to lead a tribe (feeds tribe assignment).
+ * Both are always empty/false for the child tiers.
  */
 @Serializable
 data class GuestDto(
@@ -442,11 +463,17 @@ data class GuestDto(
     val ageTier: GuestAgeTier = GuestAgeTier.AGE_9_PLUS,
     /** Null only on guests created before gender was collected. */
     val gender: Gender? = null,
+    /** Volunteer positions (from [SeasonDto.volunteerPositions]); age-9+ guests only. */
+    val positions: List<String> = emptyList(),
+    /** Willing to serve as a tribe leader; age-9+ guests only. */
+    val tribeLeaderWilling: Boolean = false,
 )
 
 /**
  * Adds or edits a registered guest (see [GuestDto]). [gender] is required (nullable only for a
  * friendlier server-side error); [shirtSize] is required except for under-3s, who get no shirt.
+ * [positions] must come from the season's volunteer-position list; the server clears positions
+ * and [tribeLeaderWilling] for the child tiers.
  */
 @Serializable
 data class UpsertGuestRequest(
@@ -454,6 +481,8 @@ data class UpsertGuestRequest(
     val shirtSize: ShirtSize? = null,
     val ageTier: GuestAgeTier = GuestAgeTier.AGE_9_PLUS,
     val gender: Gender? = null,
+    val positions: List<String> = emptyList(),
+    val tribeLeaderWilling: Boolean = false,
 )
 
 /**

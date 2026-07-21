@@ -157,6 +157,8 @@ object IndividualsTable : Table("individual_contestants") {
     val shirtSize = varchar("shirt_size", 8)
     val claimCode = varchar("claim_code", 12).uniqueIndex()
     val ownerUserId = varchar("owner_user_id", 36).references(UsersTable.id).nullable()
+    // Willing to serve as a tribe leader — any adult can, contestant or not (per-season answer).
+    val tribeLeader = bool("tribe_leader").default(false)
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -175,6 +177,10 @@ object RegistrationGuestsTable : Table("registration_guests") {
     val ageTier = varchar("age_tier", 12).default("AGE_9_PLUS")
     // Null only on guests created before gender was collected.
     val gender = varchar("gender", 8).nullable()
+    // Volunteer positions (JSON array of strings from the season's list); age-9+ guests only.
+    val positions = text("positions").default("[]")
+    // Willing to serve as a tribe leader; age-9+ guests only.
+    val tribeLeader = bool("tribe_leader").default(false)
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -364,6 +370,11 @@ object DatabaseFactory {
                 END ${'$'}${'$'}
                 """.trimIndent()
             )
+            // Volunteer positions + tribe-leader willingness (2026-07, registration backlog F2):
+            // positions on adult guests; any adult (guest or individual contestant) may lead a tribe.
+            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS positions TEXT NOT NULL DEFAULT '[]'")
+            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS tribe_leader BOOLEAN NOT NULL DEFAULT FALSE")
+            exec("ALTER TABLE individual_contestants ADD COLUMN IF NOT EXISTS tribe_leader BOOLEAN NOT NULL DEFAULT FALSE")
         }
         return db
     }
