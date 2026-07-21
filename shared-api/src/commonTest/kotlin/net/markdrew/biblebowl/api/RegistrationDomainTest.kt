@@ -123,11 +123,43 @@ class RegistrationDomainTest {
     }
 
     @Test
-    fun registrationTotalUsesTheContestantFee() {
-        val season = FALLBACK_SEASON.copy(priceContestantCents = 8500)
-        assertEquals(25500, registrationTotalCents(season, 3))
-        assertEquals(0, registrationTotalCents(season, 0))
-        assertNull(registrationTotalCents(FALLBACK_SEASON, 3), "TBD fee → no total")
+    fun registrationTotalBillsContestantsAndGuests() {
+        val season = FALLBACK_SEASON.copy(
+            priceContestantCents = 8500,
+            priceVolunteerCents = 4000,
+            priceChildCents = 2500,
+        )
+        val threeContestants = RegistrationDto(
+            id = "r",
+            congregation = CongregationDto("c", "First Church", "Austin"),
+            seasonYear = "2027",
+            status = RegistrationStatus.DRAFT,
+            teams = listOf(TeamDto("t", "Team A", listOf(entry("2018-05-01"), entry("2013-05-01")))),
+            individuals = listOf(entry(null)),
+        )
+        assertEquals(25500, registrationTotalCents(season, threeContestants))
+        assertEquals(0, registrationTotalCents(season, threeContestants.copy(teams = emptyList(), individuals = emptyList())))
+        assertNull(registrationTotalCents(FALLBACK_SEASON, threeContestants), "TBD contestant fee → no total")
+
+        val guests = listOf(
+            GuestDto("g1", "Helpful Aunt", ShirtSize.AM),
+            GuestDto("g2", "Volunteer Uncle", ShirtSize.AL),
+            GuestDto("g3", "Little Sibling", ShirtSize.YS, child = true),
+        )
+        assertEquals(
+            25500 + 2 * 4000 + 2500,
+            registrationTotalCents(season, threeContestants.copy(guests = guests)),
+            "adult guests at the volunteer fee, child guests at the child fee",
+        )
+        assertNull(
+            registrationTotalCents(season.copy(priceChildCents = null), threeContestants.copy(guests = guests)),
+            "TBD fee for a guest bracket in use → no total",
+        )
+        assertEquals(
+            25500,
+            registrationTotalCents(season.copy(priceVolunteerCents = null, priceChildCents = null), threeContestants),
+            "TBD guest fees don't block a guest-less registration",
+        )
     }
 
     @Test

@@ -354,6 +354,28 @@ data class UpsertIndividualRequest(
 )
 
 /**
+ * A registered guest — an attendee who is not a contestant (most are volunteers). Guests must
+ * register and pay like everyone else, but they are never placed on a team, compete in no
+ * division, and get no claim code. [child] marks the child-guest fee bracket (ages 3–8; adults
+ * and volunteers pay the volunteer fee). Both fees include a t-shirt, hence [shirtSize].
+ */
+@Serializable
+data class GuestDto(
+    val id: String,
+    val name: String,
+    val shirtSize: ShirtSize,
+    val child: Boolean = false,
+)
+
+/** Adds or edits a registered guest (see [GuestDto]). */
+@Serializable
+data class UpsertGuestRequest(
+    val name: String,
+    val shirtSize: ShirtSize,
+    val child: Boolean = false,
+)
+
+/**
  * A durable contestant who competed for this congregation before but has no roster entry yet this
  * season — a returning *candidate*. Team assignments are per-season, so a new event year starts with
  * none; candidates are surfaced (not billed) until the coach enrolls one, which creates that
@@ -402,7 +424,9 @@ data class RegistrationDto(
      * a registrar places any leftovers before the event. Counted as contestants for fees.
      */
     val unassigned: List<RosterEntryDto> = emptyList(),
-    /** Computed contestant total in cents, or null while fees are TBD. */
+    /** Registered guests (mostly volunteers) — they pay too, but aren't contestants (see [GuestDto]). */
+    val guests: List<GuestDto> = emptyList(),
+    /** Computed total in cents (contestants + guests), or null while a needed fee is TBD. */
     val totalCents: Int? = null,
     /** ISO-8601 instant of the last submit, or null while a draft. */
     val submittedAt: String? = null,

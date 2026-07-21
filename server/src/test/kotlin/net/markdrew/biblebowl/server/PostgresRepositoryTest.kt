@@ -2,11 +2,13 @@ package net.markdrew.biblebowl.server
 
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
+import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
+import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.model.Round
@@ -26,6 +28,7 @@ import net.markdrew.biblebowl.server.data.PostgresScoreRepository
 import net.markdrew.biblebowl.server.data.PostgresUserRepository
 import net.markdrew.biblebowl.server.data.QuestionVotesTable
 import net.markdrew.biblebowl.server.data.QuestionsTable
+import net.markdrew.biblebowl.server.data.RegistrationGuestsTable
 import net.markdrew.biblebowl.server.data.RegistrationsTable
 import net.markdrew.biblebowl.server.data.RoleGrantsTable
 import net.markdrew.biblebowl.server.data.ScoreReleasesTable
@@ -72,6 +75,7 @@ class PostgresRepositoryTest {
             ScoreReleasesTable.deleteAll()
             TeamMembersTable.deleteAll()
             IndividualsTable.deleteAll()
+            RegistrationGuestsTable.deleteAll()
             ContestantsTable.deleteAll() // after team_members + individuals (both FK-reference it)
             TeamsTable.deleteAll()
             RegistrationsTable.deleteAll()
@@ -246,6 +250,41 @@ class PostgresRepositoryTest {
         assertTrue(registrations.entryIdsOwnedBy(other.id).isEmpty())
         // The claimed flag round-trips through the full registration read.
         assertTrue(registrations.find(cong.id, "2027")!!.teams.single().members.single().claimed)
+    }
+
+    @Test
+    fun guestsRoundTripOnTheRegistration() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val db = DatabaseFactory.connect()
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val coach = users.create("gcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Guest Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+
+        // Adding a guest creates the draft registration, like teams and individuals do.
+        val volunteer = registrations.addGuest(cong.id, "2027", UpsertGuestRequest(" Aunt Vol ", ShirtSize.AM))
+        assertEquals("Aunt Vol", volunteer.name)
+        val child = registrations.addGuest(cong.id, "2027", UpsertGuestRequest("Little Sib", ShirtSize.YS, child = true))
+        assertEquals(cong.id, registrations.congregationIdForGuest(volunteer.id))
+        assertNull(registrations.congregationIdForGuest("nope"))
+
+        val reg = assertNotNull(registrations.find(cong.id, "2027"))
+        assertEquals(listOf(volunteer, child), reg.guests, "name-sorted")
+
+        val edited = assertNotNull(
+            registrations.updateGuest(child.id, UpsertGuestRequest("Bigger Sib", ShirtSize.YM, child = false)))
+        assertEquals(GuestDto(child.id, "Bigger Sib", ShirtSize.YM, child = false), edited)
+        assertNull(registrations.updateGuest("nope", UpsertGuestRequest("X", ShirtSize.AM)))
+
+        assertTrue(registrations.deleteGuest(volunteer.id))
+        assertTrue(!registrations.deleteGuest(volunteer.id))
+        assertEquals(listOf(edited), assertNotNull(registrations.find(cong.id, "2027")).guests)
     }
 
     @Test

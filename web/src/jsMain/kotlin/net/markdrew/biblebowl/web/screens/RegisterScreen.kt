@@ -5,6 +5,7 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
+import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
@@ -15,6 +16,7 @@ import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
+import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.contestantCount
@@ -90,11 +92,14 @@ object RegisterScreen {
     /** Team members plus individual (adult) contestants. */
     private val contestants: Int get() = registration?.contestantCount ?: 0
 
+    /** Registered guests (mostly volunteers) — they pay too, but aren't contestants. */
+    private val guests: List<GuestDto> get() = registration?.guests ?: emptyList()
+
     private fun firstIncompleteStep(): Int = when {
         congregation == null -> 1
         registration?.teams.isNullOrEmpty() && registration?.individuals.isNullOrEmpty() &&
             registration?.unassigned.isNullOrEmpty() && loaded?.returningCandidates.isNullOrEmpty() -> 2
-        contestants == 0 -> 3
+        contestants == 0 && guests.isEmpty() -> 3
         registration?.unassigned.isNullOrEmpty() == false -> 3 // land on the roster to place them
         else -> 4
     }
@@ -102,11 +107,12 @@ object RegisterScreen {
     /**
      * The furthest step the current data supports (completed steps stay clickable). The roster step
      * is reachable without any teams: adults are added there as individuals, so an adults-only
-     * congregation never touches the teams step.
+     * congregation never touches the teams step. Guests count as registered people here too — a
+     * guest-only registration (e.g. all volunteers) can still be reviewed and submitted.
      */
     private fun maxReachableStep(): Int = when {
         congregation == null -> 1
-        contestants == 0 -> 3
+        contestants == 0 && guests.isEmpty() -> 3
         else -> STEPS
     }
 
@@ -525,21 +531,51 @@ object RegisterScreen {
         renderUnassignedCard(parent)
         renderReturningCard(parent)
         renderIndividualsCard(parent)
+        renderGuestsCard(parent)
 
         registration?.let { reg ->
             parent.child("div", "card section-card mb-3") {
                 child("div", "card-body py-2") {
                     child(
                         "p", "mb-0 fw-semibold",
-                        "Total: ${formatCents(reg.totalCents)}" +
-                            " ($contestants contestant${if (contestants == 1) "" else "s"} × " +
-                            "${formatCents(Session.season.priceContestantCents)}, t-shirts included)",
+                        "Total: ${formatCents(reg.totalCents)} (${totalBreakdown()}, t-shirts included)",
                     )
                     Session.season.feesNote.takeIf { it.isNotEmpty() }?.let { child("p", "text-muted small mb-0", it) }
                 }
             }
         }
-        if (contestants > 0) parent.nextButton("Continue to review", 4)
+        if (contestants > 0 || guests.isNotEmpty()) parent.nextButton("Continue to review", 4)
+    }
+
+    /** "2 × $40 + 1 × $25" — the guests row's fee column (adults at the volunteer fee, children at the child fee). */
+    private fun guestFeeMath(guests: List<GuestDto>): String {
+        val vol = Session.season.priceVolunteerCents
+        val kid = Session.season.priceChildCents
+        val adults = guests.count { !it.child }
+        val children = guests.size - adults
+        val parts = buildList {
+            if (adults > 0) add("$adults × ${formatCents(vol)}")
+            if (children > 0) add("$children × ${formatCents(kid)}")
+        }
+        val total = if ((adults > 0 && vol == null) || (children > 0 && kid == null)) null
+            else adults * (vol ?: 0) + children * (kid ?: 0)
+        return "${parts.joinToString(" + ")} = ${formatCents(total)}"
+    }
+
+    /** "2 contestants × $85 + 1 adult guest × $40 + 1 child guest × $25" — only the parts in use. */
+    private fun totalBreakdown(): String {
+        val season = Session.season
+        val adultGuests = guests.count { !it.child }
+        val childGuests = guests.size - adultGuests
+        return buildList {
+            add("$contestants contestant${if (contestants == 1) "" else "s"} × ${formatCents(season.priceContestantCents)}")
+            if (adultGuests > 0) {
+                add("$adultGuests adult guest${if (adultGuests == 1) "" else "s"} × ${formatCents(season.priceVolunteerCents)}")
+            }
+            if (childGuests > 0) {
+                add("$childGuests child guest${if (childGuests == 1) "" else "s"} × ${formatCents(season.priceChildCents)}")
+            }
+        }.joinToString(" + ")
     }
 
     /** Eligible youth not on a team (e.g. their team was deleted) — assign each, or a registrar will. */
@@ -707,6 +743,85 @@ object RegisterScreen {
                 }
             }
         }
+    }
+
+    /** Guests (mostly volunteers) register and pay too, but aren't contestants and join no team. */
+    private fun renderGuestsCard(parent: Element) {
+        val cong = congregation ?: return
+        val season = Session.season
+        parent.child("div", "card section-card mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title", "Guests & volunteers")
+                child("p", "text-muted small",
+                    "Everyone attending must register and pay, including guests and volunteers — " +
+                        "adults ${formatCents(season.priceVolunteerCents)}, children ages 3–8 " +
+                        "${formatCents(season.priceChildCents)}, t-shirt included. Guests aren't " +
+                        "contestants and aren't placed on a team.")
+                guests.forEach { guest ->
+                    child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
+                        val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
+                        name.value = guest.name
+                        name.disabled = !canEdit
+                        val shirt = shirtSelect(this, guest.shirtSize)
+                        shirt.disabled = !canEdit
+                        val childBox = childGuestCheck(this, guest.child)
+                        childBox.disabled = !canEdit
+                        val save = {
+                            if (name.value.isNotBlank()) {
+                                mutate {
+                                    Session.api.updateGuest(
+                                        guest.id,
+                                        UpsertGuestRequest(name.value, ShirtSize.valueOf(shirt.value), childBox.checked),
+                                    )
+                                }
+                            }
+                        }
+                        listOf<HTMLElement>(name, shirt, childBox).forEach { it.addEventListener("change", { save() }) }
+                        if (canEdit) {
+                            child("button", "btn btn-outline-danger btn-sm", "Remove") {
+                                setAttribute("type", "button")
+                                onClick { mutate { Session.api.deleteGuest(guest.id) } }
+                            }
+                        }
+                    }
+                }
+                if (canEdit) {
+                    child("form", "d-flex flex-wrap gap-2 mt-2") {
+                        val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
+                        name.setAttribute("placeholder", "Guest or volunteer name")
+                        val shirt = shirtSelect(this, ShirtSize.AM)
+                        val childBox = childGuestCheck(this, checked = false)
+                        child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
+                        addEventListener("submit", { event ->
+                            event.preventDefault()
+                            if (name.value.isBlank()) return@addEventListener
+                            mutate {
+                                Session.api.addGuest(
+                                    cong.id,
+                                    UpsertGuestRequest(name.value, ShirtSize.valueOf(shirt.value), childBox.checked),
+                                )
+                            }
+                        })
+                    }
+                }
+            }
+        }
+    }
+
+    private var childGuestSeq = 0
+
+    /** "Child (3–8)" checkbox — bills a guest at the child fee instead of the volunteer fee. */
+    private fun childGuestCheck(parent: Element, checked: Boolean): HTMLInputElement {
+        lateinit var box: HTMLInputElement
+        parent.child("div", "form-check align-self-center text-nowrap") {
+            setAttribute("title", "A child guest, ages 3–8 — pays the child fee")
+            box = child("input", "form-check-input") as HTMLInputElement
+            box.type = "checkbox"
+            box.checked = checked
+            box.id = "child-guest-${++childGuestSeq}"
+            child("label", "form-check-label", "Child (3–8)") { setAttribute("for", box.id) }
+        }
+        return box
     }
 
     private fun renderTeamRoster(parent: Element, team: TeamDto) {
@@ -937,10 +1052,22 @@ object RegisterScreen {
                                 child("td", "text-nowrap", feeMath(reg.individuals.size))
                             }
                         }
+                        if (reg.guests.isNotEmpty()) {
+                            child("tr") {
+                                child("td", text = "Guests")
+                                child("td", text = "—")
+                                child("td", text = reg.guests.joinToString {
+                                    it.name + if (it.child) " (child)" else ""
+                                })
+                                child("td", "text-nowrap", guestFeeMath(reg.guests))
+                            }
+                        }
                     }
                     child("tfoot") {
                         child("tr", "fw-semibold") {
-                            child("td", text = "Total due ($contestants contestant${if (contestants == 1) "" else "s"})") {
+                            val guestPart = reg.guests.size
+                                .takeIf { it > 0 }?.let { " + $it guest${if (it == 1) "" else "s"}" } ?: ""
+                            child("td", text = "Total due ($contestants contestant${if (contestants == 1) "" else "s"}$guestPart)") {
                                 setAttribute("colspan", "3")
                             }
                             child("td", "text-nowrap", formatCents(reg.totalCents))
@@ -949,8 +1076,10 @@ object RegisterScreen {
                 }
                 child(
                     "p", "text-muted small mb-1",
-                    "Fee per contestant: ${formatCents(price)} (one t-shirt included). Volunteers, guests, " +
-                        "and extra shirts are paid at the door.",
+                    "Fee per contestant: ${formatCents(price)}. Guests and volunteers: " +
+                        "${formatCents(Session.season.priceVolunteerCents)} (children 3–8: " +
+                        "${formatCents(Session.season.priceChildCents)}). One t-shirt included for " +
+                        "everyone; extra shirts are paid at the door.",
                 )
                 Session.season.feesNote.takeIf { it.isNotEmpty() }?.let { child("p", "text-muted small mb-0", it) }
             }

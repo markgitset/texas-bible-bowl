@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.server.data
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
+import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.congregationCodeCandidates
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
@@ -11,6 +12,7 @@ import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
+import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import org.jetbrains.exposed.v1.core.ResultRow
@@ -137,12 +139,17 @@ interface RegistrationRepository {
     fun addIndividual(congregationId: String, seasonYear: String, req: UpsertIndividualRequest): RosterEntryDto
     fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RosterEntryDto?
     fun deleteIndividual(individualId: String): Boolean
+    /** Adds a registered guest (paying non-contestant), creating the draft registration if needed. */
+    fun addGuest(congregationId: String, seasonYear: String, req: UpsertGuestRequest): GuestDto
+    fun updateGuest(guestId: String, req: UpsertGuestRequest): GuestDto?
+    fun deleteGuest(guestId: String): Boolean
     /** Marks the registration SUBMITTED (idempotent; re-submit refreshes the timestamp). */
     fun submit(congregationId: String, seasonYear: String): RegistrationDto?
     /** Scoping lookups: which congregation a team/member/individual belongs to (for permission checks). */
     fun congregationIdForTeam(teamId: String): String?
     fun congregationIdForMember(memberId: String): String?
     fun congregationIdForIndividual(individualId: String): String?
+    fun congregationIdForGuest(guestId: String): String?
     /** The durable contestant a roster entry belongs to; null for an unlinked legacy row. */
     fun contestantIdForMember(memberId: String): String?
     /**
@@ -280,6 +287,8 @@ class InMemoryRegistrationRepository(
     private val individualContestant = mutableMapOf<String, String>() // individual id -> contestant id
     private val individuals = mutableMapOf<String, RosterEntryDto>()
     private val individualReg = mutableMapOf<String, String>()
+    private val guests = mutableMapOf<String, GuestDto>()
+    private val guestReg = mutableMapOf<String, String>()
     private val usedCodes = mutableSetOf<String>()
     private val entryOwner = mutableMapOf<String, String>()
     private val lock = Any()
@@ -501,6 +510,26 @@ class InMemoryRegistrationRepository(
         true
     }
 
+    override fun addGuest(congregationId: String, seasonYear: String, req: UpsertGuestRequest): GuestDto =
+        synchronized(lock) {
+            val reg = regFor(congregationId, seasonYear)
+            val guest = GuestDto(UUID.randomUUID().toString(), req.name.trim(), req.shirtSize, req.child)
+            guests[guest.id] = guest
+            guestReg[guest.id] = reg.id
+            guest
+        }
+
+    override fun updateGuest(guestId: String, req: UpsertGuestRequest): GuestDto? = synchronized(lock) {
+        val guest = guests[guestId] ?: return null
+        guests[guestId] = guest.copy(name = req.name.trim(), shirtSize = req.shirtSize, child = req.child)
+        guests[guestId]
+    }
+
+    override fun deleteGuest(guestId: String): Boolean = synchronized(lock) {
+        guestReg.remove(guestId)
+        guests.remove(guestId) != null
+    }
+
     override fun submit(congregationId: String, seasonYear: String): RegistrationDto? = synchronized(lock) {
         val reg = regs["$congregationId|$seasonYear"] ?: return null
         reg.status = RegistrationStatus.SUBMITTED
@@ -519,6 +548,10 @@ class InMemoryRegistrationRepository(
 
     override fun congregationIdForIndividual(individualId: String): String? = synchronized(lock) {
         individualReg[individualId]?.let { regId -> regs.values.firstOrNull { it.id == regId }?.congregationId }
+    }
+
+    override fun congregationIdForGuest(guestId: String): String? = synchronized(lock) {
+        guestReg[guestId]?.let { regId -> regs.values.firstOrNull { it.id == regId }?.congregationId }
     }
 
     override fun contestantIdForMember(memberId: String): String? = synchronized(lock) {
@@ -678,6 +711,9 @@ class InMemoryRegistrationRepository(
         unassigned = members.keys
             .filter { memberReg[it] == id && it !in memberTeam }
             .mapNotNull { memberDto(it) }
+            .sortedBy { it.name.lowercase() },
+        guests = guests.values
+            .filter { guestReg[it.id] == id }
             .sortedBy { it.name.lowercase() },
         submittedAt = submittedAtMs?.let { Instant.ofEpochMilli(it).toString() },
         paidAt = paidAtMs?.let { Instant.ofEpochMilli(it).toString() },
@@ -1085,6 +1121,35 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         deleted
     }
 
+    override fun addGuest(congregationId: String, seasonYear: String, req: UpsertGuestRequest): GuestDto =
+        transaction(db) {
+            val regId = regIdFor(congregationId, seasonYear)
+            val guestId = UUID.randomUUID().toString()
+            RegistrationGuestsTable.insert {
+                it[id] = guestId
+                it[registrationId] = regId
+                it[name] = req.name.trim()
+                it[shirtSize] = req.shirtSize.name
+                it[isChild] = req.child
+            }
+            touch(regId)
+            GuestDto(guestId, req.name.trim(), req.shirtSize, req.child)
+        }
+
+    override fun updateGuest(guestId: String, req: UpsertGuestRequest): GuestDto? = transaction(db) {
+        val updated = RegistrationGuestsTable.update({ RegistrationGuestsTable.id eq guestId }) {
+            it[name] = req.name.trim()
+            it[shirtSize] = req.shirtSize.name
+            it[isChild] = req.child
+        }
+        if (updated == 0) null
+        else RegistrationGuestsTable.selectAll().where { RegistrationGuestsTable.id eq guestId }.single().toGuest()
+    }
+
+    override fun deleteGuest(guestId: String): Boolean = transaction(db) {
+        RegistrationGuestsTable.deleteWhere { RegistrationGuestsTable.id eq guestId } > 0
+    }
+
     override fun submit(congregationId: String, seasonYear: String): RegistrationDto? = transaction(db) {
         val regId = regRow(congregationId, seasonYear)?.get(RegistrationsTable.id) ?: return@transaction null
         RegistrationsTable.update({ RegistrationsTable.id eq regId }) {
@@ -1113,6 +1178,13 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
     override fun congregationIdForIndividual(individualId: String): String? = transaction(db) {
         val regId = IndividualsTable.selectAll().where { IndividualsTable.id eq individualId }
             .singleOrNull()?.get(IndividualsTable.registrationId) ?: return@transaction null
+        RegistrationsTable.selectAll().where { RegistrationsTable.id eq regId }
+            .singleOrNull()?.get(RegistrationsTable.congregationId)
+    }
+
+    override fun congregationIdForGuest(guestId: String): String? = transaction(db) {
+        val regId = RegistrationGuestsTable.selectAll().where { RegistrationGuestsTable.id eq guestId }
+            .singleOrNull()?.get(RegistrationGuestsTable.registrationId) ?: return@transaction null
         RegistrationsTable.selectAll().where { RegistrationsTable.id eq regId }
             .singleOrNull()?.get(RegistrationsTable.congregationId)
     }
@@ -1316,6 +1388,13 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         claimed = this[TeamMembersTable.ownerUserId] != null,
     )
 
+    private fun ResultRow.toGuest() = GuestDto(
+        id = this[RegistrationGuestsTable.id],
+        name = this[RegistrationGuestsTable.name],
+        shirtSize = ShirtSize.valueOf(this[RegistrationGuestsTable.shirtSize]),
+        child = this[RegistrationGuestsTable.isChild],
+    )
+
     /** Builds an individual entry from a row that joins [IndividualsTable] to its [ContestantsTable]. */
     private fun ResultRow.toIndividual() = RosterEntryDto(
         id = this[IndividualsTable.id],
@@ -1356,6 +1435,10 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 .where { (TeamMembersTable.registrationId eq regId) and TeamMembersTable.teamId.isNull() }
                 .orderBy(ContestantsTable.name)
                 .map { it.toEntry() },
+            guests = RegistrationGuestsTable.selectAll()
+                .where { RegistrationGuestsTable.registrationId eq regId }
+                .orderBy(RegistrationGuestsTable.name)
+                .map { it.toGuest() },
             submittedAt = this[RegistrationsTable.submittedAtEpochMs]?.let { Instant.ofEpochMilli(it).toString() },
             paidAt = this[RegistrationsTable.paidAtEpochMs]?.let { Instant.ofEpochMilli(it).toString() },
         )
