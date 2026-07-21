@@ -29,7 +29,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.material3.OutlinedButton
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.ui.LocalSeason
@@ -84,6 +86,9 @@ fun AdminSeasonScreen(api: TbbApi, onSaved: (SeasonDto) -> Unit) {
                     chapterCount = set.chapterCount,
                 )
             }
+            SitesEditor(draft.sites) { draft = draft.copy(sites = it) }
+            // The volunteer positions adult guests can sign up for during registration (backlog F2).
+            VolunteerPositionsField(draft.volunteerPositions) { draft = draft.copy(volunteerPositions = it) }
             Field("Registration opens (yyyy-MM-dd, blank = not announced)", draft.registrationOpensOn ?: "") {
                 draft = draft.copy(registrationOpensOn = it.trim().ifBlank { null })
             }
@@ -109,6 +114,28 @@ fun AdminSeasonScreen(api: TbbApi, onSaved: (SeasonDto) -> Unit) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Switch(checked = draft.feesTentative, onCheckedChange = { draft = draft.copy(feesTentative = it) })
                 Text("Fees are tentative (subject to change)", Modifier.padding(start = 8.dp))
+            }
+            // Feature launch switches: both areas deploy dark and stay hidden (UI) + blocked (API)
+            // until flipped here. Global admins always see them, marked "hidden until launch".
+            Text("Feature launch", style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold)
+            Text(
+                "Off = the area is invisible and its API is disabled for everyone but admins, " +
+                    "who can still open it to test before launch.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = draft.registrationEnabled,
+                    onCheckedChange = { draft = draft.copy(registrationEnabled = it) })
+                Text("Registration is live (coach registration, claim codes, registration desk)",
+                    Modifier.padding(start = 8.dp))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(checked = draft.gradingEnabled,
+                    onCheckedChange = { draft = draft.copy(gradingEnabled = it) })
+                Text("Scoring is live (grading desk, standings, My Scores)",
+                    Modifier.padding(start = 8.dp))
             }
             Field("Prior-year scholarship total", draft.scholarshipAmount) { draft = draft.copy(scholarshipAmount = it) }
             Field("TBB scholarship", draft.tbbScholarshipAmount) { draft = draft.copy(tbbScholarshipAmount = it) }
@@ -149,6 +176,65 @@ fun AdminSeasonScreen(api: TbbApi, onSaved: (SeasonDto) -> Unit) {
             )
         }
     }
+}
+
+/**
+ * Event locations editor (item F6). A site's id is generated once and survives renames, so
+ * registrations stay pinned when an admin fixes a name; removing a site un-pins any
+ * congregation that chose it (they're asked to pick again before submitting).
+ */
+@Composable
+private fun SitesEditor(sites: List<EventSiteDto>, onChange: (List<EventSiteDto>) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Event sites", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+        Text(
+            "With one site there's nothing to pick during registration; with two or more, each " +
+                "congregation chooses its site. Removing a site un-pins congregations that chose it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        sites.forEachIndexed { i, site ->
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedTextField(
+                    site.name,
+                    { new -> onChange(sites.mapIndexed { j, s -> if (j == i) s.copy(name = new) else s }) },
+                    placeholder = { Text("Site name") }, singleLine = true, modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    site.address,
+                    { new -> onChange(sites.mapIndexed { j, s -> if (j == i) s.copy(address = new) else s }) },
+                    placeholder = { Text("Address (optional)") }, singleLine = true,
+                    modifier = Modifier.weight(1.2f),
+                )
+                OutlinedButton(onClick = { onChange(sites.filterIndexed { j, _ -> j != i }) }) {
+                    Text("Remove")
+                }
+            }
+        }
+        OutlinedButton(onClick = { onChange(sites + EventSiteDto(newSiteId(), "")) }) { Text("Add site") }
+    }
+}
+
+private fun newSiteId(): String =
+    "site-" + (1..8).map { "abcdefghijklmnopqrstuvwxyz0123456789".random() }.joinToString("")
+
+/** Comma-separated volunteer-position list; keeps its own text so typing commas isn't reparsed. */
+@Composable
+private fun VolunteerPositionsField(positions: List<String>, onChange: (List<String>) -> Unit) {
+    var text by remember { mutableStateOf(positions.joinToString(", ")) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = {
+            text = it
+            onChange(it.split(",").map(String::trim).filter(String::isNotEmpty))
+        },
+        label = { Text("Volunteer positions, comma-separated (offered to adult guests during registration)") },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 /** Dropdown over the standard 10-year rotation; shows each set's name and chapter count. */

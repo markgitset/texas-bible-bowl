@@ -27,20 +27,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.ContactInfoDto
+import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.division
 import net.markdrew.biblebowl.api.divisionForBirthdate
+import net.markdrew.biblebowl.api.isGlobalAdmin
 import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.client.TbbApi
 
 /**
  * Account screen (docs/gui-redesign.md §5H): editable profile (display name + the birthdate/adult
- * fields that drive division eligibility), roles held, sign out. Claiming a roster entry by
- * coach-shared code arrives with registration (Phase 4).
+ * fields that drive division eligibility, plus adults' event contact info), claiming a roster
+ * entry by coach-shared code, roles held, sign out.
  */
 @Composable
 fun AccountScreen(
@@ -74,6 +77,7 @@ fun AccountScreen(
         )
 
         ProfileCard(api, current, onUserChange)
+        if (season.registrationEnabled || isGlobalAdmin(current.roles)) ClaimCard(api)
 
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -111,6 +115,7 @@ private fun ProfileCard(api: TbbApi, user: UserDto, onUserChange: (UserDto) -> U
     var name by remember(user) { mutableStateOf(user.displayName) }
     var adult by remember(user) { mutableStateOf(user.adult) }
     var birthdate by remember(user) { mutableStateOf(user.birthdate ?: "") }
+    var contact by remember(user) { mutableStateOf(user.contact ?: ContactInfoDto()) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -143,6 +148,38 @@ private fun ProfileCard(api: TbbApi, user: UserDto, onUserChange: (UserDto) -> U
                 Text("Division: ${it.displayName}", style = MaterialTheme.typography.bodySmall)
             }
 
+            // Contact info (adults): optional event-communication details for registrars.
+            // Hidden for non-adults, like the web — the values still submit either way.
+            if (adult) {
+                Text("Contact info", style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.SemiBold)
+                Text(
+                    "Optional — how event organizers can reach you (only registrars see it).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                OutlinedTextField(contact.address, { contact = contact.copy(address = it) },
+                    label = { Text("Street address") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth())
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(contact.city, { contact = contact.copy(city = it) },
+                        label = { Text("City") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(contact.state, { contact = contact.copy(state = it.take(2)) },
+                        label = { Text("State") }, singleLine = true, modifier = Modifier.weight(0.5f))
+                    OutlinedTextField(contact.zip, { contact = contact.copy(zip = it.take(10)) },
+                        label = { Text("Zip") }, singleLine = true, modifier = Modifier.weight(0.6f))
+                }
+                OutlinedTextField(contact.phone, { contact = contact.copy(phone = it) },
+                    label = { Text("Phone") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                val options: List<Pair<ContactPreference?, String>> =
+                    listOf<Pair<ContactPreference?, String>>(null to "No preference") +
+                        ContactPreference.entries.map { it to it.displayName }
+                DropdownPicker(
+                    options, options.firstOrNull { it.first == contact.preference }, { it.second },
+                    enabled = true, placeholder = "No preference",
+                ) { contact = contact.copy(preference = it.first) }
+            }
+
             Button(
                 onClick = {
                     busy = true; message = null
@@ -153,6 +190,15 @@ private fun ProfileCard(api: TbbApi, user: UserDto, onUserChange: (UserDto) -> U
                                     displayName = name.trim(),
                                     birthdate = birthdate.takeIf { it.isNotBlank() }?.takeUnless { adult },
                                     adult = adult,
+                                    // Always sent (empty clears); the server keeps stored contact
+                                    // only when the field is omitted entirely (older clients).
+                                    contact = contact.copy(
+                                        address = contact.address.trim(),
+                                        city = contact.city.trim(),
+                                        state = contact.state.trim(),
+                                        zip = contact.zip.trim(),
+                                        phone = contact.phone.trim(),
+                                    ),
                                 )
                             )
                             onUserChange(updated)
@@ -170,6 +216,66 @@ private fun ProfileCard(api: TbbApi, user: UserDto, onUserChange: (UserDto) -> U
                 if (busy) CircularProgressIndicator(Modifier.height(18.dp)) else Text("Save profile")
             }
             message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        }
+    }
+}
+
+/**
+ * Claim a roster entry by the coach-shared code, linking it to this account — that link is
+ * what My Scores' owner scoping keys off (dashes/case in the code are tolerated server-side).
+ */
+@Composable
+private fun ClaimCard(api: TbbApi) {
+    var code by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var isError by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Claim your contestant entry", style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold)
+            Text(
+                "On a roster this season? Enter the claim code your coach shared (like ABCD-2345) " +
+                    "to link that entry to this account and see your scores once they're released.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(code, { code = it }, placeholder = { Text("ABCD-2345") },
+                    singleLine = true, modifier = Modifier.weight(1f))
+                Button(
+                    enabled = !busy && code.isNotBlank(),
+                    onClick = {
+                        busy = true
+                        message = null
+                        scope.launch {
+                            try {
+                                val entry = api.claimRosterEntry(code)
+                                code = ""
+                                isError = false
+                                message = "Claimed ${entry.name}'s entry — see My scores on the " +
+                                    "Event tab once they're released."
+                            } catch (e: Throwable) {
+                                isError = true
+                                message = "Claim failed: ${e.message}"
+                            } finally {
+                                busy = false
+                            }
+                        }
+                    },
+                ) { Text("Claim") }
+            }
+            message?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (isError) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.secondary,
+                    fontWeight = if (isError) FontWeight.Normal else FontWeight.SemiBold,
+                )
+            }
         }
     }
 }
