@@ -30,7 +30,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 2 | C5 | Congregation phone number | done |
 | 3 | C3 | No Elementary teams (elementary may play up) | done |
 | 4 | C2 | Individual standings in own bracket, not the team's | done |
-| 5 | C1 | Combo (cross-congregation) teams | not started |
+| 5 | C1 | Combo (cross-congregation) teams | done |
 | 6 | F6 | Event locations (multi-site seasons) | not started |
 | 7 | F1 | Guests & attendee types | not started |
 | 8 | F2 | Volunteer positions & tribe-leader willingness | not started |
@@ -109,13 +109,17 @@ City) and *MCLC-SE* (Memorial + League City). The app ties every team to a singl
 congregation's registration, so a small congregation can't field a partial team and
 combine. Most structural correction.
 
-- **Change (shape to refine):** either let a team accept members from another
-  congregation's registration, or lift teams to season level with a "home" congregation.
-  Constraints to preserve: each congregation still pays for (and edits) its own
-  contestants; the desk and standings show a sensible congregation per member (the
-  workbook shows each member under their own congregation); ≤4 cap and bracket rules
-  unchanged. Cross-congregation assignment likely needs coach-to-coach or registrar
-  mediation — refine the permission story before building.
+- **Change (as built, 2026-07):** a team keeps its home congregation's registration; a
+  `team_members` row may point at another congregation's same-season team (no schema
+  change — the member already carries its own `registration_id`). Cross-congregation
+  placement is **registrar-mediated** (event-wide REGISTRATION_MANAGE; either side's coach
+  gets 403) from the desk's unassigned picker; the home coach can always pull their member
+  back. Each congregation still pays for/edits its own contestants (`contestantCount`
+  counts home + away members, never visiting ones); visiting members display with their
+  own congregation everywhere (roster cards, desk, grading sheet, standings — a combo
+  team's standings row lists every member congregation); ≤4 cap and bracket rules
+  unchanged. Home registrations carry an `awayMembers` list so nobody vanishes from their
+  own books.
 - **Dependencies:** after 3 and 4 so team rules/brackets are already correct.
 
 ## 6. (F6) Event locations (multi-site seasons)

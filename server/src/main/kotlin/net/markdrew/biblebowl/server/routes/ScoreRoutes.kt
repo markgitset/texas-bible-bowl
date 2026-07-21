@@ -189,13 +189,15 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
                 val teamDivision = team.division(season)
                 val teamInexperienced = team.isInexperienced(season.eventYear)
                 team.members.map { member ->
+                    // A visiting (combo-team) member scopes and displays under their OWN
+                    // congregation — only the team round uses the hosting team's identity.
                     RowSeed(
-                        reg.congregation.id,
+                        member.congregationId ?: reg.congregation.id,
                         team.id,
                         ScoreRowDto(
                             rosterEntryId = member.id,
                             contestantName = member.name,
-                            congregationName = reg.congregation.name,
+                            congregationName = member.congregationName ?: reg.congregation.name,
                             teamName = team.name,
                             division = member.division(season),
                             inexperienced = member.isInexperienced(season.eventYear),
@@ -343,7 +345,8 @@ private fun computeStandings(seeds: List<RowSeed>, scores: ScoreRepository): Sta
                     StandingRowDto(
                         rank = rank,
                         name = agg.members.first().teamName ?: "?",
-                        congregationName = agg.members.first().congregationName,
+                        // A combo team lists every member congregation ("McDermott Road + League City").
+                        congregationName = agg.members.map { it.congregationName }.distinct().joinToString(" + "),
                         teamName = null,
                         rosterEntryId = null,
                         points = agg.points,

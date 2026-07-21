@@ -250,6 +250,19 @@ object AdminRegistrationsScreen {
         if (reg != null) {
             reg.teams.forEach { team -> renderTeamDetail(parent, team) }
             renderUnassignedAdmin(parent, row.congregation.id, reg)
+            if (reg.awayMembers.isNotEmpty()) {
+                parent.child("h6", "mt-2", "On combo teams")
+                reg.awayMembers.forEach { away ->
+                    parent.child("div", "small") {
+                        append("${away.entry.name} — on ${away.teamName} (${away.congregationName})")
+                        // Pulling a member back home is the desk-side undo for a combo placement.
+                        child("button", "btn btn-link btn-sm py-0", "Unassign") {
+                            setAttribute("type", "button")
+                            onClick { deskAssign { Session.api.assignMemberTeam(away.entry.id, null) } }
+                        }
+                    }
+                }
+            }
             if (reg.individuals.isNotEmpty()) {
                 parent.child("h6", "mt-2", "Individual contestants (adults)")
                 reg.individuals.forEach { entry ->
@@ -265,7 +278,8 @@ object AdminRegistrationsScreen {
             }
         }
         renderReturningCandidatesAdmin(parent, row)
-        val rosterEmpty = reg == null || (reg.teams.isEmpty() && reg.individuals.isEmpty() && reg.unassigned.isEmpty())
+        val rosterEmpty = reg == null ||
+            (reg.teams.isEmpty() && reg.individuals.isEmpty() && reg.unassigned.isEmpty() && reg.awayMembers.isEmpty())
         if (rosterEmpty && row.returningCandidates.isEmpty()) {
             parent.child("p", "text-muted mb-0",
                 if (reg == null) "No registration started this season." else "Nothing on the roster yet.")
@@ -348,11 +362,16 @@ object AdminRegistrationsScreen {
 
     /**
      * Contestants a coach left unassigned — the registrar places each on a team here (or adds a team
-     * first when none exist). Uses the same endpoints as the coach flow; an event-wide grant is
-     * accepted server-side and isn't window-gated.
+     * first when none exist), including another congregation's team (a combo team — that placement
+     * is registrar-only, which is exactly who's on this screen). Uses the same endpoints as the
+     * coach flow; an event-wide grant is accepted server-side and isn't window-gated.
      */
     private fun renderUnassignedAdmin(parent: Element, congregationId: String, reg: RegistrationDto) {
         if (reg.unassigned.isEmpty()) return
+        // Other congregations' teams, for combo placements ("Team — Congregation").
+        val comboTargets = data?.rows.orEmpty()
+            .filter { it.congregation.id != congregationId }
+            .flatMap { row -> row.registration?.teams.orEmpty().map { it to row.congregation.name } }
         parent.child("h6", "mt-3") {
             append("Unassigned contestants ")
             child("span", "badge text-bg-warning", reg.unassigned.size.toString())
@@ -361,7 +380,7 @@ object AdminRegistrationsScreen {
             parent.child("div", "d-flex flex-wrap align-items-center gap-2 small mb-1") {
                 val div = member.division(Session.season)?.displayName ?: "division unknown"
                 child("span", text = "${member.name} — $div, shirt ${member.shirtSize.name}")
-                if (reg.teams.isEmpty()) {
+                if (reg.teams.isEmpty() && comboTargets.isEmpty()) {
                     child("span", "text-muted", "add a team below to place them")
                 } else {
                     val select = child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
@@ -372,10 +391,14 @@ object AdminRegistrationsScreen {
                     reg.teams.forEach { team ->
                         (select.child("option", text = team.name) as HTMLOptionElement).value = team.id
                     }
+                    comboTargets.forEach { (team, congName) ->
+                        (select.child("option", text = "${team.name} — $congName") as HTMLOptionElement).value = team.id
+                    }
                     select.addEventListener("change", {
                         val teamId = select.value
                         if (teamId.isNotEmpty()) {
-                            deskMutate(congregationId) { Session.api.assignMemberTeam(member.id, teamId) }
+                            // A combo placement changes the hosting row too — reload the whole desk.
+                            deskAssign { Session.api.assignMemberTeam(member.id, teamId) }
                         }
                     })
                 }
@@ -392,6 +415,23 @@ object AdminRegistrationsScreen {
                     deskMutate(congregationId) { Session.api.addTeam(congregationId, name.value) }
                 }
             })
+        }
+    }
+
+    /**
+     * Runs a team assignment and reloads the whole desk: a combo placement touches two
+     * congregations' rows (the member's and the hosting team's), so a single-row swap isn't enough.
+     */
+    private fun deskAssign(call: suspend () -> RegistrationDto) {
+        message = null
+        Shell.scope.launch {
+            try {
+                call()
+                data = Session.api.registrationDesk()
+            } catch (e: Throwable) {
+                message = "Could not update the roster: ${e.message}"
+            }
+            renderContent()
         }
     }
 
@@ -429,7 +469,11 @@ object AdminRegistrationsScreen {
         }
         team.members.forEach { member ->
             val division = member.division(Session.season)?.displayName ?: "division unknown"
-            parent.child("div", "small", "${member.name} — $division, shirt ${member.shirtSize.name}")
+            parent.child("div", "small") {
+                append("${member.name} — $division, shirt ${member.shirtSize.name}")
+                // A visiting (combo-team) member — registered and paid for by their own congregation.
+                member.congregationName?.let { child("span", "badge text-bg-info ms-1", "from $it") }
+            }
         }
     }
 

@@ -657,4 +657,43 @@ class ScoreRoutesTest {
             api.get("/admin/scores") { header(HttpHeaders.Authorization, "Bearer ${admin.token}") }.status,
         )
     }
+
+    @Test
+    fun comboTeamMembersScoreUnderTheirOwnCongregation() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+
+        val (_, _, regA) = api.coachWithTeam("alice@tbb.org", "Alpha Church", listOf(juniorBirthdate))
+        val (_, _, regB) = api.coachWithTeam("bob@tbb.org", "Beta Church", listOf(juniorBirthdate))
+
+        // A registrar pools the two congregations: Beta's kid joins Alpha's team (a combo team).
+        val registrar = api.signUp("registrar@tbb.org", "Reggie Registrar")
+        users.addRoleGrant(registrar.user.id, RoleGrant(Role.REGISTRAR))
+        val placed = api.put("/registration/members/${regB.teams.single().members.single().id}/team") {
+            header(HttpHeaders.Authorization, "Bearer ${registrar.token}")
+            setBody(AssignMemberTeamRequest(regA.teams.single().id))
+        }
+        assertEquals(HttpStatusCode.OK, placed.status)
+
+        // The grading sheet shows the visiting member under their OWN congregation, host team named.
+        val grader = api.grader(users)
+        val sheet: GradingSheetResponse = api.get("/admin/scores") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        val visiting = sheet.rows.single { it.contestantName == "Kid 0 of Beta Church" }
+        assertEquals("Beta Church", visiting.congregationName)
+        assertEquals("Team A", visiting.teamName)
+        assertEquals(Division.JUNIOR, visiting.teamDivision)
+
+        // The combo team's standings row names both congregations.
+        val standings: StandingsResponse = api.get("/admin/scores/standings") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        val junior = standings.divisions.single { it.division == Division.JUNIOR && !it.inexperienced }
+        assertEquals("Alpha Church + Beta Church", junior.teams.single().congregationName)
+    }
 }

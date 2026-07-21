@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.web.screens
 
 import kotlinx.browser.window
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.AwayMemberDto
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
@@ -551,6 +552,7 @@ object RegisterScreen {
     private fun renderRosterStep(parent: Element) {
         registration?.teams?.forEach { team -> renderTeamRoster(parent, team) }
         renderUnassignedCard(parent)
+        renderAwayMembersCard(parent)
         renderReturningCard(parent)
         renderIndividualsCard(parent)
         renderGuestsCard(parent)
@@ -619,6 +621,26 @@ object RegisterScreen {
                         "Add a team on the Teams step first, then assign these contestants to it.")
                 }
                 unassigned.forEach { member -> renderContestantRow(this, member, currentTeamId = null) }
+            }
+        }
+    }
+
+    /** Members a registrar placed on another congregation's (combo) team — still edited and billed here. */
+    private fun renderAwayMembersCard(parent: Element) {
+        val away = registration?.awayMembers.orEmpty()
+        if (away.isEmpty()) return
+        parent.child("div", "card section-card border-info mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title") {
+                    append("On combo teams ")
+                    child("span", "badge text-bg-info", away.size.toString())
+                }
+                child("p", "text-muted small",
+                    "A registrar placed these contestants on another congregation's team — they're " +
+                        "still registered and paid for by your congregation. You can pull one back " +
+                        "(pick Unassigned or one of your teams); only a registrar can place them on " +
+                        "another congregation's team.")
+                away.forEach { renderContestantRow(this, it.entry, currentTeamId = it.teamId, away = it) }
             }
         }
     }
@@ -853,7 +875,11 @@ object RegisterScreen {
                     append("${team.name} ")
                     divisionBadge(this, team)
                 }
-                team.members.forEach { member -> renderContestantRow(this, member, currentTeamId = team.id) }
+                team.members.forEach { member ->
+                    // Visiting (combo-team) members are edited by their own congregation's coach.
+                    if (member.congregationId != null) renderVisitingMemberRow(this, member)
+                    else renderContestantRow(this, member, currentTeamId = team.id)
+                }
                 when {
                     !canEdit -> {}
                     team.members.size >= 4 ->
@@ -865,11 +891,31 @@ object RegisterScreen {
     }
 
     /**
-     * One editable youth contestant row (name/birthdate/shirt/gender/1st-year), used both under a
-     * team and in the Unassigned card. [currentTeamId] is the team the row belongs to (null when
-     * unassigned); the team dropdown moves the contestant between teams or off to the pool.
+     * A visiting member on one of this congregation's (combo) teams: read-only here — their own
+     * congregation registers, edits, and pays for them; a registrar moves them.
      */
-    private fun renderContestantRow(parent: Element, member: RosterEntryDto, currentTeamId: String?) {
+    private fun renderVisitingMemberRow(parent: Element, member: RosterEntryDto) {
+        parent.child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
+            child("span", text = member.name)
+            child("span", "badge text-bg-info", "from ${member.congregationName ?: "another congregation"}")
+            val division = member.division(Session.season)?.displayName ?: "division unknown"
+            child("span", "text-muted small", "$division — registered by their own congregation")
+        }
+    }
+
+    /**
+     * One editable youth contestant row (name/birthdate/shirt/gender/1st-year), used under a team,
+     * in the Unassigned card, and in the On-combo-teams card. [currentTeamId] is the team the row
+     * belongs to (null when unassigned); the team dropdown moves the contestant between teams or
+     * off to the pool. [away] labels the current (other-congregation) team when the member is on a
+     * combo team.
+     */
+    private fun renderContestantRow(
+        parent: Element,
+        member: RosterEntryDto,
+        currentTeamId: String?,
+        away: AwayMemberDto? = null,
+    ) {
         parent.child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
             val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
             name.value = member.name
@@ -898,7 +944,7 @@ object RegisterScreen {
                 (el as? HTMLSelectElement)?.disabled = !canEdit
                 (el as? HTMLInputElement)?.disabled = !canEdit
             }
-            teamAssignSelect(this, member, currentTeamId)
+            teamAssignSelect(this, member, currentTeamId, away)
             claimCodeChip(this, member.claimCode)
             if (canEdit) {
                 child("button", "btn btn-outline-danger btn-sm", "Remove") {
@@ -910,11 +956,18 @@ object RegisterScreen {
     }
 
     /**
-     * The per-contestant team picker: each team plus an "Unassigned" option. Changing it moves the
-     * contestant (server enforces the 4-cap). Rendered only when there's somewhere to move to — at
-     * least one team, or the contestant is currently on one.
+     * The per-contestant team picker: each of this congregation's teams plus an "Unassigned"
+     * option. Changing it moves the contestant (server enforces the 4-cap). Rendered only when
+     * there's somewhere to move to — at least one team, or the contestant is currently on one.
+     * For a member on a combo team, [away] adds that (other-congregation) team as the selected
+     * option, so the coach can pull the member back but not push anyone across (registrar-only).
      */
-    private fun teamAssignSelect(parent: Element, member: RosterEntryDto, currentTeamId: String?) {
+    private fun teamAssignSelect(
+        parent: Element,
+        member: RosterEntryDto,
+        currentTeamId: String?,
+        away: AwayMemberDto? = null,
+    ) {
         val teams = registration?.teams.orEmpty()
         if (teams.isEmpty() && currentTeamId == null) return
         val select = parent.child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
@@ -925,6 +978,13 @@ object RegisterScreen {
             val option = select.child("option", text = team.name) as HTMLOptionElement
             option.value = team.id
             if (team.id == currentTeamId) option.selected = true
+        }
+        if (away != null) {
+            val option = select.child(
+                "option", text = "${away.teamName} (${away.congregationName})",
+            ) as HTMLOptionElement
+            option.value = away.teamId
+            option.selected = true
         }
         select.addEventListener("change", {
             mutate { Session.api.assignMemberTeam(member.id, select.value.ifEmpty { null }) }
@@ -1048,14 +1108,18 @@ object RegisterScreen {
                     }
                     child("tbody") {
                         reg.teams.forEach { team ->
+                            // Visiting (combo-team) members are named but their own congregation
+                            // pays for them, so only home members enter this row's fee math.
+                            val homeMembers = team.members.count { it.congregationId == null }
                             child("tr") {
                                 child("td", text = team.name)
                                 child("td", text = team.division(Session.season)
                                     ?.let { divisionLabel(it, team.isInexperienced(seasonYear)) } ?: "—")
                                 child("td", text = team.members.joinToString {
-                                    it.name + if (it.isInexperienced(seasonYear)) " (1st year)" else ""
+                                    it.name + (if (it.isInexperienced(seasonYear)) " (1st year)" else "") +
+                                        (it.congregationName?.let { c -> " (from $c)" } ?: "")
                                 })
-                                child("td", "text-nowrap", feeMath(team.members.size))
+                                child("td", "text-nowrap", feeMath(homeMembers))
                             }
                         }
                         if (reg.unassigned.isNotEmpty()) {
@@ -1064,6 +1128,16 @@ object RegisterScreen {
                                 child("td", text = "—")
                                 child("td", text = reg.unassigned.joinToString { it.name })
                                 child("td", "text-nowrap", feeMath(reg.unassigned.size))
+                            }
+                        }
+                        if (reg.awayMembers.isNotEmpty()) {
+                            child("tr") {
+                                child("td", text = "On combo teams")
+                                child("td", text = "—")
+                                child("td", text = reg.awayMembers.joinToString {
+                                    "${it.entry.name} (${it.teamName}, ${it.congregationName})"
+                                })
+                                child("td", "text-nowrap", feeMath(reg.awayMembers.size))
                             }
                         }
                         if (reg.individuals.isNotEmpty()) {
