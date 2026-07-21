@@ -161,16 +161,20 @@ object IndividualsTable : Table("individual_contestants") {
 }
 
 /**
- * A registered guest (most are volunteers) — attends and pays (volunteer fee, or the child fee for
- * ages 3–8) but is not a contestant: no team, no division, no claim code, no durable-contestant
- * link. Attached straight to the per-season registration, like individual contestants.
+ * A registered guest (most are volunteers) — attends and pays by age tier (9+ at the volunteer
+ * fee, 3–8 at the child fee, under-3s free) but is not a contestant: no team, no division, no
+ * claim code, no durable-contestant link. Attached straight to the per-season registration, like
+ * individual contestants.
  */
 object RegistrationGuestsTable : Table("registration_guests") {
     val id = varchar("id", 36)
     val registrationId = varchar("registration_id", 36).references(RegistrationsTable.id)
     val name = varchar("name", 120)
-    val shirtSize = varchar("shirt_size", 8)
-    val isChild = bool("is_child").default(false)
+    // Null = no included t-shirt (under-3 guests).
+    val shirtSize = varchar("shirt_size", 8).nullable()
+    val ageTier = varchar("age_tier", 12).default("AGE_9_PLUS")
+    // Null only on guests created before gender was collected.
+    val gender = varchar("gender", 8).nullable()
     override val primaryKey = PrimaryKey(id)
 }
 
@@ -342,6 +346,24 @@ object DatabaseFactory {
             // ran on deploy); a fresh database starts empty — just drop the dead columns.
             exec("ALTER TABLE individual_contestants DROP COLUMN IF EXISTS name")
             exec("ALTER TABLE individual_contestants DROP COLUMN IF EXISTS gender")
+            // Guests gained an age tier (replacing the child boolean), gender, and an optional
+            // shirt (2026-07, registration backlog F1): under-3s attend free with no included
+            // shirt. The old boolean is converted in place, then dropped — guarded so the
+            // backfill only runs while the legacy column still exists.
+            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS age_tier VARCHAR(12) NOT NULL DEFAULT 'AGE_9_PLUS'")
+            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS gender VARCHAR(8)")
+            exec("ALTER TABLE registration_guests ALTER COLUMN shirt_size DROP NOT NULL")
+            exec(
+                """
+                DO ${'$'}${'$'} BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.columns
+                               WHERE table_name = 'registration_guests' AND column_name = 'is_child') THEN
+                        UPDATE registration_guests SET age_tier = 'AGE_3_TO_8' WHERE is_child;
+                        ALTER TABLE registration_guests DROP COLUMN is_child;
+                    END IF;
+                END ${'$'}${'$'}
+                """.trimIndent()
+            )
         }
         return db
     }

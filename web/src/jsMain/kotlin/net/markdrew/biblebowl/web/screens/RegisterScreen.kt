@@ -5,6 +5,7 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
+import net.markdrew.biblebowl.api.GuestAgeTier
 import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.RegistrationDto
@@ -614,33 +615,39 @@ object RegisterScreen {
         if (contestants > 0 || guests.isNotEmpty()) parent.nextButton("Continue to review", 4)
     }
 
-    /** "2 × $40 + 1 × $25" — the guests row's fee column (adults at the volunteer fee, children at the child fee). */
+    /** "2 × $40 + 1 × $25 + 1 free" — the guests row's fee column, by age tier (under-3s are free). */
     private fun guestFeeMath(guests: List<GuestDto>): String {
         val vol = Session.season.priceVolunteerCents
         val kid = Session.season.priceChildCents
-        val adults = guests.count { !it.child }
-        val children = guests.size - adults
+        val nineUp = guests.count { it.ageTier == GuestAgeTier.AGE_9_PLUS }
+        val children = guests.count { it.ageTier == GuestAgeTier.AGE_3_TO_8 }
+        val underThree = guests.count { it.ageTier == GuestAgeTier.UNDER_3 }
         val parts = buildList {
-            if (adults > 0) add("$adults × ${formatCents(vol)}")
+            if (nineUp > 0) add("$nineUp × ${formatCents(vol)}")
             if (children > 0) add("$children × ${formatCents(kid)}")
+            if (underThree > 0) add("$underThree free")
         }
-        val total = if ((adults > 0 && vol == null) || (children > 0 && kid == null)) null
-            else adults * (vol ?: 0) + children * (kid ?: 0)
+        val total = if ((nineUp > 0 && vol == null) || (children > 0 && kid == null)) null
+            else nineUp * (vol ?: 0) + children * (kid ?: 0)
         return "${parts.joinToString(" + ")} = ${formatCents(total)}"
     }
 
-    /** "2 contestants × $85 + 1 adult guest × $40 + 1 child guest × $25" — only the parts in use. */
+    /** "2 contestants × $85 + 1 guest (9+) × $40 + 1 guest (3–8) × $25 + 1 under-3 free" — parts in use. */
     private fun totalBreakdown(): String {
         val season = Session.season
-        val adultGuests = guests.count { !it.child }
-        val childGuests = guests.size - adultGuests
+        val nineUpGuests = guests.count { it.ageTier == GuestAgeTier.AGE_9_PLUS }
+        val childGuests = guests.count { it.ageTier == GuestAgeTier.AGE_3_TO_8 }
+        val underThreeGuests = guests.count { it.ageTier == GuestAgeTier.UNDER_3 }
         return buildList {
             add("$contestants contestant${if (contestants == 1) "" else "s"} × ${formatCents(season.priceContestantCents)}")
-            if (adultGuests > 0) {
-                add("$adultGuests adult guest${if (adultGuests == 1) "" else "s"} × ${formatCents(season.priceVolunteerCents)}")
+            if (nineUpGuests > 0) {
+                add("$nineUpGuests guest${if (nineUpGuests == 1) "" else "s"} (9+) × ${formatCents(season.priceVolunteerCents)}")
             }
             if (childGuests > 0) {
-                add("$childGuests child guest${if (childGuests == 1) "" else "s"} × ${formatCents(season.priceChildCents)}")
+                add("$childGuests guest${if (childGuests == 1) "" else "s"} (3–8) × ${formatCents(season.priceChildCents)}")
+            }
+            if (underThreeGuests > 0) {
+                add("$underThreeGuests under-3 free")
             }
         }.joinToString(" + ")
     }
@@ -821,29 +828,39 @@ object RegisterScreen {
                 child("h5", "card-title", "Guests & volunteers")
                 child("p", "text-muted small",
                     "Everyone attending must register and pay, including guests and volunteers — " +
-                        "adults ${formatCents(season.priceVolunteerCents)}, children ages 3–8 " +
-                        "${formatCents(season.priceChildCents)}, t-shirt included. Guests aren't " +
-                        "contestants and aren't placed on a team.")
+                        "age 9+ ${formatCents(season.priceVolunteerCents)}, ages 3–8 " +
+                        "${formatCents(season.priceChildCents)}, under 3 free. T-shirt included " +
+                        "(except under-3s). Guests aren't contestants and aren't placed on a team.")
                 guests.forEach { guest ->
                     child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
                         val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
                         name.value = guest.name
                         name.disabled = !canEdit
-                        val shirt = shirtSelect(this, guest.shirtSize)
-                        shirt.disabled = !canEdit
-                        val childBox = childGuestCheck(this, guest.child)
-                        childBox.disabled = !canEdit
+                        val gender = genderSelect(this, guest.gender)
+                        val tier = guestTierSelect(this, guest.ageTier)
+                        val shirt = shirtSelect(this, guest.shirtSize ?: ShirtSize.AM)
+                        val syncShirt = { shirt.classList.toggle("d-none", tier.value == GuestAgeTier.UNDER_3.name) }
+                        syncShirt()
                         val save = {
-                            if (name.value.isNotBlank()) {
+                            syncShirt()
+                            val chosenGender = genderOf(gender)
+                            if (name.value.isNotBlank() && chosenGender != null) {
                                 mutate {
                                     Session.api.updateGuest(
                                         guest.id,
-                                        UpsertGuestRequest(name.value, ShirtSize.valueOf(shirt.value), childBox.checked),
+                                        UpsertGuestRequest(
+                                            name.value, guestShirtOf(shirt, tier),
+                                            GuestAgeTier.valueOf(tier.value), chosenGender,
+                                        ),
                                     )
                                 }
                             }
                         }
-                        listOf<HTMLElement>(name, shirt, childBox).forEach { it.addEventListener("change", { save() }) }
+                        listOf<HTMLElement>(name, gender, tier, shirt).forEach { el ->
+                            el.addEventListener("change", { save() })
+                            (el as? HTMLSelectElement)?.disabled = !canEdit
+                            (el as? HTMLInputElement)?.disabled = !canEdit
+                        }
                         if (canEdit) {
                             child("button", "btn btn-outline-danger btn-sm", "Remove") {
                                 setAttribute("type", "button")
@@ -856,16 +873,24 @@ object RegisterScreen {
                     child("form", "d-flex flex-wrap gap-2 mt-2") {
                         val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
                         name.setAttribute("placeholder", "Guest or volunteer name")
+                        val gender = genderSelect(this, null)
+                        val tier = guestTierSelect(this, GuestAgeTier.AGE_9_PLUS)
                         val shirt = shirtSelect(this, ShirtSize.AM)
-                        val childBox = childGuestCheck(this, checked = false)
+                        tier.addEventListener("change", {
+                            shirt.classList.toggle("d-none", tier.value == GuestAgeTier.UNDER_3.name)
+                        })
                         child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
                         addEventListener("submit", { event ->
                             event.preventDefault()
-                            if (name.value.isBlank()) return@addEventListener
+                            val chosenGender = genderOf(gender)
+                            if (name.value.isBlank() || chosenGender == null) return@addEventListener
                             mutate {
                                 Session.api.addGuest(
                                     cong.id,
-                                    UpsertGuestRequest(name.value, ShirtSize.valueOf(shirt.value), childBox.checked),
+                                    UpsertGuestRequest(
+                                        name.value, guestShirtOf(shirt, tier),
+                                        GuestAgeTier.valueOf(tier.value), chosenGender,
+                                    ),
                                 )
                             }
                         })
@@ -875,21 +900,21 @@ object RegisterScreen {
         }
     }
 
-    private var childGuestSeq = 0
-
-    /** "Child (3–8)" checkbox — bills a guest at the child fee instead of the volunteer fee. */
-    private fun childGuestCheck(parent: Element, checked: Boolean): HTMLInputElement {
-        lateinit var box: HTMLInputElement
-        parent.child("div", "form-check align-self-center text-nowrap") {
-            setAttribute("title", "A child guest, ages 3–8 — pays the child fee")
-            box = child("input", "form-check-input") as HTMLInputElement
-            box.type = "checkbox"
-            box.checked = checked
-            box.id = "child-guest-${++childGuestSeq}"
-            child("label", "form-check-label", "Child (3–8)") { setAttribute("for", box.id) }
+    /** Age-tier select — picks the guest's fee bracket (9+ volunteer fee, 3–8 child fee, under 3 free). */
+    private fun guestTierSelect(parent: Element, selected: GuestAgeTier): HTMLSelectElement {
+        val select = parent.child("select", "form-select w-auto") as HTMLSelectElement
+        select.setAttribute("title", "Age at the event — 9+ pays the volunteer fee, 3–8 the child fee, under 3 is free")
+        GuestAgeTier.entries.forEach { tier ->
+            val option = select.child("option", text = tier.displayName) as HTMLOptionElement
+            option.value = tier.name
+            if (tier == selected) option.selected = true
         }
-        return box
+        return select
     }
+
+    /** The shirt selection for a guest — always null for under-3s, whose free entry includes no shirt. */
+    private fun guestShirtOf(shirt: HTMLSelectElement, tier: HTMLSelectElement): ShirtSize? =
+        if (tier.value == GuestAgeTier.UNDER_3.name) null else ShirtSize.valueOf(shirt.value)
 
     private fun renderTeamRoster(parent: Element, team: TeamDto) {
         parent.child("div", "card section-card mb-3") {
@@ -1127,7 +1152,11 @@ object RegisterScreen {
                                 child("td", text = "Guests")
                                 child("td", text = "—")
                                 child("td", text = reg.guests.joinToString {
-                                    it.name + if (it.child) " (child)" else ""
+                                    it.name + when (it.ageTier) {
+                                        GuestAgeTier.AGE_9_PLUS -> ""
+                                        GuestAgeTier.AGE_3_TO_8 -> " (3–8)"
+                                        GuestAgeTier.UNDER_3 -> " (under 3)"
+                                    }
                                 })
                                 child("td", "text-nowrap", guestFeeMath(reg.guests))
                             }
@@ -1146,10 +1175,10 @@ object RegisterScreen {
                 }
                 child(
                     "p", "text-muted small mb-1",
-                    "Fee per contestant: ${formatCents(price)}. Guests and volunteers: " +
-                        "${formatCents(Session.season.priceVolunteerCents)} (children 3–8: " +
-                        "${formatCents(Session.season.priceChildCents)}). One t-shirt included for " +
-                        "everyone; extra shirts are paid at the door.",
+                    "Fee per contestant: ${formatCents(price)}. Guests and volunteers age 9+: " +
+                        "${formatCents(Session.season.priceVolunteerCents)}; ages 3–8: " +
+                        "${formatCents(Session.season.priceChildCents)}; under 3: free. One t-shirt " +
+                        "included for everyone but under-3s; extra shirts are paid at the door.",
                 )
                 Session.season.feesNote.takeIf { it.isNotEmpty() }?.let { child("p", "text-muted small mb-0", it) }
             }

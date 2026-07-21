@@ -29,6 +29,7 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.api.Gender
+import net.markdrew.biblebowl.api.GuestAgeTier
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.RegisterRequest
@@ -529,33 +530,47 @@ class RegistrationRoutesTest {
 
         // A guest-only registration is billable: guests pay even though they aren't contestants.
         val blank = api.post("/registration/${cong.id}/guests") {
-            asCoach(); setBody(UpsertGuestRequest("  ", ShirtSize.AM))
+            asCoach(); setBody(UpsertGuestRequest("  ", ShirtSize.AM, gender = Gender.FEMALE))
         }
         assertEquals(HttpStatusCode.BadRequest, blank.status)
-        val withVolunteer: RegistrationDto = api.post("/registration/${cong.id}/guests") {
+        val noGender = api.post("/registration/${cong.id}/guests") {
             asCoach(); setBody(UpsertGuestRequest("Aunt Vol", ShirtSize.AM))
+        }
+        assertEquals(HttpStatusCode.BadRequest, noGender.status, "gender is required")
+        val noShirt = api.post("/registration/${cong.id}/guests") {
+            asCoach(); setBody(UpsertGuestRequest("Aunt Vol", gender = Gender.FEMALE))
+        }
+        assertEquals(HttpStatusCode.BadRequest, noShirt.status, "a shirt size is required except for under-3s")
+        val withVolunteer: RegistrationDto = api.post("/registration/${cong.id}/guests") {
+            asCoach(); setBody(UpsertGuestRequest("Aunt Vol", ShirtSize.AM, gender = Gender.FEMALE))
         }.body()
         val volunteer = withVolunteer.guests.single()
-        assertFalse(volunteer.child)
+        assertEquals(GuestAgeTier.AGE_9_PLUS, volunteer.ageTier)
+        assertEquals(Gender.FEMALE, volunteer.gender)
         assertEquals(0, withVolunteer.contestantCount, "guests are not contestants")
-        assertEquals(4000, withVolunteer.totalCents, "adult guest at the volunteer fee")
+        assertEquals(4000, withVolunteer.totalCents, "9+ guest at the volunteer fee")
 
-        // A contestant plus a child guest: contestant + volunteer + child fees.
+        // A contestant plus a child and an under-3 guest: only the under-3 is free (and shirt-less —
+        // any stray shirt selection is dropped).
         val teamId = api.post("/registration/${cong.id}/teams") {
             asCoach(); setBody(UpsertTeamRequest("Team A"))
         }.body<RegistrationDto>().teams.single().id
         api.post("/registration/teams/$teamId/members") {
             asCoach(); setBody(UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE))
         }
-        val withChild: RegistrationDto = api.post("/registration/${cong.id}/guests") {
-            asCoach(); setBody(UpsertGuestRequest("Little Sib", ShirtSize.YS, child = true))
+        api.post("/registration/${cong.id}/guests") {
+            asCoach(); setBody(UpsertGuestRequest("Little Sib", ShirtSize.YS, GuestAgeTier.AGE_3_TO_8, Gender.MALE))
+        }
+        val withBaby: RegistrationDto = api.post("/registration/${cong.id}/guests") {
+            asCoach(); setBody(UpsertGuestRequest("Baby Sib", ShirtSize.YS, GuestAgeTier.UNDER_3, Gender.FEMALE))
         }.body()
-        assertEquals(1, withChild.contestantCount)
-        assertEquals(8500 + 4000 + 2500, withChild.totalCents)
+        assertEquals(1, withBaby.contestantCount)
+        assertEquals(8500 + 4000 + 2500, withBaby.totalCents, "under-3 guests bill nothing")
+        assertNull(withBaby.guests.first { it.name == "Baby Sib" }.shirtSize, "under-3s get no shirt")
 
         // Edit and delete round-trip, and the total follows.
         val edited: RegistrationDto = api.put("/registration/guests/${volunteer.id}") {
-            asCoach(); setBody(UpsertGuestRequest("Aunt V.", ShirtSize.AL))
+            asCoach(); setBody(UpsertGuestRequest("Aunt V.", ShirtSize.AL, gender = Gender.FEMALE))
         }.body()
         assertEquals("Aunt V.", edited.guests.first { it.id == volunteer.id }.name)
         val afterDelete: RegistrationDto = api.delete("/registration/guests/${volunteer.id}") { asCoach() }.body()

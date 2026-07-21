@@ -187,20 +187,20 @@ val RegistrationDto.contestantCount: Int
 
 /**
  * The registration's total in cents: [contestantCount] × the season's contestant fee (one t-shirt
- * each included), plus every registered guest — adult guests/volunteers at the volunteer fee,
- * child guests (ages 3–8) at the child fee, t-shirts included in both. Guests register and pay
- * here like everyone else; only extra t-shirts are still paid at the door/by mail. Null while the
- * contestant fee, or a fee for a guest bracket actually in use, is TBD.
+ * each included), plus every registered guest by age tier — 9+ at the volunteer fee, 3–8 at the
+ * child fee (t-shirts included in both), under-3s free. Guests register and pay here like everyone
+ * else; only extra t-shirts are still paid at the door/by mail. Null while the contestant fee, or
+ * a fee for a guest tier actually in use, is TBD.
  */
 fun registrationTotalCents(season: SeasonDto, registration: RegistrationDto): Int? {
     val contestantTotal = season.priceContestantCents?.times(registration.contestantCount) ?: return null
-    val adultGuests = registration.guests.count { !it.child }
-    val childGuests = registration.guests.size - adultGuests
-    val adultGuestTotal =
-        if (adultGuests == 0) 0 else season.priceVolunteerCents?.times(adultGuests) ?: return null
+    val nineUpGuests = registration.guests.count { it.ageTier == GuestAgeTier.AGE_9_PLUS }
+    val childGuests = registration.guests.count { it.ageTier == GuestAgeTier.AGE_3_TO_8 }
+    val nineUpGuestTotal =
+        if (nineUpGuests == 0) 0 else season.priceVolunteerCents?.times(nineUpGuests) ?: return null
     val childGuestTotal =
         if (childGuests == 0) 0 else season.priceChildCents?.times(childGuests) ?: return null
-    return contestantTotal + adultGuestTotal + childGuestTotal
+    return contestantTotal + nineUpGuestTotal + childGuestTotal // under-3 guests are free
 }
 
 /** Formats a claim code for display/sharing: "ABCD2345" → "ABCD-2345". */

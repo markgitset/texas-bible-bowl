@@ -32,7 +32,7 @@ dependency: it wants guests, volunteers, and sites to exist before it can import
 | 4 | C2 | Individual standings in own bracket, not the team's | done |
 | 5 | C1 | Combo (cross-congregation) teams | not started |
 | 6 | F6 | Event locations (multi-site seasons) | done |
-| 7 | F1 | Guests & attendee types | not started |
+| 7 | F1 | Guests & attendee types | done |
 | 8 | F2 | Volunteer positions & tribe-leader willingness | not started |
 | 9 | F3 | Adult contact info & communication preference | not started |
 | 10 | F5 | Age-tiered fee schedule | not started |
@@ -151,6 +151,19 @@ registers only contestants and adult individuals.
   Desk and counts include guests.
 - **Dependencies:** after 6 (guests belong to a site via their congregation). Feeds 8, 10,
   11, 12, 15, 17.
+- **As built (2026-07):** the base guest flow predated this item (PR #37: guests register,
+  pay, and show on the desk). F1 added the rest: `GuestAgeTier` (Age 9+ / Age 3–8 / Under 3
+  — the 2026 fee brackets by age, replacing the adult/child boolean, since a 9–17-year-old
+  non-competing sibling pays the 9+ fee), under-3s free with no included shirt (nullable
+  shirt size), and required gender per guest. Attendee type stays derived, not stored.
+  **Types overlap** (Mark, 2026-07-21): the same person can be both a coach and a
+  contestant — e.g. an adult individual contestant who also coaches — matching the
+  workbook's "select all that apply". Anything deriving attendee types (the counts
+  dashboard of item 11 especially) must treat Coach/Tester/Guest as a set per person,
+  never as exclusive categories, and must not double-bill or double-count such a person.
+  Built in parallel with item 6 at Mark's direction (F6 merged first) — guests inherit
+  their site from the congregation's registration pin, so the two compose with no extra
+  linkage.
 
 ## 8. (F2) Volunteer positions & tribe-leader willingness
 

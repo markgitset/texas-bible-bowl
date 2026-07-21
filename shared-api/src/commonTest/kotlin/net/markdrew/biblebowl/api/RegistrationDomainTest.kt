@@ -151,23 +151,32 @@ class RegistrationDomainTest {
         assertNull(registrationTotalCents(FALLBACK_SEASON, threeContestants), "TBD contestant fee → no total")
 
         val guests = listOf(
-            GuestDto("g1", "Helpful Aunt", ShirtSize.AM),
-            GuestDto("g2", "Volunteer Uncle", ShirtSize.AL),
-            GuestDto("g3", "Little Sibling", ShirtSize.YS, child = true),
+            GuestDto("g1", "Helpful Aunt", ShirtSize.AM, gender = Gender.FEMALE),
+            GuestDto("g2", "Volunteer Uncle", ShirtSize.AL, gender = Gender.MALE),
+            GuestDto("g3", "Little Sibling", ShirtSize.YS, GuestAgeTier.AGE_3_TO_8, Gender.MALE),
+            GuestDto("g4", "Baby Sibling", null, GuestAgeTier.UNDER_3, Gender.FEMALE),
         )
         assertEquals(
             25500 + 2 * 4000 + 2500,
             registrationTotalCents(season, threeContestants.copy(guests = guests)),
-            "adult guests at the volunteer fee, child guests at the child fee",
+            "9+ guests at the volunteer fee, 3–8 at the child fee, under-3s free",
         )
         assertNull(
             registrationTotalCents(season.copy(priceChildCents = null), threeContestants.copy(guests = guests)),
-            "TBD fee for a guest bracket in use → no total",
+            "TBD fee for a guest tier in use → no total",
         )
         assertEquals(
             25500,
             registrationTotalCents(season.copy(priceVolunteerCents = null, priceChildCents = null), threeContestants),
             "TBD guest fees don't block a guest-less registration",
+        )
+        assertEquals(
+            25500,
+            registrationTotalCents(
+                season.copy(priceVolunteerCents = null, priceChildCents = null),
+                threeContestants.copy(guests = listOf(GuestDto("g4", "Baby Sibling", null, GuestAgeTier.UNDER_3))),
+            ),
+            "under-3 guests are free, so TBD guest fees don't block them either",
         )
     }
 

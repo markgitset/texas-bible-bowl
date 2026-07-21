@@ -386,25 +386,42 @@ data class UpsertIndividualRequest(
 )
 
 /**
+ * A guest's fee bracket by age at the event — the 2026 schedule, which tiered *every* attendee
+ * purely by age: 9 and up pays the volunteer fee, 3–8 the child fee, and under-3s attend free
+ * (with no included t-shirt).
+ */
+@Serializable
+enum class GuestAgeTier(val displayName: String) {
+    AGE_9_PLUS("Age 9+"), AGE_3_TO_8("Age 3–8"), UNDER_3("Under 3"),
+}
+
+/**
  * A registered guest — an attendee who is not a contestant (most are volunteers). Guests must
  * register and pay like everyone else, but they are never placed on a team, compete in no
- * division, and get no claim code. [child] marks the child-guest fee bracket (ages 3–8; adults
- * and volunteers pay the volunteer fee). Both fees include a t-shirt, hence [shirtSize].
+ * division, and get no claim code. [ageTier] picks the fee bracket (see [GuestAgeTier]). The
+ * age-9+ and 3–8 fees include a t-shirt, hence [shirtSize].
  */
 @Serializable
 data class GuestDto(
     val id: String,
     val name: String,
-    val shirtSize: ShirtSize,
-    val child: Boolean = false,
+    /** Null for an under-3 guest (no included t-shirt). */
+    val shirtSize: ShirtSize? = null,
+    val ageTier: GuestAgeTier = GuestAgeTier.AGE_9_PLUS,
+    /** Null only on guests created before gender was collected. */
+    val gender: Gender? = null,
 )
 
-/** Adds or edits a registered guest (see [GuestDto]). */
+/**
+ * Adds or edits a registered guest (see [GuestDto]). [gender] is required (nullable only for a
+ * friendlier server-side error); [shirtSize] is required except for under-3s, who get no shirt.
+ */
 @Serializable
 data class UpsertGuestRequest(
     val name: String,
-    val shirtSize: ShirtSize,
-    val child: Boolean = false,
+    val shirtSize: ShirtSize? = null,
+    val ageTier: GuestAgeTier = GuestAgeTier.AGE_9_PLUS,
+    val gender: Gender? = null,
 )
 
 /**
