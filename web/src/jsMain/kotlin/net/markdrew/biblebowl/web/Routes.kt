@@ -21,6 +21,7 @@ object Routes {
     const val ACCOUNT = "account"
     const val ADMIN_SEASON = "admin/season"
     const val ADMIN_REGISTRATIONS = "admin/registrations"
+    const val ADMIN_COUNTS = "admin/counts"
     const val ADMIN_USERS = "admin/users"
 }
 
@@ -57,6 +58,7 @@ fun routeLabel(route: String): String = when (route) {
     Routes.ACCOUNT -> "Account"
     Routes.ADMIN_SEASON -> "Season Settings"
     Routes.ADMIN_REGISTRATIONS -> "Registrations"
+    Routes.ADMIN_COUNTS -> "Registration Counts"
     Routes.ADMIN_USERS -> "Users"
     else -> "Study Resources"
 }
