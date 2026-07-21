@@ -35,13 +35,16 @@ import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryRegistrationRepository
 import net.markdrew.biblebowl.server.data.HousingRepository
+import net.markdrew.biblebowl.server.data.TribeRepository
 import net.markdrew.biblebowl.server.data.InMemoryHousingRepository
+import net.markdrew.biblebowl.server.data.InMemoryTribeRepository
 import net.markdrew.biblebowl.server.data.InMemoryScoreRepository
 import net.markdrew.biblebowl.server.data.InMemorySeasonRepository
 import net.markdrew.biblebowl.server.data.InMemoryTesterIdRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.data.PostgresCongregationRepository
 import net.markdrew.biblebowl.server.data.PostgresHousingRepository
+import net.markdrew.biblebowl.server.data.PostgresTribeRepository
 import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
 import net.markdrew.biblebowl.server.data.PostgresRegistrationRepository
 import net.markdrew.biblebowl.server.data.PostgresScoreRepository
@@ -63,6 +66,7 @@ import net.markdrew.biblebowl.server.routes.authRoutes
 import net.markdrew.biblebowl.server.routes.bibleRoutes
 import net.markdrew.biblebowl.server.routes.generateRoutes
 import net.markdrew.biblebowl.server.routes.housingRoutes
+import net.markdrew.biblebowl.server.routes.tribeRoutes
 import net.markdrew.biblebowl.server.routes.questionRoutes
 import net.markdrew.biblebowl.server.routes.registrationRoutes
 import net.markdrew.biblebowl.server.routes.scoreRoutes
@@ -89,6 +93,7 @@ fun main() {
     val registrations = db?.let(::PostgresRegistrationRepository) ?: InMemoryRegistrationRepository(congregations)
     val scores = db?.let(::PostgresScoreRepository) ?: InMemoryScoreRepository()
     val housing = db?.let(::PostgresHousingRepository) ?: InMemoryHousingRepository()
+    val tribes = db?.let(::PostgresTribeRepository) ?: InMemoryTribeRepository()
     val testerIds = db?.let(::PostgresTesterIdRepository) ?: InMemoryTesterIdRepository()
     // Prod uses the Postgres cache; local dev (no DATABASE_URL) uses a persisted on-disk cache so repeated
     // runs never re-hit the ESV API — only a first run (cache miss) or ESV_CACHE_REFRESH re-fetches. It
@@ -111,6 +116,7 @@ fun main() {
             users, questions, esv = esv, study = study, seasons = seasons, pdfCache = pdfCache,
             congregations = congregations, registrations = registrations, scores = scores,
             housing = housing,
+            tribes = tribes,
             testerIds = testerIds,
         )
     }.start(wait = true)
@@ -132,6 +138,7 @@ fun Application.module(
     registrations: RegistrationRepository = InMemoryRegistrationRepository(congregations),
     scores: ScoreRepository = InMemoryScoreRepository(),
     housing: HousingRepository = InMemoryHousingRepository(),
+    tribes: TribeRepository = InMemoryTribeRepository(),
     testerIds: TesterIdRepository = InMemoryTesterIdRepository(),
 ) {
     seedAdminFromEnv(users)
@@ -201,6 +208,7 @@ fun Application.module(
         registrationRoutes(users, seasons, congregations, registrations)
         adminRegistrationRoutes(users, seasons, congregations, registrations)
         housingRoutes(users, seasons, congregations, housing)
+        tribeRoutes(users, seasons, tribes)
         scoreRoutes(users, seasons, registrations, scores)
         testerRoutes(users, seasons, registrations, testerIds)
         userRoutes(users, congregations)

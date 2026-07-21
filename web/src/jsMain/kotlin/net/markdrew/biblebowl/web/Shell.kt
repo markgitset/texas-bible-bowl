@@ -8,6 +8,7 @@ import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.web.screens.AccountScreen
 import net.markdrew.biblebowl.web.screens.AdminCountsScreen
 import net.markdrew.biblebowl.web.screens.AdminHousingScreen
+import net.markdrew.biblebowl.web.screens.AdminTribesScreen
 import net.markdrew.biblebowl.web.screens.AdminRegistrationsScreen
 import net.markdrew.biblebowl.web.screens.AdminSeasonScreen
 import net.markdrew.biblebowl.web.screens.AdminTestersScreen
@@ -208,6 +209,11 @@ object Shell {
             Routes.ADMIN_HOUSING -> feature(container, Session.registrationVisible) {
                 gatedEventWide(container, Permission.REGISTRATION_MANAGE) {
                     AdminHousingScreen.render(container)
+                }
+            }
+            Routes.ADMIN_TRIBES -> feature(container, Session.registrationVisible) {
+                gatedEventWide(container, Permission.REGISTRATION_MANAGE) {
+                    AdminTribesScreen.render(container)
                 }
             }
             // Registrars prep tester IDs/nametags; graders need the ZipGrade export — either works.

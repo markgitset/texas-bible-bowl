@@ -782,6 +782,51 @@ data class HousingResponse(
 )
 
 // ---------------------------------------------------------------------------
+// Tribes & tribe leaders (item 16, F10) — thin event-ops assignment tool
+// ---------------------------------------------------------------------------
+
+/**
+ * One tribe at the event (2026 used color names — "Red", "Green and White Swirl"), defined per
+ * season by the registrar with its assigned leaders. On a multi-site season each tribe belongs to
+ * one site ([siteId]); single-site seasons leave it null, mirroring [CabinDto.siteId]. The 2026
+ * pattern was two leaders per tribe, but that's a convention, not a cap.
+ */
+@Serializable
+data class TribeDto(
+    val id: String,
+    val name: String,
+    /** The [EventSiteDto.id] this tribe is at; null on single-site seasons (nothing to pick). */
+    val siteId: String? = null,
+    val leaders: List<TribeLeaderDto> = emptyList(),
+)
+
+/**
+ * One assigned tribe leader — a free-form adult name, like [CheckoutDutyDto.adultName]. The
+ * screen's picker is seeded from adults who flagged willingness (item 8: adult guests and
+ * individual contestants with `tribeLeaderWilling`), but any adult may be typed in.
+ */
+@Serializable
+data class TribeLeaderDto(val id: String, val name: String)
+
+/** Adds or renames a tribe. [siteId] must be a current season site id on multi-site seasons. */
+@Serializable
+data class UpsertTribeRequest(
+    val name: String,
+    val siteId: String? = null,
+)
+
+/** Assigns a leader (free-form adult name) to a tribe. */
+@Serializable
+data class AddTribeLeaderRequest(val name: String)
+
+/** Every tribe for the current season with its leaders (`GET /admin/tribes`). */
+@Serializable
+data class TribesResponse(
+    val seasonYear: String,
+    val tribes: List<TribeDto> = emptyList(),
+)
+
+// ---------------------------------------------------------------------------
 // Scoring (grading desk, release, my scores) — docs/gui-redesign.md §5F
 // ---------------------------------------------------------------------------
 

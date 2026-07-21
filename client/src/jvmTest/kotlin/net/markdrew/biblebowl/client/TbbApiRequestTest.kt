@@ -15,6 +15,7 @@ import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
+import net.markdrew.biblebowl.api.UpsertTribeRequest
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
 import java.net.InetSocketAddress
@@ -63,6 +64,9 @@ class TbbApiRequestTest {
                     """{"congregations":[],"registration":null,"windowOpen":true}""" to "application/json"
                 "/admin/registrations" ->
                     """{"seasonYear":"2027","rows":[]}""" to "application/json"
+                "/admin/tribes", "/admin/tribes/t1", "/admin/tribes/t1/leaders", "/admin/tribes/leaders/l1" ->
+                    """{"seasonYear":"2027","tribes":[{"id":"t1","name":"Red",
+                        "leaders":[{"id":"l1","name":"Kisha Dearlove"}]}]}""" to "application/json"
                 "/admin/testers" ->
                     """{"seasonYear":"2027","rows":[{"rosterEntryId":"m1","testerId":4,
                         "externalId":"EI-MR-ENT-4","name":"Eli Tester","congregationName":"McDermott Road",
@@ -226,6 +230,20 @@ class TbbApiRequestTest {
         val desk = api.registrationDesk()
         assertEquals("2027", desk.seasonYear)
         assertEquals("GET" to "/admin/registrations", methods.last() to requests.last())
+
+        val tribes = api.tribes()
+        assertEquals("GET" to "/admin/tribes", methods.last() to requests.last())
+        assertEquals("Kisha Dearlove", tribes.tribes.single().leaders.single().name)
+        api.addTribe(UpsertTribeRequest("Red"))
+        assertEquals("POST" to "/admin/tribes", methods.last() to requests.last())
+        api.updateTribe("t1", UpsertTribeRequest("Red and Yellow Swirl"))
+        assertEquals("PUT" to "/admin/tribes/t1", methods.last() to requests.last())
+        api.addTribeLeader("t1", "Taylor Jones")
+        assertEquals("POST" to "/admin/tribes/t1/leaders", methods.last() to requests.last())
+        api.deleteTribeLeader("l1")
+        assertEquals("DELETE" to "/admin/tribes/leaders/l1", methods.last() to requests.last())
+        api.deleteTribe("t1")
+        assertEquals("DELETE" to "/admin/tribes/t1", methods.last() to requests.last())
 
         val testers = api.adminTesters()
         assertEquals("GET" to "/admin/testers", methods.last() to requests.last())
