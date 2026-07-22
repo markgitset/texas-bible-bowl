@@ -26,3 +26,7 @@ local.properties
 
 # Local on-disk ESV chapter cache (copyrighted text — never committed)
 .esv-cache/
+
+# Python bytecode (seed converter tooling)
+__pycache__/
+*.pyc

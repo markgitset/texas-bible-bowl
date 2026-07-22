@@ -97,8 +97,15 @@ live :8080 un-skips `EndToEndFlowTest`, which expects the Postgres stack.
 Two stages, PII never in git: `python3 tools/seed/convert_registration_xlsx.py` reads
 `~/Downloads/Registration.xlsx` and writes `~/Downloads/tbb-seed-2026.json`; then
 `POST /admin/seed` (global admin JWT) ingests it — idempotent, safe to re-run, returns a
-summary with warnings. Grade-only seeded youth carry `contestants.graduation_year` and get
-their real birthdate at first enrollment; seeded coach emails auto-grant COACH at signup.
+summary with warnings. Grade-only seeded youth carry a `people.graduation_year` and get
+their real birthdate at first enrollment; seeded coach emails become an `isCoach` participation
+(no `pending_coach_grants` table since the people/participants restructure) that auto-grants COACH
+at signup by email match. Volunteers are non-tester attendees with Positions → non-contestant
+participants carrying those positions; the converter counts volunteers and warns on unrecognized
+Attendee Types or unread volunteer-looking tabs, so a run that misses volunteers is obvious. After
+editing the converter run its stdlib self-test: `python3 tools/seed/convert_registration_xlsx_test.py`.
+The converter's output JSON format is unchanged, so re-running the whole flow against prod after the
+restructure deploy reconciles placeholder coach names and enriches minimally-migrated rows.
 
 ## Verifying generated PDFs locally (no ESV token needed)
 Typst is installed at `/home/mark/bin/typst` (v0.14.2); the server shells out to it.
