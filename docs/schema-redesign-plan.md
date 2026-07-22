@@ -25,10 +25,11 @@ grading are still dark in prod (feature toggles off), so the data at risk is the
    varchar(36) UUID convention. Exceptions: the three cache tables keep their natural
    composite PKs (content-addressed; a surrogate adds nothing) and `score_releases`
    keeps `season_year` as its PK (it IS one-row-per-season).
-7. **`cabin_assignments.gender` is NOT NULL, `MALE` / `FEMALE` only** — no `ALL`
-   value and no null. Every assignment row is a single-gender group; "whole
-   congregation" is expressed as two rows (one per gender), and ad-hoc label rows
-   pick a gender too.
+7. **`cabin_assignments.gender` stays nullable, `MALE` / `FEMALE` when set** (check
+   constraint on non-null values; no `ALL` value). Null means the row deliberately
+   spans genders — a whole congregation, or a mixed ad-hoc row like a family cabin.
+   (Briefly considered NOT NULL with one-row-per-gender; reverted because mixed rows
+   are a real use case.)
 
 ## Target schema
 
@@ -126,8 +127,9 @@ cabins
 cabin_assignments
   id PK, cabin_id FK NOT NULL,
   congregation_id FK                 -- still nullable: null = ad-hoc label-only row
-  gender varchar(6) NOT NULL         -- MALE/FEMALE only (check); was nullable —
-                                     -- a whole congregation = one row per gender
+  gender varchar(6)                  -- nullable: null = spans genders (whole
+                                     -- congregation, family rows); MALE/FEMALE
+                                     -- when set (check constraint)
   label, sort_order as today
 
 checkout_duties
@@ -211,10 +213,8 @@ just becomes `scores.participant_id` with an FK added.
 10. `pending_coach_grants` → `people` (email, placeholder name from the email local
     part) + a 2026 `participants` row with `is_coach=true` under that congregation's
     2026 registration. The seed-import re-run (below) reconciles real names by email.
-11. `cabin_assignments.gender`: split each null-gender row (whole-congregation or
-    ad-hoc) into two rows, one `MALE` and one `FEMALE`, preserving label and sort
-    order; then `SET NOT NULL` + check constraint. The housing UI's
-    "whole congregation" action becomes a shortcut that adds both rows.
+11. `cabin_assignments.gender`: unchanged data-wise (null keeps meaning
+    spans-genders); just add the check constraint on non-null values.
 12. Drop the six absorbed tables.
 
 ### Seed importer
