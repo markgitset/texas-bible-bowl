@@ -663,11 +663,16 @@ data class RegistrationDeskRowDto(
     val returningCandidates: List<ReturningContestantDto> = emptyList(),
 )
 
-/** The full registration desk for the current season (`GET /admin/registrations`). */
+/**
+ * The full registration desk (`GET /admin/registrations`), for the current season by default or a
+ * past one via `?year=`. [seasonYear] is the year shown; [availableYears] is every year with any
+ * registration data (plus the current one), newest first, for the desk's year picker.
+ */
 @Serializable
 data class RegistrationDeskResponse(
     val seasonYear: String,
     val rows: List<RegistrationDeskRowDto> = emptyList(),
+    val availableYears: List<String> = emptyList(),
 )
 
 /** Marks a registration's payment received (true) or clears it (false). */

@@ -79,16 +79,35 @@ internal class DeskModel(val api: TbbApi, val scope: CoroutineScope) {
     var message: String? by mutableStateOf(null)
     var loadError: String? by mutableStateOf(null)
     var siteFilter: String? by mutableStateOf(null)
+    var year: String? by mutableStateOf(null) // season year under review, or null = the current season
     val expanded = mutableStateListOf<String>() // congregation ids with the roster detail open
 
-    val multiSite: Boolean get() = season.multiSite
+    /** True when reviewing a past season's data — everything renders read-only. */
+    val viewingPast: Boolean get() = data?.let { it.seasonYear != season.eventYear } == true
+
+    /**
+     * Multi-site seasons add a site filter and per-row site editing. Suppressed for a past year:
+     * site ids only resolve against the *current* season's site list.
+     */
+    val multiSite: Boolean get() = season.multiSite && !viewingPast
 
     suspend fun load() {
         try {
-            data = api.registrationDesk()
+            data = api.registrationDesk(year)
         } catch (e: Throwable) {
             loadError = e.message ?: "Something went wrong"
         }
+    }
+
+    /** Switches the desk to [selected] (null = current season) and refetches. */
+    fun selectYear(selected: String?) {
+        year = selected
+        data = null
+        message = null
+        loadError = null
+        siteFilter = null
+        expanded.clear()
+        scope.launch { load() }
     }
 
     /** Swaps [updated] into its congregation's row. */
@@ -187,6 +206,7 @@ fun AdminRegistrationsScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            YearPicker(model, desk)
             if (model.multiSite) {
                 SiteFilterPicker(model.season, model.siteFilter) { model.siteFilter = it }
             }
@@ -197,10 +217,13 @@ fun AdminRegistrationsScreen(
             SaveCsvButton("Registrations CSV", { "tbb-registrations-${desk.seasonYear}.csv" }) {
                 deskCsv(model, desk)
             }
-            NametagsButton(model, desk.seasonYear)
+            // Nametags are a current-event artifact — the endpoint always generates for the
+            // current season, so the button hides in a past-year review.
+            if (!model.viewingPast) NametagsButton(model, desk.seasonYear)
         }
         Text(
-            "Season ${desk.seasonYear} — tap a congregation for its roster.",
+            "Season ${desk.seasonYear} — tap a congregation for its roster." +
+                (" Past season — read-only.".takeIf { model.viewingPast } ?: ""),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -226,6 +249,22 @@ fun AdminRegistrationsScreen(
         VolunteersSection(model, rows)
         ShirtOrderSection(model, rows, desk.seasonYear)
     }
+}
+
+/**
+ * The season under review: hidden when only one year has data, otherwise a picker over every year
+ * with registrations — the current event year is the default, past ones are read-only reviews.
+ */
+@Composable
+private fun YearPicker(model: DeskModel, desk: RegistrationDeskResponse) {
+    if (desk.availableYears.size < 2) return
+    val options = desk.availableYears.map { y ->
+        y to (if (y == model.season.eventYear) "$y (current)" else y)
+    }
+    DropdownPicker(
+        options, options.firstOrNull { it.first == desk.seasonYear }, { it.second },
+        enabled = true, placeholder = "Season…",
+    ) { (y, _) -> model.selectYear(y.takeIf { it != model.season.eventYear }) }
 }
 
 @Composable
@@ -308,7 +347,7 @@ private fun CongregationCard(model: DeskModel, row: RegistrationDeskRowDto, isAd
 @Composable
 private fun CodeCell(model: DeskModel, row: RegistrationDeskRowDto, isAdmin: Boolean) {
     val cong = row.congregation
-    if (!isAdmin) {
+    if (!isAdmin || model.viewingPast) {
         Text(
             cong.code.ifBlank { "—" },
             style = MaterialTheme.typography.labelMedium,
@@ -366,6 +405,7 @@ private fun PaidSwitch(model: DeskModel, congregationId: String, reg: Registrati
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Switch(
             checked = reg.paidAt != null,
+            enabled = !model.viewingPast,
             onCheckedChange = { paid ->
                 model.message = null
                 model.scope.launch {
@@ -407,7 +447,7 @@ private fun DeskDetail(model: DeskModel, row: RegistrationDeskRowDto) {
                             modifier = Modifier.weight(1f),
                         )
                         // Pulling a member back home is the desk-side undo for a combo placement.
-                        OutlinedButton(onClick = {
+                        if (!model.viewingPast) OutlinedButton(onClick = {
                             model.assignAndReload { assignMemberTeam(away.entry.id, null) }
                         }) { Text("Unassign") }
                     }
@@ -515,6 +555,18 @@ private fun SitePin(model: DeskModel, congregationId: String, reg: RegistrationD
 @Composable
 private fun UnassignedDetail(model: DeskModel, congregationId: String, reg: RegistrationDto) {
     if (reg.unassigned.isEmpty()) return
+    if (model.viewingPast) {
+        // Review only: who was never placed that year, without the placement controls.
+        DetailHeader("Unassigned contestants (${reg.unassigned.size})")
+        reg.unassigned.forEach { member ->
+            val division = member.division(model.season)?.displayName ?: "division unknown"
+            Text(
+                "${member.name} — $division, shirt ${member.shirtSize.name}",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+        return
+    }
     // Other congregations' teams, for combo placements ("Team — Congregation").
     val comboTargets = model.data?.rows.orEmpty()
         .filter { it.congregation.id != congregationId }

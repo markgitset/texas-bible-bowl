@@ -56,10 +56,18 @@ object AdminRegistrationsScreen {
     private val expanded = mutableSetOf<String>() // congregation ids with the roster detail open
     private var message: String? = null
     private var siteFilter: String? = null // EventSiteDto id, or null = all sites (multi-site seasons)
+    private var year: String? = null // season year under review, or null = the current season
     private lateinit var content: HTMLElement
 
-    /** Multi-site seasons add a Site column, a site filter, and per-row site editing. */
-    private val multiSite: Boolean get() = Session.season.multiSite
+    /** True when reviewing a past season's data — everything renders read-only. */
+    private val viewingPast: Boolean
+        get() = data?.let { it.seasonYear != Session.season.eventYear } == true
+
+    /**
+     * Multi-site seasons add a Site column, a site filter, and per-row site editing. Suppressed for
+     * a past year: site ids only resolve against the *current* season's site list.
+     */
+    private val multiSite: Boolean get() = Session.season.multiSite && !viewingPast
 
     /** Only a globally-scoped admin may change a congregation's two-letter code once it's set. */
     private val isAdmin: Boolean
@@ -68,14 +76,21 @@ object AdminRegistrationsScreen {
     fun render(container: HTMLElement) {
         container.child("h1", "page-title", "Registration desk")
         content = container.child("div")
-        content.spinner()
         data = null
+        year = null
+        reload()
+    }
+
+    /** (Re)fetches the desk for [year] (null = current season) and re-renders. */
+    private fun reload() {
+        content.clear()
+        content.spinner()
         message = null
         siteFilter = null
         expanded.clear()
         Shell.scope.launch {
             try {
-                data = Session.api.registrationDesk()
+                data = Session.api.registrationDesk(year)
                 renderContent()
             } catch (e: Throwable) {
                 content.clear()
@@ -88,7 +103,9 @@ object AdminRegistrationsScreen {
         val desk = data ?: return
         content.clear()
         content.child("div", "d-flex flex-wrap align-items-center gap-3 mb-3") {
-            child("span", "text-muted", "Season ${desk.seasonYear} — click a row for its roster.")
+            yearSelect(this, desk)
+            child("span", "text-muted", "— click a row for its roster.")
+            if (viewingPast) child("span", "badge text-bg-secondary", "past season — read-only")
             if (multiSite) siteFilterSelect(this)
             child("a", "btn btn-outline-secondary btn-sm", "Counts dashboard") {
                 setAttribute("href", "#${Routes.ADMIN_COUNTS}")
@@ -100,7 +117,9 @@ object AdminRegistrationsScreen {
                 setAttribute("type", "button")
                 onClick { downloadCsv("tbb-registrations-${desk.seasonYear}.csv", deskCsv(desk)) }
             }
-            child("button", "btn btn-outline-primary btn-sm", "Nametags PDF") {
+            // Nametags are a current-event artifact — the endpoint always generates for the
+            // current season, so the button hides in a past-year review.
+            if (!viewingPast) child("button", "btn btn-outline-primary btn-sm", "Nametags PDF") {
                 setAttribute("type", "button")
                 setAttribute("title", "Printable per-site nametags; assigns tester IDs on first run")
                 onClick { downloadNametags(this, desk.seasonYear) }
@@ -269,6 +288,32 @@ object AdminRegistrationsScreen {
         addAll(listOf("Status", "Teams", "Contestants", "Individuals", "Guests", "Total due", "Submitted", "Paid", "Coaches"))
     }
 
+    /**
+     * The season under review: a plain label when only one year has data, otherwise a picker over
+     * every year with registrations — the current event year is the default, past ones are
+     * read-only reviews.
+     */
+    private fun yearSelect(parent: Element, desk: RegistrationDeskResponse) {
+        if (desk.availableYears.size < 2) {
+            parent.child("span", "text-muted", "Season ${desk.seasonYear}")
+            return
+        }
+        parent.child("div", "d-flex align-items-center gap-2") {
+            child("span", "text-muted", "Season")
+            val select = child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
+            desk.availableYears.forEach { y ->
+                val label = if (y == Session.season.eventYear) "$y (current)" else y
+                val option = select.child("option", text = label) as HTMLOptionElement
+                option.value = y
+                if (y == desk.seasonYear) option.selected = true
+            }
+            select.addEventListener("change", {
+                year = select.value.takeIf { it != Session.season.eventYear }
+                reload()
+            })
+        }
+    }
+
     private fun siteFilterSelect(parent: Element) {
         val select = parent.child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
         (select.child("option", text = "All sites") as HTMLOptionElement).value = ""
@@ -352,7 +397,7 @@ object AdminRegistrationsScreen {
      */
     private fun renderCodeCell(cell: Element, row: RegistrationDeskRowDto) {
         val cong = row.congregation
-        if (!isAdmin) {
+        if (!isAdmin || viewingPast) {
             if (cong.code.isBlank()) cell.child("span", "text-muted", "—")
             else cell.child("span", "badge text-bg-secondary", cong.code)
             return
@@ -405,7 +450,8 @@ object AdminRegistrationsScreen {
             val input = child("input", "form-check-input") as HTMLInputElement
             input.type = "checkbox"
             input.checked = paidAt != null
-            input.setAttribute("title", "Payment received")
+            input.setAttribute("title", if (viewingPast) "Past season — read-only" else "Payment received")
+            input.disabled = viewingPast
             input.addEventListener("change", {
                 input.disabled = true
                 message = null
@@ -439,7 +485,7 @@ object AdminRegistrationsScreen {
                     parent.child("div", "small") {
                         append("${away.entry.name} — on ${away.teamName} (${away.congregationName})")
                         // Pulling a member back home is the desk-side undo for a combo placement.
-                        child("button", "btn btn-link btn-sm py-0", "Unassign") {
+                        if (!viewingPast) child("button", "btn btn-link btn-sm py-0", "Unassign") {
                             setAttribute("type", "button")
                             onClick { deskAssign { Session.api.assignMemberTeam(away.entry.id, null) } }
                         }
@@ -590,6 +636,18 @@ object AdminRegistrationsScreen {
      */
     private fun renderUnassignedAdmin(parent: Element, congregationId: String, reg: RegistrationDto) {
         if (reg.unassigned.isEmpty()) return
+        if (viewingPast) {
+            // Review only: who was never placed that year, without the placement controls.
+            parent.child("h6", "mt-3") {
+                append("Unassigned contestants ")
+                child("span", "badge text-bg-warning", reg.unassigned.size.toString())
+            }
+            reg.unassigned.forEach { member ->
+                val div = member.division(Session.season)?.displayName ?: "division unknown"
+                parent.child("div", "small", "${member.name} — $div, shirt ${member.shirtSize.name}")
+            }
+            return
+        }
         // Other congregations' teams, for combo placements ("Team — Congregation").
         val comboTargets = data?.rows.orEmpty()
             .filter { it.congregation.id != congregationId }

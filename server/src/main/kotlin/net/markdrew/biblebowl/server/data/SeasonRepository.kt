@@ -41,12 +41,15 @@ val DEFAULT_SEASON = SeasonDto(
 
 interface SeasonRepository {
     fun current(): SeasonDto
+    /** The season stored for [eventYear] (current or history row); null when never recorded. */
+    fun byYear(eventYear: String): SeasonDto?
     fun update(season: SeasonDto): SeasonDto
 }
 
 class InMemorySeasonRepository(initial: SeasonDto = DEFAULT_SEASON) : SeasonRepository {
     private val ref = AtomicReference(initial)
     override fun current(): SeasonDto = ref.get()
+    override fun byYear(eventYear: String): SeasonDto? = current().takeIf { it.eventYear == eventYear }
     override fun update(season: SeasonDto): SeasonDto = season.also(ref::set)
 }
 
@@ -82,6 +85,12 @@ class PostgresSeasonRepository(private val db: Database) : SeasonRepository {
             .firstOrNull()
             ?.let { json.decodeFromString<SeasonDto>(it[SeasonsTable.payload]) }
             ?: DEFAULT_SEASON
+    }
+
+    override fun byYear(eventYear: String): SeasonDto? = transaction(db) {
+        SeasonsTable.selectAll().where { SeasonsTable.eventYear eq eventYear }
+            .firstOrNull()
+            ?.let { json.decodeFromString<SeasonDto>(it[SeasonsTable.payload]) }
     }
 
     override fun update(season: SeasonDto): SeasonDto = transaction(db) {

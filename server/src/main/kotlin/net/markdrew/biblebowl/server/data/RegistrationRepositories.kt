@@ -32,6 +32,7 @@ import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Database
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
@@ -210,6 +211,8 @@ interface RegistrationRepository {
     fun seedMember(congregationId: String, seasonYear: String, teamId: String?, member: SeedMemberDto): RosterEntryDto?
     /** Every registration for [seasonYear], with full teams/rosters (registration desk). */
     fun listForSeason(seasonYear: String): List<RegistrationDto>
+    /** Every season year with at least one registration (any status) — the desk's year picker. */
+    fun seasonYears(): List<String>
     /** Sets (non-null) or clears (null) payment received. Null return = no such registration. */
     fun setPaid(registrationId: String, paidAtEpochMs: Long?): RegistrationDto?
     /** Links the entry with claim code [code] to [userId]. Idempotent for the same account. */
@@ -777,6 +780,10 @@ class InMemoryRegistrationRepository(
 
     override fun listForSeason(seasonYear: String): List<RegistrationDto> = synchronized(lock) {
         regs.values.filter { it.seasonYear == seasonYear }.map { it.toDto() }
+    }
+
+    override fun seasonYears(): List<String> = synchronized(lock) {
+        regs.values.map { it.seasonYear }.distinct()
     }
 
     override fun setPaid(registrationId: String, paidAtEpochMs: Long?): RegistrationDto? = synchronized(lock) {
@@ -1600,6 +1607,11 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         RegistrationsTable.selectAll()
             .where { RegistrationsTable.seasonYear eq seasonYear }
             .map { it.toDto() }
+    }
+
+    override fun seasonYears(): List<String> = transaction(db) {
+        RegistrationsTable.select(RegistrationsTable.seasonYear).withDistinct()
+            .map { it[RegistrationsTable.seasonYear] }
     }
 
     override fun setPaid(registrationId: String, paidAtEpochMs: Long?): RegistrationDto? = transaction(db) {
