@@ -16,6 +16,7 @@ import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.TribesResponse
 import net.markdrew.biblebowl.api.UpsertTribeRequest
 import net.markdrew.biblebowl.api.multiSite
+import net.markdrew.biblebowl.server.data.AddLeaderResult
 import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.TribeRepository
 import net.markdrew.biblebowl.server.data.TribeResult
@@ -115,9 +116,16 @@ fun Route.tribeRoutes(
                     ApiError("invalid_leader", "A leader needs a name"),
                 )
             }
-            tribes.addLeader(call.parameters["tribeId"]!!, req.name)
-                ?: return@post call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such tribe"))
-            call.respond(response(seasonYear))
+            when (tribes.addLeader(call.parameters["tribeId"]!!, req.name)) {
+                is AddLeaderResult.Added -> call.respond(response(seasonYear))
+                AddLeaderResult.TribeNotFound ->
+                    return@post call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such tribe"))
+                AddLeaderResult.LeaderNotRegistered ->
+                    return@post call.respond(
+                        HttpStatusCode.BadRequest,
+                        ApiError("leader_not_registered", "A tribe leader must be a registered attendee this season"),
+                    )
+            }
         }
 
         delete("/admin/tribes/leaders/{leaderId}") {

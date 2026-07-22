@@ -19,44 +19,46 @@ import net.markdrew.biblebowl.api.AddCabinAssignmentRequest
 import net.markdrew.biblebowl.api.SeedMemberDto
 import net.markdrew.biblebowl.api.UpsertCabinRequest
 import net.markdrew.biblebowl.api.UpsertTribeRequest
+import net.markdrew.biblebowl.server.data.AddLeaderResult
 import net.markdrew.biblebowl.server.data.AddMemberResult
 import net.markdrew.biblebowl.server.data.CabinAssignmentsTable
 import net.markdrew.biblebowl.server.data.CabinResult
 import net.markdrew.biblebowl.server.data.TribeResult
 import net.markdrew.biblebowl.server.data.CabinsTable
-import net.markdrew.biblebowl.server.data.PendingCoachGrantsTable
 import net.markdrew.biblebowl.server.data.CheckoutDutiesTable
 import net.markdrew.biblebowl.server.data.PostgresHousingRepository
+import net.markdrew.biblebowl.server.data.PostgresSeasonRepository
 import net.markdrew.biblebowl.server.data.PostgresTribeRepository
 import net.markdrew.biblebowl.server.data.TribeLeadersTable
 import net.markdrew.biblebowl.server.data.TribesTable
 import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.CongregationsTable
-import net.markdrew.biblebowl.server.data.ContestantsTable
 import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.DatabaseFactory
 import net.markdrew.biblebowl.server.data.EnrollResult
-import net.markdrew.biblebowl.server.data.IndividualsTable
+import net.markdrew.biblebowl.server.data.ParticipantsTable
+import net.markdrew.biblebowl.server.data.PeopleTable
 import net.markdrew.biblebowl.server.data.PostgresCongregationRepository
 import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
 import net.markdrew.biblebowl.server.data.PostgresRegistrationRepository
 import net.markdrew.biblebowl.server.data.PostgresScoreRepository
 import net.markdrew.biblebowl.server.data.PostgresTesterIdRepository
-import net.markdrew.biblebowl.server.data.TesterIdsTable
 import net.markdrew.biblebowl.server.data.PostgresUserRepository
 import net.markdrew.biblebowl.server.data.QuestionVotesTable
 import net.markdrew.biblebowl.server.data.QuestionsTable
-import net.markdrew.biblebowl.server.data.RegistrationGuestsTable
 import net.markdrew.biblebowl.server.data.RegistrationsTable
 import net.markdrew.biblebowl.server.data.RoleGrantsTable
 import net.markdrew.biblebowl.server.data.ScoreReleasesTable
 import net.markdrew.biblebowl.server.data.ScoresTable
-import net.markdrew.biblebowl.server.data.TeamMembersTable
+import net.markdrew.biblebowl.server.data.SeasonSitesTable
 import net.markdrew.biblebowl.server.data.TeamsTable
 import net.markdrew.biblebowl.server.data.UpdateCongregationResult
 import net.markdrew.biblebowl.server.data.UsersTable
+import net.markdrew.biblebowl.api.EventSiteDto
+import net.markdrew.biblebowl.server.data.DEFAULT_SEASON
 import net.markdrew.biblebowl.server.security.Passwords
 import org.jetbrains.exposed.v1.jdbc.deleteAll
+import org.jetbrains.exposed.v1.jdbc.update
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.sql.DriverManager
 import kotlin.test.BeforeTest
@@ -97,22 +99,24 @@ class PostgresRepositoryTest {
             QuestionsTable.deleteAll()
             ScoresTable.deleteAll()
             ScoreReleasesTable.deleteAll()
-            TesterIdsTable.deleteAll()
-            TeamMembersTable.deleteAll()
-            IndividualsTable.deleteAll()
-            RegistrationGuestsTable.deleteAll()
-            CabinAssignmentsTable.deleteAll()
             TribeLeadersTable.deleteAll()
             TribesTable.deleteAll()
+            CabinAssignmentsTable.deleteAll()
             CabinsTable.deleteAll()
             CheckoutDutiesTable.deleteAll()
-            PendingCoachGrantsTable.deleteAll()
-            ContestantsTable.deleteAll() // after team_members + individuals (both FK-reference it)
+            ParticipantsTable.deleteAll() // before teams/registrations/people (FK-references all)
             TeamsTable.deleteAll()
             RegistrationsTable.deleteAll()
+            SeasonSitesTable.deleteAll()
             CongregationsTable.deleteAll()
             RoleGrantsTable.deleteAll()
+            // users.person_id <-> people.managed_by_user_id is a cycle: break both links first.
+            UsersTable.update { it[personId] = null }
+            PeopleTable.update { it[managedByUserId] = null }
             UsersTable.deleteAll()
+            PeopleTable.deleteAll()
+            // Seasons rows are kept: PostgresSeasonRepository seeds the default and ensureSeasonRow
+            // fills any referenced year, so tests don't need to recreate them each time.
         }
     }
 
@@ -180,17 +184,38 @@ class PostgresRepositoryTest {
     @Test
     fun testerIdsAssignOnceAndReadBack() {
         if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
         val testerIds = PostgresTesterIdRepository(db)
 
-        testerIds.assign("2027", "entry-1", 1)
-        testerIds.assign("2027", "entry-2", 2)
-        testerIds.assign("2028", "entry-1", 5) // seasons are independent
-        assertEquals(mapOf("entry-1" to 1, "entry-2" to 2), testerIds.forSeason("2027"))
-        assertEquals(mapOf("entry-1" to 5), testerIds.forSeason("2028"))
+        // Tester ids now live on participants, so they must reference real participations.
+        val coach = users.create("tcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Tester Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+        val t2027 = assertNotNull(registrations.addTeam(cong.id, "2027", "Team A"))
+        fun member(name: String) = assertIs<AddMemberResult.Added>(registrations.addMember(
+            t2027.id, UpsertRosterEntryRequest(name, birthdate = "2013-05-01", shirtSize = ShirtSize.YM, gender = Gender.MALE),
+        )).entry.id
+        val e1 = member("Ann")
+        val e2 = member("Bob")
+        val t2028 = assertNotNull(registrations.addTeam(cong.id, "2028", "Team A"))
+        val e3 = assertIs<AddMemberResult.Added>(registrations.addMember(
+            t2028.id, UpsertRosterEntryRequest("Cy", birthdate = "2013-05-01", shirtSize = ShirtSize.YM, gender = Gender.MALE),
+        )).entry.id
+
+        testerIds.assign("2027", e1, 1)
+        testerIds.assign("2027", e2, 2)
+        testerIds.assign("2028", e3, 5) // seasons are independent
+        assertEquals(mapOf(e1 to 1, e2 to 2), testerIds.forSeason("2027"))
+        assertEquals(mapOf(e3 to 5), testerIds.forSeason("2028"))
 
         // Assignments are permanent: a re-assign of the same entry is ignored.
-        testerIds.assign("2027", "entry-1", 99)
-        assertEquals(1, testerIds.forSeason("2027")["entry-1"])
+        testerIds.assign("2027", e1, 99)
+        assertEquals(1, testerIds.forSeason("2027")[e1])
     }
 
     @Test
@@ -199,22 +224,36 @@ class PostgresRepositoryTest {
         val users = PostgresUserRepository(db)
         val scores = PostgresScoreRepository(db)
 
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
         val grader = users.create("grader@tbb.org", "Grady", null, adult = true,
             passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.GRADER)))
 
-        scores.set("entry-1", Round.FIND_THE_VERSE, 38, grader.id)
-        scores.set("entry-1", Round.FIND_THE_VERSE, 40, grader.id) // upsert overwrites
-        scores.set("entry-1", Round.POWER, 45, grader.id)
-        scores.set("entry-2", Round.FIND_THE_VERSE, 22, grader.id)
+        // Scores now FK participants, so the graded entries must be real participations.
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Score Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            grader.id,
+        )).congregation
+        val team = assertNotNull(registrations.addTeam(cong.id, "2027", "Team A"))
+        fun member(name: String) = assertIs<AddMemberResult.Added>(registrations.addMember(
+            team.id, UpsertRosterEntryRequest(name, birthdate = "2013-05-01", shirtSize = ShirtSize.YM, gender = Gender.MALE),
+        )).entry.id
+        val e1 = member("Ann")
+        val e2 = member("Bob")
+
+        scores.set(e1, Round.FIND_THE_VERSE, 38, grader.id)
+        scores.set(e1, Round.FIND_THE_VERSE, 40, grader.id) // upsert overwrites
+        scores.set(e1, Round.POWER, 45, grader.id)
+        scores.set(e2, Round.FIND_THE_VERSE, 22, grader.id)
         assertEquals(
             mapOf(Round.FIND_THE_VERSE to 40, Round.POWER to 45),
-            scores.forEntries(listOf("entry-1", "entry-2"))["entry-1"],
+            scores.forEntries(listOf(e1, e2))[e1],
         )
 
-        scores.set("entry-1", Round.POWER, null, grader.id) // null clears the cell
+        scores.set(e1, Round.POWER, null, grader.id) // null clears the cell
         assertEquals(
             mapOf(Round.FIND_THE_VERSE to 40),
-            scores.forEntries(listOf("entry-1"))["entry-1"],
+            scores.forEntries(listOf(e1))[e1],
         )
 
         assertNull(scores.releasedAt("2027"))
@@ -304,10 +343,15 @@ class PostgresRepositoryTest {
     @Test
     fun siteChoicePersistsOnTheRegistration() {
         if (!available) { println("Postgres not reachable — skipping"); return }
-        val db = DatabaseFactory.connect()
         val users = PostgresUserRepository(db)
         val congregations = PostgresCongregationRepository(db)
         val registrations = PostgresRegistrationRepository(db)
+        val seasons = PostgresSeasonRepository(db)
+
+        // Site ids now FK season_sites, so the season must have those two sites configured.
+        seasons.update(DEFAULT_SEASON.copy(sites = listOf(
+            EventSiteDto("bandina", "Bandina"), EventSiteDto("white-river", "White River"),
+        )))
 
         val coach = users.create("scoach@tbb.org", "Coach", null, adult = true,
             passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
@@ -322,6 +366,9 @@ class PostgresRepositoryTest {
         assertEquals("bandina", assertNotNull(registrations.find(cong.id, "2027")).siteId)
         // Re-pinning moves it.
         assertEquals("white-river", registrations.setSite(cong.id, "2027", "white-river").siteId)
+
+        // Reset the season back to the site-less default for the other tests sharing this DB.
+        seasons.update(DEFAULT_SEASON)
     }
 
     @Test
@@ -740,18 +787,37 @@ class PostgresRepositoryTest {
         assertEquals("2015-05-01",
             registrations.find(cong.id, "2027")!!.unassigned.single { it.name == "Grace Grade" }.birthdate)
 
-        // Pending coach grants: add is idempotent, consume drains, unknown emails yield nothing.
-        users.addPendingCoachGrant("Coach@Seed.org", cong.id)
-        users.addPendingCoachGrant("coach@seed.org", cong.id)
+        // Pending coach grants are people/participants-backed now: add is idempotent (one isCoach
+        // participation), pendingCoachGrants lists the unlinked email, consume yields the congs.
+        users.addPendingCoachGrant("Coach@Seed.org", cong.id, "2026")
+        users.addPendingCoachGrant("coach@seed.org", cong.id, "2026")
         assertEquals(mapOf("coach@seed.org" to listOf(cong.id)), users.pendingCoachGrants())
         assertEquals(listOf(cong.id), users.consumePendingCoachGrants("COACH@seed.org"))
-        assertTrue(users.consumePendingCoachGrants("coach@seed.org").isEmpty())
+        assertTrue(users.consumePendingCoachGrants("nobody@seed.org").isEmpty())
+
+        // Once an account with that email signs up, the person links and it's no longer pending.
+        users.create("coach@seed.org", "Seed Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
+        assertTrue(users.pendingCoachGrants().isEmpty(), "linked coach no longer pending")
     }
 
     @Test
     fun tribesAndLeadersRoundTrip() {
         if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
         val tribes = PostgresTribeRepository(db)
+
+        // Leaders must be registered attendees now, so set up two 2027 adult participations.
+        val coach = users.create("tlcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Tribe Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+        registrations.addGuest(cong.id, "2027", UpsertGuestRequest("Kisha Dearlove", ShirtSize.AM, gender = Gender.FEMALE))
+        registrations.addGuest(cong.id, "2027", UpsertGuestRequest("Taylor Jones", ShirtSize.AM, gender = Gender.FEMALE))
 
         // Tribes: add, duplicate-name rejection (same season + site), rename, and season scoping.
         val red = assertIs<TribeResult.Ok>(tribes.addTribe("2027", UpsertTribeRequest("Red"))).tribe
@@ -760,9 +826,10 @@ class PostgresRepositoryTest {
         assertIs<TribeResult.Ok>(tribes.updateTribe(red.id, UpsertTribeRequest("Red and Yellow Swirl")))
         assertEquals(listOf("Red and Yellow Swirl"), tribes.listTribes("2027").map { it.name })
 
-        // Leaders keep assignment order; delete one, then deleting the tribe cascades the rest.
-        val kisha = assertNotNull(tribes.addLeader(red.id, "Kisha Dearlove"))
-        assertNotNull(tribes.addLeader(red.id, "Taylor Jones"))
+        // An unregistered name can't lead; registered attendees keep assignment order.
+        assertIs<AddLeaderResult.LeaderNotRegistered>(tribes.addLeader(red.id, "Nobody Here"))
+        val kisha = assertIs<AddLeaderResult.Added>(tribes.addLeader(red.id, "Kisha Dearlove")).leader
+        assertIs<AddLeaderResult.Added>(tribes.addLeader(red.id, "Taylor Jones"))
         assertEquals(
             listOf("Kisha Dearlove", "Taylor Jones"),
             tribes.listTribes("2027").single().leaders.map { it.name },

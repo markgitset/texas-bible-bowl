@@ -176,7 +176,7 @@ private class WorkbookSeeder(
             if (existing != null) {
                 users.addRoleGrant(existing.id, RoleGrant(Role.COACH, ScopeType.CONGREGATION, cong.id))
             } else {
-                users.addPendingCoachGrant(email, cong.id)
+                users.addPendingCoachGrant(email, cong.id, seasonYear)
             }
         }
 
