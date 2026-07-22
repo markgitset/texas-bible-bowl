@@ -26,9 +26,8 @@ import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.Gender
-import net.markdrew.biblebowl.api.GuestDto
+import net.markdrew.biblebowl.api.ParticipantDto
 import net.markdrew.biblebowl.api.ReturningContestantDto
-import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
 import net.markdrew.biblebowl.api.UpsertGuestRequest
@@ -92,8 +91,11 @@ private fun TeamRosterCard(model: RegisterModel, team: TeamDto) {
             }
             team.members.forEach { member ->
                 // Visiting (combo-team) members are edited by their own congregation's coach.
-                if (member.congregationId != null) VisitingMemberRow(model, member)
-                else ContestantRow(model, member, currentTeamId = team.id)
+                if (member.participation.congregationId != model.registration?.congregation?.id) {
+                    VisitingMemberRow(model, member)
+                } else {
+                    ContestantRow(model, member, currentTeamId = team.id)
+                }
             }
             when {
                 !model.canEdit -> {}
@@ -113,12 +115,12 @@ private fun TeamRosterCard(model: RegisterModel, team: TeamDto) {
  * congregation registers, edits, and pays for them; a registrar moves them.
  */
 @Composable
-private fun VisitingMemberRow(model: RegisterModel, member: RosterEntryDto) {
+private fun VisitingMemberRow(model: RegisterModel, member: ParticipantDto) {
     Column {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(member.name)
+            Text(member.person.name)
             Text(
-                "from ${member.congregationName ?: "another congregation"}",
+                "from ${member.participation.congregationName}",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.secondary,
             )
@@ -144,45 +146,45 @@ private fun VisitingMemberRow(model: RegisterModel, member: RosterEntryDto) {
 @Composable
 private fun ContestantRow(
     model: RegisterModel,
-    member: RosterEntryDto,
+    member: ParticipantDto,
     currentTeamId: String?,
     away: AwayMemberDto? = null,
 ) {
     fun save(
-        name: String = member.name,
-        birthdate: String = member.birthdate ?: "",
-        shirt: ShirtSize = member.shirtSize,
-        gender: Gender? = member.gender,
+        name: String = member.person.name,
+        birthdate: String = member.person.birthdate ?: "",
+        shirt: ShirtSize = member.participation.shirtSize ?: ShirtSize.YM,
+        gender: Gender? = member.person.gender,
         firstYear: Boolean = member.isInexperienced(model.seasonYear),
     ) {
         if (name.isNotBlank() && isValidBirthdate(birthdate) && gender != null) {
             model.mutate {
-                updateRosterEntry(member.id, UpsertRosterEntryRequest(name, birthdate, shirt, gender, firstYear))
+                updateRosterEntry(member.participation.id, UpsertRosterEntryRequest(name, birthdate, shirt, gender, firstYear))
             }
         }
     }
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            BlurSaveField(member.name, "Name", model.canEdit, Modifier.weight(1.4f)) { save(name = it) }
+            BlurSaveField(member.person.name, "Name", model.canEdit, Modifier.weight(1.4f)) { save(name = it) }
             BlurSaveField(
-                member.birthdate ?: "", "Birthdate", model.canEdit, Modifier.weight(1f),
+                member.person.birthdate ?: "", "Birthdate", model.canEdit, Modifier.weight(1f),
                 placeholder = "YYYY-MM-DD", validate = ::isValidBirthdate,
             ) { save(birthdate = it) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ShirtPicker(member.shirtSize, model.canEdit) { save(shirt = it) }
-            GenderPicker(member.gender, model.canEdit) { save(gender = it) }
+            ShirtPicker(member.participation.shirtSize ?: ShirtSize.YM, model.canEdit) { save(shirt = it) }
+            GenderPicker(member.person.gender, model.canEdit) { save(gender = it) }
             LabeledCheckbox("1st year", member.isInexperienced(model.seasonYear), model.canEdit) {
                 save(firstYear = it)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             TeamAssignPicker(model, member, currentTeamId, away)
-            ClaimCodeChip(member.claimCode)
+            ClaimCodeChip(member.person.claimCode)
             if (model.canEdit) {
-                BusyButton(model, "remove-${member.id}", "Remove", outlined = true) {
-                    model.mutate("remove-${member.id}") { deleteRosterEntry(member.id) }
+                BusyButton(model, "remove-${member.participation.id}", "Remove", outlined = true) {
+                    model.mutate("remove-${member.participation.id}") { deleteRosterEntry(member.participation.id) }
                 }
             }
         }
@@ -199,7 +201,7 @@ private fun ContestantRow(
 @Composable
 private fun TeamAssignPicker(
     model: RegisterModel,
-    member: RosterEntryDto,
+    member: ParticipantDto,
     currentTeamId: String?,
     away: AwayMemberDto? = null,
 ) {
@@ -217,7 +219,7 @@ private fun TeamAssignPicker(
         display = { it.second },
         enabled = model.canEdit,
         placeholder = "Team…",
-    ) { (teamId, _) -> model.mutate { assignMemberTeam(member.id, teamId) } }
+    ) { (teamId, _) -> model.mutate { assignMemberTeam(member.participation.id, teamId) } }
 }
 
 @Composable
@@ -463,31 +465,31 @@ private fun IndividualsCard(model: RegisterModel) {
 }
 
 @Composable
-private fun IndividualRow(model: RegisterModel, member: RosterEntryDto) {
+private fun IndividualRow(model: RegisterModel, member: ParticipantDto) {
     fun save(
-        name: String = member.name,
-        shirt: ShirtSize = member.shirtSize,
-        gender: Gender? = member.gender,
-        tribe: Boolean = member.tribeLeaderWilling,
+        name: String = member.person.name,
+        shirt: ShirtSize = member.participation.shirtSize ?: ShirtSize.AM,
+        gender: Gender? = member.person.gender,
+        tribe: Boolean = member.participation.tribeLeaderWilling,
     ) {
         if (name.isNotBlank() && gender != null) {
             model.mutate {
-                updateIndividual(member.id, UpsertIndividualRequest(name, shirt, gender, tribeLeaderWilling = tribe))
+                updateIndividual(member.participation.id, UpsertIndividualRequest(name, shirt, gender, tribeLeaderWilling = tribe))
             }
         }
     }
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        BlurSaveField(member.name, "Name", model.canEdit, Modifier.fillMaxWidth()) { save(name = it) }
+        BlurSaveField(member.person.name, "Name", model.canEdit, Modifier.fillMaxWidth()) { save(name = it) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ShirtPicker(member.shirtSize, model.canEdit) { save(shirt = it) }
-            GenderPicker(member.gender, model.canEdit) { save(gender = it) }
-            LabeledCheckbox("Tribe leader?", member.tribeLeaderWilling, model.canEdit) { save(tribe = it) }
+            ShirtPicker(member.participation.shirtSize ?: ShirtSize.AM, model.canEdit) { save(shirt = it) }
+            GenderPicker(member.person.gender, model.canEdit) { save(gender = it) }
+            LabeledCheckbox("Tribe leader?", member.participation.tribeLeaderWilling, model.canEdit) { save(tribe = it) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            ClaimCodeChip(member.claimCode)
+            ClaimCodeChip(member.person.claimCode)
             if (model.canEdit) {
-                BusyButton(model, "remove-${member.id}", "Remove", outlined = true) {
-                    model.mutate("remove-${member.id}") { deleteIndividual(member.id) }
+                BusyButton(model, "remove-${member.participation.id}", "Remove", outlined = true) {
+                    model.mutate("remove-${member.participation.id}") { deleteIndividual(member.participation.id) }
                 }
             }
         }
@@ -560,20 +562,20 @@ private fun GuestsCard(model: RegisterModel) {
 }
 
 @Composable
-private fun GuestRow(model: RegisterModel, guest: GuestDto) {
+private fun GuestRow(model: RegisterModel, guest: ParticipantDto) {
     // The birthdate is row state (not just server state) so the tier hint, shirt visibility, and
     // volunteer/contact sections react as the coach types.
-    var birthdate by remember(guest.id, guest.birthdate) { mutableStateOf(guest.birthdate ?: "") }
-    var contactOpen by remember(guest.id) { mutableStateOf(false) }
-    var contact by remember(guest.id, guest.contact) { mutableStateOf(guest.contact ?: ContactInfoDto()) }
+    var birthdate by remember(guest.participation.id, guest.person.birthdate) { mutableStateOf(guest.person.birthdate ?: "") }
+    var contactOpen by remember(guest.participation.id) { mutableStateOf(false) }
+    var contact by remember(guest.participation.id, guest.person.contact) { mutableStateOf(guest.person.contact ?: ContactInfoDto()) }
     val tier = model.season.ageTierFor(birthdate.ifBlank { null })
 
     fun save(
-        name: String = guest.name,
-        shirt: ShirtSize? = guest.shirtSize,
-        gender: Gender? = guest.gender,
-        positions: List<String> = guest.positions,
-        tribe: Boolean = guest.tribeLeaderWilling,
+        name: String = guest.person.name,
+        shirt: ShirtSize? = guest.participation.shirtSize,
+        gender: Gender? = guest.person.gender,
+        positions: List<String> = guest.participation.positions,
+        tribe: Boolean = guest.participation.tribeLeaderWilling,
     ) {
         if (name.isBlank() || gender == null) return
         val birthdateOrNull = birthdate.ifBlank { null }
@@ -582,7 +584,7 @@ private fun GuestRow(model: RegisterModel, guest: GuestDto) {
         val effectiveShirt = if (tier == AgeTier.UNDER_3) null else shirt ?: ShirtSize.AM
         model.mutate {
             updateGuest(
-                guest.id,
+                guest.participation.id,
                 UpsertGuestRequest(
                     name, effectiveShirt, birthdateOrNull, gender,
                     positions = positions, tribeLeaderWilling = tribe, contact = contact,
@@ -593,9 +595,9 @@ private fun GuestRow(model: RegisterModel, guest: GuestDto) {
 
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            BlurSaveField(guest.name, "Name", model.canEdit, Modifier.weight(1.4f)) { save(name = it) }
+            BlurSaveField(guest.person.name, "Name", model.canEdit, Modifier.weight(1.4f)) { save(name = it) }
             BlurSaveField(
-                guest.birthdate ?: "", "Birthdate (children)", model.canEdit, Modifier.weight(1f),
+                guest.person.birthdate ?: "", "Birthdate (children)", model.canEdit, Modifier.weight(1f),
                 placeholder = "YYYY-MM-DD",
                 validate = { it.isBlank() || isValidBirthdate(it) },
             ) {
@@ -608,18 +610,18 @@ private fun GuestRow(model: RegisterModel, guest: GuestDto) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            GenderPicker(guest.gender, model.canEdit) { save(gender = it) }
+            GenderPicker(guest.person.gender, model.canEdit) { save(gender = it) }
             if (tier != AgeTier.UNDER_3) {
-                ShirtPicker(guest.shirtSize ?: ShirtSize.AM, model.canEdit) { save(shirt = it) }
+                ShirtPicker(guest.participation.shirtSize ?: ShirtSize.AM, model.canEdit) { save(shirt = it) }
             }
             if (tier == AgeTier.AGE_9_PLUS) {
                 OutlinedButton(onClick = { contactOpen = !contactOpen }) {
-                    Text(if (guest.contact != null) "Contact ✓" else "Contact")
+                    Text(if (guest.person.contact != null) "Contact ✓" else "Contact")
                 }
             }
             if (model.canEdit) {
-                BusyButton(model, "remove-${guest.id}", "Remove", outlined = true) {
-                    model.mutate("remove-${guest.id}") { deleteGuest(guest.id) }
+                BusyButton(model, "remove-${guest.participation.id}", "Remove", outlined = true) {
+                    model.mutate("remove-${guest.participation.id}") { deleteGuest(guest.participation.id) }
                 }
             }
         }
@@ -627,8 +629,8 @@ private fun GuestRow(model: RegisterModel, guest: GuestDto) {
         if (tier == AgeTier.AGE_9_PLUS) {
             VolunteerFields(
                 model,
-                positions = guest.positions,
-                tribeLeaderWilling = guest.tribeLeaderWilling,
+                positions = guest.participation.positions,
+                tribeLeaderWilling = guest.participation.tribeLeaderWilling,
                 enabled = model.canEdit,
                 onPositionsChange = { save(positions = it) },
                 onTribeChange = { save(tribe = it) },

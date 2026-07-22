@@ -105,14 +105,14 @@ fun Route.testerRoutes(
                 .sortedBy { it.congregation.name.lowercase() }
                 .flatMap { reg ->
                     val site = season.siteFor(reg.siteId)
-                    reg.guests.sortedBy { it.name.lowercase() }.map { guest ->
+                    reg.guests.sortedBy { it.person.name.lowercase() }.map { guest ->
                         SitedTag(
                             siteId = site?.id,
                             siteName = site?.name.orEmpty(),
                             tag = Nametag(
-                                name = guest.name,
+                                name = guest.person.name,
                                 congregation = reg.congregation.name,
-                                role = if (guest.positions.isNotEmpty()) "Volunteer" else "Guest",
+                                role = if (guest.participation.positions.isNotEmpty()) "Volunteer" else "Guest",
                             ),
                         )
                     }
@@ -202,12 +202,12 @@ private fun testerList(
             val teamDivision = team.division(season)
             val teamInexperienced = team.isInexperienced(season.eventYear.toString())
             team.members.map { member ->
-                val homeCongregationId = member.congregationId ?: reg.congregation.id
+                val homeCongregationId = member.participation.congregationId
                 val site = siteByCongregation[homeCongregationId]
                 TesterSeed(
-                    rosterEntryId = member.id,
-                    name = member.name,
-                    congregationName = member.congregationName ?: reg.congregation.name,
+                    rosterEntryId = member.participation.id,
+                    name = member.person.name,
+                    congregationName = member.participation.congregationName,
                     congregationCode = codeByCongregation[homeCongregationId].orEmpty(),
                     teamName = team.name,
                     teamDivision = teamDivision,
@@ -222,8 +222,8 @@ private fun testerList(
         val site = siteByCongregation[reg.congregation.id]
         val teamless = (reg.individuals + reg.unassigned).map { entry ->
             TesterSeed(
-                rosterEntryId = entry.id,
-                name = entry.name,
+                rosterEntryId = entry.participation.id,
+                name = entry.person.name,
                 congregationName = reg.congregation.name,
                 congregationCode = reg.congregation.code,
                 teamName = null,

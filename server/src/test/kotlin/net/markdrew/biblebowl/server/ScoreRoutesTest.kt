@@ -21,7 +21,8 @@ import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AuthResponse
-import net.markdrew.biblebowl.api.ClaimEntryRequest
+import net.markdrew.biblebowl.api.ClaimPersonRequest
+import net.markdrew.biblebowl.api.ClaimPersonResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Division
@@ -34,7 +35,6 @@ import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
-import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.SaveScoresRequest
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
@@ -534,36 +534,36 @@ class ScoreRoutesTest {
         )
         val (kidEntry, otherEntry) = reg.teams.single().members
 
-        // The contestant claims their entry — dashes/lowercase tolerated, bad codes 404.
+        // A parent claims the contestant's person — dashes/lowercase tolerated, bad codes 404.
         val kid = api.signUp("kid@tbb.org", "Kid", adult = false)
+        val kidCode = kidEntry.claimCode
         assertEquals(
             HttpStatusCode.NotFound,
-            api.post("/roster/claim") {
+            api.post("/people/claim") {
                 header(HttpHeaders.Authorization, "Bearer ${kid.token}")
-                setBody(ClaimEntryRequest("ZZZZ-9999"))
+                setBody(ClaimPersonRequest("ZZZZ-9999"))
             }.status,
         )
-        val dashed = "${kidEntry.claimCode.take(4)}-${kidEntry.claimCode.drop(4).lowercase()}"
-        val claimed: RosterEntryDto = api.post("/roster/claim") {
+        val dashed = "${kidCode.take(4)}-${kidCode.drop(4).lowercase()}"
+        val claimed: ClaimPersonResponse = api.post("/people/claim") {
             header(HttpHeaders.Authorization, "Bearer ${kid.token}")
-            setBody(ClaimEntryRequest(dashed))
+            setBody(ClaimPersonRequest(dashed))
         }.body()
-        assertEquals(kidEntry.id, claimed.id)
-        assertTrue(claimed.claimed)
-        // Someone else can't claim the same entry (but re-claiming your own is idempotent).
+        assertEquals(kidEntry.name, claimed.person.name)
+        // Someone else can't claim the same person (but re-claiming your own is idempotent).
         val stranger = api.signUp("stranger@tbb.org", "Stranger", adult = false)
         assertEquals(
             HttpStatusCode.Conflict,
-            api.post("/roster/claim") {
+            api.post("/people/claim") {
                 header(HttpHeaders.Authorization, "Bearer ${stranger.token}")
-                setBody(ClaimEntryRequest(kidEntry.claimCode))
+                setBody(ClaimPersonRequest(kidCode))
             }.status,
         )
         assertEquals(
             HttpStatusCode.OK,
-            api.post("/roster/claim") {
+            api.post("/people/claim") {
                 header(HttpHeaders.Authorization, "Bearer ${kid.token}")
-                setBody(ClaimEntryRequest(kidEntry.claimCode))
+                setBody(ClaimPersonRequest(kidCode))
             }.status,
         )
 

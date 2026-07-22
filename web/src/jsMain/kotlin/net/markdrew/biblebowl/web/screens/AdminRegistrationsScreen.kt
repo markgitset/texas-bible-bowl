@@ -177,14 +177,14 @@ object AdminRegistrationsScreen {
         rows.forEach { row ->
             val reg = row.registration ?: return@forEach
             reg.guests.forEach { guest ->
-                guest.positions.forEach { position ->
+                guest.participation.positions.forEach { position ->
                     // getOrPut keeps volunteers whose position was later removed from the season list.
-                    byPosition.getOrPut(position) { mutableListOf() } += Volunteer(guest.name, row.congregation.name)
+                    byPosition.getOrPut(position) { mutableListOf() } += Volunteer(guest.person.name, row.congregation.name)
                 }
-                if (guest.tribeLeaderWilling) tribeLeaders += Volunteer(guest.name, row.congregation.name)
+                if (guest.participation.tribeLeaderWilling) tribeLeaders += Volunteer(guest.person.name, row.congregation.name)
             }
-            reg.individuals.filter { it.tribeLeaderWilling }
-                .forEach { tribeLeaders += Volunteer(it.name, row.congregation.name) }
+            reg.individuals.filter { it.participation.tribeLeaderWilling }
+                .forEach { tribeLeaders += Volunteer(it.person.name, row.congregation.name) }
         }
         if (byPosition.values.all { it.isEmpty() } && tribeLeaders.isEmpty()) return
 
@@ -224,7 +224,7 @@ object AdminRegistrationsScreen {
         if (counts.isEmpty()) return
         val totals: Map<ShirtSize, Int> =
             ShirtSize.entries.associateWith { size -> counts.sumOf { (_, bySize) -> bySize[size] ?: 0 } }
-        val noShirt = rows.sumOf { row -> row.registration?.guests?.count { it.shirtSize == null } ?: 0 }
+        val noShirt = rows.sumOf { row -> row.registration?.guests?.count { it.participation.shirtSize == null } ?: 0 }
 
         parent.child("div", "d-flex flex-wrap align-items-center gap-3 mt-4 mb-2") {
             child("h4", "mb-0") {
@@ -479,17 +479,17 @@ object AdminRegistrationsScreen {
         val reg = row.registration
         if (reg != null) {
             if (multiSite) renderSiteSelectAdmin(parent, row.congregation.id, reg)
-            reg.teams.forEach { team -> renderTeamDetail(parent, team) }
+            reg.teams.forEach { team -> renderTeamDetail(parent, team, row.congregation.id) }
             renderUnassignedAdmin(parent, row.congregation.id, reg)
             if (reg.awayMembers.isNotEmpty()) {
                 parent.child("h6", "mt-2", "On combo teams")
                 reg.awayMembers.forEach { away ->
                     parent.child("div", "small") {
-                        append("${away.entry.name} — on ${away.teamName} (${away.congregationName})")
+                        append("${away.entry.person.name} — on ${away.teamName} (${away.congregationName})")
                         // Pulling a member back home is the desk-side undo for a combo placement.
                         if (!viewingPast) child("button", "btn btn-link btn-sm py-0", "Unassign") {
                             setAttribute("type", "button")
-                            onClick { deskAssign { Session.api.assignMemberTeam(away.entry.id, null) } }
+                            onClick { deskAssign { Session.api.assignMemberTeam(away.entry.participation.id, null) } }
                         }
                     }
                 }
@@ -498,8 +498,8 @@ object AdminRegistrationsScreen {
                 parent.child("h6", "mt-2", "Individual contestants (adults)")
                 reg.individuals.forEach { entry ->
                     parent.child("div", "small") {
-                        append("${entry.name} — shirt ${entry.shirtSize.name}")
-                        if (entry.tribeLeaderWilling) child("span", "badge text-bg-success ms-1", "tribe leader")
+                        append("${entry.person.name} — shirt ${entry.participation.shirtSize?.name ?: "—"}")
+                        if (entry.participation.tribeLeaderWilling) child("span", "badge text-bg-success ms-1", "tribe leader")
                     }
                 }
             }
@@ -507,15 +507,15 @@ object AdminRegistrationsScreen {
                 parent.child("h6", "mt-2", "Guests & volunteers")
                 reg.guests.forEach { guest ->
                     val details = listOfNotNull(
-                        Session.season.ageTierFor(guest.birthdate).displayName.lowercase(),
-                        guest.gender?.displayName?.lowercase(),
-                        guest.shirtSize?.let { "shirt ${it.name}" } ?: "no shirt",
+                        Session.season.ageTierFor(guest.person.birthdate).displayName.lowercase(),
+                        guest.person.gender?.displayName?.lowercase(),
+                        guest.participation.shirtSize?.let { "shirt ${it.name}" } ?: "no shirt",
                     )
                     parent.child("div", "small") {
-                        append("${guest.name} — ${details.joinToString(", ")}")
-                        guest.positions.forEach { child("span", "badge text-bg-secondary ms-1", it) }
-                        if (guest.tribeLeaderWilling) child("span", "badge text-bg-success ms-1", "tribe leader")
-                        guest.contact?.let { child("div", "text-muted ms-3", contactSummary(it)) }
+                        append("${guest.person.name} — ${details.joinToString(", ")}")
+                        guest.participation.positions.forEach { child("span", "badge text-bg-secondary ms-1", it) }
+                        if (guest.participation.tribeLeaderWilling) child("span", "badge text-bg-success ms-1", "tribe leader")
+                        guest.person.contact?.let { child("div", "text-muted ms-3", contactSummary(it)) }
                     }
                 }
             }
@@ -732,7 +732,7 @@ object AdminRegistrationsScreen {
             }
             reg.unassigned.forEach { member ->
                 val div = member.division(Session.season)?.displayName ?: "division unknown"
-                parent.child("div", "small", "${member.name} — $div, shirt ${member.shirtSize.name}")
+                parent.child("div", "small", "${member.person.name} — $div, shirt ${member.participation.shirtSize?.name ?: "—"}")
             }
             return
         }
@@ -747,7 +747,7 @@ object AdminRegistrationsScreen {
         reg.unassigned.forEach { member ->
             parent.child("div", "d-flex flex-wrap align-items-center gap-2 small mb-1") {
                 val div = member.division(Session.season)?.displayName ?: "division unknown"
-                child("span", text = "${member.name} — $div, shirt ${member.shirtSize.name}")
+                child("span", text = "${member.person.name} — $div, shirt ${member.participation.shirtSize?.name ?: "—"}")
                 if (reg.teams.isEmpty() && comboTargets.isEmpty()) {
                     child("span", "text-muted", "add a team below to place them")
                 } else {
@@ -766,7 +766,7 @@ object AdminRegistrationsScreen {
                         val teamId = select.value
                         if (teamId.isNotEmpty()) {
                             // A combo placement changes the hosting row too — reload the whole desk.
-                            deskAssign { Session.api.assignMemberTeam(member.id, teamId) }
+                            deskAssign { Session.api.assignMemberTeam(member.participation.id, teamId) }
                         }
                     })
                 }
@@ -850,7 +850,7 @@ object AdminRegistrationsScreen {
         }
     }
 
-    private fun renderTeamDetail(parent: Element, team: TeamDto) {
+    private fun renderTeamDetail(parent: Element, team: TeamDto, homeCongregationId: String) {
         parent.child("h6", "mt-2") {
             append("${team.name} ")
             val division = team.division(Session.season)
@@ -867,9 +867,11 @@ object AdminRegistrationsScreen {
         team.members.forEach { member ->
             val division = member.division(Session.season)?.displayName ?: "division unknown"
             parent.child("div", "small") {
-                append("${member.name} — $division, shirt ${member.shirtSize.name}")
+                append("${member.person.name} — $division, shirt ${member.participation.shirtSize?.name ?: "—"}")
                 // A visiting (combo-team) member — registered and paid for by their own congregation.
-                member.congregationName?.let { child("span", "badge text-bg-info ms-1", "from $it") }
+                if (member.participation.congregationId != homeCongregationId) {
+                    child("span", "badge text-bg-info ms-1", "from ${member.participation.congregationName}")
+                }
             }
         }
     }

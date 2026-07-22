@@ -43,13 +43,10 @@ import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.multiSite
 import net.markdrew.biblebowl.api.registrationTotalCents
 import net.markdrew.biblebowl.api.siteFor
-import net.markdrew.biblebowl.api.ClaimEntryRequest
 import net.markdrew.biblebowl.server.RegistrationWindowState
 import net.markdrew.biblebowl.server.data.AddMemberResult
 import net.markdrew.biblebowl.server.data.AssignResult
-import net.markdrew.biblebowl.server.data.ClaimCodes
 import net.markdrew.biblebowl.server.data.EnrollResult
-import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.CongregationRepository
 import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.RegistrationRepository
@@ -541,34 +538,6 @@ fun Route.registrationRoutes(
             if (!requireWindowOpen(user, seasons)) return@delete
             registrations.deleteGuest(guestId)
             respondRegistrationUpdate(congregationId, seasons, registrations)
-        }
-
-        // Claiming a roster entry (docs/gui-redesign.md, owner-account model): a contestant/parent
-        // account redeems the coach-shared code, linking the entry to the account — that link is
-        // what My Scores' owner scoping keys off. No window gating: claiming happens any time,
-        // including after registration closes.
-        post("/roster/claim") {
-            val user = currentUser(users) ?: return@post
-            if (!requireRegistrationFeature(user, seasons)) return@post
-            val req = call.receive<ClaimEntryRequest>()
-            val code = req.code.uppercase().filter { it.isLetterOrDigit() }
-            if (code.length != ClaimCodes.LENGTH) {
-                return@post call.respond(
-                    HttpStatusCode.BadRequest,
-                    ApiError("invalid_claim_code", "Claim codes look like ABCD-2345 — check yours with your coach"),
-                )
-            }
-            when (val result = registrations.claimEntry(code, user.id)) {
-                is ClaimResult.Claimed -> call.respond(result.entry)
-                ClaimResult.NotFound -> call.respond(
-                    HttpStatusCode.NotFound,
-                    ApiError("claim_code_not_found", "No roster entry matches that code — check it with your coach"),
-                )
-                ClaimResult.AlreadyClaimed -> call.respond(
-                    HttpStatusCode.Conflict,
-                    ApiError("already_claimed", "That entry was already claimed by another account — contact us"),
-                )
-            }
         }
 
         post("/registration/{congregationId}/submit") {

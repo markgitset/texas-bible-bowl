@@ -80,9 +80,6 @@ class TbbApiRequestTest {
                     """[{"id":"u2","email":"carol@tbb.org","displayName":"Carol"}]""" to "application/json"
                 "/users/u2/roles" ->
                     """{"id":"u2","email":"carol@tbb.org","displayName":"Carol"}""" to "application/json"
-                "/roster/claim" ->
-                    """{"id":"m1","name":"Timothy","shirtSize":"YM","claimCode":"ABCD2345","claimed":true}""" to
-                        "application/json"
                 "/admin/scores", "/admin/scores/release" ->
                     """{"seasonYear":"2027","rows":[]}""" to "application/json"
                 "/admin/scores/standings" ->
@@ -281,11 +278,6 @@ class TbbApiRequestTest {
     @Test
     fun scoringEndpointsSendAuthorizedTypedRequests() = runBlocking {
         api.login(LoginRequest("grader@tbb.org", "password123"))
-
-        val claimed = api.claimRosterEntry("abcd-2345")
-        assertEquals("Timothy", claimed.name)
-        assertTrue(claimed.claimed)
-        assertEquals("POST" to "/roster/claim", methods.last() to requests.last())
 
         val sheet = api.gradingSheet()
         assertEquals("2027", sheet.seasonYear)

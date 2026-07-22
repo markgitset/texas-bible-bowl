@@ -39,33 +39,34 @@ data class AttendeeRow(
 fun deskAttendees(season: SeasonDto, rows: List<RegistrationDeskRowDto>): List<AttendeeRow> =
     rows.flatMap { row ->
         val reg = row.registration ?: return@flatMap emptyList<AttendeeRow>()
-        fun tester(entry: RosterEntryDto) = AttendeeRow(
-            name = entry.name,
+        fun tester(entry: ParticipantDto) = AttendeeRow(
+            name = entry.person.name,
             congregationId = row.congregation.id,
             congregationName = row.congregation.name,
             siteId = reg.siteId,
             tester = true,
-            gender = entry.gender,
-            shirtSize = entry.shirtSize,
-            ageTier = season.ageTierFor(entry.birthdate),
-            grade = entry.birthdate?.let { season.gradeForBirthdate(it) },
+            gender = entry.person.gender,
+            shirtSize = entry.participation.shirtSize,
+            ageTier = season.ageTierFor(entry.person.birthdate),
+            grade = entry.person.birthdate?.let { season.gradeForBirthdate(it) },
             division = entry.division(season),
             inexperienced = entry.isInexperienced(reg.seasonYear),
         )
-        reg.teams.flatMap { team -> team.members.filter { it.congregationId == null } }.map(::tester) +
+        reg.teams.flatMap { team -> team.members.filter { it.participation.congregationId == row.congregation.id } }
+            .map(::tester) +
             reg.unassigned.map(::tester) +
             reg.awayMembers.map { tester(it.entry) } +
             reg.individuals.map(::tester) +
             reg.guests.map { guest ->
                 AttendeeRow(
-                    name = guest.name,
+                    name = guest.person.name,
                     congregationId = row.congregation.id,
                     congregationName = row.congregation.name,
                     siteId = reg.siteId,
                     tester = false,
-                    gender = guest.gender,
-                    shirtSize = guest.shirtSize,
-                    ageTier = season.ageTierFor(guest.birthdate),
+                    gender = guest.person.gender,
+                    shirtSize = guest.participation.shirtSize,
+                    ageTier = season.ageTierFor(guest.person.birthdate),
                 )
             }
     }

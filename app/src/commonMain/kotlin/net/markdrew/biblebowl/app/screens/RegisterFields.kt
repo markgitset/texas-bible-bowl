@@ -122,9 +122,10 @@ internal fun LabeledCheckbox(label: String, checked: Boolean, enabled: Boolean, 
     }
 }
 
-/** Claim-code chip — tap to copy (the web version's click-to-copy badge). */
+/** Claim-code chip — tap to copy (the web version's click-to-copy badge); nothing when codeless. */
 @Composable
-internal fun ClaimCodeChip(code: String) {
+internal fun ClaimCodeChip(code: String?) {
+    if (code.isNullOrBlank()) return
     val clipboard = LocalClipboardManager.current
     var copied by remember { mutableStateOf(false) }
     if (copied) LaunchedEffect(Unit) {

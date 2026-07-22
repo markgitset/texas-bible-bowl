@@ -154,9 +154,9 @@ private class WorkbookSeeder(
                 return@forEach
             }
             val req = UpsertIndividualRequest(si.name, si.shirtSize, gender, si.tribeLeaderWilling)
-            val existing = snapshot?.individuals?.firstOrNull { it.name.equals(si.name.trim(), ignoreCase = true) }
+            val existing = snapshot?.individuals?.firstOrNull { it.person.name.equals(si.name.trim(), ignoreCase = true) }
             if (existing == null) registrations.addIndividual(cong.id, seasonYear, req)
-            else registrations.updateIndividual(existing.id, req)
+            else registrations.updateIndividual(existing.participation.id, req)
         }
 
         // Guests (volunteers, families, coach-typed attendees) — matched by name against the snapshot.
@@ -165,9 +165,9 @@ private class WorkbookSeeder(
                 name = sg.name, shirtSize = sg.shirtSize, birthdate = null, gender = sg.gender,
                 positions = sg.positions, tribeLeaderWilling = sg.tribeLeaderWilling, contact = sg.contact,
             )
-            val existing = snapshot?.guests?.firstOrNull { it.name.equals(sg.name.trim(), ignoreCase = true) }
+            val existing = snapshot?.guests?.firstOrNull { it.person.name.equals(sg.name.trim(), ignoreCase = true) }
             if (existing == null) registrations.addGuest(cong.id, seasonYear, req)
-            else registrations.updateGuest(existing.id, req)
+            else registrations.updateGuest(existing.participation.id, req)
         }
 
         // Coach emails: grant now when the account already exists, else park a pending grant.

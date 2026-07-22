@@ -993,9 +993,10 @@ class RegistrationRoutesTest {
         val alphaTeam = alphaReg.registration!!.teams.single()
         assertEquals(listOf("Ann", "Betsy"), alphaTeam.members.map { it.name }.sorted())
         val visiting = alphaTeam.members.single { it.name == "Betsy" }
-        assertEquals(congB.id, visiting.congregationId)
-        assertEquals("Beta Church", visiting.congregationName)
-        assertNull(alphaTeam.members.single { it.name == "Ann" }.congregationId)
+        assertEquals(congB.id, visiting.participation.congregationId)
+        assertEquals("Beta Church", visiting.participation.congregationName)
+        // Ann is a home member: her participation congregation is Alpha's, not a visitor's.
+        assertEquals(congA.id, alphaTeam.members.single { it.name == "Ann" }.participation.congregationId)
         assertEquals(1, alphaReg.registration!!.contestantCount)
         assertEquals(8500, alphaReg.registration!!.totalCents)
 

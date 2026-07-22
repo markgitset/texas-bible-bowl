@@ -11,22 +11,39 @@ class AttendeesTest {
     /** FALLBACK_SEASON is the 2027 event, so the default grade cutoff is 2026-09-01. */
     private val season = FALLBACK_SEASON
 
+    /** A contestant participant. [congregationId] null = home ("c1"); a value marks a visiting member. */
     private fun entry(
         name: String,
         birthdate: String?,
         firstSeasonYear: String? = null,
         congregationId: String? = null,
         gender: Gender? = Gender.MALE,
-    ) = RosterEntryDto(
-        id = "e-$name",
-        name = name,
-        birthdate = birthdate,
-        shirtSize = ShirtSize.AM,
-        gender = gender,
-        firstSeasonYear = firstSeasonYear,
-        claimCode = "AAAA2222",
-        congregationId = congregationId,
-        congregationName = congregationId?.let { "Elsewhere" },
+    ) = ParticipantDto(
+        person = PersonDto(
+            id = "p-$name", name = name, birthdate = birthdate, isAdult = birthdate == null,
+            gender = gender, firstSeasonYear = firstSeasonYear, claimCode = "AAAA2222",
+        ),
+        participation = ParticipationDto(
+            id = "e-$name", seasonYear = season.eventYear.toString(),
+            congregationId = congregationId ?: "c1",
+            congregationName = if (congregationId == null) "First Street" else "Elsewhere",
+            isContestant = true, shirtSize = ShirtSize.AM,
+        ),
+    )
+
+    /** A guest participant (isContestant = false). */
+    private fun guest(
+        id: String,
+        name: String,
+        shirtSize: ShirtSize? = null,
+        birthdate: String? = null,
+        gender: Gender? = null,
+    ) = ParticipantDto(
+        person = PersonDto(id = "p-$id", name = name, birthdate = birthdate, isAdult = birthdate == null, gender = gender),
+        participation = ParticipationDto(
+            id = id, seasonYear = season.eventYear.toString(), congregationId = "c1",
+            congregationName = "First Street", isContestant = false, shirtSize = shirtSize,
+        ),
     )
 
     private fun deskRow(registration: RegistrationDto?) = RegistrationDeskRowDto(
@@ -36,10 +53,10 @@ class AttendeesTest {
 
     private fun registration(
         teams: List<TeamDto> = emptyList(),
-        individuals: List<RosterEntryDto> = emptyList(),
-        unassigned: List<RosterEntryDto> = emptyList(),
+        individuals: List<ParticipantDto> = emptyList(),
+        unassigned: List<ParticipantDto> = emptyList(),
         awayMembers: List<AwayMemberDto> = emptyList(),
-        guests: List<GuestDto> = emptyList(),
+        guests: List<ParticipantDto> = emptyList(),
         siteId: String? = null,
     ) = RegistrationDto(
         id = "r1",
@@ -75,8 +92,8 @@ class AttendeesTest {
             ),
             individuals = listOf(entry("Adult Solo", birthdate = null)),
             guests = listOf(
-                GuestDto(id = "g1", name = "Grown Guest", shirtSize = ShirtSize.AL, gender = Gender.FEMALE),
-                GuestDto(id = "g2", name = "Toddler", shirtSize = null, birthdate = "2025-01-01", gender = Gender.MALE),
+                guest(id = "g1", name = "Grown Guest", shirtSize = ShirtSize.AL, gender = Gender.FEMALE),
+                guest(id = "g2", name = "Toddler", shirtSize = null, birthdate = "2025-01-01", gender = Gender.MALE),
             ),
             siteId = "site-b",
         )
@@ -116,8 +133,8 @@ class AttendeesTest {
     fun guestFieldsDeriveTierFromBirthdate() {
         val reg = registration(
             guests = listOf(
-                GuestDto(id = "g1", name = "Grown Guest", shirtSize = ShirtSize.AL, gender = Gender.FEMALE),
-                GuestDto(id = "g2", name = "Toddler", shirtSize = null, birthdate = "2025-01-01"),
+                guest(id = "g1", name = "Grown Guest", shirtSize = ShirtSize.AL, gender = Gender.FEMALE),
+                guest(id = "g2", name = "Toddler", shirtSize = null, birthdate = "2025-01-01"),
             ),
         )
         val (grown, toddler) = deskAttendees(season, listOf(deskRow(reg)))

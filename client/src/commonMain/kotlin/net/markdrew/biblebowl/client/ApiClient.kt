@@ -21,7 +21,6 @@ import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AttachPersonRequest
 import net.markdrew.biblebowl.api.AuthResponse
-import net.markdrew.biblebowl.api.ClaimEntryRequest
 import net.markdrew.biblebowl.api.ClaimPersonRequest
 import net.markdrew.biblebowl.api.ClaimPersonResponse
 import net.markdrew.biblebowl.api.MergePeopleRequest
@@ -49,7 +48,6 @@ import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.RoleGrant
-import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.SaveScoresRequest
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.SeasonDto
@@ -451,18 +449,12 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun submitRegistration(congregationId: String): RegistrationUpdateResponse =
         client.post("$baseUrl/registration/$congregationId/submit") { authorize() }.bodyOrThrow()
 
-    /** Claims a roster entry by its coach-shared code (dashes/case ignored). 404/409 on bad codes. */
-    suspend fun claimRosterEntry(code: String): RosterEntryDto =
-        client.post("$baseUrl/roster/claim") {
-            authorize(); contentType(ContentType.Application.Json); setBody(ClaimEntryRequest(code))
-        }.bodyOrThrow()
-
     // --- Person-centric registration (schema redesign phase 4) ---
 
     /**
-     * Claims a *person* by their coach-shared code (dashes/case ignored) — the person-centric
-     * replacement for [claimRosterEntry]. The response says whether the account now IS the person
-     * ([PersonRelation.SELF]) or manages them ([PersonRelation.MANAGED]). 400/404/409 on bad codes.
+     * Claims a *person* by their coach-shared code (dashes/case ignored). The response says whether
+     * the account now IS the person ([PersonRelation.SELF]) or manages them
+     * ([PersonRelation.MANAGED]). 400/404/409 on bad codes.
      */
     suspend fun claimPerson(code: String): ClaimPersonResponse =
         client.post("$baseUrl/people/claim") {

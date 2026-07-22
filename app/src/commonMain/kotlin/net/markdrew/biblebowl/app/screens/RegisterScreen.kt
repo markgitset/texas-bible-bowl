@@ -743,12 +743,12 @@ private fun ReviewStep(model: RegisterModel) {
                     division = team.division(season)
                         ?.let { divisionLabel(it, team.isInexperienced(model.seasonYear)) } ?: "—",
                     people = team.members.joinToString {
-                        it.name + (if (it.isInexperienced(model.seasonYear)) " (1st year)" else "") +
-                            (it.congregationName?.let { c -> " (from $c)" } ?: "")
+                        it.person.name + (if (it.isInexperienced(model.seasonYear)) " (1st year)" else "") +
+                            (if (it.participation.congregationId != reg.congregation.id) " (from ${it.participation.congregationName})" else "")
                     },
                     fees = tierFeeMath(
                         season,
-                        team.members.filter { it.congregationId == null }.map { it.birthdate },
+                        team.members.filter { it.participation.congregationId == reg.congregation.id }.map { it.person.birthdate },
                         contestant = true,
                     ),
                 )
@@ -756,37 +756,37 @@ private fun ReviewStep(model: RegisterModel) {
             if (reg.unassigned.isNotEmpty()) {
                 ReviewRow(
                     title = "Unassigned", division = "—",
-                    people = reg.unassigned.joinToString { it.name },
-                    fees = tierFeeMath(season, reg.unassigned.map { it.birthdate }, contestant = true),
+                    people = reg.unassigned.joinToString { it.person.name },
+                    fees = tierFeeMath(season, reg.unassigned.map { it.person.birthdate }, contestant = true),
                 )
             }
             if (reg.awayMembers.isNotEmpty()) {
                 ReviewRow(
                     title = "On combo teams", division = "—",
                     people = reg.awayMembers.joinToString {
-                        "${it.entry.name} (${it.teamName}, ${it.congregationName})"
+                        "${it.entry.person.name} (${it.teamName}, ${it.congregationName})"
                     },
-                    fees = tierFeeMath(season, reg.awayMembers.map { it.entry.birthdate }, contestant = true),
+                    fees = tierFeeMath(season, reg.awayMembers.map { it.entry.person.birthdate }, contestant = true),
                 )
             }
             if (reg.individuals.isNotEmpty()) {
                 ReviewRow(
                     title = "Individuals", division = "Adult",
-                    people = reg.individuals.joinToString { it.name },
-                    fees = tierFeeMath(season, reg.individuals.map { it.birthdate }, contestant = true),
+                    people = reg.individuals.joinToString { it.person.name },
+                    fees = tierFeeMath(season, reg.individuals.map { it.person.birthdate }, contestant = true),
                 )
             }
             if (reg.guests.isNotEmpty()) {
                 ReviewRow(
                     title = "Guests", division = "—",
                     people = reg.guests.joinToString {
-                        it.name + when (season.ageTierFor(it.birthdate)) {
+                        it.person.name + when (season.ageTierFor(it.person.birthdate)) {
                             AgeTier.AGE_9_PLUS -> ""
                             AgeTier.AGE_3_TO_8 -> " (3–8)"
                             AgeTier.UNDER_3 -> " (under 3)"
                         }
                     },
-                    fees = tierFeeMath(season, reg.guests.map { it.birthdate }, contestant = false),
+                    fees = tierFeeMath(season, reg.guests.map { it.person.birthdate }, contestant = false),
                 )
             }
 

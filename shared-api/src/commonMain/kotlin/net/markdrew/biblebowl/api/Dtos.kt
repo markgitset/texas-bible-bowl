@@ -366,54 +366,33 @@ data class UpdateCongregationRequest(
 )
 
 /**
- * One contestant — either on a team's roster or registered as an individual (adult).
- * [claimCode] lets a contestant/parent account claim the entry later.
+ * A person participating in one registration this season: their season-independent identity
+ * ([person]) paired with the single [ParticipationDto] for this season (team, shirt, positions,
+ * tribe-leader willingness, tester id, contestant/guest role). This is the read-model leaf of every
+ * registration bucket — team members, unassigned youth, individuals (adults), and guests — replacing
+ * the pre-V2 flattened roster-entry/guest rows.
+ *
+ * A visiting (combo-team) member is one whose [ParticipationDto.congregationId] differs from the
+ * surrounding registration's congregation; a home member's matches it. Identity facts (name,
+ * birthdate, gender, experience anchor, claim code) live on [person]; per-season facts on
+ * [participation]. The participant id that scores/tester ids/tribe rows reference is
+ * [ParticipationDto.id].
  */
 @Serializable
-data class RosterEntryDto(
-    val id: String,
-    val name: String,
-    /** ISO-8601 birthdate (drives the division); always null for an individual (adult) contestant. */
-    val birthdate: String? = null,
-    val shirtSize: ShirtSize,
-    /** Null only on entries created before gender was collected. */
-    val gender: Gender? = null,
-    /**
-     * The first event year this contestant competed, e.g. "2027" — equal to the current season for
-     * an inexperienced (first-year) contestant (see [isInexperienced]). Null = experienced with an
-     * unknown first year. Always null for individuals: the Adult division has no experience split.
-     */
-    val firstSeasonYear: String? = null,
-    val claimCode: String,
-    val claimed: Boolean = false,
-    /**
-     * The member's own congregation — set ONLY when it differs from the surrounding context, i.e.
-     * a visiting member on another congregation's (combo) team. Null = belongs to the context's
-     * congregation. Visiting members are registered, edited, and billed by their own congregation;
-     * only the team slot is borrowed.
-     */
-    val congregationId: String? = null,
-    /** Display name matching [congregationId]; null for a home member. */
-    val congregationName: String? = null,
-    /**
-     * Willing to serve as a tribe leader. Meaningful only for individual (adult) contestants —
-     * any adult can lead a tribe, contestant or not; always false on youth roster entries.
-     */
-    val tribeLeaderWilling: Boolean = false,
-)
+data class ParticipantDto(val person: PersonDto, val participation: ParticipationDto)
 
 /**
  * A team, owned by its home congregation's registration. A *combo* team also hosts visiting
- * members from other congregations' registrations (same season) — those members carry their own
- * [RosterEntryDto.congregationId]/[RosterEntryDto.congregationName] and count toward the ≤4 cap
- * and the team's division/experience bracket like anyone else, but stay registered and billed by
- * their own congregation.
+ * members from other congregations' registrations (same season) — those members carry a
+ * [ParticipationDto.congregationId] that differs from the team's registration and count toward the
+ * ≤4 cap and the team's division/experience bracket like anyone else, but stay registered and
+ * billed by their own congregation.
  */
 @Serializable
 data class TeamDto(
     val id: String,
     val name: String,
-    val members: List<RosterEntryDto> = emptyList(),
+    val members: List<ParticipantDto> = emptyList(),
 )
 
 @Serializable
@@ -436,7 +415,7 @@ data class AssignMemberTeamRequest(val teamId: String? = null)
  */
 @Serializable
 data class AwayMemberDto(
-    val entry: RosterEntryDto,
+    val entry: ParticipantDto,
     val teamId: String,
     val teamName: String,
     /** The hosting team's congregation (display). */
@@ -484,39 +463,11 @@ enum class AgeTier(val displayName: String) {
 }
 
 /**
- * A registered guest — an attendee who is not a contestant (most are volunteers). Guests must
- * register and pay like everyone else, but they are never placed on a team, compete in no
- * division, and get no claim code. The fee bracket derives from [birthdate] (see [ageTierFor]);
- * the age-9+ and 3–8 fees include a t-shirt, hence [shirtSize].
- *
- * Adult (age-9+ tier) guests are the event's volunteer pool: [positions] holds the volunteer
- * positions they signed up for (drawn from [SeasonDto.volunteerPositions], select all that
- * apply) and [tribeLeaderWilling] marks willingness to lead a tribe (feeds tribe assignment).
- * Both are always empty/false for the child tiers.
- */
-@Serializable
-data class GuestDto(
-    val id: String,
-    val name: String,
-    /** Null for an under-3 guest (no included t-shirt). */
-    val shirtSize: ShirtSize? = null,
-    /**
-     * ISO-8601 birthdate, collected for children (under 9) so their fee tier falls out of their
-     * age each season; null = an adult guest (age 9+), whose exact birthdate isn't needed.
-     */
-    val birthdate: String? = null,
-    /** Null only on guests created before gender was collected. */
-    val gender: Gender? = null,
-    /** Volunteer positions (from [SeasonDto.volunteerPositions]); age-9+ guests only. */
-    val positions: List<String> = emptyList(),
-    /** Willing to serve as a tribe leader; age-9+ guests only. */
-    val tribeLeaderWilling: Boolean = false,
-    /** Optional contact details — collected for adult (9+) guests, who have no account. */
-    val contact: ContactInfoDto? = null,
-)
-
-/**
- * Adds or edits a registered guest (see [GuestDto]). [gender] is required (nullable only for a
+ * Adds or edits a registered guest — an attendee who is not a contestant (most are volunteers).
+ * Guests register and pay like everyone else, but are never placed on a team, compete in no
+ * division, and get no claim code. On the wire a saved guest comes back as a [ParticipantDto] with
+ * [ParticipationDto.isContestant] false (identity on the person, per-season facts on the
+ * participation). [gender] is required (nullable only for a
  * friendlier server-side error); [shirtSize] is required except for under-3s, who get no shirt;
  * [birthdate] is collected for children (blank/null = adult, age 9+). [positions] must come from
  * the season's volunteer-position list; the server clears positions and [tribeLeaderWilling] for
@@ -618,7 +569,7 @@ data class RegistrationDto(
     val siteId: String? = null,
     val teams: List<TeamDto> = emptyList(),
     /** Individual (adult) contestants — never on a team, each competes in the Adult division. */
-    val individuals: List<RosterEntryDto> = emptyList(),
+    val individuals: List<ParticipantDto> = emptyList(),
     /**
      * Eligible youth contestants (grades 3–12) not currently on any team. They compete
      * individually in their own division and experience bracket — the normal home for elementary
@@ -627,15 +578,18 @@ data class RegistrationDto(
      * here, and a registrar places leftover Junior/Senior entries before the event. Counted as
      * contestants for fees.
      */
-    val unassigned: List<RosterEntryDto> = emptyList(),
+    val unassigned: List<ParticipantDto> = emptyList(),
     /**
      * This registration's members placed on other congregations' (combo) teams. Still registered,
      * edited, and billed here — they appear in the hosting registration's [teams] as visiting
      * members, so they are deliberately NOT in [teams]/[unassigned] above (see [AwayMemberDto]).
      */
     val awayMembers: List<AwayMemberDto> = emptyList(),
-    /** Registered guests (mostly volunteers) — they pay too, but aren't contestants (see [GuestDto]). */
-    val guests: List<GuestDto> = emptyList(),
+    /**
+     * Registered guests (mostly volunteers) — they pay too, but aren't contestants. Each is a
+     * [ParticipantDto] whose [ParticipationDto.isContestant] is false.
+     */
+    val guests: List<ParticipantDto> = emptyList(),
     /** Computed total in cents (contestants + guests), or null while a needed fee is TBD. */
     val totalCents: Int? = null,
     /** ISO-8601 instant of the last submit, or null while a draft. */
@@ -748,17 +702,8 @@ data class TesterListResponse(
     val rows: List<TesterRowDto> = emptyList(),
 )
 
-/**
- * Claims a roster entry by its coach-shared code (`POST /roster/claim`); dashes and case are
- * ignored, so "abcd-2345" matches "ABCD2345". Claiming links the entry to the signed-in account,
- * which is what My Scores' owner scoping keys off.
- */
-@Serializable
-data class ClaimEntryRequest(val code: String)
-
 // ---------------------------------------------------------------------------
-// Person-centric registration API (schema redesign phase 4) — additive; the
-// roster-entry DTOs above stay for the current clients until they migrate.
+// Person-centric registration API (schema redesign phase 4)
 // ---------------------------------------------------------------------------
 
 /** How the signed-in account relates to a person. */
