@@ -590,9 +590,11 @@ class PostgresRepositoryTest {
 
         val findCount = QueryCountInterceptor.measure { registrations.find(cong.id, "2027") }
         val candidateCount = QueryCountInterceptor.measure { registrations.returningContestants(cong.id, "2027") }
-        // Generous fixed bounds: find() is ~9 statements, returningContestants() ~6 — anything that
-        // scales with the 12 candidates / 8 roster entries above blows well past these.
-        assertTrue(findCount in 1..12, "find() ran $findCount statements — did a per-row query creep back in?")
+        // Fixed bounds: find() is ~7 statements (one combined members/unassigned/away query),
+        // returningContestants() ~6 — anything that scales with the 12 candidates / 8 roster
+        // entries above blows well past these. Every statement is a round trip to a possibly
+        // remote database, so keep these tight.
+        assertTrue(findCount in 1..9, "find() ran $findCount statements — did a per-row query creep back in?")
         assertTrue(candidateCount in 1..8,
             "returningContestants() ran $candidateCount statements — did a per-candidate query creep back in?")
     }
