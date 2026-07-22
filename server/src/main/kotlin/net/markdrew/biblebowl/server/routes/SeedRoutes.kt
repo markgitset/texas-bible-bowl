@@ -9,6 +9,7 @@ import io.ktor.server.routing.post
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
@@ -19,9 +20,11 @@ import net.markdrew.biblebowl.api.SeedSummary
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
+import net.markdrew.biblebowl.api.siteSlug
 import net.markdrew.biblebowl.server.data.CongregationRepository
 import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.RegistrationRepository
+import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.UpdateCongregationResult
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.currentUser
@@ -36,14 +39,18 @@ import java.time.Instant
  * Idempotent by natural keys — re-running updates in place; the seed fills gaps but never
  * overwrites curated data (an existing congregation keeps its address, an existing contestant
  * their birthdate). Seed-season registrations are marked submitted + paid so history reads as
- * settled; coach emails become pending grants consumed at signup (see AuthRoutes).
+ * settled; coach emails become pending grants consumed at signup (see AuthRoutes). Seeded
+ * siteIds (name-slugs from the workbook) are resolved against the current season's sites by id
+ * or name-slug — an unresolved one is stored as-is with a warning, since unpinned registrations
+ * in a multi-site season leave their testers un-numbered (TesterRoutes).
  */
 fun Route.seedRoutes(
     users: UserRepository,
     congregations: CongregationRepository,
     registrations: RegistrationRepository,
+    seasons: SeasonRepository,
 ) {
-    val seeder = WorkbookSeeder(users, congregations, registrations)
+    val seeder = WorkbookSeeder(users, congregations, registrations, seasons)
     authenticate {
         post("/admin/seed") {
             val user = currentUser(users) ?: return@post
@@ -69,9 +76,11 @@ private class WorkbookSeeder(
     private val users: UserRepository,
     private val congregations: CongregationRepository,
     private val registrations: RegistrationRepository,
+    private val seasons: SeasonRepository,
 ) {
     fun run(req: SeedRequest, adminUserId: String): SeedSummary {
         val warnings = mutableListOf<String>()
+        val sites = seasons.current().sites
         // Two passes: every congregation must exist before any roster is seeded, because a combo
         // team's visiting members belong to a *different* congregation than the team's host.
         val byName = req.congregations.mapNotNull { sc ->
@@ -79,7 +88,7 @@ private class WorkbookSeeder(
         }
         val congregationIdByName = byName.associate { (_, cong) -> cong.name.lowercase() to cong.id }
         val seeded = byName.map { (sc, cong) ->
-            seedCongregation(sc, cong, req.seasonYear, congregationIdByName, warnings)
+            seedCongregation(sc, cong, req.seasonYear, congregationIdByName, sites, warnings)
         }
         // Summary counts are what's present after the run (idempotent-friendly), not deltas.
         val regs = seeded.mapNotNull { registrations.find(it.id, req.seasonYear) }
@@ -100,9 +109,10 @@ private class WorkbookSeeder(
         cong: CongregationDto,
         seasonYear: String,
         congregationIdByName: Map<String, String>,
+        sites: List<EventSiteDto>,
         warnings: MutableList<String>,
     ): CongregationDto {
-        sc.siteId?.let { registrations.setSite(cong.id, seasonYear, it) }
+        sc.siteId?.let { registrations.setSite(cong.id, seasonYear, resolveSiteId(it, sites, cong.name, warnings)) }
 
         // A combo team's visiting member seeds under their OWN congregation (combo rule, item 5).
         fun ownCongregationId(m: SeedMemberDto): String =
@@ -176,6 +186,30 @@ private class WorkbookSeeder(
             registrations.setPaid(it.id, Instant.parse("$seasonYear-06-15T00:00:00Z").toEpochMilli())
         }
         return cong
+    }
+
+    /**
+     * Maps a seeded siteId onto the current season's configured sites. The converter slugs the
+     * workbook's site names ("White River" → "white-river"), while sites created before the slug
+     * convention may carry any id — so match by exact id first, then by name-slug. An unmatched
+     * id is stored as-is with a warning: in a multi-site season it counts as "unpinned" and its
+     * testers stay un-numbered, so fix Season settings and re-run the seed. With no sites
+     * configured there is nothing to resolve against (everyone numbers as one implicit site).
+     */
+    private fun resolveSiteId(
+        seeded: String,
+        sites: List<EventSiteDto>,
+        congregationName: String,
+        warnings: MutableList<String>,
+    ): String {
+        if (sites.isEmpty()) return seeded
+        val match = sites.firstOrNull { it.id == seeded } ?: sites.firstOrNull { siteSlug(it.name) == seeded }
+        if (match == null) {
+            warnings += "$congregationName: site \"$seeded\" matches none of the season's sites — " +
+                "left unresolved (fix Season settings and re-run the seed)"
+            return seeded
+        }
+        return match.id
     }
 
     /**

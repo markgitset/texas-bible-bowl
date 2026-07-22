@@ -457,9 +457,15 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
 
     // --- Admin: registration desk & user management (docs/gui-redesign.md §5G) ---
 
-    /** The full registration desk for the current season. Requires event-wide REGISTRATION_MANAGE. */
-    suspend fun registrationDesk(): RegistrationDeskResponse =
-        client.get("$baseUrl/admin/registrations") { authorize() }.bodyOrThrow()
+    /**
+     * The full registration desk — the current season by default, or a past [year] for review.
+     * Requires event-wide REGISTRATION_MANAGE.
+     */
+    suspend fun registrationDesk(year: String? = null): RegistrationDeskResponse =
+        client.get("$baseUrl/admin/registrations") {
+            authorize()
+            if (year != null) parameter("year", year)
+        }.bodyOrThrow()
 
     /**
      * Every tester this season with per-site tester IDs and ZipGrade external IDs; fetching lazily

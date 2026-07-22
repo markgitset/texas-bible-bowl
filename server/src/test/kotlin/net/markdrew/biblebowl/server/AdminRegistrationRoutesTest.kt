@@ -289,6 +289,46 @@ class AdminRegistrationRoutesTest {
     }
 
     @Test
+    fun deskDefaultsToTheCurrentYearAndReviewsAPastOne() = testApplication {
+        val users = InMemoryUserRepository()
+        val congregations = InMemoryCongregationRepository()
+        val registrations = InMemoryRegistrationRepository(congregations)
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason), congregations = congregations, registrations = registrations)
+        }
+        val api = jsonClient()
+        val (_, cong) = api.coachWithCongregation("coach@tbb.org", "History Church", memberCount = 1)
+        // Seed a prior season (2026) directly: one submitted team.
+        val oldTeam = registrations.addTeam(cong.id, "2026", "Old Team")!!
+        registrations.addMember(oldTeam.id, UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE))
+        registrations.submit(cong.id, "2026")
+
+        val registrar = api.signUp("registrar@tbb.org", "Reg Istrar")
+        users.addRoleGrant(registrar.user.id, RoleGrant(Role.REGISTRAR))
+        fun io.ktor.client.request.HttpRequestBuilder.asRegistrar() =
+            header(HttpHeaders.Authorization, "Bearer ${registrar.token}")
+
+        // Default: the current event year, with both years offered (newest first).
+        val current: RegistrationDeskResponse = api.get("/admin/registrations") { asRegistrar() }.body()
+        assertEquals(openSeason.eventYear, current.seasonYear)
+        assertEquals(listOf(openSeason.eventYear, "2026"), current.availableYears)
+        assertEquals(listOf("Kid 0"), assertNotNull(current.rows.single().registration).teams.single().members.map { it.name })
+
+        // ?year= reviews the past season: its roster, no returning candidates, no fee totals
+        // (2026 has no stored season row, so current fees would be misleading).
+        val past: RegistrationDeskResponse = api.get("/admin/registrations?year=2026") { asRegistrar() }.body()
+        assertEquals("2026", past.seasonYear)
+        assertEquals(listOf(openSeason.eventYear, "2026"), past.availableYears)
+        val pastRow = past.rows.single { it.congregation.id == cong.id }
+        val pastReg = assertNotNull(pastRow.registration)
+        assertEquals(RegistrationStatus.SUBMITTED, pastReg.status)
+        assertEquals(listOf("Timothy"), pastReg.teams.single { it.name == "Old Team" }.members.map { it.name })
+        assertNull(pastReg.totalCents, "no 2026 season row → no fee total")
+        assertTrue(pastRow.returningCandidates.isEmpty(), "enrollment only targets the current season")
+    }
+
+    @Test
     fun paidToggleSetsAndClearsAndIsEventWideGated() = testApplication {
         val users = InMemoryUserRepository()
         application {

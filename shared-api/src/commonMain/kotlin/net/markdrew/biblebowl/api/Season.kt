@@ -70,6 +70,16 @@ val SeasonDto.multiSite: Boolean
 fun SeasonDto.siteFor(siteId: String?): EventSiteDto? =
     sites.singleOrNull() ?: sites.firstOrNull { it.id == siteId }
 
+/**
+ * Canonical slug of an event-site name: "White River Youth Camp" → "white-river-youth-camp".
+ * This is the same rule the workbook seed converter (tools/seed/convert_registration_xlsx.py,
+ * `site_id()`) applies to the workbook's site names, and the season editor derives new
+ * [EventSiteDto.id]s from it — so seeded siteIds and admin-created sites resolve to each other
+ * by name without manual mapping.
+ */
+fun siteSlug(name: String): String =
+    name.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+
 /** A note to show near prices while [SeasonDto.feesTentative] is set; empty otherwise. */
 val SeasonDto.feesNote: String
     get() = if (feesTentative) "Prices are tentative and subject to change." else ""

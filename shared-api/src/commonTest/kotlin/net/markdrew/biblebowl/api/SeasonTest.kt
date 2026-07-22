@@ -49,6 +49,16 @@ class SeasonTest {
     }
 
     @Test
+    fun siteSlugMatchesTheSeedConvertersRule() {
+        // Must mirror site_id() in tools/seed/convert_registration_xlsx.py, so the workbook
+        // seed's siteIds resolve against admin-created sites by name.
+        assertEquals("bandina", siteSlug("Bandina"))
+        assertEquals("white-river-youth-camp", siteSlug("White River Youth Camp"))
+        assertEquals("st-john-s", siteSlug(" St. John's "))
+        assertEquals("", siteSlug("!!!"))
+    }
+
+    @Test
     fun feesNoteFollowsTheTentativeFlag() {
         assertEquals("Prices are tentative and subject to change.", FALLBACK_SEASON.feesNote)
         assertEquals("", FALLBACK_SEASON.copy(feesTentative = false).feesNote)

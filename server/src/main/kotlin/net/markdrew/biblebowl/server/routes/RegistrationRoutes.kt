@@ -573,7 +573,11 @@ private fun UpdateCongregationRequest.isValid(): Boolean =
 
 /** Decorates a registration with its total (contestants + guests) from the current season's fees. */
 internal fun RegistrationDto.withTotal(seasons: SeasonRepository): RegistrationDto =
-    copy(totalCents = registrationTotalCents(seasons.current(), this))
+    withTotal(seasons.current())
+
+/** [withTotal] against an explicit season — the desk's past-year view uses that year's fees. */
+internal fun RegistrationDto.withTotal(season: SeasonDto): RegistrationDto =
+    copy(totalCents = registrationTotalCents(season, this))
 
 /** Guest field rules shared by add and edit; null when the request is valid. */
 private fun guestError(req: UpsertGuestRequest, season: SeasonDto): ApiError? = when {

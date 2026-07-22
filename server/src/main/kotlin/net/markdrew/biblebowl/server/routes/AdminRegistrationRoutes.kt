@@ -23,9 +23,10 @@ import net.markdrew.biblebowl.server.security.requireEventWidePermission
 
 /**
  * The registration desk (docs/gui-redesign.md §5E): a cross-congregation view of the current
- * season's registrations for registrars/admins. Requires an event-wide REGISTRATION_MANAGE grant —
- * a coach's congregation-scoped grant deliberately does not qualify. No window gating: desk
- * workers record payments whenever checks arrive.
+ * season's registrations for registrars/admins (`?year=` reviews a past season's data instead).
+ * Requires an event-wide REGISTRATION_MANAGE grant — a coach's congregation-scoped grant
+ * deliberately does not qualify. No window gating: desk workers record payments whenever checks
+ * arrive.
  */
 fun Route.adminRegistrationRoutes(
     users: UserRepository,
@@ -38,22 +39,33 @@ fun Route.adminRegistrationRoutes(
             val user = currentUser(users) ?: return@get
             if (!requireRegistrationFeature(user, seasons)) return@get
             if (!requireEventWidePermission(user, Permission.REGISTRATION_MANAGE)) return@get
-            val season = seasons.current()
-            val regsByCongregation = registrations.listForSeason(season.eventYear)
+            val current = seasons.current()
+            // `?year=` reviews a past season's data; unset (or the current year) is the live desk.
+            val year = call.request.queryParameters["year"]?.takeIf { it.isNotBlank() } ?: current.eventYear
+            val isCurrentYear = year == current.eventYear
+            // A past year's totals use that season's stored fees; a year with no season row (e.g.
+            // workbook-seeded history) gets no totals rather than misleading current-fee ones.
+            val seasonForYear = if (isCurrentYear) current else seasons.byYear(year)
+            val regsByCongregation = registrations.listForSeason(year)
                 .associateBy { it.congregation.id }
             val allCongregations = congregations.listAll()
             val coaches = users.coachesByCongregation(allCongregations.map { it.id })
             call.respond(
                 RegistrationDeskResponse(
-                    seasonYear = season.eventYear,
+                    seasonYear = year,
+                    availableYears = (registrations.seasonYears() + current.eventYear)
+                        .distinct().sortedDescending(),
                     rows = allCongregations.map { cong ->
                         RegistrationDeskRowDto(
                             congregation = cong,
-                            registration = regsByCongregation[cong.id]?.withTotal(seasons),
+                            registration = regsByCongregation[cong.id]
+                                ?.let { reg -> seasonForYear?.let { reg.withTotal(it) } ?: reg },
                             coaches = coaches[cong.id].orEmpty()
                                 .map { CoachContactDto(it.displayName, it.email, it.contact) },
-                            returningCandidates = registrations.returningContestants(cong.id, season.eventYear)
-                                .filter { season.isEligibleReturningCandidate(it) },
+                            // Enrollment only targets the current season — a past-year review offers none.
+                            returningCandidates = if (!isCurrentYear) emptyList() else
+                                registrations.returningContestants(cong.id, year)
+                                    .filter { current.isEligibleReturningCandidate(it) },
                         )
                     },
                 )

@@ -190,8 +190,9 @@ data class IndexRefDto(
 
 /**
  * One of the season's event locations (2026 ran two: Bandina and White River Youth Camp). [id] is
- * the stable key registrations pin to — generated when the site is added and unchanged by renames,
- * so an admin can fix a site's name without unpinning every congregation.
+ * the stable key registrations pin to — assigned on first save as the [siteSlug] of the name (the
+ * editors send new sites with a blank id) and unchanged by renames, so an admin can fix a site's
+ * name without unpinning every congregation.
  */
 @Serializable
 data class EventSiteDto(
@@ -663,11 +664,16 @@ data class RegistrationDeskRowDto(
     val returningCandidates: List<ReturningContestantDto> = emptyList(),
 )
 
-/** The full registration desk for the current season (`GET /admin/registrations`). */
+/**
+ * The full registration desk (`GET /admin/registrations`), for the current season by default or a
+ * past one via `?year=`. [seasonYear] is the year shown; [availableYears] is every year with any
+ * registration data (plus the current one), newest first, for the desk's year picker.
+ */
 @Serializable
 data class RegistrationDeskResponse(
     val seasonYear: String,
     val rows: List<RegistrationDeskRowDto> = emptyList(),
+    val availableYears: List<String> = emptyList(),
 )
 
 /** Marks a registration's payment received (true) or clears it (false). */
