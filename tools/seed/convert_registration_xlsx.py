@@ -20,6 +20,17 @@ Mapping notes:
   another congregation (the 2026 combo teams) carry their own `congregationName`.
 - Coach-typed rows become guests (coach *accounts* are not attendee rows in the app);
   their emails become pending coach grants consumed at signup.
+- Volunteers are non-tester attendee rows carrying one or more Positions; they become guests
+  (non-contestant participants) with those positions. The converter guards the "missing
+  volunteers" gap three ways: it counts volunteers in the summary (a run that imported zero is
+  obvious), warns on any Attendee Type token it doesn't recognize (a mistyped volunteer category),
+  and warns if the workbook has an unread tab whose name looks volunteer-related (this script only
+  reads the Attendees tab). A tester who ALSO volunteers keeps their contestant row and is warned:
+  the seed's tester DTOs don't carry positions, so that volunteer role is recorded separately until
+  the API-evolution phases let contestant participations hold positions.
+
+Run `python3 tools/seed/convert_registration_xlsx_test.py` after changing this file (a stdlib-only
+self-test over a synthetic workbook; not wired into Gradle/CI).
 """
 import json
 import re
@@ -41,6 +52,10 @@ GENDERS = {'Male': 'MALE', 'Female': 'FEMALE'}
 PREFERENCES = {'E-Mail': 'EMAIL', 'Email': 'EMAIL', 'Phone': 'PHONE', 'Text': 'TEXT'}
 # Ind Category code -> (division grade range, inexperienced)
 IND_RANGES = {'E': range(3, 7), 'J': range(7, 10), 'S': range(10, 13)}
+# Every Attendee Type token the row logic handles. A row typed anything else falls through to the
+# guest branch (so it's still imported), but the token is surfaced so a mistyped or brand-new
+# category — e.g. a volunteer entered as "Helper" — is caught rather than silently reclassified.
+KNOWN_TYPES = {'Tester', 'Coach', 'Guest', 'Volunteer'}
 
 warnings = []
 
@@ -121,6 +136,15 @@ def parse_address(raw):
 def convert(workbook_path):
     z, sheets, shared = load_workbook(workbook_path)
 
+    # Only the Attendees + Congregations tabs are read. If the workbook keeps volunteers on a
+    # separate tab (as it does for housing/nametags/tribe-leader assignments), those people would
+    # be invisible to this converter — flag any such tab so it isn't silently missed.
+    for tab in sheets:
+        low = tab.lower()
+        if tab not in ('Attendees', 'Congregations') and ('volunteer' in low or 'position' in low):
+            warn(f'workbook has an unread tab {tab!r} that looks volunteer-related — this converter '
+                 f'only reads the Attendees tab; volunteers listed only there are NOT imported')
+
     congregations = {}  # trimmed lowercase name -> seed dict
     for r in sheet_rows(z, sheets, shared, 'Congregations')[2:]:
         if not r or not r[0].strip() or 'Gender' in r[:1]:
@@ -167,13 +191,26 @@ def convert(workbook_path):
             warn(f'{full_name}: unknown congregation {cong_name!r} — skipped')
             continue
         types = {t.strip() for t in cell(r, 'Attendee Type').split(',') if t.strip()}
+        unknown_types = types - KNOWN_TYPES
+        if unknown_types:
+            warn(f'{full_name}: unrecognized Attendee Type {sorted(unknown_types)} — imported as a '
+                 f'guest; if this is a volunteer category, add it to KNOWN_TYPES')
         gender = GENDERS.get(cell(r, 'Gender'))
         shirt = SHIRTS.get(cell(r, 't-shirt'))
         if cell(r, 't-shirt') and shirt is None:
             warn(f'{full_name}: unknown shirt size {cell(r, "t-shirt")!r}')
         tribe_leader = cell(r, 'Tribe Leader') == 'Yes'
+        positions = [p.strip() for p in cell(r, 'Positions').split(',') if p.strip()]
         grade_txt = cell(r, 'School Grade')
         ind_cat = cell(r, 'Ind Category')
+
+        # A tester who ALSO volunteers keeps their contestant row here, but the seed's tester DTOs
+        # don't carry positions — so their volunteer role would be lost. Surface it (the person's
+        # positions are event-ops data the registrar re-enters, until contestant participations
+        # carry positions natively in the API-evolution phases).
+        if 'Tester' in types and positions:
+            warn(f'{full_name}: tester who also volunteers (positions {positions}) — the volunteer '
+                 f'role is NOT seeded onto the contestant; record it separately')
 
         if 'Coach' in types:
             email = cell(r, 'email').lower()
@@ -224,7 +261,7 @@ def convert(workbook_path):
         has_contact = any(contact.values()) or preference
         cong['guests'].append({
             'name': full_name, 'gender': gender, 'shirtSize': shirt,
-            'positions': [p.strip() for p in cell(r, 'Positions').split(',') if p.strip()],
+            'positions': positions,
             'tribeLeaderWilling': tribe_leader,
             'contact': ({**contact, 'preference': preference} if has_contact else None),
         })
@@ -260,6 +297,9 @@ def main():
         teams=sum(len(c['teams']) for c in congs),
         individuals=sum(len(c['individuals']) for c in congs),
         guests=sum(len(c['guests']) for c in congs),
+        # Volunteers are guests carrying at least one position — called out so a run that imported
+        # zero (the gap this converter guards against) is obvious at a glance.
+        volunteers=sum(1 for c in congs for g in c['guests'] if g['positions']),
         coachEmails=sum(len(c['coachEmails']) for c in congs),
     )
     print(f'read {attendee_count} attendee rows -> {len(congs)} congregations, {dict(tally)}')
