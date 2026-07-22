@@ -737,6 +737,91 @@ data class TesterListResponse(
 data class ClaimEntryRequest(val code: String)
 
 // ---------------------------------------------------------------------------
+// Person-centric registration API (schema redesign phase 4) — additive; the
+// roster-entry DTOs above stay for the current clients until they migrate.
+// ---------------------------------------------------------------------------
+
+/** How the signed-in account relates to a person. */
+@Serializable
+enum class PersonRelation {
+    /** This account IS this person (an adult who claimed their own code, or an email match). */
+    SELF,
+    /** This account MANAGES this person (a parent who claimed a child's code). */
+    MANAGED,
+}
+
+/**
+ * A person — a single human across all seasons (contestant, guest, coach, volunteer). Identity
+ * facts live here, independent of any season (per-season facts are [ParticipationDto]). [relation]
+ * is how the requesting account relates to this person (null when there is no relation).
+ * [claimCode] is included only for people the account may share (its own managed people / a coach's
+ * roster) — it's the secret others redeem to claim the person.
+ */
+@Serializable
+data class PersonDto(
+    val id: String,
+    val name: String,
+    /** ISO-8601 birthdate; null for a birthdate-less adult or a grade-seeded youth. */
+    val birthdate: String? = null,
+    val isAdult: Boolean = false,
+    val gender: Gender? = null,
+    /** Seeded-youth provenance (the event year they finish grade 12); birthdate wins once set. */
+    val graduationYear: Int? = null,
+    /** First event year competed, e.g. "2027"; the experience anchor. */
+    val firstSeasonYear: String? = null,
+    val email: String? = null,
+    val contact: ContactInfoDto? = null,
+    val claimCode: String? = null,
+    val relation: PersonRelation? = null,
+)
+
+/**
+ * One season's participation of a person — the per-season facets (a person can be several at once:
+ * a contestant who also volunteers). Youth/adult, division, and fee tier stay derived from the
+ * person's birthdate/adult flag, not stored here.
+ */
+@Serializable
+data class ParticipationDto(
+    /** The participant id (what scores, tester ids, and tribe-leader rows reference). */
+    val id: String,
+    val seasonYear: String,
+    val congregationId: String,
+    val congregationName: String,
+    val isContestant: Boolean = false,
+    val isCoach: Boolean = false,
+    val teamId: String? = null,
+    val teamName: String? = null,
+    val shirtSize: ShirtSize? = null,
+    val positions: List<String> = emptyList(),
+    val tribeLeaderWilling: Boolean = false,
+    val testerId: Int? = null,
+)
+
+/** A person together with their participations across seasons (newest season first). */
+@Serializable
+data class PersonWithParticipationsDto(
+    val person: PersonDto,
+    val participations: List<ParticipationDto> = emptyList(),
+)
+
+/**
+ * Claims a person by their coach-shared code (`POST /people/claim`); dashes and case are ignored.
+ * Whether the account becomes the person ([PersonRelation.SELF]) or a manager of them
+ * ([PersonRelation.MANAGED]) is decided automatically: an adult person whose email matches the
+ * account is a self-claim, everyone else (a child, or an adult with a different email) is managed.
+ */
+@Serializable
+data class ClaimPersonRequest(val code: String)
+
+/** The result of a successful `POST /people/claim`: the person and the resolved relation. */
+@Serializable
+data class ClaimPersonResponse(val person: PersonDto, val relation: PersonRelation)
+
+/** `GET /people/mine`: every person the signed-in account is or manages, with their participations. */
+@Serializable
+data class MyPeopleResponse(val people: List<PersonWithParticipationsDto> = emptyList())
+
+// ---------------------------------------------------------------------------
 // Seed import from the 2026 workbook (item 17, F13) — one-time, idempotent
 // ---------------------------------------------------------------------------
 

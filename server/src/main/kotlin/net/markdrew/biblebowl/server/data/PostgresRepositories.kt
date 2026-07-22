@@ -105,7 +105,10 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
                 it[scopeId] = grant.scopeId
             }
         }
-        UserRecord(userId, email.lowercase(), displayName, birthdate, adult, passwordHash, roles.toMutableList())
+        UserRecord(
+            userId, email.lowercase(), displayName, birthdate, adult, passwordHash,
+            roles.toMutableList(), personId = personId,
+        )
     }.let(::cached)
 
     private fun usersWithPerson() =
@@ -161,6 +164,13 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
             cache.remove(userId)
             usersWithPerson().selectAll().where { UsersTable.id eq userId }.singleOrNull()?.toUserRecord()
         }?.let(::cached)
+
+    override fun linkPerson(userId: String, personId: String) {
+        transaction(db) {
+            UsersTable.update({ UsersTable.id eq userId }) { it[UsersTable.personId] = personId }
+        }
+        cache.remove(userId)
+    }
 
     override fun addRoleGrant(userId: String, grant: RoleGrant) {
         transaction(db) {
@@ -325,6 +335,7 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
             adult = if (hasPerson) this[PeopleTable.isAdult] else false,
             passwordHash = this[UsersTable.passwordHash],
             roles = roleGrants,
+            personId = this[UsersTable.personId],
             contact = if (!hasPerson) null else ContactInfoDto(
                 address = this[PeopleTable.contactAddress],
                 city = this[PeopleTable.contactCity],
