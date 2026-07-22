@@ -12,14 +12,13 @@ import net.markdrew.biblebowl.api.AgeTier
 import net.markdrew.biblebowl.api.ageTierFor
 import net.markdrew.biblebowl.api.feeCentsFor
 import net.markdrew.biblebowl.api.registrationFeeLines
-import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.ReturningContestantDto
+import net.markdrew.biblebowl.api.ParticipantDto
 import net.markdrew.biblebowl.api.Role
-import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.TeamDto
@@ -107,7 +106,7 @@ object RegisterScreen {
     private val contestants: Int get() = registration?.contestantCount ?: 0
 
     /** Registered guests (mostly volunteers) — they pay too, but aren't contestants. */
-    private val guests: List<GuestDto> get() = registration?.guests ?: emptyList()
+    private val guests: List<ParticipantDto> get() = registration?.guests ?: emptyList()
 
     private fun firstIncompleteStep(): Int = when {
         congregation == null -> 1
@@ -790,20 +789,20 @@ object RegisterScreen {
                 registration?.individuals?.forEach { member ->
                     child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
                         val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
-                        name.value = member.name
+                        name.value = member.person.name
                         name.disabled = !canEdit
-                        val shirt = shirtSelect(this, member.shirtSize)
+                        val shirt = shirtSelect(this, member.participation.shirtSize ?: ShirtSize.AM)
                         shirt.disabled = !canEdit
-                        val gender = genderSelect(this, member.gender)
+                        val gender = genderSelect(this, member.person.gender)
                         gender.disabled = !canEdit
-                        val tribe = tribeLeaderCheck(this, member.tribeLeaderWilling)
+                        val tribe = tribeLeaderCheck(this, member.participation.tribeLeaderWilling)
                         tribe.disabled = !canEdit
                         val save = {
                             val chosenGender = genderOf(gender)
                             if (name.value.isNotBlank() && chosenGender != null) {
                                 mutate {
                                     Session.api.updateIndividual(
-                                        member.id,
+                                        member.participation.id,
                                         UpsertIndividualRequest(
                                             name.value, ShirtSize.valueOf(shirt.value), chosenGender,
                                             tribeLeaderWilling = tribe.checked,
@@ -813,12 +812,12 @@ object RegisterScreen {
                             }
                         }
                         listOf<HTMLElement>(name, shirt, gender, tribe).forEach { it.addEventListener("change", { save() }) }
-                        claimCodeChip(this, member.claimCode)
+                        claimCodeChip(this, member.person.claimCode)
                         if (canEdit) {
                             child("button", "btn btn-outline-danger btn-sm", "Remove") {
                                 setAttribute("type", "button")
                                 val btn = this
-                                onClick { mutate(btn) { Session.api.deleteIndividual(member.id) } }
+                                onClick { mutate(btn) { Session.api.deleteIndividual(member.participation.id) } }
                             }
                         }
                     }
@@ -892,24 +891,24 @@ object RegisterScreen {
                     child("div", "mb-2") {
                         val row = child("div", "d-flex flex-wrap align-items-center gap-2")
                         val name = row.child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
-                        name.value = guest.name
+                        name.value = guest.person.name
                         name.disabled = !canEdit
-                        val gender = genderSelect(row, guest.gender)
-                        val birthdate = guestBirthdateInput(row, guest.birthdate)
-                        val shirt = shirtSelect(row, guest.shirtSize ?: ShirtSize.AM)
+                        val gender = genderSelect(row, guest.person.gender)
+                        val birthdate = guestBirthdateInput(row, guest.person.birthdate)
+                        val shirt = shirtSelect(row, guest.participation.shirtSize ?: ShirtSize.AM)
                         val hint = row.child("span", "text-muted small align-self-center")
 
                         // Optional contact details (item 9, F3) for adult (9+) guests, collapsed
                         // behind a toggle so the row stays tight.
                         val contactToggle = row.child(
                             "button", "btn btn-outline-secondary btn-sm",
-                            if (guest.contact != null) "Contact \u2713" else "Contact",
+                            if (guest.person.contact != null) "Contact \u2713" else "Contact",
                         ) as HTMLButtonElement
                         contactToggle.setAttribute("type", "button")
                         contactToggle.setAttribute("title", "Contact info for event organizers (optional)")
                         // Volunteer positions + tribe leading (item 8, F2): adult (age-9+ tier) guests only.
                         val (positionBoxes, tribeBox, volunteerLine) =
-                            volunteerFields(this, guest.positions, guest.tribeLeaderWilling)
+                            volunteerFields(this, guest.participation.positions, guest.participation.tribeLeaderWilling)
                         val contactPanel = child("div", "border rounded p-2 mt-1 ms-3 d-none")
                         contactToggle.onClick { contactPanel.classList.toggle("d-none") }
 
@@ -929,7 +928,7 @@ object RegisterScreen {
                             if (name.value.isNotBlank() && chosenGender != null) {
                                 mutate {
                                     Session.api.updateGuest(
-                                        guest.id,
+                                        guest.participation.id,
                                         UpsertGuestRequest(
                                             name.value, guestShirtOf(shirt, birthdate),
                                             birthdate.value.ifBlank { null }, chosenGender,
@@ -941,7 +940,7 @@ object RegisterScreen {
                                 }
                             }
                         }
-                        contactFields = guestContactFields(contactPanel, guest.contact, save)
+                        contactFields = guestContactFields(contactPanel, guest.person.contact, save)
 
                         sync()
                         val fields: List<HTMLElement> =
@@ -955,7 +954,7 @@ object RegisterScreen {
                             row.child("button", "btn btn-outline-danger btn-sm", "Remove") {
                                 setAttribute("type", "button")
                                 val btn = this
-                                onClick { mutate(btn) { Session.api.deleteGuest(guest.id) } }
+                                onClick { mutate(btn) { Session.api.deleteGuest(guest.participation.id) } }
                             }
                         }
                     }
@@ -1103,8 +1102,11 @@ object RegisterScreen {
                 }
                 team.members.forEach { member ->
                     // Visiting (combo-team) members are edited by their own congregation's coach.
-                    if (member.congregationId != null) renderVisitingMemberRow(this, member)
-                    else renderContestantRow(this, member, currentTeamId = team.id)
+                    if (member.participation.congregationId != registration?.congregation?.id) {
+                        renderVisitingMemberRow(this, member)
+                    } else {
+                        renderContestantRow(this, member, currentTeamId = team.id)
+                    }
                 }
                 when {
                     !canEdit -> {}
@@ -1120,10 +1122,10 @@ object RegisterScreen {
      * A visiting member on one of this congregation's (combo) teams: read-only here — their own
      * congregation registers, edits, and pays for them; a registrar moves them.
      */
-    private fun renderVisitingMemberRow(parent: Element, member: RosterEntryDto) {
+    private fun renderVisitingMemberRow(parent: Element, member: ParticipantDto) {
         parent.child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
-            child("span", text = member.name)
-            child("span", "badge text-bg-info", "from ${member.congregationName ?: "another congregation"}")
+            child("span", text = member.person.name)
+            child("span", "badge text-bg-info", "from ${member.participation.congregationName}")
             val division = member.division(Session.season)?.displayName ?: "division unknown"
             child("span", "text-muted small", "$division — registered by their own congregation")
         }
@@ -1138,17 +1140,17 @@ object RegisterScreen {
      */
     private fun renderContestantRow(
         parent: Element,
-        member: RosterEntryDto,
+        member: ParticipantDto,
         currentTeamId: String?,
         away: AwayMemberDto? = null,
     ) {
         parent.child("div", "d-flex flex-wrap align-items-center gap-2 mb-2") {
             val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
-            name.value = member.name
+            name.value = member.person.name
             name.disabled = !canEdit
-            val birthdate = birthdateInput(this, member.birthdate)
-            val shirt = shirtSelect(this, member.shirtSize)
-            val gender = genderSelect(this, member.gender)
+            val birthdate = birthdateInput(this, member.person.birthdate)
+            val shirt = shirtSelect(this, member.participation.shirtSize ?: ShirtSize.YM)
+            val gender = genderSelect(this, member.person.gender)
             val firstYear = firstYearCheck(this, member.isInexperienced(seasonYear))
             firstYear.disabled = !canEdit
             val save = {
@@ -1156,7 +1158,7 @@ object RegisterScreen {
                 if (name.value.isNotBlank() && isValidBirthdate(birthdate.value) && chosenGender != null) {
                     mutate {
                         Session.api.updateRosterEntry(
-                            member.id,
+                            member.participation.id,
                             UpsertRosterEntryRequest(
                                 name.value, birthdate.value, ShirtSize.valueOf(shirt.value),
                                 chosenGender, firstYear.checked,
@@ -1171,12 +1173,12 @@ object RegisterScreen {
                 (el as? HTMLInputElement)?.disabled = !canEdit
             }
             teamAssignSelect(this, member, currentTeamId, away)
-            claimCodeChip(this, member.claimCode)
+            claimCodeChip(this, member.person.claimCode)
             if (canEdit) {
                 child("button", "btn btn-outline-danger btn-sm", "Remove") {
                     setAttribute("type", "button")
                     val btn = this
-                    onClick { mutate(btn) { Session.api.deleteRosterEntry(member.id) } }
+                    onClick { mutate(btn) { Session.api.deleteRosterEntry(member.participation.id) } }
                 }
             }
         }
@@ -1191,7 +1193,7 @@ object RegisterScreen {
      */
     private fun teamAssignSelect(
         parent: Element,
-        member: RosterEntryDto,
+        member: ParticipantDto,
         currentTeamId: String?,
         away: AwayMemberDto? = null,
     ) {
@@ -1214,7 +1216,7 @@ object RegisterScreen {
             option.selected = true
         }
         select.addEventListener("change", {
-            mutate(select) { Session.api.assignMemberTeam(member.id, select.value.ifEmpty { null }) }
+            mutate(select) { Session.api.assignMemberTeam(member.participation.id, select.value.ifEmpty { null }) }
         })
     }
 
@@ -1350,7 +1352,8 @@ object RegisterScreen {
         return box
     }
 
-    private fun claimCodeChip(parent: Element, code: String) {
+    private fun claimCodeChip(parent: Element, code: String?) {
+        if (code.isNullOrBlank()) return
         parent.child("span", "badge text-bg-light border font-monospace", formatClaimCode(code)) {
             setAttribute("title", "Claim code — click to copy")
             setAttribute("role", "button")
@@ -1384,26 +1387,25 @@ object RegisterScreen {
                         reg.teams.forEach { team ->
                             // Visiting (combo-team) members are named but their own congregation
                             // pays for them, so only home members enter this row's fee math.
-                            val homeMembers = team.members.count { it.congregationId == null }
+                            val homeMembers = team.members.filter { it.participation.congregationId == cong.id }
                             child("tr") {
                                 child("td", text = team.name)
                                 child("td", text = team.division(Session.season)
                                     ?.let { divisionLabel(it, team.isInexperienced(seasonYear)) } ?: "—")
                                 child("td", text = team.members.joinToString {
-                                    it.name + (if (it.isInexperienced(seasonYear)) " (1st year)" else "") +
-                                        (it.congregationName?.let { c -> " (from $c)" } ?: "")
+                                    it.person.name + (if (it.isInexperienced(seasonYear)) " (1st year)" else "") +
+                                        (if (it.participation.congregationId != cong.id) " (from ${it.participation.congregationName})" else "")
                                 })
                                 child("td", "text-nowrap",
-                                    tierFeeMath(team.members.filter { it.congregationId == null }.map { it.birthdate },
-                                        contestant = true))
+                                    tierFeeMath(homeMembers.map { it.person.birthdate }, contestant = true))
                             }
                         }
                         if (reg.unassigned.isNotEmpty()) {
                             child("tr", "table-warning") {
                                 child("td", text = "Unassigned")
                                 child("td", text = "—")
-                                child("td", text = reg.unassigned.joinToString { it.name })
-                                child("td", "text-nowrap", tierFeeMath(reg.unassigned.map { it.birthdate }, contestant = true))
+                                child("td", text = reg.unassigned.joinToString { it.person.name })
+                                child("td", "text-nowrap", tierFeeMath(reg.unassigned.map { it.person.birthdate }, contestant = true))
                             }
                         }
                         if (reg.awayMembers.isNotEmpty()) {
@@ -1411,18 +1413,18 @@ object RegisterScreen {
                                 child("td", text = "On combo teams")
                                 child("td", text = "—")
                                 child("td", text = reg.awayMembers.joinToString {
-                                    "${it.entry.name} (${it.teamName}, ${it.congregationName})"
+                                    "${it.entry.person.name} (${it.teamName}, ${it.congregationName})"
                                 })
                                 child("td", "text-nowrap",
-                                    tierFeeMath(reg.awayMembers.map { it.entry.birthdate }, contestant = true))
+                                    tierFeeMath(reg.awayMembers.map { it.entry.person.birthdate }, contestant = true))
                             }
                         }
                         if (reg.individuals.isNotEmpty()) {
                             child("tr") {
                                 child("td", text = "Individuals")
                                 child("td", text = "Adult")
-                                child("td", text = reg.individuals.joinToString { it.name })
-                                child("td", "text-nowrap", tierFeeMath(reg.individuals.map { it.birthdate }, contestant = true))
+                                child("td", text = reg.individuals.joinToString { it.person.name })
+                                child("td", "text-nowrap", tierFeeMath(reg.individuals.map { it.person.birthdate }, contestant = true))
                             }
                         }
                         if (reg.guests.isNotEmpty()) {
@@ -1430,13 +1432,13 @@ object RegisterScreen {
                                 child("td", text = "Guests")
                                 child("td", text = "—")
                                 child("td", text = reg.guests.joinToString {
-                                    it.name + when (Session.season.ageTierFor(it.birthdate)) {
+                                    it.person.name + when (Session.season.ageTierFor(it.person.birthdate)) {
                                         AgeTier.AGE_9_PLUS -> ""
                                         AgeTier.AGE_3_TO_8 -> " (3\u20138)"
                                         AgeTier.UNDER_3 -> " (under 3)"
                                     }
                                 })
-                                child("td", "text-nowrap", tierFeeMath(reg.guests.map { it.birthdate }, contestant = false))
+                                child("td", "text-nowrap", tierFeeMath(reg.guests.map { it.person.birthdate }, contestant = false))
                             }
                         }
                     }

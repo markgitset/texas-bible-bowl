@@ -79,10 +79,10 @@ object AdminTribesScreen {
         desk?.rows.orEmpty().flatMap { row ->
             val reg = row.registration ?: return@flatMap emptyList<WillingLeader>()
             val siteId = Session.season.siteFor(reg.siteId)?.id
-            reg.guests.filter { it.tribeLeaderWilling }
-                .map { WillingLeader(it.name, row.congregation.name, siteId) } +
-                reg.individuals.filter { it.tribeLeaderWilling }
-                    .map { WillingLeader(it.name, row.congregation.name, siteId) }
+            reg.guests.filter { it.participation.tribeLeaderWilling }
+                .map { WillingLeader(it.person.name, row.congregation.name, siteId) } +
+                reg.individuals.filter { it.participation.tribeLeaderWilling }
+                    .map { WillingLeader(it.person.name, row.congregation.name, siteId) }
         }.sortedBy { it.name.lowercase() }
 
     private fun renderContent() {
