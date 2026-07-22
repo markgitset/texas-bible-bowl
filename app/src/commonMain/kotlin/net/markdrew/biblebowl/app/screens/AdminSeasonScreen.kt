@@ -75,7 +75,9 @@ fun AdminSeasonScreen(api: TbbApi, onSaved: (SeasonDto) -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
-            Field("Event year (e.g. 2027)", draft.eventYear) { draft = draft.copy(eventYear = it) }
+            Field("Event year (e.g. 2027)", draft.eventYear.toString()) {
+                draft = draft.copy(eventYear = it.trim().toIntOrNull() ?: draft.eventYear)
+            }
             Field("Event dates (e.g. April 2–4)", draft.eventDateRange) { draft = draft.copy(eventDateRange = it) }
             Field("Theme (TBD hides it)", draft.eventTheme) { draft = draft.copy(eventTheme = it) }
             StudySetDropdown(slug = draft.studySet) { set ->
@@ -174,7 +176,7 @@ fun AdminSeasonScreen(api: TbbApi, onSaved: (SeasonDto) -> Unit) {
                     }
                 }
             },
-            enabled = !busy && draft.eventYear.isNotBlank(),
+            enabled = !busy && draft.eventYear >= 2000,
             modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
         ) {
             if (busy) CircularProgressIndicator(Modifier.height(18.dp)) else Text("Save season")

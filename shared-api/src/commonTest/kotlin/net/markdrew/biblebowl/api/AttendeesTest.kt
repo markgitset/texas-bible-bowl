@@ -44,7 +44,7 @@ class AttendeesTest {
     ) = RegistrationDto(
         id = "r1",
         congregation = CongregationDto(id = "c1", name = "First Street", city = "Waco"),
-        seasonYear = season.eventYear,
+        seasonYear = season.eventYear.toString(),
         status = RegistrationStatus.SUBMITTED,
         siteId = siteId,
         teams = teams,
@@ -96,7 +96,7 @@ class AttendeesTest {
     @Test
     fun testerFieldsDeriveFromBirthdateAndFirstSeason() {
         val reg = registration(
-            unassigned = listOf(entry("Third Grader", "2018-05-01", firstSeasonYear = season.eventYear)),
+            unassigned = listOf(entry("Third Grader", "2018-05-01", firstSeasonYear = season.eventYear.toString())),
             individuals = listOf(entry("Adult Solo", birthdate = null)),
         )
         val (kid, adult) = deskAttendees(season, listOf(deskRow(reg)))

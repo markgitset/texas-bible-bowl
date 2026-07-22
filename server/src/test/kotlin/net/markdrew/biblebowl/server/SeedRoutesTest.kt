@@ -225,7 +225,7 @@ class SeedRoutesTest {
 
         // The first two siteIds are the converter's name-slugs; the third matches nothing.
         val seed = SeedRequest(
-            seasonYear = season.eventYear,
+            seasonYear = season.eventYear.toString(),
             congregations = listOf(
                 SeedCongregationDto(
                     name = "First Church", city = "Austin", code = "FC", siteId = "bandina",
@@ -250,7 +250,7 @@ class SeedRoutesTest {
 
         // Slugged siteIds resolved to the season's real site ids; the unknown one is kept + warned.
         fun regFor(name: String) =
-            registrations.find(congregations.listAll().single { it.name == name }.id, season.eventYear)
+            registrations.find(congregations.listAll().single { it.name == name }.id, season.eventYear.toString())
         assertEquals(bandina.id, regFor("First Church")?.siteId)
         assertEquals(whiteRiver.id, regFor("Second Church")?.siteId)
         assertEquals("gone-fishing", regFor("Third Church")?.siteId)

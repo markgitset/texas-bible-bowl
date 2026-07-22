@@ -593,7 +593,7 @@ object RegisterScreen {
     }
 
     /** The registration's season (falls back to the current season before the draft exists). */
-    private val seasonYear: String get() = registration?.seasonYear ?: Session.season.eventYear
+    private val seasonYear: String get() = registration?.seasonYear ?: Session.season.eventYear.toString()
 
     private fun divisionBadge(parent: Element, team: TeamDto) {
         val division = team.division(Session.season)

@@ -60,9 +60,10 @@
 {{- $scripture := index $s "eventScripture" -}}
 {{- $deadline := index $s "scholarshipDeadline" -}}
 {{- $s = merge $s (dict
+  "eventYear" (string $year)
   "eventYearMinus1" (string (sub $year 1))
   "schoolYear" (printf "%d–%02d" (sub $year 1) (mod $year 100))
-  "eventDates" (printf "%s, %s" (index $s "eventDateRange") (index $s "eventYear"))
+  "eventDates" (printf "%s, %d" (index $s "eventDateRange") $year)
   "scholarshipDeadlineFull" (cond (eq $deadline "TBD") "TBD" (printf "%s, %d" $deadline $year))
   "seasonTitle" (cond (and $theme (ne $theme "TBD")) (printf "%s — %s" $theme $scripture) $scripture)
   "registrationOpensTitle" (index $s "registrationOpens")

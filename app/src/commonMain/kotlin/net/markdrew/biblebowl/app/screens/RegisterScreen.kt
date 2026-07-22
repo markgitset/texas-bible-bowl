@@ -102,7 +102,7 @@ internal class RegisterModel(
     val guests get() = registration?.guests ?: emptyList()
 
     /** The registration's season (falls back to the current season before the draft exists). */
-    val seasonYear: String get() = registration?.seasonYear ?: season.eventYear
+    val seasonYear: String get() = registration?.seasonYear ?: season.eventYear.toString()
 
     fun firstIncompleteStep(): Int = when {
         congregation == null -> 1

@@ -185,7 +185,7 @@ class AdminRegistrationRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${admin.token}")
         }.body()
 
-        assertEquals(openSeason.eventYear, desk.seasonYear)
+        assertEquals(openSeason.eventYear.toString(), desk.seasonYear)
         assertEquals(listOf("Alpha Church", "Beta Church"), desk.rows.map { it.congregation.name })
 
         val alpha = desk.rows.single { it.congregation.id == congA.id }
@@ -312,15 +312,15 @@ class AdminRegistrationRoutesTest {
 
         // Default: the current event year, with both years offered (newest first).
         val current: RegistrationDeskResponse = api.get("/admin/registrations") { asRegistrar() }.body()
-        assertEquals(openSeason.eventYear, current.seasonYear)
-        assertEquals(listOf(openSeason.eventYear, "2026"), current.availableYears)
+        assertEquals(openSeason.eventYear.toString(), current.seasonYear)
+        assertEquals(listOf(openSeason.eventYear.toString(), "2026"), current.availableYears)
         assertEquals(listOf("Kid 0"), assertNotNull(current.rows.single().registration).teams.single().members.map { it.name })
 
         // ?year= reviews the past season: its roster, no returning candidates, no fee totals
         // (2026 has no stored season row, so current fees would be misleading).
         val past: RegistrationDeskResponse = api.get("/admin/registrations?year=2026") { asRegistrar() }.body()
         assertEquals("2026", past.seasonYear)
-        assertEquals(listOf(openSeason.eventYear, "2026"), past.availableYears)
+        assertEquals(listOf(openSeason.eventYear.toString(), "2026"), past.availableYears)
         val pastRow = past.rows.single { it.congregation.id == cong.id }
         val pastReg = assertNotNull(pastRow.registration)
         assertEquals(RegistrationStatus.SUBMITTED, pastReg.status)

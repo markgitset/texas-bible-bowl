@@ -62,7 +62,7 @@ object AdminRegistrationsScreen {
 
     /** True when reviewing a past season's data — everything renders read-only. */
     private val viewingPast: Boolean
-        get() = data?.let { it.seasonYear != Session.season.eventYear } == true
+        get() = data?.let { it.seasonYear != Session.season.eventYear.toString() } == true
 
     /**
      * Multi-site seasons add a Site column, a site filter, and per-row site editing. Suppressed for
@@ -303,13 +303,13 @@ object AdminRegistrationsScreen {
             child("span", "text-muted", "Season")
             val select = child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
             desk.availableYears.forEach { y ->
-                val label = if (y == Session.season.eventYear) "$y (current)" else y
+                val label = if (y == Session.season.eventYear.toString()) "$y (current)" else y
                 val option = select.child("option", text = label) as HTMLOptionElement
                 option.value = y
                 if (y == desk.seasonYear) option.selected = true
             }
             select.addEventListener("change", {
-                year = select.value.takeIf { it != Session.season.eventYear }
+                year = select.value.takeIf { it != Session.season.eventYear.toString() }
                 reload()
             })
         }

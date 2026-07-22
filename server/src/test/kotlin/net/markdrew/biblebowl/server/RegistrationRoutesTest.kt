@@ -388,7 +388,7 @@ class RegistrationRoutesTest {
         val entry = withMember.teams.single().members.single()
         assertEquals("2013-05-01", entry.birthdate)
         assertEquals(Gender.MALE, entry.gender)
-        assertEquals(DEFAULT_SEASON.eventYear, entry.firstSeasonYear, "inexperienced → first season is this one")
+        assertEquals(DEFAULT_SEASON.eventYear.toString(), entry.firstSeasonYear, "inexperienced → first season is this one")
         assertEquals(8, entry.claimCode.length)
         assertEquals(8500, withMember.totalCents, "1 contestant × \$85")
 

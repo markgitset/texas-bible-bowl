@@ -219,7 +219,7 @@ class ScoreRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${grader.token}")
         }.body()
 
-        assertEquals(openSeason.eventYear, sheet.seasonYear)
+        assertEquals(openSeason.eventYear.toString(), sheet.seasonYear)
         assertNull(sheet.releasedAt)
         assertEquals(5, sheet.rows.size)
         // Each Mixed Church member keeps their OWN division; the team's (Junior) rides alongside.
@@ -380,7 +380,7 @@ class ScoreRoutesTest {
         val standings: StandingsResponse = api.get("/admin/scores/standings") {
             header(HttpHeaders.Authorization, "Bearer ${grader.token}")
         }.body()
-        assertEquals(openSeason.eventYear, standings.seasonYear)
+        assertEquals(openSeason.eventYear.toString(), standings.seasonYear)
         assertNull(standings.releasedAt)
         assertEquals(
             listOf(Division.ELEMENTARY, Division.JUNIOR, Division.ADULT),

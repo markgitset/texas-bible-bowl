@@ -5,7 +5,7 @@ package net.markdrew.biblebowl.api
  * `GET /seasons/current` answers, so clients render sensibly offline and against old backends.
  */
 val FALLBACK_SEASON = SeasonDto(
-    eventYear = "2027",
+    eventYear = 2027,
     eventDateRange = "April 2–4",
     eventTheme = "TBD",
     eventScripture = "Acts",
@@ -29,9 +29,8 @@ val FALLBACK_SEASON = SeasonDto(
 /** The season label spanning two school years, e.g. "2026–27". */
 val SeasonDto.schoolYear: String
     get() {
-        val year = eventYear.toIntOrNull() ?: return eventYear
-        val suffix = (year % 100).toString().padStart(2, '0')
-        return "${year - 1}–$suffix"
+        val suffix = (eventYear % 100).toString().padStart(2, '0')
+        return "${eventYear - 1}–$suffix"
     }
 
 /** Formats a fee in cents for display: "$85", "$12.50", or "TBD" when null. */

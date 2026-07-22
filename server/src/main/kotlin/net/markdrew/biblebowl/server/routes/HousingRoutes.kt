@@ -60,7 +60,7 @@ fun Route.housingRoutes(
         val user = currentUser(users) ?: return null
         if (!requireRegistrationFeature(user, seasons)) return null
         if (!requireEventWidePermission(user, Permission.REGISTRATION_MANAGE)) return null
-        return seasons.current().eventYear
+        return seasons.current().eventYear.toString()
     }
 
     /** Validates a cabin upsert; responds and returns false when invalid. */

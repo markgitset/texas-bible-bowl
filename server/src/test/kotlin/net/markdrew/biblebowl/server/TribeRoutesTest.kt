@@ -102,7 +102,7 @@ class TribeRoutesTest {
         val tribes: TribesResponse = api.get("/admin/tribes") {
             header(HttpHeaders.Authorization, "Bearer ${admin.token}")
         }.body()
-        assertEquals(openSeason.eventYear, tribes.seasonYear)
+        assertEquals(openSeason.eventYear.toString(), tribes.seasonYear)
         assertTrue(tribes.tribes.isEmpty())
     }
 

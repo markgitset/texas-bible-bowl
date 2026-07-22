@@ -101,7 +101,7 @@ fun Route.testerRoutes(
                     ),
                 )
             }
-            val guestTags = registrations.listForSeason(season.eventYear)
+            val guestTags = registrations.listForSeason(season.eventYear.toString())
                 .sortedBy { it.congregation.name.lowercase() }
                 .flatMap { reg ->
                     val site = season.siteFor(reg.siteId)
@@ -190,7 +190,7 @@ private fun testerList(
     registrations: RegistrationRepository,
     testerIds: TesterIdRepository,
 ): TesterListResponse {
-    val regs = registrations.listForSeason(season.eventYear)
+    val regs = registrations.listForSeason(season.eventYear.toString())
     val codeByCongregation = regs.associate { it.congregation.id to it.congregation.code }
     val siteByCongregation = regs.associate { it.congregation.id to season.siteFor(it.siteId) }
 
@@ -200,7 +200,7 @@ private fun testerList(
         // (never awayMembers, which mirror the same entries) covers every contestant exactly once.
         val teamRows = reg.teams.flatMap { team ->
             val teamDivision = team.division(season)
-            val teamInexperienced = team.isInexperienced(season.eventYear)
+            val teamInexperienced = team.isInexperienced(season.eventYear.toString())
             team.members.map { member ->
                 val homeCongregationId = member.congregationId ?: reg.congregation.id
                 val site = siteByCongregation[homeCongregationId]
@@ -213,7 +213,7 @@ private fun testerList(
                     teamDivision = teamDivision,
                     teamInexperienced = teamInexperienced,
                     division = member.division(season),
-                    inexperienced = member.isInexperienced(season.eventYear),
+                    inexperienced = member.isInexperienced(season.eventYear.toString()),
                     siteId = site?.id,
                     siteName = site?.name.orEmpty(),
                 )
@@ -230,7 +230,7 @@ private fun testerList(
                 teamDivision = null,
                 teamInexperienced = false,
                 division = entry.division(season),
-                inexperienced = entry.isInexperienced(season.eventYear),
+                inexperienced = entry.isInexperienced(season.eventYear.toString()),
                 siteId = site?.id,
                 siteName = site?.name.orEmpty(),
             )
@@ -267,7 +267,7 @@ private fun testerList(
         // Tester-ID order (site-grouped by first assignment); any un-numbered rows sort last.
         .sortedWith(compareBy({ it.testerId == null }, { it.testerId }, { it.name.lowercase() }))
 
-    return TesterListResponse(seasonYear = season.eventYear, rows = rows)
+    return TesterListResponse(seasonYear = season.eventYear.toString(), rows = rows)
 }
 
 /**
@@ -282,7 +282,7 @@ private fun assignMissingIds(
     seeds: List<TesterSeed>,
     testerIds: TesterIdRepository,
 ): Map<String, Int> {
-    val assigned = testerIds.forSeason(season.eventYear).toMutableMap()
+    val assigned = testerIds.forSeason(season.eventYear.toString()).toMutableMap()
     val siteOrder: Map<String?, Int> = season.sites.mapIndexed { i, s -> s.id to i }.toMap()
     var next = (assigned.values.maxOrNull() ?: 0) + 1
     seeds
@@ -297,7 +297,7 @@ private fun assignMissingIds(
             )
         )
         .forEach { seed ->
-            testerIds.assign(season.eventYear, seed.rosterEntryId, next)
+            testerIds.assign(season.eventYear.toString(), seed.rosterEntryId, next)
             assigned[seed.rosterEntryId] = next
             next++
         }

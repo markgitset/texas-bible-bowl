@@ -36,10 +36,10 @@ fun Route.seasonRoutes(users: UserRepository, seasons: SeasonRepository) {
             val user = currentUser(users) ?: return@put
             if (!requirePermission(user, Permission.SEASON_MANAGE)) return@put
             val season = call.receive<SeasonDto>()
-            if (season.eventYear.isBlank() || season.chapterCount < 1) {
+            if (season.eventYear < 2000 || season.chapterCount < 1) {
                 return@put call.respond(
                     HttpStatusCode.BadRequest,
-                    ApiError("invalid_season", "eventYear is required and chapterCount must be positive"),
+                    ApiError("invalid_season", "eventYear must be a valid year and chapterCount must be positive"),
                 )
             }
             if (StandardStudySet.parseOrNull(season.studySet) == null) {

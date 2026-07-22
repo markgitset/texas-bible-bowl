@@ -49,7 +49,9 @@ object AdminSeasonScreen {
         )
 
         val form = container.child("form")
-        form.field("Event year (e.g. 2027)", draft.eventYear) { draft = draft.copy(eventYear = it) }
+        form.field("Event year (e.g. 2027)", draft.eventYear.toString()) {
+            draft = draft.copy(eventYear = it.trim().toIntOrNull() ?: draft.eventYear)
+        }
         form.field("Event dates (e.g. April 2–4)", draft.eventDateRange) { draft = draft.copy(eventDateRange = it) }
         form.field("Theme (TBD hides it)", draft.eventTheme) { draft = draft.copy(eventTheme = it) }
         form.studySetSelect()
@@ -124,7 +126,7 @@ object AdminSeasonScreen {
 
         form.addEventListener("submit", { event ->
             event.preventDefault()
-            if (draft.eventYear.isBlank()) return@addEventListener
+            if (draft.eventYear < 2000) return@addEventListener
             save.disabled = true
             message = null
             messageSlot.clear()

@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicReference
  * site's `[params]` at migration time.
  */
 val DEFAULT_SEASON = SeasonDto(
-    eventYear = "2027",
+    eventYear = 2027,
     eventDateRange = "April 2–4",
     eventTheme = "TBD",
     eventScripture = "Acts",
@@ -50,7 +50,7 @@ interface SeasonRepository {
 class InMemorySeasonRepository(initial: SeasonDto = DEFAULT_SEASON) : SeasonRepository {
     private val ref = AtomicReference(initial)
     override fun current(): SeasonDto = ref.get()
-    override fun byYear(eventYear: String): SeasonDto? = current().takeIf { it.eventYear == eventYear }
+    override fun byYear(eventYear: String): SeasonDto? = current().takeIf { it.eventYear.toString() == eventYear }
     override fun update(season: SeasonDto): SeasonDto = season.also(ref::set)
 }
 
@@ -77,7 +77,7 @@ class PostgresSeasonRepository(private val db: Database) : SeasonRepository {
             if (SeasonsTable.selectAll().where { SeasonsTable.isCurrent eq true }.count() == 0L) {
                 // The default year may already have a stub row (ensureSeasonRow, created non-current
                 // when data referenced it before any season was configured) — promote it if so.
-                val year = DEFAULT_SEASON.eventYear.toInt()
+                val year = DEFAULT_SEASON.eventYear
                 val payloadJson = json.encodeToString(DEFAULT_SEASON.copy(sites = emptyList()))
                 if (SeasonsTable.selectAll().where { SeasonsTable.year eq year }.any()) {
                     SeasonsTable.update({ SeasonsTable.year eq year }) {
@@ -102,7 +102,7 @@ class PostgresSeasonRepository(private val db: Database) : SeasonRepository {
             .map { EventSiteDto(it[SeasonSitesTable.id], it[SeasonSitesTable.name], it[SeasonSitesTable.address]) }
 
     private fun decode(year: Int, payload: String): SeasonDto =
-        json.decodeFromString<SeasonDto>(payload).copy(eventYear = year.toString(), sites = sitesFor(year))
+        json.decodeFromString<SeasonDto>(payload).copy(eventYear = year, sites = sitesFor(year))
 
     override fun current(): SeasonDto = transaction(db) {
         SeasonsTable.selectAll().where { SeasonsTable.isCurrent eq true }
@@ -119,7 +119,7 @@ class PostgresSeasonRepository(private val db: Database) : SeasonRepository {
     }
 
     override fun update(season: SeasonDto): SeasonDto = transaction(db) {
-        val year = requireNotNull(season.eventYear.toIntOrNull()) { "eventYear must be numeric" }
+        val year = season.eventYear
         // The updated season becomes the single current one (same year = edit; new year = rollover).
         SeasonsTable.update({ SeasonsTable.isCurrent eq true }) { it[isCurrent] = false }
         // Sites are stored as rows (FK targets), everything else as payload JSON without them.
