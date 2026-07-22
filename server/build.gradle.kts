@@ -9,7 +9,16 @@ version = "0.1.0"
 
 application {
     mainClass.set("net.markdrew.biblebowl.server.ApplicationKt")
+    // Baked into the installDist start script (bin/server), which is what the Docker image runs.
+    applicationDefaultJvmArgs = listOf("-XX:MaxRAMPercentage=75")
 }
+
+// Deploy runs the application distribution (installDist → separate jars on the classpath), NOT the
+// Ktor fat jar. Reason: the shadow fat jar merges every dependency's META-INF/services with a
+// last-dependency-wins strategy that drops flyway-core's plugin registrations (its
+// CoreResourceTypeProvider, which recognizes .sql files as migrations) — so at runtime Flyway
+// "detects but rejects" V1/V2 and never migrates the schema. With separate jars each service file
+// stays intact and Flyway sees all its plugins. (buildFatJar still works for local convenience.)
 
 dependencies {
     implementation(project(":core"))
