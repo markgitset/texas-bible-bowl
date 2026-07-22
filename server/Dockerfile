@@ -5,7 +5,10 @@ FROM eclipse-temurin:25-jdk AS build
 WORKDIR /src
 # Copy the whole repo (server depends on :core, :shared-api, :generation).
 COPY . .
-RUN ./gradlew --no-daemon :server:buildFatJar
+# installDist (not a fat jar): the application distribution keeps every dependency as its own jar,
+# so each Flyway plugin's META-INF/services stays intact and migrations run. A shadow fat jar
+# merges service files last-wins and silently drops flyway-core's migration resolver.
+RUN ./gradlew --no-daemon :server:installDist
 
 # ---------- Typst stage: fetch the static musl binary ----------
 FROM debian:bookworm-slim AS typst
@@ -21,9 +24,11 @@ FROM eclipse-temurin:25-jre
 # No font packages needed: the typst release binary embeds its default fonts
 # (Libertinus Serif, New Computer Modern) — exactly what the generators use.
 COPY --from=typst /usr/local/bin/typst /usr/local/bin/typst
-COPY --from=build /src/server/build/libs/*-all.jar /app/server.jar
+# The application distribution: bin/server start script + lib/*.jar (each dependency separate).
+COPY --from=build /src/server/build/install/server /app
 
 ENV PORT=8080
 EXPOSE 8080
-# Cloud Run sets $PORT; the app reads it (Application.kt).
-ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75", "-jar", "/app/server.jar"]
+# Cloud Run / Fly set $PORT; the app reads it (Application.kt). JVM args (MaxRAMPercentage) are
+# baked into the start script via applicationDefaultJvmArgs.
+ENTRYPOINT ["/app/bin/server"]
