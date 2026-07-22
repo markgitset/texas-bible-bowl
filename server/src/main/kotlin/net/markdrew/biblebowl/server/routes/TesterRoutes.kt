@@ -98,6 +98,7 @@ fun Route.testerRoutes(
                         congregation = row.congregationName,
                         role = row.division?.displayName ?: "",
                         testerId = row.testerId,
+                        externalId = row.externalId,
                     ),
                 )
             }
