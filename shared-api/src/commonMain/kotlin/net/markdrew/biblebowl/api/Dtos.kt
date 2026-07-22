@@ -587,6 +587,22 @@ data class EnrollContestantRequest(
     val birthdate: String? = null,
 )
 
+/**
+ * Registrar-only: attaches an existing person (by [personId], found via `GET /admin/people`) to a
+ * congregation's current-season registration as a contestant — the cross-congregation reuse path
+ * for a person who moved congregations (`POST /admin/registration/{congregationId}/attach-person`).
+ * Unlike a coach's enroll, the person need not have prior history at the congregation; the
+ * one-participation-per-season rule still holds, so a person already registered this season is
+ * refused. [shirtSize]/[teamId]/[birthdate] behave as in [EnrollContestantRequest].
+ */
+@Serializable
+data class AttachPersonRequest(
+    val personId: String,
+    val shirtSize: ShirtSize,
+    val teamId: String? = null,
+    val birthdate: String? = null,
+)
+
 /** A congregation's registration for one season; unique per (congregation, seasonYear). */
 @Serializable
 data class RegistrationDto(

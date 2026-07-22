@@ -251,6 +251,13 @@ interface RegistrationRepository {
         teamId: String?,
         birthdate: String? = null,
         eligible: (ReturningContestantDto) -> Boolean = { true },
+        /**
+         * When true, the person need not have prior contestant history at [congregationId] — the
+         * registrar-only cross-congregation "attach existing person" path (a person who moved
+         * congregations). The one-participation-per-season rule still applies. Coaches leave this
+         * false, so their reuse stays scoped to their own congregation's returning candidates.
+         */
+        allowNewCongregation: Boolean = false,
     ): EnrollResult
     /**
      * Workbook seed (item 17, F13): upserts the person for `(congregationId, name)` — grade-seeded,
@@ -782,8 +789,10 @@ class InMemoryRegistrationRepository(
         teamId: String?,
         birthdate: String?,
         eligible: (ReturningContestantDto) -> Boolean,
+        allowNewCongregation: Boolean,
     ): EnrollResult = synchronized(lock) {
-        val contestant = contestants[contestantId]?.takeIf { it.congregationId == congregationId }
+        val contestant = contestants[contestantId]
+            ?.takeIf { allowNewCongregation || it.congregationId == congregationId }
             ?: return EnrollResult.ContestantNotFound
         // Eligibility goes by the stored identity — a seeded youth is judged by graduation year
         // even though the real birthdate is adopted just below.
