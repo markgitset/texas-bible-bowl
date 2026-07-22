@@ -33,8 +33,14 @@ object AdminSeasonScreen {
     private var message: String? = null
     private var isError = false
 
+    /** Shows/hides the unsaved-changes hint; bound to the current render's DOM in [render]. */
+    private var refreshDirty: () -> Unit = {}
+
     fun render(container: HTMLElement) {
         draft = Session.season
+        // Everything on this page is a draft until "Save season" — guard against silently
+        // losing edits (an added site looks saved but isn't until the form is submitted).
+        Shell.unsavedChanges = { draft != Session.season }
         container.child("h1", "page-title", "Season settings")
         container.child(
             "p", "text-muted",
@@ -97,6 +103,16 @@ object AdminSeasonScreen {
         form.field("Paul Hendrickson scholarship", draft.paulHendricksonAmount) {
             draft = draft.copy(paulHendricksonAmount = it)
         }
+
+        val dirtyHint = form.child(
+            "div", "alert alert-warning py-1 px-2 small mb-2 d-none",
+            "Unsaved changes — click \"Save season\" below to apply them.",
+        )
+        refreshDirty = { dirtyHint.classList.toggle("d-none", draft == Session.season) }
+        // Text/date/select edits bubble here; the sites editor's add/remove buttons don't fire
+        // input events, so their click handlers call refreshDirty() directly.
+        form.addEventListener("input", { refreshDirty() })
+        form.addEventListener("change", { refreshDirty() })
 
         val save = form.child("button", "btn btn-primary w-100 mt-2", "Save season") {
             setAttribute("type", "submit")
@@ -220,7 +236,8 @@ object AdminSeasonScreen {
             child(
                 "div", "form-text mb-2",
                 "With one site there's nothing to pick during registration; with two or more, each " +
-                    "congregation chooses its site. Removing a site un-pins congregations that chose it.",
+                    "congregation chooses its site. Removing a site un-pins congregations that chose it. " +
+                    "Sites carry over from season to season until changed here.",
             )
             val list = child("div")
             fun renderSites() {
@@ -248,6 +265,7 @@ object AdminSeasonScreen {
                             onClick {
                                 draft = draft.copy(sites = draft.sites.filterIndexed { j, _ -> j != i })
                                 renderSites()
+                                refreshDirty()
                             }
                         }
                     }
@@ -259,6 +277,7 @@ object AdminSeasonScreen {
                         // across renames), keeping site ids aligned with the workbook seed's.
                         draft = draft.copy(sites = draft.sites + EventSiteDto("", ""))
                         renderSites()
+                        refreshDirty()
                     }
                 }
             }

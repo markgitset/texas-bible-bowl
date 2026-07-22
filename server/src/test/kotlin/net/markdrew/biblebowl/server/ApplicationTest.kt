@@ -350,6 +350,18 @@ class ApplicationTest {
             listOf("bandina", "white-river-youth-camp", "bandina-north", "bandina-2"),
             sluggedBack.sites.map { it.id },
         )
+
+        // Sites change rarely, so they're inherited season over season: the settings form is
+        // prefilled from the current season, and a new-year save (rollover) carries them along
+        // with their stable ids.
+        val rolled = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(sitedBack.copy(eventYear = "2028"))
+        }
+        assertEquals(HttpStatusCode.OK, rolled.status)
+        val rolledBack: SeasonDto = json.decodeFromString(api.get("/seasons/current").bodyAsText())
+        assertEquals("2028", rolledBack.eventYear)
+        assertEquals(sitedBack.sites, rolledBack.sites)
     }
 
     @Test
