@@ -30,6 +30,12 @@ object Routes {
     const val SIGN_IN = "signin"
     const val ACCOUNT = "account"
     const val ADMIN_SEASON = "admin/season"
+    const val ADMIN_REGISTRATIONS = "admin/registrations"
+    const val ADMIN_COUNTS = "admin/counts"
+    const val ADMIN_HOUSING = "admin/housing"
+    const val ADMIN_TRIBES = "admin/tribes"
+    const val ADMIN_TESTERS = "admin/testers"
+    const val ADMIN_USERS = "admin/users"
 }
 
 /**
