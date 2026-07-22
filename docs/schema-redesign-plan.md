@@ -25,8 +25,10 @@ grading are still dark in prod (feature toggles off), so the data at risk is the
    varchar(36) UUID convention. Exceptions: the three cache tables keep their natural
    composite PKs (content-addressed; a surrogate adds nothing) and `score_releases`
    keeps `season_year` as its PK (it IS one-row-per-season).
-7. **`cabin_assignments.gender` is NOT NULL** — values `MALE` / `FEMALE` / `ALL`
-   (check constraint); today's `null = whole congregation` becomes `ALL`.
+7. **`cabin_assignments.gender` is NOT NULL, `MALE` / `FEMALE` only** — no `ALL`
+   value and no null. Every assignment row is a single-gender group; "whole
+   congregation" is expressed as two rows (one per gender), and ad-hoc label rows
+   pick a gender too.
 
 ## Target schema
 
@@ -124,7 +126,8 @@ cabins
 cabin_assignments
   id PK, cabin_id FK NOT NULL,
   congregation_id FK                 -- still nullable: null = ad-hoc label-only row
-  gender varchar(6) NOT NULL         -- MALE/FEMALE/ALL (check); was nullable
+  gender varchar(6) NOT NULL         -- MALE/FEMALE only (check); was nullable —
+                                     -- a whole congregation = one row per gender
   label, sort_order as today
 
 checkout_duties
@@ -208,7 +211,10 @@ just becomes `scores.participant_id` with an FK added.
 10. `pending_coach_grants` → `people` (email, placeholder name from the email local
     part) + a 2026 `participants` row with `is_coach=true` under that congregation's
     2026 registration. The seed-import re-run (below) reconciles real names by email.
-11. `cabin_assignments.gender`: `NULL` → `'ALL'`, then `SET NOT NULL`.
+11. `cabin_assignments.gender`: split each null-gender row (whole-congregation or
+    ad-hoc) into two rows, one `MALE` and one `FEMALE`, preserving label and sort
+    order; then `SET NOT NULL` + check constraint. The housing UI's
+    "whole congregation" action becomes a shortcut that adds both rows.
 12. Drop the six absorbed tables.
 
 ### Seed importer
@@ -219,13 +225,19 @@ idempotent (match people by name+birthdate, coaches by email). Re-run it against
 after deploy to reconcile placeholder coach names and enrich anything the migration
 carried minimally.
 
+**Known gap to fix in the rewrite: volunteers from the 2026 workbook were not imported
+by the current seeding process.** The rewrite must bring them in as `people` +
+non-contestant `participants` rows (with their positions), which the new model makes
+natural — check whether the converter script even extracts them from the workbook, and
+extend it if not.
+
 ## Phase plan (each phase = one PR, tests green throughout)
 
 | # | PR | Contents |
 |---|----|----------|
 | 1 | Flyway adoption | flyway deps, `V1__baseline.sql`, baseline-on-migrate, delete the ALTER pile. No schema change. |
 | 2 | Restructure, server-internal | `V2__people_participants.sql`, Exposed table defs, Postgres + in-memory repos rewritten. **Wire DTOs unchanged** — repos adapt participants back to the existing `TeamMemberDto`/`IndividualDto`/`GuestDto` shapes so `:app` and `:web` are untouched. `SeasonDto.eventYear` stays a wire string (DB int ↔ string at the edge). |
-| 3 | Seed importer rewrite | new-schema ingester + re-run against local stack; docs update. |
+| 3 | Seed importer rewrite | new-schema ingester + re-run against local stack; fix the missing-volunteers import gap; docs update. |
 | 4 | API evolution — registration | person-centric DTOs (person + participation), claim-a-person flow replacing claim-a-roster-row, `:web` + `:app` registration screens. |
 | 5 | API evolution — event ops | scores/testers/housing/tribes endpoints on participant ids; `SeasonDto.eventYear: Int` cleanup (drops the `toIntOrNull()` scattering in shared-api). |
 | 6 | Cleanup | remove phase-2 adapter mappings; registrar "merge people" tool (new backlog item — global person matching makes duplicates likelier and FK-everywhere makes merging trivial). |
