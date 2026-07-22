@@ -62,9 +62,11 @@ interface UserRepository {
     /**
      * Records a coach email known from the workbook seed (item 17, F13): when this email later
      * registers, [consumePendingCoachGrants] hands out the congregation-scoped COACH role.
-     * Idempotent per (email, congregation).
+     * Idempotent per (email, congregation). Since V2 this is people/participants-backed: the
+     * email becomes a person with an `isCoach` participation under the congregation's
+     * [seasonYear] registration (the in-memory double keeps a simple map).
      */
-    fun addPendingCoachGrant(email: String, congregationId: String)
+    fun addPendingCoachGrant(email: String, congregationId: String, seasonYear: String)
     /** Congregation ids pending for [email] — removed (consumed) and returned; empty when none. */
     fun consumePendingCoachGrants(email: String): List<String>
     /** All not-yet-consumed pending coach grants, congregation ids keyed by email (seed summary). */
@@ -144,7 +146,7 @@ class InMemoryUserRepository : UserRepository {
 
     private val pendingCoach = ConcurrentHashMap<String, MutableSet<String>>() // email -> congregation ids
 
-    override fun addPendingCoachGrant(email: String, congregationId: String) {
+    override fun addPendingCoachGrant(email: String, congregationId: String, seasonYear: String) {
         pendingCoach.getOrPut(email.lowercase()) { ConcurrentHashMap.newKeySet() }.add(congregationId)
     }
 

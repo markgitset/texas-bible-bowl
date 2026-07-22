@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.server.data
 import net.markdrew.biblebowl.api.TribeDto
 import net.markdrew.biblebowl.api.TribeLeaderDto
 import net.markdrew.biblebowl.api.UpsertTribeRequest
+import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.v1.core.and
@@ -39,9 +40,22 @@ interface TribeRepository {
     fun updateTribe(tribeId: String, req: UpsertTribeRequest): TribeResult
     /** Deletes a tribe and its leader rows. */
     fun deleteTribe(tribeId: String): Boolean
-    /** Assigns a leader; null when the tribe doesn't exist. */
-    fun addLeader(tribeId: String, name: String): TribeLeaderDto?
+    /**
+     * Assigns a leader by name; null when the tribe doesn't exist. Since V2 leaders are registered
+     * attendees ([TribeLeadersTable] FKs a participant): the Postgres impl resolves the name to a
+     * participant in the tribe's season and returns [LeaderNotRegistered] when none matches (the
+     * name isn't a registered attendee). The in-memory double keeps free-form names.
+     */
+    fun addLeader(tribeId: String, name: String): AddLeaderResult
     fun deleteLeader(leaderId: String): Boolean
+}
+
+/** Outcome of assigning a tribe leader. */
+sealed interface AddLeaderResult {
+    data class Added(val leader: TribeLeaderDto) : AddLeaderResult
+    data object TribeNotFound : AddLeaderResult
+    /** The name doesn't match a registered attendee this season (leaders must be registered). */
+    data object LeaderNotRegistered : AddLeaderResult
 }
 
 private val TRIBE_ORDER = compareBy<TribeDto>({ it.siteId ?: "" }, { it.name.lowercase() })
@@ -83,11 +97,11 @@ class InMemoryTribeRepository : TribeRepository {
 
     override fun deleteTribe(tribeId: String): Boolean = tribes.remove(tribeId) != null
 
-    override fun addLeader(tribeId: String, name: String): TribeLeaderDto? {
-        val existing = tribes[tribeId] ?: return null
+    override fun addLeader(tribeId: String, name: String): AddLeaderResult {
+        val existing = tribes[tribeId] ?: return AddLeaderResult.TribeNotFound
         val leader = TribeLeaderDto(UUID.randomUUID().toString(), name.trim())
         tribes[tribeId] = existing.copy(dto = existing.dto.copy(leaders = existing.dto.leaders + leader))
-        return leader
+        return AddLeaderResult.Added(leader)
     }
 
     override fun deleteLeader(leaderId: String): Boolean {
@@ -104,10 +118,16 @@ class InMemoryTribeRepository : TribeRepository {
 
 class PostgresTribeRepository(private val db: Database) : TribeRepository {
 
-    private fun ResultRow.toLeader() = TribeLeaderDto(
-        id = this[TribeLeadersTable.id],
-        name = this[TribeLeadersTable.name],
-    )
+    /** Leader identity is the participant's person name (join), no longer a stored free-form name. */
+    private fun leaderRows(tribeIds: Set<String>): Map<String, List<TribeLeaderDto>> =
+        if (tribeIds.isEmpty()) emptyMap() else
+            (TribeLeadersTable innerJoin ParticipantsTable innerJoin PeopleTable)
+                .selectAll()
+                .where { TribeLeadersTable.tribeId inList tribeIds }
+                .orderBy(TribeLeadersTable.sortOrder)
+                .groupBy({ it[TribeLeadersTable.tribeId] }) {
+                    TribeLeaderDto(it[TribeLeadersTable.id], it[PeopleTable.name])
+                }
 
     private fun ResultRow.toTribe(leaders: List<TribeLeaderDto>) = TribeDto(
         id = this[TribesTable.id],
@@ -117,18 +137,14 @@ class PostgresTribeRepository(private val db: Database) : TribeRepository {
     )
 
     override fun listTribes(seasonYear: String): List<TribeDto> = transaction(db) {
-        val tribeRows = TribesTable.selectAll().where { TribesTable.seasonYear eq seasonYear }.toList()
-        val ids = tribeRows.map { it[TribesTable.id] }.toSet()
-        val leaders = if (ids.isEmpty()) emptyMap() else
-            TribeLeadersTable.selectAll()
-                .where { TribeLeadersTable.tribeId inList ids }
-                .orderBy(TribeLeadersTable.sortOrder)
-                .groupBy({ it[TribeLeadersTable.tribeId] }, { it.toLeader() })
+        val year = seasonYear.toIntOrNull() ?: return@transaction emptyList()
+        val tribeRows = TribesTable.selectAll().where { TribesTable.seasonYear eq year }.toList()
+        val leaders = leaderRows(tribeRows.map { it[TribesTable.id] }.toSet())
         tribeRows.map { it.toTribe(leaders[it[TribesTable.id]].orEmpty()) }
             .sortedWith(TRIBE_ORDER)
     }
 
-    private fun nameTaken(seasonYear: String, siteId: String?, name: String, exceptId: String?): Boolean =
+    private fun nameTaken(seasonYear: Int, siteId: String, name: String, exceptId: String?): Boolean =
         TribesTable.selectAll()
             .where {
                 (TribesTable.seasonYear eq seasonYear) and (TribesTable.name.lowerCase() eq name.lowercase())
@@ -136,34 +152,35 @@ class PostgresTribeRepository(private val db: Database) : TribeRepository {
             .any { it[TribesTable.siteId] == siteId && it[TribesTable.id] != exceptId }
 
     override fun addTribe(seasonYear: String, req: UpsertTribeRequest): TribeResult = transaction(db) {
+        val year = seasonYear.toInt()
         val name = req.name.trim()
-        if (nameTaken(seasonYear, req.siteId, name, exceptId = null)) return@transaction TribeResult.NameTaken
+        val site = resolveOrCreateSeasonSite(year, req.siteId)
+        if (nameTaken(year, site, name, exceptId = null)) return@transaction TribeResult.NameTaken
         val tribeId = UUID.randomUUID().toString()
         TribesTable.insert {
             it[id] = tribeId
-            it[TribesTable.seasonYear] = seasonYear
-            it[siteId] = req.siteId
+            it[TribesTable.seasonYear] = year
+            it[siteId] = site
             it[TribesTable.name] = name
         }
-        TribeResult.Ok(TribeDto(tribeId, name, req.siteId))
+        TribeResult.Ok(TribeDto(tribeId, name, site))
     }
 
     override fun updateTribe(tribeId: String, req: UpsertTribeRequest): TribeResult = transaction(db) {
         val row = TribesTable.selectAll().where { TribesTable.id eq tribeId }.singleOrNull()
             ?: return@transaction TribeResult.NotFound
+        val year = row[TribesTable.seasonYear]
         val name = req.name.trim()
-        if (nameTaken(row[TribesTable.seasonYear], req.siteId, name, exceptId = tribeId)) {
+        val site = resolveOrCreateSeasonSite(year, req.siteId)
+        if (nameTaken(year, site, name, exceptId = tribeId)) {
             return@transaction TribeResult.NameTaken
         }
         TribesTable.update({ TribesTable.id eq tribeId }) {
             it[TribesTable.name] = name
-            it[siteId] = req.siteId
+            it[siteId] = site
         }
-        val leaders = TribeLeadersTable.selectAll()
-            .where { TribeLeadersTable.tribeId eq tribeId }
-            .orderBy(TribeLeadersTable.sortOrder)
-            .map { it.toLeader() }
-        TribeResult.Ok(TribeDto(tribeId, name, req.siteId, leaders))
+        val leaders = leaderRows(setOf(tribeId))[tribeId].orEmpty()
+        TribeResult.Ok(TribeDto(tribeId, name, site, leaders))
     }
 
     override fun deleteTribe(tribeId: String): Boolean = transaction(db) {
@@ -171,18 +188,26 @@ class PostgresTribeRepository(private val db: Database) : TribeRepository {
         TribesTable.deleteWhere { TribesTable.id eq tribeId } > 0
     }
 
-    override fun addLeader(tribeId: String, name: String): TribeLeaderDto? = transaction(db) {
-        TribesTable.selectAll().where { TribesTable.id eq tribeId }.singleOrNull() ?: return@transaction null
+    override fun addLeader(tribeId: String, name: String): AddLeaderResult = transaction(db) {
+        val tribe = TribesTable.selectAll().where { TribesTable.id eq tribeId }.singleOrNull()
+            ?: return@transaction AddLeaderResult.TribeNotFound
+        val year = tribe[TribesTable.seasonYear]
+        // Leaders must be registered attendees: resolve the name to a participant this season.
+        val participantId = (ParticipantsTable innerJoin PeopleTable)
+            .selectAll()
+            .where { (ParticipantsTable.seasonYear eq year) and (PeopleTable.name.lowerCase() eq name.trim().lowercase()) }
+            .firstOrNull()?.get(ParticipantsTable.id)
+            ?: return@transaction AddLeaderResult.LeaderNotRegistered
         val order = TribeLeadersTable.selectAll()
             .where { TribeLeadersTable.tribeId eq tribeId }.count().toInt()
         val leaderId = UUID.randomUUID().toString()
         TribeLeadersTable.insert {
             it[id] = leaderId
             it[TribeLeadersTable.tribeId] = tribeId
-            it[TribeLeadersTable.name] = name.trim()
+            it[TribeLeadersTable.participantId] = participantId
             it[sortOrder] = order
         }
-        TribeLeaderDto(leaderId, name.trim())
+        AddLeaderResult.Added(TribeLeaderDto(leaderId, name.trim()))
     }
 
     override fun deleteLeader(leaderId: String): Boolean = transaction(db) {

@@ -35,6 +35,7 @@ dependencies {
     // Persistence (Postgres via Exposed)
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
+    implementation(libs.exposed.datetime)
     implementation(libs.postgresql)
     implementation(libs.hikari)
     implementation(libs.flyway.core)

@@ -6,6 +6,7 @@ import net.markdrew.biblebowl.api.CabinDto
 import net.markdrew.biblebowl.api.CheckoutDutyDto
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.UpsertCabinRequest
+import org.jetbrains.exposed.v1.core.JoinType
 import org.jetbrains.exposed.v1.core.ResultRow
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.v1.core.and
@@ -144,7 +145,8 @@ class PostgresHousingRepository(private val db: Database) : HousingRepository {
     )
 
     override fun listCabins(seasonYear: String): List<CabinDto> = transaction(db) {
-        val cabinRows = CabinsTable.selectAll().where { CabinsTable.seasonYear eq seasonYear }.toList()
+        val year = seasonYear.toIntOrNull() ?: return@transaction emptyList()
+        val cabinRows = CabinsTable.selectAll().where { CabinsTable.seasonYear eq year }.toList()
         val ids = cabinRows.map { it[CabinsTable.id] }.toSet()
         val assignments = if (ids.isEmpty()) emptyMap() else
             CabinAssignmentsTable.selectAll()
@@ -155,7 +157,7 @@ class PostgresHousingRepository(private val db: Database) : HousingRepository {
             .sortedWith(CABIN_ORDER)
     }
 
-    private fun nameTaken(seasonYear: String, siteId: String?, name: String, exceptId: String?): Boolean =
+    private fun nameTaken(seasonYear: Int, siteId: String, name: String, exceptId: String?): Boolean =
         CabinsTable.selectAll()
             .where {
                 (CabinsTable.seasonYear eq seasonYear) and (CabinsTable.name.lowerCase() eq name.lowercase())
@@ -163,36 +165,40 @@ class PostgresHousingRepository(private val db: Database) : HousingRepository {
             .any { it[CabinsTable.siteId] == siteId && it[CabinsTable.id] != exceptId }
 
     override fun addCabin(seasonYear: String, req: UpsertCabinRequest): CabinResult = transaction(db) {
+        val year = seasonYear.toInt()
         val name = req.name.trim()
-        if (nameTaken(seasonYear, req.siteId, name, exceptId = null)) return@transaction CabinResult.NameTaken
+        val site = resolveOrCreateSeasonSite(year, req.siteId)
+        if (nameTaken(year, site, name, exceptId = null)) return@transaction CabinResult.NameTaken
         val cabinId = UUID.randomUUID().toString()
         CabinsTable.insert {
             it[id] = cabinId
-            it[CabinsTable.seasonYear] = seasonYear
-            it[siteId] = req.siteId
+            it[CabinsTable.seasonYear] = year
+            it[siteId] = site
             it[CabinsTable.name] = name
             it[capacity] = req.capacity
         }
-        CabinResult.Ok(CabinDto(cabinId, name, req.siteId, req.capacity))
+        CabinResult.Ok(CabinDto(cabinId, name, site, req.capacity))
     }
 
     override fun updateCabin(cabinId: String, req: UpsertCabinRequest): CabinResult = transaction(db) {
         val row = CabinsTable.selectAll().where { CabinsTable.id eq cabinId }.singleOrNull()
             ?: return@transaction CabinResult.NotFound
+        val year = row[CabinsTable.seasonYear]
         val name = req.name.trim()
-        if (nameTaken(row[CabinsTable.seasonYear], req.siteId, name, exceptId = cabinId)) {
+        val site = resolveOrCreateSeasonSite(year, req.siteId)
+        if (nameTaken(year, site, name, exceptId = cabinId)) {
             return@transaction CabinResult.NameTaken
         }
         CabinsTable.update({ CabinsTable.id eq cabinId }) {
             it[CabinsTable.name] = name
-            it[siteId] = req.siteId
+            it[siteId] = site
             it[capacity] = req.capacity
         }
         val assignments = CabinAssignmentsTable.selectAll()
             .where { CabinAssignmentsTable.cabinId eq cabinId }
             .orderBy(CabinAssignmentsTable.sortOrder)
             .map { it.toAssignment() }
-        CabinResult.Ok(CabinDto(cabinId, name, req.siteId, req.capacity, assignments))
+        CabinResult.Ok(CabinDto(cabinId, name, site, req.capacity, assignments))
     }
 
     override fun deleteCabin(cabinId: String): Boolean = transaction(db) {
@@ -222,26 +228,62 @@ class PostgresHousingRepository(private val db: Database) : HousingRepository {
     }
 
     override fun listDuties(seasonYear: String): List<CheckoutDutyDto> = transaction(db) {
-        CheckoutDutiesTable.selectAll().where { CheckoutDutiesTable.seasonYear eq seasonYear }
-            .map { CheckoutDutyDto(congregationId = it[CheckoutDutiesTable.congregationId], adultName = it[CheckoutDutiesTable.adultName]) }
+        val year = seasonYear.toIntOrNull() ?: return@transaction emptyList()
+        (CheckoutDutiesTable innerJoin PeopleTable)
+            .selectAll().where { CheckoutDutiesTable.seasonYear eq year }
+            .map {
+                CheckoutDutyDto(
+                    congregationId = it[CheckoutDutiesTable.congregationId],
+                    adultName = it[PeopleTable.name],
+                )
+            }
             .sortedBy { it.congregationId }
     }
 
     override fun setDuty(seasonYear: String, congregationId: String, adultName: String): Unit = transaction(db) {
+        val year = seasonYear.toIntOrNull() ?: return@transaction
         val name = adultName.trim()
-        val where = (CheckoutDutiesTable.seasonYear eq seasonYear) and
+        val where = (CheckoutDutiesTable.seasonYear eq year) and
             (CheckoutDutiesTable.congregationId eq congregationId)
         if (name.isEmpty()) {
             CheckoutDutiesTable.deleteWhere { where }
-        } else {
-            val updated = CheckoutDutiesTable.update({ where }) { it[CheckoutDutiesTable.adultName] = name }
-            if (updated == 0) {
-                CheckoutDutiesTable.insert {
-                    it[CheckoutDutiesTable.seasonYear] = seasonYear
-                    it[CheckoutDutiesTable.congregationId] = congregationId
-                    it[CheckoutDutiesTable.adultName] = name
-                }
+            return@transaction
+        }
+        ensureSeasonRow(year)
+        val personId = resolveDutyPerson(congregationId, name)
+        val updated = CheckoutDutiesTable.update({ where }) { it[CheckoutDutiesTable.personId] = personId }
+        if (updated == 0) {
+            CheckoutDutiesTable.insert {
+                it[id] = UUID.randomUUID().toString()
+                it[CheckoutDutiesTable.seasonYear] = year
+                it[CheckoutDutiesTable.congregationId] = congregationId
+                it[CheckoutDutiesTable.personId] = personId
             }
         }
+    }
+
+    /**
+     * The person a check-out duty names: matched by name among the congregation's people (anyone
+     * with a participation there, any season), else a minimal person is created — check-out staff
+     * aren't necessarily registered attendees, so the free-form name from the desk still resolves.
+     */
+    private fun resolveDutyPerson(congregationId: String, name: String): String {
+        val existing = (PeopleTable innerJoin ParticipantsTable)
+            .join(RegistrationsTable, JoinType.INNER, onColumn = ParticipantsTable.registrationId, otherColumn = RegistrationsTable.id)
+            .selectAll()
+            .where {
+                (RegistrationsTable.congregationId eq congregationId) and
+                    (PeopleTable.name.lowerCase() eq name.lowercase())
+            }
+            .firstOrNull()?.get(PeopleTable.id)
+        if (existing != null) return existing
+        val newId = UUID.randomUUID().toString()
+        PeopleTable.insert {
+            it[id] = newId
+            it[PeopleTable.name] = name
+            it[isAdult] = true
+            it[claimCode] = freshPersonClaimCode()
+        }
+        return newId
     }
 }

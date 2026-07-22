@@ -1,6 +1,7 @@
 package net.markdrew.biblebowl.server.data
 
 import java.time.Instant
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import net.markdrew.biblebowl.model.Round
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
@@ -14,9 +15,10 @@ import org.jetbrains.exposed.v1.jdbc.update
 
 /**
  * Entered round scores and the season release flag (docs/gui-redesign.md §5F). Scores are keyed
- * by (roster entry, round) — roster entries hang off a per-season registration, so the entry id
- * alone scopes a score to its season. Validation (0..maxPoints, round/division eligibility)
- * happens in the routes; repositories just store cells.
+ * by (participant, round) — a participation hangs off a per-season registration, so the
+ * participant id alone scopes a score to its season. Validation (0..maxPoints, round/division
+ * eligibility) happens in the routes; repositories just store cells. The `rosterEntryId`
+ * parameter names are kept for wire/route compatibility — the value is a participant id.
  */
 interface ScoreRepository {
     /** Entered points by entry id and round for [entryIds]; entries with no scores yet are absent. */
@@ -66,8 +68,8 @@ class PostgresScoreRepository(private val db: Database) : ScoreRepository {
     override fun forEntries(entryIds: Collection<String>): Map<String, Map<Round, Int>> = transaction(db) {
         if (entryIds.isEmpty()) return@transaction emptyMap()
         ScoresTable.selectAll()
-            .where { ScoresTable.rosterEntryId inList entryIds }
-            .groupBy({ it[ScoresTable.rosterEntryId] }) {
+            .where { ScoresTable.participantId inList entryIds }
+            .groupBy({ it[ScoresTable.participantId] }) {
                 Round.valueOf(it[ScoresTable.round]) to it[ScoresTable.points]
             }
             .mapValues { (_, pairs) -> pairs.toMap() }
@@ -77,12 +79,12 @@ class PostgresScoreRepository(private val db: Database) : ScoreRepository {
         transaction(db) {
             if (points == null) {
                 ScoresTable.deleteWhere {
-                    (ScoresTable.rosterEntryId eq rosterEntryId) and (ScoresTable.round eq round.name)
+                    (ScoresTable.participantId eq rosterEntryId) and (ScoresTable.round eq round.name)
                 }
                 return@transaction
             }
             val updated = ScoresTable.update({
-                (ScoresTable.rosterEntryId eq rosterEntryId) and (ScoresTable.round eq round.name)
+                (ScoresTable.participantId eq rosterEntryId) and (ScoresTable.round eq round.name)
             }) {
                 it[ScoresTable.points] = points
                 it[ScoresTable.enteredByUserId] = enteredByUserId
@@ -90,7 +92,8 @@ class PostgresScoreRepository(private val db: Database) : ScoreRepository {
             }
             if (updated == 0) {
                 ScoresTable.insert {
-                    it[ScoresTable.rosterEntryId] = rosterEntryId
+                    it[id] = UUID.randomUUID().toString()
+                    it[ScoresTable.participantId] = rosterEntryId
                     it[ScoresTable.round] = round.name
                     it[ScoresTable.points] = points
                     it[ScoresTable.enteredByUserId] = enteredByUserId
@@ -100,25 +103,28 @@ class PostgresScoreRepository(private val db: Database) : ScoreRepository {
         }
 
     override fun releasedAt(seasonYear: String): String? = transaction(db) {
+        val year = seasonYear.toIntOrNull() ?: return@transaction null
         ScoreReleasesTable.selectAll()
-            .where { ScoreReleasesTable.seasonYear eq seasonYear }
+            .where { ScoreReleasesTable.seasonYear eq year }
             .singleOrNull()
             ?.let { Instant.ofEpochMilli(it[ScoreReleasesTable.releasedAtEpochMs]).toString() }
     }
 
     override fun setReleased(seasonYear: String, releasedByUserId: String, released: Boolean): String? =
         transaction(db) {
+            val year = seasonYear.toIntOrNull() ?: return@transaction null
             if (!released) {
-                ScoreReleasesTable.deleteWhere { ScoreReleasesTable.seasonYear eq seasonYear }
+                ScoreReleasesTable.deleteWhere { ScoreReleasesTable.seasonYear eq year }
                 return@transaction null
             }
+            ensureSeasonRow(year)
             val existing = ScoreReleasesTable.selectAll()
-                .where { ScoreReleasesTable.seasonYear eq seasonYear }
+                .where { ScoreReleasesTable.seasonYear eq year }
                 .singleOrNull()
             val releasedMs = existing?.get(ScoreReleasesTable.releasedAtEpochMs) ?: run {
                 val now = System.currentTimeMillis()
                 ScoreReleasesTable.insert {
-                    it[ScoreReleasesTable.seasonYear] = seasonYear
+                    it[ScoreReleasesTable.seasonYear] = year
                     it[releasedAtEpochMs] = now
                     it[ScoreReleasesTable.releasedByUserId] = releasedByUserId
                 }
