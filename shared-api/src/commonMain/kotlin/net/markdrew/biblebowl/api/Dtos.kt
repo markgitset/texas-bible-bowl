@@ -821,6 +821,19 @@ data class ClaimPersonResponse(val person: PersonDto, val relation: PersonRelati
 @Serializable
 data class MyPeopleResponse(val people: List<PersonWithParticipationsDto> = emptyList())
 
+/**
+ * Merges two people (`POST /admin/people/merge`, registrar-gated) — the mitigation for the global
+ * person-matching that makes duplicates likelier. [keepId] survives and absorbs [mergeId]'s
+ * participations, claims, and identity gaps; [mergeId] is deleted. Refused (`409`) when the two
+ * share a season (they'd double-participate) — the registrar resolves that overlap first.
+ */
+@Serializable
+data class MergePeopleRequest(val keepId: String, val mergeId: String)
+
+/** The surviving person after a merge, with its (now combined) participations. */
+@Serializable
+data class MergePeopleResponse(val person: PersonWithParticipationsDto)
+
 // ---------------------------------------------------------------------------
 // Seed import from the 2026 workbook (item 17, F13) — one-time, idempotent
 // ---------------------------------------------------------------------------
