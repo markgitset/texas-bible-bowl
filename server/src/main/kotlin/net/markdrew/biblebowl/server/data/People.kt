@@ -28,7 +28,7 @@ internal fun ensureSeasonRow(year: Int) {
     SeasonsTable.insert {
         it[SeasonsTable.year] = year
         it[isCurrent] = false
-        it[payload] = """{"eventYear":"$year","eventDateRange":"TBD","eventTheme":"TBD",""" +
+        it[payload] = """{"eventYear":$year,"eventDateRange":"TBD","eventTheme":"TBD",""" +
             """"eventScripture":"TBD","bookCode":"ACT","chapterCount":28,""" +
             """"scholarshipAmount":"TBD","scholarshipDeadline":"TBD"}"""
     }

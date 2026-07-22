@@ -191,9 +191,9 @@ fun Route.registrationRoutes(
             val season = seasons.current()
             val coached = congregations.findByIds(coachedCongregationIds(user.roles))
             val congregation = coached.firstOrNull()
-            val registration = congregation?.let { registrations.find(it.id, season.eventYear) }?.withTotal(seasons)
+            val registration = congregation?.let { registrations.find(it.id, season.eventYear.toString()) }?.withTotal(seasons)
             val candidates = congregation
-                ?.let { registrations.returningContestants(it.id, season.eventYear) }
+                ?.let { registrations.returningContestants(it.id, season.eventYear.toString()) }
                 ?.filter { season.isEligibleReturningCandidate(it) }
                 ?: emptyList()
             call.respond(
@@ -222,7 +222,7 @@ fun Route.registrationRoutes(
                     ApiError("unknown_site", "That event site isn't one of this season's sites"),
                 )
             }
-            registrations.setSite(congregationId, season.eventYear, req.siteId)
+            registrations.setSite(congregationId, season.eventYear.toString(), req.siteId)
             respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
@@ -236,7 +236,7 @@ fun Route.registrationRoutes(
             if (req.name.isBlank()) {
                 return@post call.respond(HttpStatusCode.BadRequest, ApiError("invalid_team", "Team name is required"))
             }
-            registrations.addTeam(congregationId, seasons.current().eventYear, req.name)
+            registrations.addTeam(congregationId, seasons.current().eventYear.toString(), req.name)
                 ?: return@post call.respond(
                     HttpStatusCode.Conflict,
                     ApiError("team_exists", "A team with that name already exists"),
@@ -383,7 +383,7 @@ fun Route.registrationRoutes(
             // Age eligibility is checked inside the enroll transaction (one fewer round of queries
             // than prefetching the candidate); an unknown id answers like an ineligible one.
             when (registrations.enrollContestant(
-                congregationId, season.eventYear, contestantId, req.shirtSize, req.teamId, req.birthdate,
+                congregationId, season.eventYear.toString(), contestantId, req.shirtSize, req.teamId, req.birthdate,
                 eligible = { season.isEligibleReturningCandidate(it) },
             )) {
                 EnrollResult.Enrolled ->
@@ -418,7 +418,7 @@ fun Route.registrationRoutes(
             if (req.name.isBlank()) {
                 return@post call.respond(HttpStatusCode.BadRequest, ApiError("invalid_individual", "Name is required"))
             }
-            registrations.addIndividual(congregationId, seasons.current().eventYear, req)
+            registrations.addIndividual(congregationId, seasons.current().eventYear.toString(), req)
             respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
@@ -461,7 +461,7 @@ fun Route.registrationRoutes(
             if (!requireWindowOpen(user, seasons)) return@post
             val req = call.receive<UpsertGuestRequest>()
             guestError(req, seasons.current())?.let { return@post call.respond(HttpStatusCode.BadRequest, it) }
-            registrations.addGuest(congregationId, seasons.current().eventYear, req.normalized(seasons.current()))
+            registrations.addGuest(congregationId, seasons.current().eventYear.toString(), req.normalized(seasons.current()))
             respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
@@ -527,14 +527,14 @@ fun Route.registrationRoutes(
             if (!requireWindowOpen(user, seasons)) return@post
             val season = seasons.current()
             // A multi-site season needs the site chosen before submit (a removed site unchooses).
-            val current = registrations.find(congregationId, season.eventYear)
+            val current = registrations.find(congregationId, season.eventYear.toString())
             if (season.multiSite && current != null && season.siteFor(current.siteId) == null) {
                 return@post call.respond(
                     HttpStatusCode.Conflict,
                     ApiError("site_required", "Choose which event site your congregation attends before submitting"),
                 )
             }
-            registrations.submit(congregationId, season.eventYear)
+            registrations.submit(congregationId, season.eventYear.toString())
                 ?: return@post call.respond(
                     HttpStatusCode.NotFound,
                     ApiError("not_found", "No registration to submit — add a team or an individual contestant first"),
@@ -599,10 +599,10 @@ private suspend fun RoutingContext.respondRegistrationUpdate(
     // (and keeps the blocking JDBC work off the request dispatcher).
     val response = coroutineScope {
         val registration = async(Dispatchers.IO) {
-            registrations.find(congregationId, season.eventYear)!!.withTotal(seasons)
+            registrations.find(congregationId, season.eventYear.toString())!!.withTotal(seasons)
         }
         val candidates = async(Dispatchers.IO) {
-            registrations.returningContestants(congregationId, season.eventYear)
+            registrations.returningContestants(congregationId, season.eventYear.toString())
                 .filter { season.isEligibleReturningCandidate(it) }
         }
         RegistrationUpdateResponse(registration.await(), candidates.await())

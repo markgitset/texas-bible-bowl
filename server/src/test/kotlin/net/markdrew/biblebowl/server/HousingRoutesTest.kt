@@ -120,7 +120,7 @@ class HousingRoutesTest {
         val housing: HousingResponse = api.get("/admin/housing") {
             header(HttpHeaders.Authorization, "Bearer ${registrar.token}")
         }.body()
-        assertEquals(openSeason.eventYear, housing.seasonYear)
+        assertEquals(openSeason.eventYear.toString(), housing.seasonYear)
         assertTrue(housing.cabins.isEmpty())
     }
 

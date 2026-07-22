@@ -213,8 +213,12 @@ data class EventSiteDto(
  */
 @Serializable
 data class SeasonDto(
-    /** Event year, e.g. "2027" (the season label spans two calendar years, e.g. 2026–27). */
-    val eventYear: String,
+    /**
+     * Event year, e.g. 2027 (the season label spans two calendar years, e.g. 2026–27). Tolerates
+     * the legacy quoted form on read (old payloads / old clients) via [FlexibleIntSerializer].
+     */
+    @Serializable(with = FlexibleIntSerializer::class)
+    val eventYear: Int,
     /** Event dates without the year, e.g. "April 2–4". */
     val eventDateRange: String,
     val eventTheme: String,

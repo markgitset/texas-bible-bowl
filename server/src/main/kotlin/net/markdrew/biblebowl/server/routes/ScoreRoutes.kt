@@ -105,7 +105,7 @@ fun Route.scoreRoutes(
             if (!requireEventWidePermission(user, Permission.SCORE_RELEASE)) return@put
             val season = seasons.current()
             val req = call.receive<SetScoresReleasedRequest>()
-            scores.setReleased(season.eventYear, user.id, req.released)
+            scores.setReleased(season.eventYear.toString(), user.id, req.released)
             call.respond(gradingSheet(season, registrations, scores))
         }
 
@@ -116,8 +116,8 @@ fun Route.scoreRoutes(
             val season = seasons.current()
             call.respond(
                 StandingsResponse(
-                    seasonYear = season.eventYear,
-                    releasedAt = scores.releasedAt(season.eventYear),
+                    seasonYear = season.eventYear.toString(),
+                    releasedAt = scores.releasedAt(season.eventYear.toString()),
                     divisions = computeStandings(rowSeeds(season, registrations), scores).divisions,
                 )
             )
@@ -127,10 +127,10 @@ fun Route.scoreRoutes(
             val user = currentUser(users) ?: return@get
             if (!requireGradingFeature(user, seasons)) return@get
             val season = seasons.current()
-            val released = scores.releasedAt(season.eventYear) != null
+            val released = scores.releasedAt(season.eventYear.toString()) != null
             if (!released) {
                 // Nothing is visible pre-release — not even to the entries' owners.
-                return@get call.respond(MyScoresResponse(season.eventYear, released = false))
+                return@get call.respond(MyScoresResponse(season.eventYear.toString(), released = false))
             }
             val seeds = rowSeeds(season, registrations)
             val visible = if (hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
@@ -153,7 +153,7 @@ fun Route.scoreRoutes(
                     teamPoints = team?.points,
                 )
             }
-            call.respond(MyScoresResponse(season.eventYear, released = true, rows = rows))
+            call.respond(MyScoresResponse(season.eventYear.toString(), released = true, rows = rows))
         }
     }
 }
@@ -183,11 +183,11 @@ private data class RowSeed(val congregationId: String, val teamId: String?, val 
  * without a scores fetch.
  */
 private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): List<RowSeed> =
-    registrations.listForSeason(season.eventYear)
+    registrations.listForSeason(season.eventYear.toString())
         .flatMap { reg ->
             val teamRows = reg.teams.flatMap { team ->
                 val teamDivision = team.division(season)
-                val teamInexperienced = team.isInexperienced(season.eventYear)
+                val teamInexperienced = team.isInexperienced(season.eventYear.toString())
                 team.members.map { member ->
                     // A visiting (combo-team) member scopes and displays under their OWN
                     // congregation — only the team round uses the hosting team's identity.
@@ -200,7 +200,7 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
                             congregationName = member.congregationName ?: reg.congregation.name,
                             teamName = team.name,
                             division = member.division(season),
-                            inexperienced = member.isInexperienced(season.eventYear),
+                            inexperienced = member.isInexperienced(season.eventYear.toString()),
                             teamDivision = teamDivision,
                             teamInexperienced = teamInexperienced,
                         ),
@@ -230,7 +230,7 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
                         congregationName = reg.congregation.name,
                         teamName = null,
                         division = entry.division(season),
-                        inexperienced = entry.isInexperienced(season.eventYear),
+                        inexperienced = entry.isInexperienced(season.eventYear.toString()),
                     ),
                 )
             }
@@ -255,8 +255,8 @@ private fun gradingSheet(
     registrations: RegistrationRepository,
     scores: ScoreRepository,
 ): GradingSheetResponse = GradingSheetResponse(
-    seasonYear = season.eventYear,
-    releasedAt = scores.releasedAt(season.eventYear),
+    seasonYear = season.eventYear.toString(),
+    releasedAt = scores.releasedAt(season.eventYear.toString()),
     rows = rowSeeds(season, registrations).withScores(scores),
 )
 

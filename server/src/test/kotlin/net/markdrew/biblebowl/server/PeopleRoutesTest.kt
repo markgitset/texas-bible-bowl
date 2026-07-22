@@ -76,7 +76,7 @@ class PeopleRoutesTest {
             CreateCongregationRequest("Claim Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
             coach.id,
         ) as CreateCongregationResult.Created).congregation
-        val team = assertNotNull(registrations.addTeam(cong.id, season.eventYear, "Team A"))
+        val team = assertNotNull(registrations.addTeam(cong.id, season.eventYear.toString(), "Team A"))
         val entry = (registrations.addMember(
             team.id, UpsertRosterEntryRequest("Timmy", birthdate = "2013-05-01", shirtSize = ShirtSize.YL, gender = Gender.MALE),
         ) as AddMemberResult.Added).entry
@@ -99,7 +99,7 @@ class PeopleRoutesTest {
         val managed = mine.people.single()
         assertEquals("Timmy", managed.person.name)
         assertEquals(PersonRelation.MANAGED, managed.person.relation)
-        assertEquals(listOf(season.eventYear), managed.participations.map { it.seasonYear })
+        assertEquals(listOf(season.eventYear.toString()), managed.participations.map { it.seasonYear })
         assertEquals("Team A", managed.participations.single().teamName)
 
         // A bogus code is a 404; a malformed one is a 400.
@@ -147,7 +147,7 @@ class PeopleRoutesTest {
             CreateCongregationRequest("Merge Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
             coach.id,
         ) as CreateCongregationResult.Created).congregation
-        val t26 = assertNotNull(registrations.addTeam(cong.id, season.eventYear, "Team A"))
+        val t26 = assertNotNull(registrations.addTeam(cong.id, season.eventYear.toString(), "Team A"))
         val sam = (registrations.addMember(
             t26.id, UpsertRosterEntryRequest("Sam", birthdate = "2013-05-01", shirtSize = ShirtSize.YM, gender = Gender.MALE),
         ) as AddMemberResult.Added).entry
@@ -177,7 +177,7 @@ class PeopleRoutesTest {
             setBody(net.markdrew.biblebowl.api.MergePeopleRequest(keepId, mergeId))
         }.body()
         assertEquals(keepId, merged.person.person.id)
-        assertEquals(setOf(season.eventYear, "2028"), merged.person.participations.map { it.seasonYear }.toSet())
+        assertEquals(setOf(season.eventYear.toString(), "2028"), merged.person.participations.map { it.seasonYear }.toSet())
     }
 
     @Test
@@ -202,7 +202,7 @@ class PeopleRoutesTest {
             CreateCongregationRequest("Search Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
             coach.id,
         ) as CreateCongregationResult.Created).congregation
-        val team = assertNotNull(registrations.addTeam(cong.id, season.eventYear, "Team A"))
+        val team = assertNotNull(registrations.addTeam(cong.id, season.eventYear.toString(), "Team A"))
         listOf("Sam" to "2013-05-01", "Samuel" to "2013-05-02", "Bethany" to "2013-05-03").forEach { (n, b) ->
             registrations.addMember(team.id, UpsertRosterEntryRequest(n, birthdate = b, shirtSize = ShirtSize.YM, gender = Gender.MALE))
         }

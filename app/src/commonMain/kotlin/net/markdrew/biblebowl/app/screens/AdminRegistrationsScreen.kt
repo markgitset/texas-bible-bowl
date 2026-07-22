@@ -84,7 +84,7 @@ internal class DeskModel(val api: TbbApi, val scope: CoroutineScope) {
     val expanded = mutableStateListOf<String>() // congregation ids with the roster detail open
 
     /** True when reviewing a past season's data — everything renders read-only. */
-    val viewingPast: Boolean get() = data?.let { it.seasonYear != season.eventYear } == true
+    val viewingPast: Boolean get() = data?.let { it.seasonYear != season.eventYear.toString() } == true
 
     /**
      * Multi-site seasons add a site filter and per-row site editing. Suppressed for a past year:
@@ -262,13 +262,14 @@ fun AdminRegistrationsScreen(
 @Composable
 private fun YearPicker(model: DeskModel, desk: RegistrationDeskResponse) {
     if (desk.availableYears.size < 2) return
+    val currentYear = model.season.eventYear.toString()
     val options = desk.availableYears.map { y ->
-        y to (if (y == model.season.eventYear) "$y (current)" else y)
+        y to (if (y == currentYear) "$y (current)" else y)
     }
     DropdownPicker(
         options, options.firstOrNull { it.first == desk.seasonYear }, { it.second },
         enabled = true, placeholder = "Season…",
-    ) { (y, _) -> model.selectYear(y.takeIf { it != model.season.eventYear }) }
+    ) { (y, _) -> model.selectYear(y.takeIf { it != currentYear }) }
 }
 
 @Composable

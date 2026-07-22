@@ -59,7 +59,7 @@ fun ageOn(birthdateIso: String, dateIso: String): Int? {
  */
 val SeasonDto.gradeCutoff: String
     get() = gradeCutoffDate?.takeIf { it.isNotBlank() }
-        ?: "${(eventYear.toIntOrNull() ?: 0) - 1}-09-01"
+        ?: "${eventYear - 1}-09-01"
 
 /**
  * The school grade implied by [birthdateIso] this season: age on [gradeCutoff] minus 5, since a
@@ -95,7 +95,7 @@ fun SeasonDto.isEligibleReturningCandidate(birthdate: String?): Boolean =
  */
 fun SeasonDto.isEligibleReturningCandidate(candidate: ReturningContestantDto): Boolean = when {
     candidate.birthdate != null -> isEligibleReturningCandidate(candidate.birthdate)
-    candidate.graduationYear != null -> (eventYear.toIntOrNull() ?: 0) <= candidate.graduationYear
+    candidate.graduationYear != null -> eventYear <= candidate.graduationYear
     else -> true
 }
 
@@ -105,7 +105,7 @@ fun SeasonDto.isEligibleReturningCandidate(candidate: ReturningContestantDto): B
  * aged-out candidate; callers filter with [isEligibleReturningCandidate] first.
  */
 fun SeasonDto.gradeForGraduationYear(graduationYear: Int): Int =
-    12 - (graduationYear - (eventYear.toIntOrNull() ?: 0))
+    12 - (graduationYear - eventYear)
 
 /** The event year a student in [grade] during [seasonYear] finishes grade 12 (the seed's stable form). */
 fun graduationYearFor(seasonYear: String, grade: Int): Int = (seasonYear.toIntOrNull() ?: 0) + (12 - grade)

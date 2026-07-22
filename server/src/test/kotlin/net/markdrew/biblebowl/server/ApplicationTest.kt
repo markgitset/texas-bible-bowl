@@ -356,11 +356,11 @@ class ApplicationTest {
         // with their stable ids.
         val rolled = api.put("/seasons/current") {
             header(HttpHeaders.Authorization, "Bearer ${admin.token}")
-            setBody(sitedBack.copy(eventYear = "2028"))
+            setBody(sitedBack.copy(eventYear = 2028))
         }
         assertEquals(HttpStatusCode.OK, rolled.status)
         val rolledBack: SeasonDto = json.decodeFromString(api.get("/seasons/current").bodyAsText())
-        assertEquals("2028", rolledBack.eventYear)
+        assertEquals(2028, rolledBack.eventYear)
         assertEquals(sitedBack.sites, rolledBack.sites)
     }
 
@@ -378,7 +378,7 @@ class ApplicationTest {
         """.trimIndent()
         val decoded = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
             .decodeFromString<SeasonDto>(legacy)
-        assertEquals("2027", decoded.eventYear)
+        assertEquals(2027, decoded.eventYear)
         assertEquals(null, decoded.priceContestantCents)
         assertEquals(null, decoded.registrationOpensOn)
         assertTrue(decoded.feesTentative)

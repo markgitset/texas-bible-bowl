@@ -41,8 +41,8 @@ fun Route.adminRegistrationRoutes(
             if (!requireEventWidePermission(user, Permission.REGISTRATION_MANAGE)) return@get
             val current = seasons.current()
             // `?year=` reviews a past season's data; unset (or the current year) is the live desk.
-            val year = call.request.queryParameters["year"]?.takeIf { it.isNotBlank() } ?: current.eventYear
-            val isCurrentYear = year == current.eventYear
+            val year = call.request.queryParameters["year"]?.takeIf { it.isNotBlank() } ?: current.eventYear.toString()
+            val isCurrentYear = year == current.eventYear.toString()
             // A past year's totals use that season's stored fees; a year with no season row (e.g.
             // workbook-seeded history) gets no totals rather than misleading current-fee ones.
             val seasonForYear = if (isCurrentYear) current else seasons.byYear(year)
@@ -53,7 +53,7 @@ fun Route.adminRegistrationRoutes(
             call.respond(
                 RegistrationDeskResponse(
                     seasonYear = year,
-                    availableYears = (registrations.seasonYears() + current.eventYear)
+                    availableYears = (registrations.seasonYears() + current.eventYear.toString())
                         .distinct().sortedDescending(),
                     rows = allCongregations.map { cong ->
                         RegistrationDeskRowDto(

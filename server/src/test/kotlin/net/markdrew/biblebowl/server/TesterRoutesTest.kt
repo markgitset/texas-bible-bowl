@@ -197,7 +197,7 @@ class TesterRoutesTest {
         val admin = api.loginSeededAdmin(users)
         val testers = api.testers(admin.token)
 
-        assertEquals(openSeason.eventYear, testers.seasonYear)
+        assertEquals(openSeason.eventYear.toString(), testers.seasonYear)
         assertEquals(4, testers.rows.size)
         // A zero-site season numbers everyone as one implicit site, from 1, in desk order
         // (congregation, team — teamless last, name).
