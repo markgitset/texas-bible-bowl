@@ -76,10 +76,13 @@ build with "Lock file was changed" — run `./gradlew kotlinUpgradeYarnLock` and
 Top-level destinations (`Routes.kt` per app): the Compose app has five — study, quiz,
 questions, downloads, event; the web app has four — the event tab was removed from `:web`
 2026-07 because the Hugo site already shows season info (the Android app has no site around
-it, so its Event tab stays). Both also have signin, account, and gated admin routes; the web
-app additionally has the registration/event-ops routes (`#event/register`, `#event/grading`,
-`#event/my-scores`, `#admin/registrations`, `#admin/users`) — these are web-only so far, the
-Compose app hasn't caught up. No auth wall — GET routes are
+it, so its Event tab stays). Both also have signin, account, gated admin routes, and the full
+registration/event-ops route set (`event/register`, `event/grading`, `event/standings`,
+`event/my-scores`, `admin/registrations`, `admin/counts`, `admin/housing`, `admin/tribes`,
+`admin/testers`, `admin/users`) with identical route strings and gating — the Compose app
+reached web parity 2026-07 (PRs #59–#62; entry points are the Event tab's cards and the
+Account screen's Event-staff links, standing in for the web navbar's NavMenu). No auth
+wall — GET routes are
 public server-side; JWT only on submit/vote/moderate; permission-gated routes render the
 sign-in screen in place (never disabled-but-visible affordances). The Compose app uses
 JetBrains navigation-compose with an adaptive scaffold in `App.kt`; the web app uses a

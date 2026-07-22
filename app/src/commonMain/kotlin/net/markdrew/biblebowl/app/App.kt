@@ -49,6 +49,12 @@ import net.markdrew.biblebowl.app.navigation.TopDestination
 import net.markdrew.biblebowl.app.navigation.topDestinationOf
 import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.screens.AccountScreen
+import net.markdrew.biblebowl.app.screens.AdminCountsScreen
+import net.markdrew.biblebowl.app.screens.AdminHousingScreen
+import net.markdrew.biblebowl.app.screens.AdminRegistrationsScreen
+import net.markdrew.biblebowl.app.screens.AdminTestersScreen
+import net.markdrew.biblebowl.app.screens.AdminTribesScreen
+import net.markdrew.biblebowl.app.screens.AdminUsersScreen
 import net.markdrew.biblebowl.app.screens.AuthScreen
 import net.markdrew.biblebowl.app.screens.ContributeScreen
 import net.markdrew.biblebowl.app.screens.DownloadsScreen
@@ -328,11 +334,61 @@ private fun AppNavHost(
                     navController.popBackStack(Routes.STUDY, inclusive = false)
                 },
                 onOpenSeasonAdmin = { navController.navigate(Routes.ADMIN_SEASON) },
+                onNavigate = { navController.navigate(it) { launchSingleTop = true } },
             )
         }
         composable(Routes.ADMIN_SEASON) {
             if (user != null && Permission.SEASON_MANAGE in user.permissions) {
                 AdminSeasonScreen(api, onSaved = onSeasonChange)
+            } else AuthScreen(api, onSignedIn = onUserChange)
+        }
+        // Event-ops screens, gated exactly like the web shell: registration launch toggle
+        // (admin preview included) + an event-wide grant; the server enforces both regardless.
+        composable(Routes.ADMIN_REGISTRATIONS) {
+            FeatureGate(LocalSeason.current.registrationEnabled, user) {
+                if (user != null && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
+                    AdminRegistrationsScreen(
+                        api, user,
+                        onOpenCounts = { navController.navigate(Routes.ADMIN_COUNTS) },
+                        onOpenHousing = { navController.navigate(Routes.ADMIN_HOUSING) },
+                    )
+                } else AuthScreen(api, onSignedIn = onUserChange)
+            }
+        }
+        composable(Routes.ADMIN_COUNTS) {
+            FeatureGate(LocalSeason.current.registrationEnabled, user) {
+                if (user != null && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
+                    AdminCountsScreen(api, onOpenDesk = { navController.navigate(Routes.ADMIN_REGISTRATIONS) })
+                } else AuthScreen(api, onSignedIn = onUserChange)
+            }
+        }
+        composable(Routes.ADMIN_HOUSING) {
+            FeatureGate(LocalSeason.current.registrationEnabled, user) {
+                if (user != null && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
+                    AdminHousingScreen(api, onOpenDesk = { navController.navigate(Routes.ADMIN_REGISTRATIONS) })
+                } else AuthScreen(api, onSignedIn = onUserChange)
+            }
+        }
+        composable(Routes.ADMIN_TRIBES) {
+            FeatureGate(LocalSeason.current.registrationEnabled, user) {
+                if (user != null && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
+                    AdminTribesScreen(api, onOpenDesk = { navController.navigate(Routes.ADMIN_REGISTRATIONS) })
+                } else AuthScreen(api, onSignedIn = onUserChange)
+            }
+        }
+        // Registrars prep tester IDs/nametags; graders need the ZipGrade export — either works.
+        composable(Routes.ADMIN_TESTERS) {
+            FeatureGate(LocalSeason.current.registrationEnabled, user) {
+                val allowed = user != null &&
+                    (hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE) ||
+                        hasEventWidePermission(user.roles, Permission.SCORE_ENTER))
+                if (allowed) AdminTestersScreen(api)
+                else AuthScreen(api, onSignedIn = onUserChange)
+            }
+        }
+        composable(Routes.ADMIN_USERS) {
+            if (user != null && Permission.USER_MANAGE in user.permissions) {
+                AdminUsersScreen(api, currentUser = user, onUserChange = onUserChange)
             } else AuthScreen(api, onSignedIn = onUserChange)
         }
     }

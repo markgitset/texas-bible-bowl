@@ -35,8 +35,10 @@ import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.division
 import net.markdrew.biblebowl.api.divisionForBirthdate
+import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.isGlobalAdmin
 import net.markdrew.biblebowl.api.isValidBirthdate
+import net.markdrew.biblebowl.app.navigation.Routes
 import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.client.TbbApi
 
@@ -52,6 +54,7 @@ fun AccountScreen(
     onUserChange: (UserDto) -> Unit,
     onSignOut: () -> Unit,
     onOpenSeasonAdmin: () -> Unit,
+    onNavigate: (String) -> Unit,
 ) {
     val current = user ?: return // routed here only when signed in; guard for safety
     val season = LocalSeason.current
@@ -99,6 +102,8 @@ fun AccountScreen(
             }
         }
 
+        StaffLinks(current, onNavigate)
+
         if (Permission.SEASON_MANAGE in current.permissions) {
             OutlinedButton(onClick = onOpenSeasonAdmin, modifier = Modifier.fillMaxWidth()) {
                 Text("Season settings")
@@ -106,6 +111,48 @@ fun AccountScreen(
             ClearPdfCacheButton(api)
         }
         OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
+    }
+}
+
+/**
+ * Event-staff destinations, mirroring the web navbar's user menu (NavMenu.kt): the desk-family
+ * screens for event-wide REGISTRATION_MANAGE holders, tester IDs also for SCORE_ENTER, user
+ * management for USER_MANAGE — each behind the registration launch toggle where the web is
+ * (admins preview dark features with a note).
+ */
+@Composable
+private fun StaffLinks(user: UserDto, onNavigate: (String) -> Unit) {
+    val season = LocalSeason.current
+    val registrationVisible = season.registrationEnabled || isGlobalAdmin(user.roles)
+    val registrar = hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)
+    val testerAccess = registrar || hasEventWidePermission(user.roles, Permission.SCORE_ENTER)
+    val links = buildList {
+        if (registrationVisible && registrar) {
+            add("Registration desk" to Routes.ADMIN_REGISTRATIONS)
+            add("Registration counts" to Routes.ADMIN_COUNTS)
+            add("Housing" to Routes.ADMIN_HOUSING)
+            add("Tribes" to Routes.ADMIN_TRIBES)
+        }
+        if (registrationVisible && testerAccess) add("Tester IDs" to Routes.ADMIN_TESTERS)
+        if (Permission.USER_MANAGE in user.permissions) add("User management" to Routes.ADMIN_USERS)
+    }
+    if (links.isEmpty()) return
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Event staff", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            if (!season.registrationEnabled && registrationVisible && (registrar || testerAccess)) {
+                Text(
+                    "Registration is hidden until launch — visible to you as a global admin.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
+            links.forEach { (label, route) ->
+                OutlinedButton(onClick = { onNavigate(route) }, modifier = Modifier.fillMaxWidth()) {
+                    Text(label)
+                }
+            }
+        }
     }
 }
 
