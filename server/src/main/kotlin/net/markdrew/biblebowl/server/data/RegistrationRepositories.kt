@@ -187,6 +187,12 @@ interface RegistrationRepository {
      */
     fun returningContestants(congregationId: String, seasonYear: String): List<ReturningContestantDto>
     /**
+     * The single returning candidate [contestantId] — null when the contestant doesn't belong to
+     * [congregationId] or already has a [seasonYear] roster entry. Last-seen details (season, shirt)
+     * are omitted: this is the eligibility-check form, not the display form.
+     */
+    fun returningContestant(congregationId: String, seasonYear: String, contestantId: String): ReturningContestantDto?
+    /**
      * Creates [seasonYear]'s roster entry for an existing contestant (on [teamId], else unassigned).
      * [birthdate] is for workbook-seeded youth (grade but no birthdate): required for them —
      * [EnrollResult.BirthdateRequired] otherwise — and written onto the durable contestant, who is
@@ -665,6 +671,29 @@ class InMemoryRegistrationRepository(
                     )
                 }
         }
+
+    override fun returningContestant(
+        congregationId: String,
+        seasonYear: String,
+        contestantId: String,
+    ): ReturningContestantDto? = synchronized(lock) {
+        val contestant = contestants[contestantId]?.takeIf { it.congregationId == congregationId }
+            ?: return null
+        val seasonRegId = regs["$congregationId|$seasonYear"]?.id
+        val enrolled = seasonRegId != null && (
+            memberContestant.any { (mid, cid) -> cid == contestantId && memberReg[mid] == seasonRegId } ||
+                individualContestant.any { (iid, cid) -> cid == contestantId && individualReg[iid] == seasonRegId }
+            )
+        if (enrolled) return null
+        ReturningContestantDto(
+            contestantId = contestant.id,
+            name = contestant.name,
+            birthdate = contestant.birthdate,
+            gender = contestant.gender,
+            firstSeasonYear = contestant.firstSeasonYear,
+            graduationYear = contestant.graduationYear,
+        )
+    }
 
     override fun enrollContestant(
         congregationId: String,
@@ -1420,35 +1449,81 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                     IndividualsTable.selectAll().where { IndividualsTable.registrationId eq seasonRegId }
                         .mapNotNull { it[IndividualsTable.contestantId] }
                 ).toSet()
-            ContestantsTable.selectAll()
+            val candidates = ContestantsTable.selectAll()
                 .where { ContestantsTable.congregationId eq congregationId }
                 .orderBy(ContestantsTable.name)
-                .filter { it[ContestantsTable.id] !in enrolledThisSeason }
-                .map { row ->
-                    val cid = row[ContestantsTable.id]
-                    // Most recent enrollment of this person (team for youth, individual for adults),
-                    // for display + shirt-size prefill.
-                    val recentTeam = (TeamMembersTable innerJoin RegistrationsTable).selectAll()
-                        .where { TeamMembersTable.contestantId eq cid }
-                        .maxByOrNull { it[RegistrationsTable.seasonYear] }
-                        ?.let { it[RegistrationsTable.seasonYear] to it[TeamMembersTable.shirtSize] }
-                    val recentIndiv = (IndividualsTable innerJoin RegistrationsTable).selectAll()
-                        .where { IndividualsTable.contestantId eq cid }
-                        .maxByOrNull { it[RegistrationsTable.seasonYear] }
-                        ?.let { it[RegistrationsTable.seasonYear] to it[IndividualsTable.shirtSize] }
-                    val recent = listOfNotNull(recentTeam, recentIndiv).maxByOrNull { it.first }
-                    ReturningContestantDto(
-                        contestantId = cid,
-                        name = row[ContestantsTable.name],
-                        birthdate = row[ContestantsTable.birthdate],
-                        gender = row[ContestantsTable.gender]?.let { Gender.valueOf(it) },
-                        lastSeasonYear = recent?.first,
-                        lastShirtSize = recent?.second?.let { ShirtSize.valueOf(it) },
-                        firstSeasonYear = row[ContestantsTable.firstSeasonYear],
-                        graduationYear = row[ContestantsTable.graduationYear],
-                    )
-                }
+                .filterNot { it[ContestantsTable.id] in enrolledThisSeason }
+            // Most recent enrollment per person (team for youth, individual for adults), for
+            // display + shirt-size prefill — batched over all candidates, not queried per person.
+            val ids = candidates.map { it[ContestantsTable.id] }
+            val latest = HashMap<String, Pair<String, String>>() // contestant id -> (season, shirt)
+            fun consider(cid: String?, season: String, shirt: String) {
+                if (cid == null) return
+                val current = latest[cid]
+                if (current == null || season > current.first) latest[cid] = season to shirt
+            }
+            if (ids.isNotEmpty()) {
+                (TeamMembersTable innerJoin RegistrationsTable).selectAll()
+                    .where { TeamMembersTable.contestantId inList ids }
+                    .forEach {
+                        consider(
+                            it[TeamMembersTable.contestantId],
+                            it[RegistrationsTable.seasonYear],
+                            it[TeamMembersTable.shirtSize],
+                        )
+                    }
+                (IndividualsTable innerJoin RegistrationsTable).selectAll()
+                    .where { IndividualsTable.contestantId inList ids }
+                    .forEach {
+                        consider(
+                            it[IndividualsTable.contestantId],
+                            it[RegistrationsTable.seasonYear],
+                            it[IndividualsTable.shirtSize],
+                        )
+                    }
+            }
+            candidates.map { row ->
+                val recent = latest[row[ContestantsTable.id]]
+                ReturningContestantDto(
+                    contestantId = row[ContestantsTable.id],
+                    name = row[ContestantsTable.name],
+                    birthdate = row[ContestantsTable.birthdate],
+                    gender = row[ContestantsTable.gender]?.let { Gender.valueOf(it) },
+                    lastSeasonYear = recent?.first,
+                    lastShirtSize = recent?.second?.let { ShirtSize.valueOf(it) },
+                    firstSeasonYear = row[ContestantsTable.firstSeasonYear],
+                    graduationYear = row[ContestantsTable.graduationYear],
+                )
+            }
         }
+
+    override fun returningContestant(
+        congregationId: String,
+        seasonYear: String,
+        contestantId: String,
+    ): ReturningContestantDto? = transaction(db) {
+        val contestant = ContestantsTable.selectAll().where { ContestantsTable.id eq contestantId }.singleOrNull()
+            ?.takeIf { it[ContestantsTable.congregationId] == congregationId }
+            ?: return@transaction null
+        val seasonRegId = regRow(congregationId, seasonYear)?.get(RegistrationsTable.id)
+        val enrolled = seasonRegId != null && (
+            TeamMembersTable.selectAll()
+                .where { (TeamMembersTable.contestantId eq contestantId) and (TeamMembersTable.registrationId eq seasonRegId) }
+                .any() ||
+                IndividualsTable.selectAll()
+                    .where { (IndividualsTable.contestantId eq contestantId) and (IndividualsTable.registrationId eq seasonRegId) }
+                    .any()
+            )
+        if (enrolled) return@transaction null
+        ReturningContestantDto(
+            contestantId = contestant[ContestantsTable.id],
+            name = contestant[ContestantsTable.name],
+            birthdate = contestant[ContestantsTable.birthdate],
+            gender = contestant[ContestantsTable.gender]?.let { Gender.valueOf(it) },
+            firstSeasonYear = contestant[ContestantsTable.firstSeasonYear],
+            graduationYear = contestant[ContestantsTable.graduationYear],
+        )
+    }
 
     override fun enrollContestant(
         congregationId: String,
@@ -1745,6 +1820,35 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         val regId = this[RegistrationsTable.id]
         val congId = this[RegistrationsTable.congregationId]
         val cong = CongregationsTable.selectAll().where { CongregationsTable.id eq congId }.singleOrNull()
+        // Teams and every member on them (including visitors from other registrations), batched:
+        // one query for the team rows and one join for all their members.
+        val teamRows = TeamsTable.selectAll()
+            .where { TeamsTable.registrationId eq regId }
+            .orderBy(TeamsTable.sortOrder)
+            .toList()
+        val teamIds = teamRows.map { it[TeamsTable.id] }
+        val memberRows = if (teamIds.isEmpty()) emptyList() else
+            (TeamMembersTable innerJoin ContestantsTable).selectAll()
+                .where { TeamMembersTable.teamId inList teamIds }
+                .toList()
+        val awayRows = (TeamMembersTable innerJoin ContestantsTable innerJoin TeamsTable).selectAll()
+            .where { (TeamMembersTable.registrationId eq regId) and (TeamsTable.registrationId neq regId) }
+            .orderBy(ContestantsTable.name)
+            .toList()
+        // Foreign registrations touched above — a visiting member's home, or an away member's host
+        // team's — resolved to congregation ids/names in two batched lookups.
+        val foreignRegIds = (
+            memberRows.map { it[TeamMembersTable.registrationId] } + awayRows.map { it[TeamsTable.registrationId] }
+            ).filter { it != regId }.distinct()
+        val regCongregation: Map<String, String> = if (foreignRegIds.isEmpty()) emptyMap() else
+            RegistrationsTable.selectAll().where { RegistrationsTable.id inList foreignRegIds }
+                .associate { it[RegistrationsTable.id] to it[RegistrationsTable.congregationId] }
+        val congregationName: Map<String, String> = if (foreignRegIds.isEmpty()) emptyMap() else
+            CongregationsTable.selectAll().where { CongregationsTable.id inList regCongregation.values.distinct() }
+                .associate { it[CongregationsTable.id] to it[CongregationsTable.name] }
+
+        fun nameForReg(id: String): String = regCongregation[id]?.let { congregationName[it] } ?: "?"
+        val membersByTeam = memberRows.groupBy { it[TeamMembersTable.teamId] }
         return RegistrationDto(
             id = regId,
             congregation = CongregationDto(
@@ -1760,10 +1864,22 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             seasonYear = this[RegistrationsTable.seasonYear],
             status = RegistrationStatus.valueOf(this[RegistrationsTable.status]),
             siteId = this[RegistrationsTable.siteId],
-            teams = TeamsTable.selectAll()
-                .where { TeamsTable.registrationId eq regId }
-                .orderBy(TeamsTable.sortOrder)
-                .map { row -> teamDto(row[TeamsTable.id])!! },
+            teams = teamRows.map { teamRow ->
+                TeamDto(
+                    id = teamRow[TeamsTable.id],
+                    name = teamRow[TeamsTable.name],
+                    members = membersByTeam[teamRow[TeamsTable.id]].orEmpty().map { memberRow ->
+                        val entry = memberRow.toEntry()
+                        val memberRegId = memberRow[TeamMembersTable.registrationId]
+                        // A visiting (combo-team) member carries their own congregation.
+                        if (memberRegId == regId) entry
+                        else entry.copy(
+                            congregationId = regCongregation[memberRegId],
+                            congregationName = nameForReg(memberRegId),
+                        )
+                    },
+                )
+            },
             individuals = (IndividualsTable innerJoin ContestantsTable).selectAll()
                 .where { IndividualsTable.registrationId eq regId }
                 .orderBy(ContestantsTable.name)
@@ -1772,17 +1888,14 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
                 .where { (TeamMembersTable.registrationId eq regId) and TeamMembersTable.teamId.isNull() }
                 .orderBy(ContestantsTable.name)
                 .map { it.toEntry() },
-            awayMembers = (TeamMembersTable innerJoin ContestantsTable innerJoin TeamsTable).selectAll()
-                .where { (TeamMembersTable.registrationId eq regId) and (TeamsTable.registrationId neq regId) }
-                .orderBy(ContestantsTable.name)
-                .map { row ->
-                    AwayMemberDto(
-                        entry = row.toEntry(),
-                        teamId = row[TeamsTable.id],
-                        teamName = row[TeamsTable.name],
-                        congregationName = congregationNameForReg(row[TeamsTable.registrationId]),
-                    )
-                },
+            awayMembers = awayRows.map { row ->
+                AwayMemberDto(
+                    entry = row.toEntry(),
+                    teamId = row[TeamsTable.id],
+                    teamName = row[TeamsTable.name],
+                    congregationName = nameForReg(row[TeamsTable.registrationId]),
+                )
+            },
             guests = RegistrationGuestsTable.selectAll()
                 .where { RegistrationGuestsTable.registrationId eq regId }
                 .orderBy(RegistrationGuestsTable.name)

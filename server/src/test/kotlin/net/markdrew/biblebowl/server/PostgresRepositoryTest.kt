@@ -547,6 +547,56 @@ class PostgresRepositoryTest {
         assertTrue(registrations.returningContestants(cong.id, "2028").isEmpty())
     }
 
+    /**
+     * The registration read paths must run a FIXED number of SQL statements — not one-per-team,
+     * one-per-member, or one-per-candidate. These reads run on every roster mutation (each response
+     * rebuilds the registration + candidate list), so an N+1 here is what made adding/removing a
+     * returning contestant take seconds against a remote Postgres.
+     */
+    @Test
+    fun registrationReadsUseAFixedQueryCountRegardlessOfRosterSize() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val coach = users.create("qcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Query Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+
+        // A large prior season (12 contestants) → 12 returning candidates for 2027 …
+        repeat(3) { t ->
+            val team = assertNotNull(registrations.addTeam(cong.id, "2026", "Old Team $t"))
+            repeat(4) { m ->
+                registrations.addMember(team.id, UpsertRosterEntryRequest(
+                    "Kid $t-$m", birthdate = "2013-05-0${m + 1}", shirtSize = ShirtSize.YM, gender = Gender.MALE,
+                ))
+            }
+        }
+        // … plus a current season with teams, members, an individual, and a guest.
+        repeat(2) { t ->
+            val team = assertNotNull(registrations.addTeam(cong.id, "2027", "Team $t"))
+            repeat(3) { m ->
+                registrations.addMember(team.id, UpsertRosterEntryRequest(
+                    "New $t-$m", birthdate = "2014-05-0${m + 1}", shirtSize = ShirtSize.YM, gender = Gender.FEMALE,
+                ))
+            }
+        }
+        registrations.addIndividual(cong.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AL, Gender.FEMALE))
+        registrations.addGuest(cong.id, "2027", UpsertGuestRequest("Aunt Vol", ShirtSize.AM, birthdate = null, gender = Gender.FEMALE))
+
+        val findCount = QueryCountInterceptor.measure { registrations.find(cong.id, "2027") }
+        val candidateCount = QueryCountInterceptor.measure { registrations.returningContestants(cong.id, "2027") }
+        // Generous fixed bounds: find() is ~9 statements, returningContestants() ~6 — anything that
+        // scales with the 12 candidates / 8 roster entries above blows well past these.
+        assertTrue(findCount in 1..12, "find() ran $findCount statements — did a per-row query creep back in?")
+        assertTrue(candidateCount in 1..8,
+            "returningContestants() ran $candidateCount statements — did a per-candidate query creep back in?")
+    }
+
     @Test
     fun claimingPersistsAcrossSeasons() {
         if (!available) { println("Postgres not reachable — skipping"); return }

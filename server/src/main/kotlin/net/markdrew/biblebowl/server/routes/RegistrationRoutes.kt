@@ -19,6 +19,7 @@ import net.markdrew.biblebowl.api.AgeTier
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.RegistrationDto
+import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
@@ -218,7 +219,8 @@ fun Route.registrationRoutes(
                     ApiError("unknown_site", "That event site isn't one of this season's sites"),
                 )
             }
-            call.respond(registrations.setSite(congregationId, season.eventYear, req.siteId).withTotal(seasons))
+            registrations.setSite(congregationId, season.eventYear, req.siteId)
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         post("/registration/{congregationId}/teams") {
@@ -236,7 +238,7 @@ fun Route.registrationRoutes(
                     HttpStatusCode.Conflict,
                     ApiError("team_exists", "A team with that name already exists"),
                 )
-            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         put("/registration/teams/{teamId}") {
@@ -252,7 +254,7 @@ fun Route.registrationRoutes(
                 return@put call.respond(HttpStatusCode.BadRequest, ApiError("invalid_team", "Team name is required"))
             }
             registrations.renameTeam(teamId, req.name)
-            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         delete("/registration/teams/{teamId}") {
@@ -264,7 +266,7 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@delete
             if (!requireWindowOpen(user, seasons)) return@delete
             registrations.deleteTeam(teamId)
-            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         post("/registration/teams/{teamId}/members") {
@@ -284,7 +286,7 @@ fun Route.registrationRoutes(
             }
             when (registrations.addMember(teamId, req)) {
                 is AddMemberResult.Added ->
-                    call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+                    respondRegistrationUpdate(congregationId, seasons, registrations)
                 AddMemberResult.RosterFull ->
                     call.respond(HttpStatusCode.Conflict, ApiError("roster_full", "A team may have at most 4 contestants"))
                 AddMemberResult.TeamNotFound ->
@@ -308,7 +310,7 @@ fun Route.registrationRoutes(
                 )
             }
             registrations.updateMember(memberId, req)
-            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         delete("/registration/members/{memberId}") {
@@ -320,7 +322,7 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@delete
             if (!requireWindowOpen(user, seasons)) return@delete
             registrations.deleteMember(memberId)
-            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         // (Re)assign a youth contestant to a team, or free it to the unassigned pool (null teamId).
@@ -346,7 +348,7 @@ fun Route.registrationRoutes(
             }
             when (registrations.assignMemberToTeam(memberId, req.teamId)) {
                 AssignResult.Assigned ->
-                    call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+                    respondRegistrationUpdate(congregationId, seasons, registrations)
                 AssignResult.RosterFull ->
                     call.respond(HttpStatusCode.Conflict, ApiError("roster_full", "A team may have at most 4 contestants"))
                 AssignResult.TeamNotFound ->
@@ -366,8 +368,9 @@ fun Route.registrationRoutes(
             val contestantId = call.parameters["contestantId"]!!
             if (!requireCongregationEditor(user, congregationId, seasons)) return@post
             val season = seasons.current()
-            val eligible = registrations.returningContestants(congregationId, season.eventYear)
-                .any { it.contestantId == contestantId && season.isEligibleReturningCandidate(it) }
+            // Targeted lookup — don't recompute the whole candidate list to eligibility-check one id.
+            val eligible = registrations.returningContestant(congregationId, season.eventYear, contestantId)
+                ?.let { season.isEligibleReturningCandidate(it) } == true
             if (!eligible) {
                 return@post call.respond(
                     HttpStatusCode.Conflict,
@@ -387,7 +390,7 @@ fun Route.registrationRoutes(
                 congregationId, season.eventYear, contestantId, req.shirtSize, req.teamId, req.birthdate,
             )) {
                 EnrollResult.Enrolled ->
-                    call.respond(registrations.find(congregationId, season.eventYear)!!.withTotal(seasons))
+                    respondRegistrationUpdate(congregationId, seasons, registrations)
                 EnrollResult.RosterFull ->
                     call.respond(HttpStatusCode.Conflict, ApiError("roster_full", "A team may have at most 4 contestants"))
                 EnrollResult.TeamNotFound ->
@@ -416,7 +419,7 @@ fun Route.registrationRoutes(
                 return@post call.respond(HttpStatusCode.BadRequest, ApiError("invalid_individual", "Name is required"))
             }
             registrations.addIndividual(congregationId, seasons.current().eventYear, req)
-            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         put("/registration/individuals/{individualId}") {
@@ -432,7 +435,7 @@ fun Route.registrationRoutes(
                 return@put call.respond(HttpStatusCode.BadRequest, ApiError("invalid_individual", "Name is required"))
             }
             registrations.updateIndividual(individualId, req)
-            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         delete("/registration/individuals/{individualId}") {
@@ -444,7 +447,7 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@delete
             if (!requireWindowOpen(user, seasons)) return@delete
             registrations.deleteIndividual(individualId)
-            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         // Registered guests — attendees (mostly volunteers) who must register and pay but are not
@@ -459,7 +462,7 @@ fun Route.registrationRoutes(
             val req = call.receive<UpsertGuestRequest>()
             guestError(req, seasons.current())?.let { return@post call.respond(HttpStatusCode.BadRequest, it) }
             registrations.addGuest(congregationId, seasons.current().eventYear, req.normalized(seasons.current()))
-            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         put("/registration/guests/{guestId}") {
@@ -473,7 +476,7 @@ fun Route.registrationRoutes(
             val req = call.receive<UpsertGuestRequest>()
             guestError(req, seasons.current())?.let { return@put call.respond(HttpStatusCode.BadRequest, it) }
             registrations.updateGuest(guestId, req.normalized(seasons.current()))
-            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         delete("/registration/guests/{guestId}") {
@@ -485,7 +488,7 @@ fun Route.registrationRoutes(
             if (!requireScopedPermission(user, Permission.TEAM_MANAGE, congregationId)) return@delete
             if (!requireWindowOpen(user, seasons)) return@delete
             registrations.deleteGuest(guestId)
-            call.respond(registrations.find(congregationId, seasons.current().eventYear)!!.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
 
         // Claiming a roster entry (docs/gui-redesign.md, owner-account model): a contestant/parent
@@ -531,12 +534,12 @@ fun Route.registrationRoutes(
                     ApiError("site_required", "Choose which event site your congregation attends before submitting"),
                 )
             }
-            val submitted = registrations.submit(congregationId, season.eventYear)
+            registrations.submit(congregationId, season.eventYear)
                 ?: return@post call.respond(
                     HttpStatusCode.NotFound,
                     ApiError("not_found", "No registration to submit — add a team or an individual contestant first"),
                 )
-            call.respond(submitted.withTotal(seasons))
+            respondRegistrationUpdate(congregationId, seasons, registrations)
         }
     }
 }
@@ -574,6 +577,24 @@ private fun UpdateCongregationRequest.isValid(): Boolean =
 /** Decorates a registration with its total (contestants + guests) from the current season's fees. */
 internal fun RegistrationDto.withTotal(seasons: SeasonRepository): RegistrationDto =
     copy(totalCents = registrationTotalCents(seasons.current(), this))
+
+/**
+ * The shared response of every registration mutation: the refreshed registration (with total) plus
+ * the recomputed returning-candidate list. Sending the candidates on every mutation keeps clients
+ * current in one round trip — enrolling consumes a candidate, and deleting a prior-season
+ * contestant's entry makes them a candidate again.
+ */
+private suspend fun RoutingContext.respondRegistrationUpdate(
+    congregationId: String,
+    seasons: SeasonRepository,
+    registrations: RegistrationRepository,
+) {
+    val season = seasons.current()
+    val registration = registrations.find(congregationId, season.eventYear)!!.withTotal(seasons)
+    val candidates = registrations.returningContestants(congregationId, season.eventYear)
+        .filter { season.isEligibleReturningCandidate(it) }
+    call.respond(RegistrationUpdateResponse(registration, candidates))
+}
 
 /** Guest field rules shared by add and edit; null when the request is valid. */
 private fun guestError(req: UpsertGuestRequest, season: SeasonDto): ApiError? = when {

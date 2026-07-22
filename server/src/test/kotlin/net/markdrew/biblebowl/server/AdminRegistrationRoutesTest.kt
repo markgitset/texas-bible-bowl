@@ -29,6 +29,7 @@ import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDto
+import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
@@ -104,7 +105,7 @@ class AdminRegistrationRoutesTest {
             val reg: RegistrationDto = post("/registration/${cong.id}/teams") {
                 header(HttpHeaders.Authorization, "Bearer ${coach.token}")
                 setBody(UpsertTeamRequest("Team A"))
-            }.body()
+            }.regBody()
             repeat(memberCount) { i ->
                 post("/registration/teams/${reg.teams.single().id}/members") {
                     header(HttpHeaders.Authorization, "Bearer ${coach.token}")
@@ -222,7 +223,7 @@ class AdminRegistrationRoutesTest {
         val memberId = reg0.teams.single().members.single().id
         val afterDelete: RegistrationDto = api.delete("/registration/teams/$teamId") {
             header(HttpHeaders.Authorization, "Bearer ${coach.token}")
-        }.body()
+        }.regBody()
         assertEquals(1, afterDelete.unassigned.size)
 
         // A registrar holds an event-wide grant only (no coach scope) — they add a team and assign.
@@ -233,10 +234,10 @@ class AdminRegistrationRoutesTest {
 
         val teamB = api.post("/registration/${cong.id}/teams") {
             asRegistrar(); setBody(UpsertTeamRequest("Placed Team"))
-        }.body<RegistrationDto>().teams.single { it.name == "Placed Team" }.id
+        }.body<RegistrationUpdateResponse>().registration.teams.single { it.name == "Placed Team" }.id
         val placed: RegistrationDto = api.put("/registration/members/$memberId/team") {
             asRegistrar(); setBody(AssignMemberTeamRequest(teamB))
-        }.body()
+        }.regBody()
         assertTrue(placed.unassigned.isEmpty())
         assertEquals(listOf("Kid 0"), placed.teams.single { it.id == teamB }.members.map { it.name })
 
@@ -280,7 +281,7 @@ class AdminRegistrationRoutesTest {
         // The registrar enrolls him (unassigned) — it lands on this season's roster.
         val enrolled: RegistrationDto = api.post("/registration/${cong.id}/contestants/$contestantId/enroll") {
             asRegistrar(); setBody(EnrollContestantRequest(ShirtSize.YL))
-        }.body()
+        }.regBody()
         assertEquals(listOf("Timothy"), enrolled.unassigned.map { it.name })
 
         // He's no longer offered as a candidate on the desk.

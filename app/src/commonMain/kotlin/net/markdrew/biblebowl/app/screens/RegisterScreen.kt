@@ -5,8 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
@@ -40,6 +42,7 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
+import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.SeasonDto
@@ -138,32 +141,32 @@ internal class RegisterModel(
         }
     }
 
-    /** Runs a mutation and adopts the returned registration (API errors show inline). */
-    fun mutate(call: suspend TbbApi.() -> RegistrationDto) {
+    /**
+     * The key of the control whose mutation is in flight — its button renders a spinner and blocks
+     * re-clicks (see [BusyButton]). Null when idle or for keyless autosaves (field edits).
+     */
+    var busyKey: String? by mutableStateOf(null)
+
+    /**
+     * Runs a mutation and adopts the returned registration + returning candidates (API errors show
+     * inline). Every mutation response carries the recomputed candidate list, so one round trip
+     * keeps the roster step in sync — enrolling consumes a candidate, and removing a prior-season
+     * contestant re-offers them. [busy] marks the triggering control busy until the call lands.
+     */
+    fun mutate(busy: String? = null, call: suspend TbbApi.() -> RegistrationUpdateResponse) {
+        busy?.let { busyKey = it }
         scope.launch {
             try {
                 val updated = api.call()
-                loaded = loaded?.copy(registration = updated)
+                loaded = loaded?.copy(
+                    registration = updated.registration,
+                    returningCandidates = updated.returningCandidates,
+                )
                 error = null
             } catch (e: Throwable) {
                 error = e.message ?: "Something went wrong"
-            }
-        }
-    }
-
-    /**
-     * Like [mutate] but re-fetches the whole registration afterward — enrolling a returning
-     * contestant both updates the roster and removes them from the candidate list, so a plain
-     * registration swap isn't enough.
-     */
-    fun enroll(call: suspend TbbApi.() -> RegistrationDto) {
-        scope.launch {
-            try {
-                api.call()
-                loaded = api.myRegistration()
-                error = null
-            } catch (e: Throwable) {
-                error = e.message ?: "Something went wrong"
+            } finally {
+                if (busy != null && busyKey == busy) busyKey = null
             }
         }
     }
@@ -259,6 +262,28 @@ private fun Stepper(model: RegisterModel) {
 @Composable
 private fun NextButton(model: RegisterModel, label: String, nextStep: Int) {
     Button(onClick = { model.goTo(nextStep) }) { Text(label) }
+}
+
+/**
+ * A mutation button with instant feedback: while the mutation keyed [key] is in flight
+ * (see [RegisterModel.mutate]'s `busy` parameter) it shows a small spinner and blocks re-clicks.
+ */
+@Composable
+internal fun BusyButton(
+    model: RegisterModel,
+    key: String,
+    label: String,
+    outlined: Boolean = false,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val busy = model.busyKey == key
+    val content: @Composable RowScope.() -> Unit = {
+        if (busy) CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+        else Text(label)
+    }
+    if (outlined) OutlinedButton(onClick = onClick, enabled = enabled && !busy, content = content)
+    else Button(onClick = onClick, enabled = enabled && !busy, content = content)
 }
 
 // --- Step 1: congregation ---------------------------------------------------------------
@@ -614,18 +639,18 @@ private fun TeamsStep(model: RegisterModel) {
             Text("${team.members.size}/4", style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (model.canEdit) {
-                OutlinedButton(onClick = {
+                BusyButton(model, "delete-team-${team.id}", "Delete", outlined = true, onClick = {
                     if (team.members.isEmpty()) {
-                        model.mutate { deleteTeam(team.id) }
+                        model.mutate("delete-team-${team.id}") { deleteTeam(team.id) }
                     } else {
                         model.confirm = ConfirmRequest(
                             "Delete ${team.name}? Its ${team.members.size} contestant" +
                                 "${if (team.members.size == 1) "" else "s"} won't be deleted — " +
                                 "they'll move to Unassigned so you can place them on another team.",
                             confirmLabel = "Delete",
-                        ) { model.mutate { deleteTeam(team.id) } }
+                        ) { model.mutate("delete-team-${team.id}") { deleteTeam(team.id) } }
                     }
-                }) { Text("Delete") }
+                })
             }
         }
     }
@@ -639,13 +664,14 @@ private fun TeamsStep(model: RegisterModel) {
         ) {
             OutlinedTextField(newName, { newName = it }, placeholder = { Text("New team name") },
                 singleLine = true, modifier = Modifier.weight(1f))
-            Button(
+            BusyButton(
+                model, "add-team", "Add team",
                 enabled = newName.isNotBlank(),
                 onClick = {
-                    model.mutate { addTeam(cong.id, newName) }
+                    model.mutate("add-team") { addTeam(cong.id, newName) }
                     newName = ""
                 },
-            ) { Text("Add team") }
+            )
         }
     }
 
@@ -820,10 +846,10 @@ private fun ReviewStep(model: RegisterModel) {
     }
     if (model.canEdit) {
         val label = if (reg.status == RegistrationStatus.SUBMITTED) "Update registration" else "Submit registration"
-        Button(onClick = {
+        BusyButton(model, "submit", label, onClick = {
             if (siteMissing) {
                 model.goTo(1)
-                return@Button
+                return@BusyButton
             }
             if (unassignedCount > 0) {
                 model.confirm = ConfirmRequest(
@@ -831,11 +857,11 @@ private fun ReviewStep(model: RegisterModel) {
                         "on a team yet. Submit anyway and let a registrar place them, or cancel to " +
                         "go back and assign them to a team yourself?",
                     confirmLabel = "Submit anyway",
-                ) { model.mutate { submitRegistration(cong.id) } }
+                ) { model.mutate("submit") { submitRegistration(cong.id) } }
             } else {
-                model.mutate { submitRegistration(cong.id) }
+                model.mutate("submit") { submitRegistration(cong.id) }
             }
-        }) { Text(label) }
+        })
     }
 }
 

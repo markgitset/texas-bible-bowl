@@ -181,7 +181,9 @@ private fun ContestantRow(
             TeamAssignPicker(model, member, currentTeamId, away)
             ClaimCodeChip(member.claimCode)
             if (model.canEdit) {
-                OutlinedButton(onClick = { model.mutate { deleteRosterEntry(member.id) } }) { Text("Remove") }
+                BusyButton(model, "remove-${member.id}", "Remove", outlined = true) {
+                    model.mutate("remove-${member.id}") { deleteRosterEntry(member.id) }
+                }
             }
         }
     }
@@ -237,11 +239,12 @@ private fun AddMemberForm(model: RegisterModel, team: TeamDto) {
             ShirtPicker(shirt, enabled = true) { shirt = it }
             GenderPicker(gender, enabled = true) { gender = it }
             LabeledCheckbox("1st year", firstYear, enabled = true) { firstYear = it }
-            Button(
+            BusyButton(
+                model, "add-member-${team.id}", "Add",
                 enabled = name.isNotBlank() && isValidBirthdate(birthdate) && gender != null,
                 onClick = {
-                    val chosenGender = gender ?: return@Button
-                    model.mutate {
+                    val chosenGender = gender ?: return@BusyButton
+                    model.mutate("add-member-${team.id}") {
                         addRosterEntry(
                             team.id,
                             UpsertRosterEntryRequest(name, birthdate, shirt, chosenGender, firstYear),
@@ -252,7 +255,7 @@ private fun AddMemberForm(model: RegisterModel, team: TeamDto) {
                     gender = null
                     firstYear = false
                 },
-            ) { Text("Add") }
+            )
         }
         Text(
             "The birthdate places each contestant in the right division (adults go under " +
@@ -392,18 +395,18 @@ private fun ReturningRow(model: RegisterModel, candidate: ReturningContestantDto
                 options, options.firstOrNull { it.first == teamId }, { it.second },
                 enabled = true, placeholder = "Team…",
             ) { teamId = it.first }
-            Button(onClick = {
+            BusyButton(model, "enroll-${candidate.contestantId}", "Add") {
                 if (candidate.isSeededYouth && !isValidBirthdate(birthdate)) {
                     model.error = "${candidate.name} needs a birthdate — the workbook only had a school grade"
-                    return@Button
+                    return@BusyButton
                 }
-                model.enroll {
+                model.mutate("enroll-${candidate.contestantId}") {
                     enrollContestant(
                         congregationId, candidate.contestantId, shirt, teamId,
                         birthdate.takeIf { candidate.isSeededYouth },
                     )
                 }
-            }) { Text("Add") }
+            }
         }
     }
 }
@@ -445,9 +448,11 @@ private fun IndividualsCard(model: RegisterModel) {
                             }
                         }
                         ShirtPicker(shirt, enabled = true) { shirt = it }
-                        Button(onClick = {
-                            model.enroll { enrollContestant(cong.id, candidate.contestantId, shirt, null) }
-                        }) { Text("Add") }
+                        BusyButton(model, "enroll-${candidate.contestantId}", "Add") {
+                            model.mutate("enroll-${candidate.contestantId}") {
+                                enrollContestant(cong.id, candidate.contestantId, shirt, null)
+                            }
+                        }
                     }
                 }
             }
@@ -481,7 +486,9 @@ private fun IndividualRow(model: RegisterModel, member: RosterEntryDto) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             ClaimCodeChip(member.claimCode)
             if (model.canEdit) {
-                OutlinedButton(onClick = { model.mutate { deleteIndividual(member.id) } }) { Text("Remove") }
+                BusyButton(model, "remove-${member.id}", "Remove", outlined = true) {
+                    model.mutate("remove-${member.id}") { deleteIndividual(member.id) }
+                }
             }
         }
     }
@@ -500,11 +507,12 @@ private fun AddIndividualForm(model: RegisterModel, congregationId: String) {
             ShirtPicker(shirt, enabled = true) { shirt = it }
             GenderPicker(gender, enabled = true) { gender = it }
             LabeledCheckbox("Tribe leader?", tribe, enabled = true) { tribe = it }
-            Button(
+            BusyButton(
+                model, "add-individual", "Add",
                 enabled = name.isNotBlank() && gender != null,
                 onClick = {
-                    val chosenGender = gender ?: return@Button
-                    model.mutate {
+                    val chosenGender = gender ?: return@BusyButton
+                    model.mutate("add-individual") {
                         addIndividual(
                             congregationId,
                             UpsertIndividualRequest(name, shirt, chosenGender, tribeLeaderWilling = tribe),
@@ -514,7 +522,7 @@ private fun AddIndividualForm(model: RegisterModel, congregationId: String) {
                     gender = null
                     tribe = false
                 },
-            ) { Text("Add") }
+            )
         }
     }
 }
@@ -610,7 +618,9 @@ private fun GuestRow(model: RegisterModel, guest: GuestDto) {
                 }
             }
             if (model.canEdit) {
-                OutlinedButton(onClick = { model.mutate { deleteGuest(guest.id) } }) { Text("Remove") }
+                BusyButton(model, "remove-${guest.id}", "Remove", outlined = true) {
+                    model.mutate("remove-${guest.id}") { deleteGuest(guest.id) }
+                }
             }
         }
         // Volunteer positions + tribe leading (item 8, F2): adult (age-9+ tier) guests only.
@@ -729,12 +739,13 @@ private fun AddGuestForm(model: RegisterModel, congregationId: String) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             GenderPicker(gender, enabled = true) { gender = it }
             if (tier != AgeTier.UNDER_3) ShirtPicker(shirt, enabled = true) { shirt = it }
-            Button(
+            BusyButton(
+                model, "add-guest", "Add",
                 enabled = name.isNotBlank() && gender != null &&
                     (birthdate.isBlank() || isValidBirthdate(birthdate)),
                 onClick = {
-                    val chosenGender = gender ?: return@Button
-                    model.mutate {
+                    val chosenGender = gender ?: return@BusyButton
+                    model.mutate("add-guest") {
                         addGuest(
                             congregationId,
                             UpsertGuestRequest(
@@ -753,7 +764,7 @@ private fun AddGuestForm(model: RegisterModel, congregationId: String) {
                     positions = emptyList()
                     tribe = false
                 },
-            ) { Text("Add") }
+            )
         }
         if (tier == AgeTier.AGE_9_PLUS) {
             VolunteerFields(

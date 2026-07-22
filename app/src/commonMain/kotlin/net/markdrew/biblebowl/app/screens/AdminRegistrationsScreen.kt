@@ -39,6 +39,7 @@ import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDeskRowDto
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
+import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.ReturningContestantDto
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.ScopeType
@@ -100,12 +101,24 @@ internal class DeskModel(val api: TbbApi, val scope: CoroutineScope) {
         }
     }
 
+    /** Swaps a mutation response (registration + pared candidate list) into its congregation's row. */
+    private fun swapRow(congregationId: String, updated: RegistrationUpdateResponse) {
+        data = data?.let { desk ->
+            desk.copy(rows = desk.rows.map { row ->
+                if (row.congregation.id == congregationId) row.copy(
+                    registration = updated.registration,
+                    returningCandidates = updated.returningCandidates,
+                ) else row
+            })
+        }
+    }
+
     /** Runs a desk-side registration mutation and swaps the refreshed registration into its row. */
-    fun mutateRow(congregationId: String, call: suspend TbbApi.() -> RegistrationDto) {
+    fun mutateRow(congregationId: String, call: suspend TbbApi.() -> RegistrationUpdateResponse) {
         message = null
         scope.launch {
             try {
-                swapRegistration(congregationId, api.call())
+                swapRow(congregationId, api.call())
             } catch (e: Throwable) {
                 message = "Could not update the roster: ${e.message}"
             }
@@ -116,7 +129,7 @@ internal class DeskModel(val api: TbbApi, val scope: CoroutineScope) {
      * Runs a team assignment and reloads the whole desk: a combo placement touches two
      * congregations' rows (the member's and the hosting team's), so a single-row swap isn't enough.
      */
-    fun assignAndReload(call: suspend TbbApi.() -> RegistrationDto) {
+    fun assignAndReload(call: suspend TbbApi.() -> RegistrationUpdateResponse) {
         message = null
         scope.launch {
             try {
@@ -128,21 +141,12 @@ internal class DeskModel(val api: TbbApi, val scope: CoroutineScope) {
         }
     }
 
-    /** Enrolls a returning candidate and drops it from the row's candidate list. */
-    fun enroll(congregationId: String, contestantId: String, call: suspend TbbApi.() -> RegistrationDto) {
+    /** Enrolls a returning candidate — the response carries the row's pared candidate list. */
+    fun enroll(congregationId: String, call: suspend TbbApi.() -> RegistrationUpdateResponse) {
         message = null
         scope.launch {
             try {
-                val updated = api.call()
-                data = data?.let { desk ->
-                    desk.copy(rows = desk.rows.map { row ->
-                        if (row.congregation.id == congregationId) row.copy(
-                            registration = updated,
-                            returningCandidates =
-                                row.returningCandidates.filterNot { it.contestantId == contestantId },
-                        ) else row
-                    })
-                }
+                swapRow(congregationId, api.call())
             } catch (e: Throwable) {
                 message = "Could not enroll: ${e.message}"
             }
@@ -624,7 +628,7 @@ private fun ReturningCandidateRow(
                         "${candidate.name} needs a birthdate — the workbook only had a school grade"
                     return@Button
                 }
-                model.enroll(congregationId, candidate.contestantId) {
+                model.enroll(congregationId) {
                     enrollContestant(
                         congregationId, candidate.contestantId, shirt,
                         teamId.takeUnless { isAdult },

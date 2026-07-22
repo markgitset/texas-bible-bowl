@@ -91,8 +91,10 @@ class TbbApiRequestTest {
                     """{"seasonYear":"2027","released":false,"rows":[]}""" to "application/json"
                 else ->
                     if (exchange.requestURI.path.startsWith("/registration/")) {
-                        """{"id":"r1","congregation":{"id":"c1","name":"First Church","city":"Austin"},
-                            "seasonYear":"2027","status":"DRAFT","teams":[]}""" to "application/json"
+                        // Mutation endpoints respond with the registration + candidates wrapper.
+                        """{"registration":{"id":"r1","congregation":{"id":"c1","name":"First Church",
+                            "city":"Austin"},"seasonYear":"2027","status":"DRAFT","teams":[]},
+                            "returningCandidates":[]}""" to "application/json"
                     } else {
                         "%PDF-1.7 fake" to "application/pdf"
                     }
