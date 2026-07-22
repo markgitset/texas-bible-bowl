@@ -4,7 +4,6 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Gender
-import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
@@ -31,7 +30,6 @@ import net.markdrew.biblebowl.server.data.PostgresSeasonRepository
 import net.markdrew.biblebowl.server.data.PostgresTribeRepository
 import net.markdrew.biblebowl.server.data.TribeLeadersTable
 import net.markdrew.biblebowl.server.data.TribesTable
-import net.markdrew.biblebowl.server.data.ClaimResult
 import net.markdrew.biblebowl.server.data.CongregationsTable
 import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.DatabaseFactory
@@ -333,15 +331,14 @@ class PostgresRepositoryTest {
             )
         ).entry
 
-        assertIs<ClaimResult.NotFound>(registrations.claimEntry("ZZZZ9999", owner.id))
-        val claimed = assertIs<ClaimResult.Claimed>(registrations.claimEntry(added.claimCode, owner.id))
-        assertTrue(claimed.entry.claimed)
-        assertIs<ClaimResult.AlreadyClaimed>(registrations.claimEntry(added.claimCode, other.id))
-        assertIs<ClaimResult.Claimed>(registrations.claimEntry(added.claimCode, owner.id)) // idempotent re-claim
+        assertIs<PersonClaimResult.NotFound>(registrations.claimPerson("ZZZZ9999", owner.id))
+        assertIs<PersonClaimResult.Claimed>(registrations.claimPerson(added.claimCode, owner.id))
+        assertIs<PersonClaimResult.AlreadyClaimed>(registrations.claimPerson(added.claimCode, other.id))
+        assertIs<PersonClaimResult.Claimed>(registrations.claimPerson(added.claimCode, owner.id)) // idempotent re-claim
         assertEquals(setOf(added.id), registrations.entryIdsOwnedBy(owner.id))
         assertTrue(registrations.entryIdsOwnedBy(other.id).isEmpty())
-        // The claimed flag round-trips through the full registration read.
-        assertTrue(registrations.find(cong.id, "2027")!!.teams.single().members.single().claimed)
+        // Ownership is durable per person: the entry is owned by the claiming account.
+        assertTrue(registrations.find(cong.id, "2027")!!.teams.single().members.single().id in registrations.entryIdsOwnedBy(owner.id))
     }
 
     @Test
@@ -426,9 +423,11 @@ class PostgresRepositoryTest {
             registrations.updateGuest(
                 child.id,
                 UpsertGuestRequest("Bigger Sib", ShirtSize.YM, birthdate = null, gender = Gender.MALE, contact = contact)))
-        assertEquals(
-            GuestDto(child.id, "Bigger Sib", ShirtSize.YM, null, Gender.MALE, contact = contact),
-            edited)
+        assertEquals("Bigger Sib", edited.name)
+        assertEquals(ShirtSize.YM, edited.shirtSize)
+        assertNull(edited.birthdate)
+        assertEquals(Gender.MALE, edited.gender)
+        assertEquals(contact, edited.contact)
         assertNull(registrations.updateGuest("nope", UpsertGuestRequest("X", ShirtSize.AM, gender = Gender.MALE)))
 
         assertTrue(registrations.deleteGuest(volunteer.id))
@@ -518,8 +517,8 @@ class PostgresRepositoryTest {
         // Host view: a visiting member labeled with her own congregation.
         val visiting = assertNotNull(registrations.find(host.id, "2027")).teams.single().members.single()
         assertEquals("Betsy", visiting.name)
-        assertEquals(home.id, visiting.congregationId)
-        assertEquals("Home Church", visiting.congregationName)
+        assertEquals(home.id, visiting.participation.congregationId)
+        assertEquals("Home Church", visiting.participation.congregationName)
 
         // Home view: still on the books here, listed among the away members.
         val homeReg = assertNotNull(registrations.find(home.id, "2027"))
@@ -672,14 +671,14 @@ class PostgresRepositoryTest {
         )).entry
         val contestantId = registrations.contestantIdForMember(m2027.id)!!
 
-        assertIs<ClaimResult.Claimed>(registrations.claimEntry(m2027.claimCode, parent.id))
+        assertIs<PersonClaimResult.Claimed>(registrations.claimPerson(m2027.claimCode, parent.id))
         assertEquals(setOf(m2027.id), registrations.entryIdsOwnedBy(parent.id))
 
         // Enrolling him next season carries the claim forward — no re-claim needed.
         val t2028 = assertNotNull(registrations.addTeam(cong.id, "2028", "Team A"))
         assertIs<EnrollResult.Enrolled>(registrations.enrollContestant(cong.id, "2028", contestantId, ShirtSize.YL, t2028.id))
         val m2028 = registrations.find(cong.id, "2028")!!.teams.single().members.single()
-        assertTrue(m2028.claimed, "the new season's entry inherits the durable owner")
+        assertTrue(m2028.id in registrations.entryIdsOwnedBy(parent.id), "the new season's entry inherits the durable owner")
         assertEquals(setOf(m2027.id, m2028.id), registrations.entryIdsOwnedBy(parent.id))
     }
 
@@ -700,12 +699,12 @@ class PostgresRepositoryTest {
         )).congregation
 
         val a2027 = registrations.addIndividual(cong.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AL, Gender.FEMALE))
-        assertIs<ClaimResult.Claimed>(registrations.claimEntry(a2027.claimCode, pat.id))
+        assertIs<PersonClaimResult.Claimed>(registrations.claimPerson(a2027.claimCode, pat.id))
         assertEquals(setOf(a2027.id), registrations.entryIdsOwnedBy(pat.id))
 
         // The same adult re-added next season inherits the durable owner (claim persists).
         val a2028 = registrations.addIndividual(cong.id, "2028", UpsertIndividualRequest("Pat Adult", ShirtSize.AL, Gender.FEMALE))
-        assertTrue(a2028.claimed, "the new season's adult entry inherits the durable owner")
+        assertTrue(a2028.id in registrations.entryIdsOwnedBy(pat.id), "the new season's adult entry inherits the durable owner")
         assertEquals(setOf(a2027.id, a2028.id), registrations.entryIdsOwnedBy(pat.id))
     }
 

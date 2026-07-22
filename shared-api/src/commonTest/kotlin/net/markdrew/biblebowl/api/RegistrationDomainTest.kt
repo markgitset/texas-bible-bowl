@@ -11,15 +11,38 @@ class RegistrationDomainTest {
     /** FALLBACK_SEASON is the 2027 event, so the default grade cutoff is 2026-09-01. */
     private val season = FALLBACK_SEASON
 
-    private fun entry(birthdate: String?, firstSeasonYear: String? = null, shirtSize: ShirtSize = ShirtSize.AM) =
-        RosterEntryDto(
-            id = "e$birthdate",
-            name = "Kid",
-            birthdate = birthdate,
-            shirtSize = shirtSize,
-            firstSeasonYear = firstSeasonYear,
-            claimCode = "AAAA2222",
-        )
+    /** A contestant participant. Defaults to the fixtures' home congregation "c"; override to visit. */
+    private fun entry(
+        birthdate: String?,
+        firstSeasonYear: String? = null,
+        shirtSize: ShirtSize = ShirtSize.AM,
+        congregationId: String = "c",
+        congregationName: String = "First Church",
+    ) = ParticipantDto(
+        person = PersonDto(
+            id = "e$birthdate", name = "Kid", birthdate = birthdate, isAdult = birthdate == null,
+            firstSeasonYear = firstSeasonYear, claimCode = "AAAA2222",
+        ),
+        participation = ParticipationDto(
+            id = "e$birthdate", seasonYear = "2027", congregationId = congregationId,
+            congregationName = congregationName, isContestant = true, shirtSize = shirtSize,
+        ),
+    )
+
+    /** A guest participant (isContestant = false). */
+    private fun guest(
+        id: String,
+        name: String,
+        shirtSize: ShirtSize? = null,
+        birthdate: String? = null,
+        gender: Gender? = null,
+    ) = ParticipantDto(
+        person = PersonDto(id = "p-$id", name = name, birthdate = birthdate, isAdult = birthdate == null, gender = gender),
+        participation = ParticipationDto(
+            id = id, seasonYear = "2027", congregationId = "c", congregationName = "First Church",
+            isContestant = false, shirtSize = shirtSize,
+        ),
+    )
 
     @Test
     fun agesCountFullYearsWithBirthdayBoundaries() {
@@ -135,8 +158,7 @@ class RegistrationDomainTest {
     @Test
     fun shirtSizesCoverEveryAttendeeWithAShirt() {
         // A visiting (combo-team) member on this registration's team: their own congregation orders their shirt.
-        val visiting = entry("2013-05-01", shirtSize = ShirtSize.YL)
-            .copy(congregationId = "other", congregationName = "Other Church")
+        val visiting = entry("2013-05-01", shirtSize = ShirtSize.YL, congregationId = "other", congregationName = "Other Church")
         val reg = RegistrationDto(
             id = "r",
             congregation = CongregationDto("c", "First Church", "Austin"),
@@ -149,8 +171,8 @@ class RegistrationDomainTest {
                 AwayMemberDto(entry("2012-05-01", shirtSize = ShirtSize.AS), "t2", "Away Team", "Other Church"),
             ),
             guests = listOf(
-                GuestDto("g1", "Helpful Aunt", ShirtSize.AM, gender = Gender.FEMALE),
-                GuestDto("g2", "Baby Sibling", null, birthdate = "2025-06-15", gender = Gender.FEMALE),
+                guest("g1", "Helpful Aunt", ShirtSize.AM, gender = Gender.FEMALE),
+                guest("g2", "Baby Sibling", null, birthdate = "2025-06-15", gender = Gender.FEMALE),
             ),
         )
         assertEquals(
@@ -199,10 +221,10 @@ class RegistrationDomainTest {
         assertNull(registrationTotalCents(FALLBACK_SEASON, threeContestants), "TBD fees \u2192 no total")
 
         val guests = listOf(
-            GuestDto("g1", "Helpful Aunt", ShirtSize.AM, gender = Gender.FEMALE),
-            GuestDto("g2", "Volunteer Uncle", ShirtSize.AL, gender = Gender.MALE),
-            GuestDto("g3", "Little Sibling", ShirtSize.YS, birthdate = "2020-06-15", gender = Gender.MALE),
-            GuestDto("g4", "Baby Sibling", null, birthdate = "2025-06-15", gender = Gender.FEMALE),
+            guest("g1", "Helpful Aunt", ShirtSize.AM, gender = Gender.FEMALE),
+            guest("g2", "Volunteer Uncle", ShirtSize.AL, gender = Gender.MALE),
+            guest("g3", "Little Sibling", ShirtSize.YS, birthdate = "2020-06-15", gender = Gender.MALE),
+            guest("g4", "Baby Sibling", null, birthdate = "2025-06-15", gender = Gender.FEMALE),
         )
         assertEquals(
             19500 + 2 * 4000 + 2500,
@@ -239,7 +261,7 @@ class RegistrationDomainTest {
             2 * 8500,
             registrationTotalCents(
                 season.copy(priceVolunteerCents = null, priceChildCents = null),
-                nineUpOnly.copy(guests = listOf(GuestDto("g4", "Baby Sibling", null, birthdate = "2025-06-15"))),
+                nineUpOnly.copy(guests = listOf(guest("g4", "Baby Sibling", null, birthdate = "2025-06-15"))),
             ),
             "under-3 guests are free, so TBD fees don't block them either",
         )

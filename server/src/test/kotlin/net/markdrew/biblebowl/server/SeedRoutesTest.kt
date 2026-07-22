@@ -189,7 +189,7 @@ class SeedRoutesTest {
         val team = reg.teams.single()
         // The visiting member displays with her own congregation (combo rule).
         val visitor = team.members.single { it.name == "Vera Visitor" }
-        assertEquals("Second Church", visitor.congregationName)
+        assertEquals("Second Church", visitor.participation.congregationName)
         assertEquals(listOf("Ellie Elementary"), reg.unassigned.map { it.name })
         // Inexperienced in 2026 anchors the first season; the guest carries positions + contact.
         assertEquals("2026", reg.unassigned.single().firstSeasonYear)

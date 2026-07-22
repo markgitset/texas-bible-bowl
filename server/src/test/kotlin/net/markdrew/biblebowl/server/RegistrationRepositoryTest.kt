@@ -11,7 +11,7 @@ import net.markdrew.biblebowl.server.data.AddMemberResult
 import net.markdrew.biblebowl.server.data.AssignResult
 import net.markdrew.biblebowl.server.data.ClaimCodes
 import net.markdrew.biblebowl.server.data.EnrollResult
-import net.markdrew.biblebowl.server.data.ClaimResult
+import net.markdrew.biblebowl.server.data.PersonClaimResult
 import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
 import net.markdrew.biblebowl.server.data.InMemoryRegistrationRepository
 import net.markdrew.biblebowl.server.data.CreateCongregationResult
@@ -296,15 +296,14 @@ class RegistrationRepositoryTest {
         val team = repo.addTeam(cong.id, "2027", "Team A")!!
         val added = assertIs<AddMemberResult.Added>(repo.addMember(team.id, entry("Kid"))).entry
 
-        assertIs<ClaimResult.NotFound>(repo.claimEntry("ZZZZ9999", "owner-user"))
-        val claimed = assertIs<ClaimResult.Claimed>(repo.claimEntry(added.claimCode, "owner-user"))
-        assertTrue(claimed.entry.claimed)
-        assertIs<ClaimResult.AlreadyClaimed>(repo.claimEntry(added.claimCode, "other-user"))
-        assertIs<ClaimResult.Claimed>(repo.claimEntry(added.claimCode, "owner-user")) // idempotent re-claim
+        assertIs<PersonClaimResult.NotFound>(repo.claimPerson("ZZZZ9999", "owner-user"))
+        assertIs<PersonClaimResult.Claimed>(repo.claimPerson(added.claimCode, "owner-user"))
+        assertIs<PersonClaimResult.AlreadyClaimed>(repo.claimPerson(added.claimCode, "other-user"))
+        assertIs<PersonClaimResult.Claimed>(repo.claimPerson(added.claimCode, "owner-user")) // idempotent re-claim
         assertEquals(setOf(added.id), repo.entryIdsOwnedBy("owner-user"))
         assertTrue(repo.entryIdsOwnedBy("other-user").isEmpty())
-        // The claimed flag round-trips through the full registration read.
-        assertTrue(repo.find(cong.id, "2027")!!.teams.single().members.single().claimed)
+        // Ownership is durable per person: the entry is owned by the claiming account.
+        assertTrue(repo.find(cong.id, "2027")!!.teams.single().members.single().id in repo.entryIdsOwnedBy("owner-user"))
     }
 
     @Test
@@ -393,19 +392,18 @@ class RegistrationRepositoryTest {
     fun claimingAnAdultPersistsAcrossSeasons() {
         val cong = newCongregation("Adult Persist Church", "Waco")!!
         val a2027 = repo.addIndividual(cong.id, "2027", UpsertIndividualRequest("Pat Adult", ShirtSize.AL, Gender.FEMALE))
-        assertIs<ClaimResult.Claimed>(repo.claimEntry(a2027.claimCode, "pat-account"))
+        assertIs<PersonClaimResult.Claimed>(repo.claimPerson(a2027.claimCode, "pat-account"))
         assertEquals(setOf(a2027.id), repo.entryIdsOwnedBy("pat-account"))
-        assertTrue(repo.find(cong.id, "2027")!!.individuals.single().claimed)
 
         // Next season the same adult (case/space-insensitively) is re-added → inherits the durable owner.
         val a2028 = repo.addIndividual(cong.id, "2028", UpsertIndividualRequest("  pat adult ", ShirtSize.AL, Gender.FEMALE))
-        assertTrue(a2028.claimed, "the new season's adult entry inherits the durable owner")
+        assertTrue(a2028.id in repo.entryIdsOwnedBy("pat-account"), "the new season's adult entry inherits the durable owner")
         assertEquals(setOf(a2027.id, a2028.id), repo.entryIdsOwnedBy("pat-account"))
 
         // Another account can't claim them, and a distinct name is a distinct person.
-        assertIs<ClaimResult.AlreadyClaimed>(repo.claimEntry(a2028.claimCode, "someone-else"))
+        assertIs<PersonClaimResult.AlreadyClaimed>(repo.claimPerson(a2028.claimCode, "someone-else"))
         val other = repo.addIndividual(cong.id, "2028", UpsertIndividualRequest("Other Adult", ShirtSize.AM, Gender.MALE))
-        assertFalse(other.claimed)
+        assertFalse(other.id in repo.entryIdsOwnedBy("pat-account"))
     }
 
     @Test
@@ -415,16 +413,15 @@ class RegistrationRepositoryTest {
         val m2027 = assertIs<AddMemberResult.Added>(repo.addMember(t2027.id, entry("Timothy"))).entry
         val contestantId = repo.contestantIdForMember(m2027.id)!!
 
-        // A parent claims the 2027 code → they own that entry, which shows claimed.
-        assertIs<ClaimResult.Claimed>(repo.claimEntry(m2027.claimCode, "parent"))
+        // A parent claims the 2027 code → they own that entry.
+        assertIs<PersonClaimResult.Claimed>(repo.claimPerson(m2027.claimCode, "parent"))
         assertEquals(setOf(m2027.id), repo.entryIdsOwnedBy("parent"))
-        assertTrue(repo.find(cong.id, "2027")!!.teams.single().members.single().claimed)
 
         // Next season the coach enrolls him → the new entry is owned automatically (no re-claim needed).
         val t2028 = repo.addTeam(cong.id, "2028", "Team A")!!
         assertIs<EnrollResult.Enrolled>(repo.enrollContestant(cong.id, "2028", contestantId, ShirtSize.YL, t2028.id))
         val m2028 = repo.find(cong.id, "2028")!!.teams.single().members.single()
-        assertTrue(m2028.claimed, "the new season's entry inherits the durable owner")
+        assertTrue(m2028.id in repo.entryIdsOwnedBy("parent"), "the new season's entry inherits the durable owner")
         assertEquals(setOf(m2027.id, m2028.id), repo.entryIdsOwnedBy("parent"))
 
         // Re-adding the same person by name (via addMember) in a third season also inherits the owner.
@@ -433,7 +430,7 @@ class RegistrationRepositoryTest {
         assertEquals(setOf(m2027.id, m2028.id, m2029.id), repo.entryIdsOwnedBy("parent"))
 
         // A different account can't claim a contestant already owned by someone else.
-        assertIs<ClaimResult.AlreadyClaimed>(repo.claimEntry(m2029.claimCode, "someone-else"))
+        assertIs<PersonClaimResult.AlreadyClaimed>(repo.claimPerson(m2029.claimCode, "someone-else"))
     }
 
     @Test
@@ -535,8 +532,8 @@ class RegistrationRepositoryTest {
         val hostReg = repo.find(other.id, "2027")!!
         val visiting = hostReg.teams.single().members.single()
         assertEquals("Extra", visiting.name)
-        assertEquals(cong.id, visiting.congregationId)
-        assertEquals("Home Church", visiting.congregationName)
+        assertEquals(cong.id, visiting.participation.congregationId)
+        assertEquals("Home Church", visiting.participation.congregationName)
 
         // ...and stays on the HOME registration's books, listed under its away members.
         val homeReg = repo.find(cong.id, "2027")!!
