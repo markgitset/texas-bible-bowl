@@ -36,6 +36,7 @@ import net.markdrew.biblebowl.server.data.CongregationsTable
 import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.DatabaseFactory
 import net.markdrew.biblebowl.server.data.EnrollResult
+import net.markdrew.biblebowl.server.data.MergeResult
 import net.markdrew.biblebowl.server.data.ParticipantsTable
 import net.markdrew.biblebowl.server.data.PeopleTable
 import net.markdrew.biblebowl.server.data.PersonClaimResult
@@ -862,6 +863,58 @@ class PostgresRepositoryTest {
         // linkPerson records the self identity, and it reads back on the user record.
         users.linkPerson(parent.id, valClaim.id)
         assertEquals(valClaim.id, users.findById(parent.id)?.personId)
+    }
+
+    @Test
+    fun mergePeopleFoldsDuplicatesAndRefusesSeasonOverlap() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+        val scores = PostgresScoreRepository(db)
+        val testerIds = PostgresTesterIdRepository(db)
+
+        val coach = users.create("mcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Merge Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+
+        // Two rows the global dedupe treated as different people (different spelling), in
+        // different seasons: "Sam" (2026) and "Samuel" (2027, with a score + tester id).
+        val t26 = assertNotNull(registrations.addTeam(cong.id, "2026", "Team A"))
+        val sam = assertIs<AddMemberResult.Added>(registrations.addMember(
+            t26.id, UpsertRosterEntryRequest("Sam", birthdate = "2013-05-01", shirtSize = ShirtSize.YM, gender = Gender.MALE),
+        )).entry
+        val keepId = assertNotNull(registrations.contestantIdForMember(sam.id))
+        val t27 = assertNotNull(registrations.addTeam(cong.id, "2027", "Team A"))
+        val samuel = assertIs<AddMemberResult.Added>(registrations.addMember(
+            t27.id, UpsertRosterEntryRequest("Samuel", birthdate = "2013-05-02", shirtSize = ShirtSize.YM, gender = Gender.MALE),
+        )).entry
+        val mergeId = assertNotNull(registrations.contestantIdForMember(samuel.id))
+        assertTrue(keepId != mergeId)
+        scores.set(samuel.id, Round.FIND_THE_VERSE, 33, coach.id)
+        testerIds.assign("2027", samuel.id, 7)
+
+        // Merge Samuel into Sam: no season overlap, so it folds. The 2027 participation (and its
+        // score + tester id, which FK the participant) follow the survivor.
+        val merged = assertIs<MergeResult.Merged>(registrations.mergePeople(keepId, mergeId))
+        assertEquals(setOf("2026", "2027"), merged.person.participations.map { it.seasonYear }.toSet())
+        assertEquals(keepId, registrations.contestantIdForMember(samuel.id))
+        assertEquals(mapOf(Round.FIND_THE_VERSE to 33), scores.forEntries(listOf(samuel.id))[samuel.id])
+        assertEquals(7, testerIds.forSeason("2027")[samuel.id])
+        assertNull(registrations.personWithParticipations(mergeId), "loser is deleted")
+
+        // A same-season overlap is refused (they'd double-participate that season).
+        val other26 = assertIs<AddMemberResult.Added>(registrations.addMember(
+            t26.id, UpsertRosterEntryRequest("Dan", birthdate = "2013-06-01", shirtSize = ShirtSize.YM, gender = Gender.MALE),
+        )).entry
+        val danId = assertNotNull(registrations.contestantIdForMember(other26.id))
+        val conflict = assertIs<MergeResult.SeasonConflict>(registrations.mergePeople(keepId, danId))
+        assertEquals(listOf("2026"), conflict.seasons)
+        assertIs<MergeResult.NotFound>(registrations.mergePeople(keepId, keepId))
+        assertIs<MergeResult.NotFound>(registrations.mergePeople(keepId, "nope"))
     }
 
     @Test

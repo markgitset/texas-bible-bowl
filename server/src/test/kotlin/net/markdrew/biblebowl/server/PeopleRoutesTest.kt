@@ -123,4 +123,59 @@ class PeopleRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${other.token}")
         }.body<MyPeopleResponse>().people.isEmpty())
     }
+
+    @Test
+    fun mergePeopleEndpointIsRegistrarGatedAndFoldsDuplicates() = testApplication {
+        val users = InMemoryUserRepository()
+        val congregations = InMemoryCongregationRepository()
+        val registrations = InMemoryRegistrationRepository(congregations)
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(season),
+                congregations = congregations, registrations = registrations)
+        }
+        val api = createClient {
+            install(ContentNegotiation) { json(json) }
+            defaultRequest { contentType(ContentType.Application.Json) }
+        }
+
+        val coach = users.create("mrcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = net.markdrew.biblebowl.server.security.Passwords.hash("password123"),
+            roles = listOf(RoleGrant(Role.COACH)))
+        val cong = (congregations.create(
+            CreateCongregationRequest("Merge Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        ) as CreateCongregationResult.Created).congregation
+        val t26 = assertNotNull(registrations.addTeam(cong.id, season.eventYear, "Team A"))
+        val sam = (registrations.addMember(
+            t26.id, UpsertRosterEntryRequest("Sam", birthdate = "2013-05-01", shirtSize = ShirtSize.YM, gender = Gender.MALE),
+        ) as AddMemberResult.Added).entry
+        val t28 = assertNotNull(registrations.addTeam(cong.id, "2028", "Team A"))
+        val samuel = (registrations.addMember(
+            t28.id, UpsertRosterEntryRequest("Samuel", birthdate = "2013-05-02", shirtSize = ShirtSize.YM, gender = Gender.MALE),
+        ) as AddMemberResult.Added).entry
+        val keepId = assertNotNull(registrations.contestantIdForMember(sam.id))
+        val mergeId = assertNotNull(registrations.contestantIdForMember(samuel.id))
+
+        // A non-registrar account is refused.
+        val parent: AuthResponse = api.post("/auth/register") {
+            setBody(RegisterRequest("nreg@tbb.org", "password123", "Parent", adult = true))
+        }.body()
+        assertEquals(HttpStatusCode.Forbidden, api.post("/admin/people/merge") {
+            header(HttpHeaders.Authorization, "Bearer ${parent.token}")
+            setBody(net.markdrew.biblebowl.api.MergePeopleRequest(keepId, mergeId))
+        }.status)
+
+        // A registrar folds the two (different seasons — no overlap).
+        val registrar: AuthResponse = api.post("/auth/register") {
+            setBody(RegisterRequest("registrar@tbb.org", "password123", "Reg", adult = true))
+        }.body()
+        users.addRoleGrant(registrar.user.id, RoleGrant(Role.REGISTRAR))
+        val merged: net.markdrew.biblebowl.api.MergePeopleResponse = api.post("/admin/people/merge") {
+            header(HttpHeaders.Authorization, "Bearer ${registrar.token}")
+            setBody(net.markdrew.biblebowl.api.MergePeopleRequest(keepId, mergeId))
+        }.body()
+        assertEquals(keepId, merged.person.person.id)
+        assertEquals(setOf(season.eventYear, "2028"), merged.person.participations.map { it.seasonYear }.toSet())
+    }
 }

@@ -134,6 +134,15 @@ sealed interface PersonClaimResult {
     data object AlreadyClaimed : PersonClaimResult
 }
 
+/** Outcome of [PeopleRepository.mergePeople]. */
+sealed interface MergeResult {
+    data class Merged(val person: PersonWithParticipationsDto) : MergeResult
+    /** One (or both) of the ids doesn't exist, or they're the same person. */
+    data object NotFound : MergeResult
+    /** The two people both participate in these seasons — merging would double-participate them. */
+    data class SeasonConflict(val seasons: List<String>) : MergeResult
+}
+
 /**
  * The person-centric read/claim surface (schema redesign phase 4) — additive alongside the
  * roster-entry API. Implemented by the same repositories that own people/participants, so the
@@ -150,6 +159,13 @@ interface PeopleRepository {
     fun personWithParticipations(personId: String): PersonWithParticipationsDto?
     /** Every person the account manages (people.managed_by = [userId]), with participations. */
     fun peopleManagedBy(userId: String): List<PersonWithParticipationsDto>
+    /**
+     * Merges [mergeId] into [keepId]: reassigns [mergeId]'s participations, claims/manager, and
+     * self-link to [keepId], fills [keepId]'s empty identity fields from [mergeId], then deletes
+     * [mergeId]. Refused with [MergeResult.SeasonConflict] when both participate in the same season
+     * (the unique person-per-season would break); the registrar resolves that overlap first.
+     */
+    fun mergePeople(keepId: String, mergeId: String): MergeResult
 }
 
 /**
@@ -917,6 +933,30 @@ class InMemoryRegistrationRepository(
             .filter { it.ownerUserId == userId }
             .sortedBy { it.name.lowercase() }
             .map { PersonWithParticipationsDto(personDtoOf(it), participationsOf(it.id)) }
+    }
+
+    override fun mergePeople(keepId: String, mergeId: String): MergeResult = synchronized(lock) {
+        if (keepId == mergeId) return MergeResult.NotFound
+        val keep = contestants[keepId] ?: return MergeResult.NotFound
+        val merge = contestants[mergeId] ?: return MergeResult.NotFound
+        fun seasonsOf(pid: String): Set<String> {
+            fun regSeason(regId: String?) = regId?.let { r -> regs.values.firstOrNull { it.id == r }?.seasonYear }
+            return (memberContestant.filterValues { it == pid }.keys.mapNotNull { regSeason(memberReg[it]) } +
+                individualContestant.filterValues { it == pid }.keys.mapNotNull { regSeason(individualReg[it]) }).toSet()
+        }
+        val overlap = seasonsOf(keepId) intersect seasonsOf(mergeId)
+        if (overlap.isNotEmpty()) return MergeResult.SeasonConflict(overlap.sorted())
+        // Reassign the loser's entries to the survivor.
+        memberContestant.entries.filter { it.value == mergeId }.forEach { memberContestant[it.key] = keepId }
+        individualContestant.entries.filter { it.value == mergeId }.forEach { individualContestant[it.key] = keepId }
+        // Survivor's values win; fill only its gaps.
+        if (keep.birthdate == null) keep.birthdate = merge.birthdate
+        if (keep.gender == null) keep.gender = merge.gender
+        if (keep.graduationYear == null) keep.graduationYear = merge.graduationYear
+        if (keep.ownerUserId == null) keep.ownerUserId = merge.ownerUserId
+        keep.firstSeasonYear = listOfNotNull(keep.firstSeasonYear, merge.firstSeasonYear).minOrNull()
+        contestants.remove(mergeId)
+        MergeResult.Merged(PersonWithParticipationsDto(personDtoOf(keep), participationsOf(keepId)))
     }
 
     private fun personDtoOf(c: Contestant) = PersonDto(

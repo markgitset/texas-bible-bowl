@@ -10,14 +10,19 @@ import io.ktor.server.routing.post
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.ClaimPersonRequest
 import net.markdrew.biblebowl.api.ClaimPersonResponse
+import net.markdrew.biblebowl.api.MergePeopleRequest
+import net.markdrew.biblebowl.api.MergePeopleResponse
 import net.markdrew.biblebowl.api.MyPeopleResponse
+import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.PersonRelation
 import net.markdrew.biblebowl.server.data.ClaimCodes
+import net.markdrew.biblebowl.server.data.MergeResult
 import net.markdrew.biblebowl.server.data.PeopleRepository
 import net.markdrew.biblebowl.server.data.PersonClaimResult
 import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.currentUser
+import net.markdrew.biblebowl.server.security.requireEventWidePermission
 
 /**
  * Person-centric registration API (schema redesign phase 4) — additive alongside the roster-entry
@@ -79,6 +84,37 @@ fun Route.peopleRoutes(
                 pw.copy(person = pw.person.copy(relation = relation))
             }
             call.respond(MyPeopleResponse(withRelation))
+        }
+
+        // Registrar tool (schema redesign phase 6): merge two duplicate people. Global person
+        // matching makes duplicates likelier, and FK-everywhere makes the merge clean — every
+        // score, tester id, claim, and self-link follows the surviving person automatically.
+        post("/admin/people/merge") {
+            val user = currentUser(users) ?: return@post
+            if (!requireRegistrationFeature(user, seasons)) return@post
+            if (!requireEventWidePermission(user, Permission.REGISTRATION_MANAGE)) return@post
+            val req = call.receive<MergePeopleRequest>()
+            if (req.keepId.isBlank() || req.mergeId.isBlank()) {
+                return@post call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("invalid_merge", "Both keepId and mergeId are required"),
+                )
+            }
+            when (val result = people.mergePeople(req.keepId, req.mergeId)) {
+                is MergeResult.Merged -> call.respond(MergePeopleResponse(result.person))
+                MergeResult.NotFound -> call.respond(
+                    HttpStatusCode.NotFound,
+                    ApiError("person_not_found", "One of those people doesn't exist (or they're the same person)"),
+                )
+                is MergeResult.SeasonConflict -> call.respond(
+                    HttpStatusCode.Conflict,
+                    ApiError(
+                        "season_conflict",
+                        "Both people are registered in ${result.seasons.joinToString(", ")} — resolve the " +
+                            "duplicate registration in those seasons before merging",
+                    ),
+                )
+            }
         }
     }
 }

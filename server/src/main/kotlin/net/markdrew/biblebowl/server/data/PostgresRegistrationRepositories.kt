@@ -188,6 +188,46 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             .map { PersonWithParticipationsDto(it, participationsOf(it.id)) }
     }
 
+    override fun mergePeople(keepId: String, mergeId: String): MergeResult = transaction(db) {
+        if (keepId == mergeId) return@transaction MergeResult.NotFound
+        val keep = PeopleTable.selectAll().where { PeopleTable.id eq keepId }.singleOrNull()
+            ?: return@transaction MergeResult.NotFound
+        val merge = PeopleTable.selectAll().where { PeopleTable.id eq mergeId }.singleOrNull()
+            ?: return@transaction MergeResult.NotFound
+        fun seasonsOf(personId: String) = ParticipantsTable.selectAll()
+            .where { ParticipantsTable.personId eq personId }
+            .map { it[ParticipantsTable.seasonYear] }.toSet()
+        val overlap = seasonsOf(keepId) intersect seasonsOf(mergeId)
+        if (overlap.isNotEmpty()) {
+            return@transaction MergeResult.SeasonConflict(overlap.sorted().map { it.toString() })
+        }
+        // Move everything that points at the loser onto the survivor. Scores, tester ids, and
+        // tribe-leader rows follow automatically — they FK the participant, not the person.
+        ParticipantsTable.update({ ParticipantsTable.personId eq mergeId }) { it[personId] = keepId }
+        CheckoutDutiesTable.update({ CheckoutDutiesTable.personId eq mergeId }) { it[personId] = keepId }
+        UsersTable.update({ UsersTable.personId eq mergeId }) { it[personId] = keepId }
+        // Fill the survivor's empty identity/contact fields from the loser (survivor's values win).
+        PeopleTable.update({ PeopleTable.id eq keepId }) {
+            if (keep[PeopleTable.birthdate] == null) it[birthdate] = merge[PeopleTable.birthdate]
+            if (keep[PeopleTable.gender] == null) it[gender] = merge[PeopleTable.gender]
+            if (keep[PeopleTable.graduationYear] == null) it[graduationYear] = merge[PeopleTable.graduationYear]
+            if (keep[PeopleTable.email] == null) it[email] = merge[PeopleTable.email]
+            if (keep[PeopleTable.managedByUserId] == null) it[managedByUserId] = merge[PeopleTable.managedByUserId]
+            it[isAdult] = keep[PeopleTable.isAdult] || merge[PeopleTable.isAdult]
+            val firstYears = listOfNotNull(keep[PeopleTable.firstSeasonYear], merge[PeopleTable.firstSeasonYear])
+            if (firstYears.isNotEmpty()) it[firstSeasonYear] = firstYears.min()
+            if (keep[PeopleTable.contactAddress].isBlank()) it[contactAddress] = merge[PeopleTable.contactAddress]
+            if (keep[PeopleTable.contactCity].isBlank()) it[contactCity] = merge[PeopleTable.contactCity]
+            if (keep[PeopleTable.contactState].isBlank()) it[contactState] = merge[PeopleTable.contactState]
+            if (keep[PeopleTable.contactZip].isBlank()) it[contactZip] = merge[PeopleTable.contactZip]
+            if (keep[PeopleTable.contactPhone].isBlank()) it[contactPhone] = merge[PeopleTable.contactPhone]
+            if (keep[PeopleTable.contactPreference] == null) it[contactPreference] = merge[PeopleTable.contactPreference]
+        }
+        PeopleTable.deleteWhere { PeopleTable.id eq mergeId }
+        val survivor = PeopleTable.selectAll().where { PeopleTable.id eq keepId }.single()
+        MergeResult.Merged(PersonWithParticipationsDto(survivor.toPersonDto(), participationsOf(keepId)))
+    }
+
     private fun ResultRow.toPersonDto() = PersonDto(
         id = this[PeopleTable.id],
         name = this[PeopleTable.name],
