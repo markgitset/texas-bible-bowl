@@ -3,10 +3,9 @@ package net.markdrew.biblebowl.server.data
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import java.net.URI
+import org.flywaydb.core.Flyway
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.jdbc.Database
-import org.jetbrains.exposed.v1.jdbc.SchemaUtils
-import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 
 /**
  * Exposed table definitions: users, role grants, the crowd-sourced question bank, server-side
@@ -403,7 +402,12 @@ data class DbSettings(val jdbcUrl: String, val user: String?, val password: Stri
     }
 }
 
-/** Connects a Hikari pool to Postgres and creates any missing tables. */
+/**
+ * Connects a Hikari pool to Postgres after running Flyway migrations. Flyway owns the schema:
+ * `db/migration/V1__baseline.sql` is the pre-Flyway as-deployed schema (existing databases are
+ * baseline-stamped at V1 without executing it; fresh databases run it), and every change since is
+ * a new versioned script. The Exposed table objects above are description-only mirrors.
+ */
 object DatabaseFactory {
     fun connect(settings: DbSettings = DbSettings.fromEnv()): Database {
         val config = HikariConfig().apply {
@@ -413,128 +417,13 @@ object DatabaseFactory {
             maximumPoolSize = 5 // scale-to-zero friendly (Cloud Run / Fly auto-stop)
             isAutoCommit = false
         }
-        val db = Database.connect(HikariDataSource(config))
-        transaction(db) {
-            SchemaUtils.create(
-                UsersTable, RoleGrantsTable, QuestionsTable, QuestionVotesTable, EsvChaptersTable,
-                TextAnnotationsTable, GeneratedPdfsTable, SeasonsTable,
-                CongregationsTable, RegistrationsTable, TeamsTable, ContestantsTable, TeamMembersTable,
-                IndividualsTable, RegistrationGuestsTable, ScoresTable, ScoreReleasesTable,
-                CabinsTable, CabinAssignmentsTable, CheckoutDutiesTable, TesterIdsTable,
-                TribesTable, TribeLeadersTable, PendingCoachGrantsTable,
-            )
-            // SchemaUtils.create only creates missing *tables* — columns added after a table
-            // first shipped need explicit (idempotent) ALTERs for existing databases.
-            exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS state VARCHAR(2) NOT NULL DEFAULT ''")
-            exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS mailing_address VARCHAR(200) NOT NULL DEFAULT ''")
-            exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS zip VARCHAR(10) NOT NULL DEFAULT ''")
-            exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS phone VARCHAR(30) NOT NULL DEFAULT ''")
-            exec("ALTER TABLE congregations ADD COLUMN IF NOT EXISTS code VARCHAR(2) NOT NULL DEFAULT ''")
-            // Congregation codes are unique — but only among the ones actually assigned; unassigned
-            // congregations all share the "" default, so the uniqueness is a partial index.
-            exec("CREATE UNIQUE INDEX IF NOT EXISTS congregations_code_key ON congregations (code) WHERE code <> ''")
-            exec("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS paid_at_epoch_ms BIGINT")
-            // Workbook-seeded youth (item 17, F13) carry a graduation year instead of a birthdate.
-            exec("ALTER TABLE contestants ADD COLUMN IF NOT EXISTS graduation_year INTEGER")
-            // Multi-site seasons (2026-07): each registration pins to one of the season's event sites.
-            exec("ALTER TABLE registrations ADD COLUMN IF NOT EXISTS site_id VARCHAR(36)")
-            // Birthdates replaced self-reported grades (2026-07). Legacy grades are dropped, not
-            // converted: affected users/roster entries fall back to "no division" until a birthdate
-            // (or the adult flag) is set on the account/roster form.
-            exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS birthdate VARCHAR(10)")
-            exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_adult BOOLEAN NOT NULL DEFAULT FALSE")
-            exec("ALTER TABLE users DROP COLUMN IF EXISTS grade")
-            exec("ALTER TABLE team_members DROP COLUMN IF EXISTS grade")
-            // Deleting a team frees its members (they become unassigned) rather than deleting them
-            // (2026-07): give each member a direct registration link and let team_id go null.
-            exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS registration_id VARCHAR(36)")
-            exec(
-                "UPDATE team_members tm SET registration_id = t.registration_id " +
-                    "FROM teams t WHERE t.id = tm.team_id AND tm.registration_id IS NULL"
-            )
-            exec("ALTER TABLE team_members ALTER COLUMN team_id DROP NOT NULL")
-            // Durable contestants: each per-season roster row links to a durable contestant (added in
-            // the phase-1 release, which also backfilled the contestants table from team_members).
-            exec("ALTER TABLE team_members ADD COLUMN IF NOT EXISTS contestant_id VARCHAR(36)")
-            // Phase 4 (2026-07): the contestant is now the single source of truth for a person's identity,
-            // so the denormalized copies are dropped from the per-season enrollment row. Existing databases
-            // are already fully linked (the phase-1 backfill ran on deploy); a fresh database starts empty,
-            // so nothing needs migrating here — just drop the dead columns.
-            exec("ALTER TABLE team_members DROP COLUMN IF EXISTS name")
-            exec("ALTER TABLE team_members DROP COLUMN IF EXISTS birthdate")
-            exec("ALTER TABLE team_members DROP COLUMN IF EXISTS gender")
-            exec("ALTER TABLE team_members DROP COLUMN IF EXISTS first_season_year")
-            // Durable adults: individual (adult) contestants link to a birthdate-less contestant (added
-            // in the phase-5 release, which also backfilled contestants from individual_contestants).
-            exec("ALTER TABLE individual_contestants ADD COLUMN IF NOT EXISTS contestant_id VARCHAR(36)")
-            // Phase 6 (2026-07): the contestant is now the single source of truth for an adult's identity
-            // too, so the denormalized copies are dropped from the per-season entry (mirrors phase 4 for
-            // youth). Existing databases already carry adult identity on contestants (the phase-5 backfill
-            // ran on deploy); a fresh database starts empty — just drop the dead columns.
-            exec("ALTER TABLE individual_contestants DROP COLUMN IF EXISTS name")
-            exec("ALTER TABLE individual_contestants DROP COLUMN IF EXISTS gender")
-            // Guests gained an age tier (replacing the child boolean), gender, and an optional
-            // shirt (2026-07, registration backlog F1): under-3s attend free with no included
-            // shirt. The old boolean is converted in place, then dropped — guarded so the
-            // backfill only runs while the legacy column still exists.
-            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS gender VARCHAR(8)")
-            exec("ALTER TABLE registration_guests ALTER COLUMN shirt_size DROP NOT NULL")
-            // The transient age_tier column only materializes while legacy is_child data still
-            // needs converting — F5's birthdate migration below then folds it into a birthdate.
-            exec(
-                """
-                DO ${'$'}${'$'} BEGIN
-                    IF EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = 'registration_guests' AND column_name = 'is_child') THEN
-                        ALTER TABLE registration_guests
-                            ADD COLUMN IF NOT EXISTS age_tier VARCHAR(12) NOT NULL DEFAULT 'AGE_9_PLUS';
-                        UPDATE registration_guests SET age_tier = 'AGE_3_TO_8' WHERE is_child;
-                        ALTER TABLE registration_guests DROP COLUMN is_child;
-                    END IF;
-                END ${'$'}${'$'}
-                """.trimIndent()
-            )
-            // Volunteer positions + tribe-leader willingness (2026-07, registration backlog F2):
-            // positions on adult guests; any adult (guest or individual contestant) may lead a tribe.
-            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS positions TEXT NOT NULL DEFAULT '[]'")
-            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS tribe_leader BOOLEAN NOT NULL DEFAULT FALSE")
-            exec("ALTER TABLE individual_contestants ADD COLUMN IF NOT EXISTS tribe_leader BOOLEAN NOT NULL DEFAULT FALSE")
-            // Adult contact info + communication preference (2026-07, registration backlog F3):
-            // optional per-adult contact on user accounts, and on guests (who have no account,
-            // hence the extra email column there).
-            for (col in listOf(
-                "contact_address VARCHAR(200) NOT NULL DEFAULT ''",
-                "contact_city VARCHAR(100) NOT NULL DEFAULT ''",
-                "contact_state VARCHAR(20) NOT NULL DEFAULT ''",
-                "contact_zip VARCHAR(10) NOT NULL DEFAULT ''",
-                "contact_phone VARCHAR(30) NOT NULL DEFAULT ''",
-                "contact_preference VARCHAR(8)",
-            )) {
-                exec("ALTER TABLE users ADD COLUMN IF NOT EXISTS $col")
-                exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS $col")
-            }
-            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255) NOT NULL DEFAULT ''")
-            // Child guests now carry a birthdate and the fee tier derives from age (2026-07,
-            // registration backlog F5) — the stored tier is dropped. Pre-birthdate child rows
-            // (admin test data; the feature deploys dark) get an approximate birthdate that lands
-            // in the same tier for the 2027 season, guarded so this runs only while the legacy
-            // column still exists.
-            exec("ALTER TABLE registration_guests ADD COLUMN IF NOT EXISTS birthdate VARCHAR(10)")
-            exec(
-                """
-                DO ${'$'}${'$'} BEGIN
-                    IF EXISTS (SELECT 1 FROM information_schema.columns
-                               WHERE table_name = 'registration_guests' AND column_name = 'age_tier') THEN
-                        UPDATE registration_guests SET birthdate = '2020-06-15'
-                            WHERE birthdate IS NULL AND age_tier = 'AGE_3_TO_8';
-                        UPDATE registration_guests SET birthdate = '2025-06-15'
-                            WHERE birthdate IS NULL AND age_tier = 'UNDER_3';
-                        ALTER TABLE registration_guests DROP COLUMN age_tier;
-                    END IF;
-                END ${'$'}${'$'}
-                """.trimIndent()
-            )
-        }
-        return db
+        val dataSource = HikariDataSource(config)
+        Flyway.configure()
+            .dataSource(dataSource)
+            .baselineOnMigrate(true) // pre-Flyway databases: record V1 as applied, don't run it
+            .load()
+            .migrate()
+        return Database.connect(dataSource)
     }
 }
+
