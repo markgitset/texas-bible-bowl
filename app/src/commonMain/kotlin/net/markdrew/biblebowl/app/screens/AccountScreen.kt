@@ -17,6 +17,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,8 +31,11 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Division
+import net.markdrew.biblebowl.api.ParticipationDto
 import net.markdrew.biblebowl.api.PersonRelation
+import net.markdrew.biblebowl.api.PersonWithParticipationsDto
 import net.markdrew.biblebowl.api.Permission
+import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.division
@@ -81,7 +85,11 @@ fun AccountScreen(
         )
 
         ProfileCard(api, current, onUserChange)
-        if (season.registrationEnabled || isGlobalAdmin(current.roles)) ClaimCard(api)
+        if (season.registrationEnabled || isGlobalAdmin(current.roles)) {
+            var peopleReload by remember { mutableStateOf(0) }
+            MyPeopleCard(api, peopleReload)
+            ClaimCard(api, onClaimed = { peopleReload++ })
+        }
 
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -269,11 +277,99 @@ private fun ProfileCard(api: TbbApi, user: UserDto, onUserChange: (UserDto) -> U
 }
 
 /**
- * Claim a roster entry by the coach-shared code, linking it to this account — that link is
- * what My Scores' owner scoping keys off (dashes/case in the code are tolerated server-side).
+ * The people this account is or manages, with their per-season participations — the list the claim
+ * card feeds. Reloads whenever [reloadKey] changes (bumped after a fresh claim).
  */
 @Composable
-private fun ClaimCard(api: TbbApi) {
+private fun MyPeopleCard(api: TbbApi, reloadKey: Int) {
+    val season = LocalSeason.current
+    var people by remember { mutableStateOf<List<PersonWithParticipationsDto>?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(reloadKey) {
+        try {
+            people = api.myPeople().people
+            error = null
+        } catch (e: Throwable) {
+            error = e.message
+        }
+    }
+
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("My people", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Contestants and other attendees you've claimed. You'll see their scores here once " +
+                    "they're released.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            val loaded = people
+            when {
+                error != null -> Text(
+                    "Couldn't load your people: $error",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                loaded == null -> CircularProgressIndicator(Modifier.height(18.dp))
+                loaded.isEmpty() -> Text(
+                    "You haven't claimed anyone yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                else -> loaded.forEach { PersonRow(it, season) }
+            }
+        }
+    }
+}
+
+/** One claimed person: name + relation, division, and a line per season participation. */
+@Composable
+private fun PersonRow(pwp: PersonWithParticipationsDto, season: SeasonDto) {
+    val person = pwp.person
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(person.name, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+            Text(
+                if (person.relation == PersonRelation.SELF) "You" else "You manage",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        person.division(season)?.let {
+            Text("Division: ${it.displayName}", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (pwp.participations.isEmpty()) {
+            Text("Not registered for any season yet.", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+        } else {
+            pwp.participations.forEach { Text(participationLine(it), style = MaterialTheme.typography.bodySmall) }
+        }
+    }
+}
+
+/** "2027 · First Baptist — Contestant, Coach · Team Lions · Tester #12" for one participation. */
+private fun participationLine(p: ParticipationDto): String {
+    val roles = buildList {
+        if (p.isContestant) add("Contestant")
+        if (p.isCoach) add("Coach")
+        addAll(p.positions)
+    }.joinToString(", ").ifEmpty { "Attendee" }
+    return buildString {
+        append("${p.seasonYear} · ${p.congregationName} — $roles")
+        p.teamName?.let { append(" · Team $it") }
+        p.testerId?.let { append(" · Tester #$it") }
+    }
+}
+
+/**
+ * Claim a person by the coach-shared code, linking it to this account — that link is what My Scores'
+ * owner scoping keys off (dashes/case in the code are tolerated server-side). On success [onClaimed]
+ * refreshes the My-people list so the freshly-claimed person appears immediately.
+ */
+@Composable
+private fun ClaimCard(api: TbbApi, onClaimed: () -> Unit) {
     var code by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -303,6 +399,7 @@ private fun ClaimCard(api: TbbApi) {
                             try {
                                 val result = api.claimPerson(code)
                                 code = ""
+                                onClaimed()
                                 isError = false
                                 val who = if (result.relation == PersonRelation.SELF) "you" else result.person.name
                                 message = "Claimed ${result.person.name} (as $who) — see My scores on the " +

@@ -121,6 +121,19 @@ fun UserDto.division(season: SeasonDto): Division? = when {
 }
 
 /**
+ * A person's division this [season]: [Division.ADULT] when the person is an adult, otherwise from
+ * the birthdate, then falling back to the seeded [PersonDto.graduationYear] (a grade-seeded youth
+ * with no birthdate yet). Null when none apply or the youth has aged out of the divisions.
+ */
+fun PersonDto.division(season: SeasonDto): Division? = when {
+    isAdult -> Division.ADULT
+    birthdate != null -> season.divisionForBirthdate(birthdate)
+    graduationYear != null -> season.gradeForGraduationYear(graduationYear).takeIf { it in 3..12 }
+        ?.let { Division.forGrade(it) }
+    else -> null
+}
+
+/**
  * A roster entry's own division this [season]: by birthdate, or [Division.ADULT] for an
  * individual (adult) entry, which carries none. Server validation keeps new team entries in a
  * youth division; null is possible only for an unparseable legacy birthdate.
