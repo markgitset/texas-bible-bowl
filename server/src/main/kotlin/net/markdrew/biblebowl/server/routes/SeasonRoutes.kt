@@ -10,6 +10,7 @@ import io.ktor.server.routing.put
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.SeasonDto
+import net.markdrew.biblebowl.api.siteSlug
 import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.UserRepository
@@ -73,18 +74,34 @@ fun Route.seasonRoutes(users: UserRepository, seasons: SeasonRepository) {
                     ApiError("invalid_dates", "registrationClosesOn must not be before registrationOpensOn"),
                 )
             }
+            // New sites arrive from the editors with a blank id and get the slug of their name
+            // ("White River Youth Camp" → "white-river-youth-camp", deduped with a numeric
+            // suffix), so admin-created sites line up with the workbook seed's name-slug siteIds.
+            // Existing sites keep their id — a rename never unpins registrations.
+            val taken = season.sites.filterNot { it.id.isBlank() }.mapTo(mutableSetOf()) { it.id }
+            val normalized = season.copy(
+                sites = season.sites.map { site ->
+                    val base = siteSlug(site.name)
+                    if (site.id.isNotBlank() || base.isEmpty()) return@map site
+                    var id = base
+                    var n = 2
+                    while (id in taken) id = "$base-${n++}"
+                    taken += id
+                    site.copy(id = id)
+                },
+            )
             // Event sites: registrations pin to a site by its id, so every site needs a stable
             // non-blank id, and names must be distinct for the pickers to make sense.
-            if (season.sites.any { it.id.isBlank() || it.name.isBlank() } ||
-                season.sites.distinctBy { it.id }.size != season.sites.size ||
-                season.sites.distinctBy { it.name.trim().lowercase() }.size != season.sites.size
+            if (normalized.sites.any { it.id.isBlank() || it.name.isBlank() } ||
+                normalized.sites.distinctBy { it.id }.size != normalized.sites.size ||
+                normalized.sites.distinctBy { it.name.trim().lowercase() }.size != normalized.sites.size
             ) {
                 return@put call.respond(
                     HttpStatusCode.BadRequest,
                     ApiError("invalid_sites", "Every event site needs an id and a name, and both must be unique"),
                 )
             }
-            call.respond(seasons.update(season))
+            call.respond(seasons.update(normalized))
         }
     }
 }

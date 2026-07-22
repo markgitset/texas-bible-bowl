@@ -190,8 +190,9 @@ data class IndexRefDto(
 
 /**
  * One of the season's event locations (2026 ran two: Bandina and White River Youth Camp). [id] is
- * the stable key registrations pin to — generated when the site is added and unchanged by renames,
- * so an admin can fix a site's name without unpinning every congregation.
+ * the stable key registrations pin to — assigned on first save as the [siteSlug] of the name (the
+ * editors send new sites with a blank id) and unchanged by renames, so an admin can fix a site's
+ * name without unpinning every congregation.
  */
 @Serializable
 data class EventSiteDto(

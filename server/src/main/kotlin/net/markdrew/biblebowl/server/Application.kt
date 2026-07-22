@@ -208,7 +208,7 @@ fun Application.module(
         seasonRoutes(users, seasons)
         registrationRoutes(users, seasons, congregations, registrations)
         adminRegistrationRoutes(users, seasons, congregations, registrations)
-        seedRoutes(users, congregations, registrations)
+        seedRoutes(users, congregations, registrations, seasons)
         housingRoutes(users, seasons, congregations, housing)
         tribeRoutes(users, seasons, tribes)
         scoreRoutes(users, seasons, registrations, scores)
