@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.web.screens
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.ContactPreference
+import net.markdrew.biblebowl.api.PersonRelation
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.division
@@ -221,11 +222,13 @@ object AccountScreen {
     private fun claimCard(container: Element) {
         container.child("div", "card section-card mb-3") {
             child("div", "card-body") {
-                child("h5", "card-title", "Claim your contestant entry")
+                child("h5", "card-title", "Claim a contestant")
                 child(
                     "p", "text-muted",
-                    "On a roster this season? Enter the claim code your coach shared (like ABCD-2345) to " +
-                        "link that entry to this account and see your scores once they're released.",
+                    "Enter the claim code your coach shared (like ABCD-2345) to link a contestant to this " +
+                        "account and see their scores once they're released. If the code is your own and " +
+                        "your email matches, it becomes you; otherwise you'll manage them (e.g. a parent " +
+                        "claiming a child).",
                 )
                 val form = child("form", "d-flex flex-wrap gap-2 align-items-start")
                 val code = (form.child("input", "form-control") as HTMLInputElement).apply {
@@ -244,12 +247,13 @@ object AccountScreen {
                     messageSlot.clear()
                     Shell.scope.launch {
                         try {
-                            val entry = Session.api.claimRosterEntry(code.value)
+                            val result = Session.api.claimPerson(code.value)
                             code.value = ""
+                            val who = if (result.relation == PersonRelation.SELF) "you" else result.person.name
                             messageSlot.child("p", "tbb-gold fw-semibold mt-2 mb-0") {
-                                append("Claimed ${entry.name}'s entry — see ")
+                                append("Claimed ${result.person.name} (as $who) — see ")
                                 child("a", text = "My scores") { setAttribute("href", "#${Routes.MY_SCORES}") }
-                                append(" once they're released.")
+                                append(" once scores are released.")
                             }
                         } catch (e: Throwable) {
                             messageSlot.child("p", "text-danger mt-2 mb-0", "Claim failed: ${e.message}")

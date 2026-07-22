@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Division
+import net.markdrew.biblebowl.api.PersonRelation
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UserDto
@@ -281,11 +282,12 @@ private fun ClaimCard(api: TbbApi) {
 
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Claim your contestant entry", style = MaterialTheme.typography.titleMedium,
+            Text("Claim a contestant", style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold)
             Text(
-                "On a roster this season? Enter the claim code your coach shared (like ABCD-2345) " +
-                    "to link that entry to this account and see your scores once they're released.",
+                "Enter the claim code your coach shared (like ABCD-2345) to link a contestant to this " +
+                    "account and see their scores once they're released. If it's your own code and your " +
+                    "email matches, it becomes you; otherwise you'll manage them (e.g. a parent claiming a child).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -299,11 +301,12 @@ private fun ClaimCard(api: TbbApi) {
                         message = null
                         scope.launch {
                             try {
-                                val entry = api.claimRosterEntry(code)
+                                val result = api.claimPerson(code)
                                 code = ""
                                 isError = false
-                                message = "Claimed ${entry.name}'s entry — see My scores on the " +
-                                    "Event tab once they're released."
+                                val who = if (result.relation == PersonRelation.SELF) "you" else result.person.name
+                                message = "Claimed ${result.person.name} (as $who) — see My scores on the " +
+                                    "Event tab once scores are released."
                             } catch (e: Throwable) {
                                 isError = true
                                 message = "Claim failed: ${e.message}"

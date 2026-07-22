@@ -21,6 +21,12 @@ import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AssignMemberTeamRequest
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ClaimEntryRequest
+import net.markdrew.biblebowl.api.ClaimPersonRequest
+import net.markdrew.biblebowl.api.ClaimPersonResponse
+import net.markdrew.biblebowl.api.MergePeopleRequest
+import net.markdrew.biblebowl.api.MergePeopleResponse
+import net.markdrew.biblebowl.api.MyPeopleResponse
+import net.markdrew.biblebowl.api.PersonRelation
 import net.markdrew.biblebowl.api.ClearPdfCacheResponse
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CongregationDto
@@ -429,6 +435,31 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun claimRosterEntry(code: String): RosterEntryDto =
         client.post("$baseUrl/roster/claim") {
             authorize(); contentType(ContentType.Application.Json); setBody(ClaimEntryRequest(code))
+        }.bodyOrThrow()
+
+    // --- Person-centric registration (schema redesign phase 4) ---
+
+    /**
+     * Claims a *person* by their coach-shared code (dashes/case ignored) — the person-centric
+     * replacement for [claimRosterEntry]. The response says whether the account now IS the person
+     * ([PersonRelation.SELF]) or manages them ([PersonRelation.MANAGED]). 400/404/409 on bad codes.
+     */
+    suspend fun claimPerson(code: String): ClaimPersonResponse =
+        client.post("$baseUrl/people/claim") {
+            authorize(); contentType(ContentType.Application.Json); setBody(ClaimPersonRequest(code))
+        }.bodyOrThrow()
+
+    /** Every person the signed-in account is or manages, with their participations across seasons. */
+    suspend fun myPeople(): MyPeopleResponse =
+        client.get("$baseUrl/people/mine") { authorize() }.bodyOrThrow()
+
+    /**
+     * Registrar tool: merges [mergeId] into [keepId] (event-wide REGISTRATION_MANAGE). 409 when the
+     * two share a season (resolve the duplicate registration there first).
+     */
+    suspend fun mergePeople(keepId: String, mergeId: String): MergePeopleResponse =
+        client.post("$baseUrl/admin/people/merge") {
+            authorize(); contentType(ContentType.Application.Json); setBody(MergePeopleRequest(keepId, mergeId))
         }.bodyOrThrow()
 
     // --- Scoring (grading desk, release, my scores; docs/gui-redesign.md §5F) ---
