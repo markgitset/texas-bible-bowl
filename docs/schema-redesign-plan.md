@@ -43,13 +43,14 @@ New/changed tables (types are Postgres; all ids varchar(36) UUIDs unless noted):
 seasons
   year INT PK                        -- was event_year varchar(8)
   is_current BOOL
+  next_tester_id INT NOT NULL DEFAULT 1   -- season-wide append-only tester-id counter
+                                          -- (never reused; NO per-site blocks — PR #63)
   payload TEXT                       -- SeasonDto JSON minus sites (now rows)
 
 season_sites                         -- NEW: promoted out of the season JSON
   id PK                              -- keeps the existing EventSiteDto slug ids
   season_year INT FK -> seasons NOT NULL
   name varchar(120)
-  next_tester_id INT NOT NULL DEFAULT 1   -- allocation counter; preserves never-reuse
   -- single-site seasons have exactly one row (no more "null site" special case
   -- for cabins/tribes; registrations auto-pin to the lone site)
 
@@ -101,9 +102,9 @@ participants                         -- NEW: one row per (person, season)
   positions TEXT NOT NULL DEFAULT '[]'     -- volunteer positions JSON; adults
   tribe_leader BOOL NOT NULL DEFAULT FALSE
   tester_id INT                      -- null until assigned; allocated from
-                                     -- season_sites.next_tester_id (counter is the
-                                     -- uniqueness + never-reuse guarantee; ids are
-                                     -- per-site so a plain UNIQUE can't express it)
+                                     -- seasons.next_tester_id (season-wide sequence);
+                                     -- UNIQUE (season_year, tester_id) — DB-enforced
+                                     -- now, unlike the old cross-table convention
   -- facets, not a role enum: an adult contestant can also volunteer. Youth/adult,
   -- division, and fee tier all stay DERIVED from people.birthdate/is_adult.
 
@@ -196,7 +197,7 @@ just becomes `scores.participant_id` with an FK added.
    `registration_guests` (`is_contestant=false`, positions, tribe_leader, shirt).
    `owner_user_id` → `people.managed_by_user_id`; when the owner's own person row IS
    this person (name+birthdate match), also set that user's `person_id` (self-claim).
-6. `tester_ids` → `participants.tester_id` (join on roster id); set each site's
+6. `tester_ids` → `participants.tester_id` (join on roster id); set each season's
    `next_tester_id` = max assigned + 1.
 7. `scores`: rename `roster_entry_id` → `participant_id`, add surrogate id + FK.
 8. `checkout_duties.adult_name` → `person_id`: match by name among the congregation's
@@ -248,9 +249,9 @@ Phases 4–6 can trail the restructure; 1–3 should land together in one deploy
   kids (same name, same birthday, different congregations). Rare; the merge/split tool
   in phase 6 is the mitigation. Registration UX should confirm "is this returning
   person X?" rather than silently merging.
-- **Tester-id uniqueness** is guaranteed by the per-site counter (serialized allocation),
-  not a DB constraint — a plain UNIQUE can't express per-site scoping without further
-  denormalization. Documented in the table definition.
+- **Tester ids**: the season-wide `UNIQUE (season_year, tester_id)` constraint is new —
+  the old schema could only enforce this inside `tester_ids`. The `seasons.next_tester_id`
+  counter (not `max()+1`) preserves the never-reuse-after-delete rule.
 - **`participants.season_year` denormalization** exists solely so the DB can enforce
   one-participation-per-person-per-season; repos must keep it equal to the
   registration's season (single write path makes this easy).
