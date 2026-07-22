@@ -12,6 +12,7 @@ import net.markdrew.biblebowl.web.screens.AdminTribesScreen
 import net.markdrew.biblebowl.web.screens.AdminRegistrationsScreen
 import net.markdrew.biblebowl.web.screens.AdminSeasonScreen
 import net.markdrew.biblebowl.web.screens.AdminTestersScreen
+import net.markdrew.biblebowl.web.screens.AdminMergePeopleScreen
 import net.markdrew.biblebowl.web.screens.AdminUsersScreen
 import net.markdrew.biblebowl.web.screens.AuthScreen
 import net.markdrew.biblebowl.web.screens.ContributeScreen
@@ -259,6 +260,11 @@ object Shell {
             }
             Routes.ADMIN_USERS -> gated(container, Permission.USER_MANAGE) {
                 AdminUsersScreen.render(container)
+            }
+            Routes.ADMIN_MERGE_PEOPLE -> feature(container, Session.registrationVisible) {
+                gatedEventWide(container, Permission.REGISTRATION_MANAGE) {
+                    AdminMergePeopleScreen.render(container)
+                }
             }
             else -> studyOverview(container) // unknown deep link → the site's hub page
         }

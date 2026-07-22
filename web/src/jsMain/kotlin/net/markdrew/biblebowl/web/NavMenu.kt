@@ -54,6 +54,7 @@ fun buildNavMenu(user: UserDto, season: SeasonDto): NavMenu {
             add(NavItem("Registration Counts", Routes.ADMIN_COUNTS, badge = !season.registrationEnabled))
             add(NavItem("Housing", Routes.ADMIN_HOUSING, badge = !season.registrationEnabled))
             add(NavItem("Tribes", Routes.ADMIN_TRIBES, badge = !season.registrationEnabled))
+            add(NavItem("Merge People", Routes.ADMIN_MERGE_PEOPLE, badge = !season.registrationEnabled))
         }
         // Registrars prep IDs/nametags; graders run the ZipGrade export — both get the link.
         val testerAccess = hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE) ||

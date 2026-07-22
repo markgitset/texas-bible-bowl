@@ -26,7 +26,9 @@ import net.markdrew.biblebowl.api.ClaimPersonResponse
 import net.markdrew.biblebowl.api.MergePeopleRequest
 import net.markdrew.biblebowl.api.MergePeopleResponse
 import net.markdrew.biblebowl.api.MyPeopleResponse
+import net.markdrew.biblebowl.api.PeopleSearchResponse
 import net.markdrew.biblebowl.api.PersonRelation
+import net.markdrew.biblebowl.api.PersonWithParticipationsDto
 import net.markdrew.biblebowl.api.ClearPdfCacheResponse
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CongregationDto
@@ -452,6 +454,14 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     /** Every person the signed-in account is or manages, with their participations across seasons. */
     suspend fun myPeople(): MyPeopleResponse =
         client.get("$baseUrl/people/mine") { authorize() }.bodyOrThrow()
+
+    /**
+     * Registrar tool: people whose name matches [query] (blank lists all), with participations —
+     * the lookup that feeds the merge tool (event-wide REGISTRATION_MANAGE).
+     */
+    suspend fun searchPeople(query: String): List<PersonWithParticipationsDto> =
+        client.get("$baseUrl/admin/people") { authorize(); parameter("query", query) }
+            .bodyOrThrow<PeopleSearchResponse>().people
 
     /**
      * Registrar tool: merges [mergeId] into [keepId] (event-wide REGISTRATION_MANAGE). 409 when the

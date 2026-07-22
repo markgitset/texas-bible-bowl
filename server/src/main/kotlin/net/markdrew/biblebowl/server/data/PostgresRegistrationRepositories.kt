@@ -188,6 +188,17 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
             .map { PersonWithParticipationsDto(it, participationsOf(it.id)) }
     }
 
+    override fun searchPeople(query: String, limit: Int): List<PersonWithParticipationsDto> = transaction(db) {
+        // A blank query yields "%%", which LIKE matches against every name — the intended "list all".
+        val q = "%${query.trim().lowercase()}%"
+        PeopleTable.selectAll()
+            .where { PeopleTable.name.lowerCase() like q }
+            .orderBy(PeopleTable.name)
+            .limit(limit)
+            .map { it.toPersonDto() }
+            .map { PersonWithParticipationsDto(it, participationsOf(it.id)) }
+    }
+
     override fun mergePeople(keepId: String, mergeId: String): MergeResult = transaction(db) {
         if (keepId == mergeId) return@transaction MergeResult.NotFound
         val keep = PeopleTable.selectAll().where { PeopleTable.id eq keepId }.singleOrNull()

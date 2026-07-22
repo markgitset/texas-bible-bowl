@@ -160,6 +160,12 @@ interface PeopleRepository {
     /** Every person the account manages (people.managed_by = [userId]), with participations. */
     fun peopleManagedBy(userId: String): List<PersonWithParticipationsDto>
     /**
+     * People whose name contains [query] (case-insensitive), with participations — the registrar's
+     * merge-tool lookup. A blank query matches everyone. Results are name-sorted and capped at
+     * [limit] (a busy season has a few hundred people, not thousands).
+     */
+    fun searchPeople(query: String, limit: Int = 50): List<PersonWithParticipationsDto>
+    /**
      * Merges [mergeId] into [keepId]: reassigns [mergeId]'s participations, claims/manager, and
      * self-link to [keepId], fills [keepId]'s empty identity fields from [mergeId], then deletes
      * [mergeId]. Refused with [MergeResult.SeasonConflict] when both participate in the same season
@@ -932,6 +938,15 @@ class InMemoryRegistrationRepository(
         contestants.values
             .filter { it.ownerUserId == userId }
             .sortedBy { it.name.lowercase() }
+            .map { PersonWithParticipationsDto(personDtoOf(it), participationsOf(it.id)) }
+    }
+
+    override fun searchPeople(query: String, limit: Int): List<PersonWithParticipationsDto> = synchronized(lock) {
+        val needle = query.trim().lowercase()
+        contestants.values
+            .filter { needle.isEmpty() || it.name.lowercase().contains(needle) }
+            .sortedBy { it.name.lowercase() }
+            .take(limit)
             .map { PersonWithParticipationsDto(personDtoOf(it), participationsOf(it.id)) }
     }
 

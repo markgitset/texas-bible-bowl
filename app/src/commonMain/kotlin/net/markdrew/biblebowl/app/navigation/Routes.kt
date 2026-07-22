@@ -36,6 +36,7 @@ object Routes {
     const val ADMIN_TRIBES = "admin/tribes"
     const val ADMIN_TESTERS = "admin/testers"
     const val ADMIN_USERS = "admin/users"
+    const val ADMIN_MERGE_PEOPLE = "admin/people"
 }
 
 /**

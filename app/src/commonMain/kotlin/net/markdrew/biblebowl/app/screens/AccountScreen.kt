@@ -141,6 +141,7 @@ private fun StaffLinks(user: UserDto, onNavigate: (String) -> Unit) {
             add("Registration counts" to Routes.ADMIN_COUNTS)
             add("Housing" to Routes.ADMIN_HOUSING)
             add("Tribes" to Routes.ADMIN_TRIBES)
+            add("Merge people" to Routes.ADMIN_MERGE_PEOPLE)
         }
         if (registrationVisible && testerAccess) add("Tester IDs" to Routes.ADMIN_TESTERS)
         if (Permission.USER_MANAGE in user.permissions) add("User management" to Routes.ADMIN_USERS)
