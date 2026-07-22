@@ -676,15 +676,15 @@ data class SetPaidRequest(val paid: Boolean)
 
 /**
  * One tester (= contestant) with their assigned IDs (registration backlog item 13, F7; see
- * shared-api TesterIds.kt for the scheme). [testerId]/[externalId] are null only while the tester
- * can't be numbered yet: their registration hasn't pinned an event site in a multi-site season.
+ * shared-api TesterIds.kt for the scheme). Current servers always number every tester (one
+ * season-wide sequence, site-agnostic), so [testerId] is only null on the wire for old data.
  */
 @Serializable
 data class TesterRowDto(
     val rosterEntryId: String,
-    /** Stable per-site sequential ID (never reassigned once given); null while un-numberable. */
+    /** Stable season-wide sequential ID (never reassigned once given). */
     val testerId: Int? = null,
-    /** ZipGrade external ID, e.g. "EI-MR-ENT-4"; null exactly when [testerId] is. */
+    /** ZipGrade external ID, e.g. "EI-MR-ENT-4"; null when the division is unknown. */
     val externalId: String? = null,
     val name: String,
     val congregationName: String,

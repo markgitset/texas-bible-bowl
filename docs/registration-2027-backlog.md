@@ -278,9 +278,11 @@ code, exported to ZipGrade for scan grading.
   view of `#admin/testers` (`GET /admin/testers`; event-wide REGISTRATION_MANAGE *or*
   SCORE_ENTER) numbers everyone in desk order, later additions take the next number, and an
   assigned number never changes (nametags can print early; removals leave gaps, like 2026's
-  Bandina 4–142). Sites number in disjoint 200-blocks in season order (site 1 from 1, site 2
-  from 201 — mirroring 2026); testers of an unpinned congregation stay un-numbered (flagged
-  on-screen) until the site is chosen. External IDs match the workbook exactly:
+  Bandina 4–142). Numbering is **one season-wide sequence from 1** — the workbook's disjoint
+  per-site blocks were dropped (Mark, 2026-07-21: they don't scale). First assignment orders
+  by site so the initial print still groups per site, and testers of an unpinned congregation
+  are numbered too; the screen instead flags the missing site pin, which the per-site ZipGrade
+  rosters and nametag sheets still need. External IDs match the workbook exactly:
   `{IndCat}-{CongCode}-{TeamCatTeamName or ANT/ENT}-{testerId}` with the contestant's OWN
   bracket as IndCat (a JI on a JE team stays JI…), `JNT`/`SNT` extending the no-teams codes
   for unplaced youth, and `??` standing in for a missing congregation code. The screen's

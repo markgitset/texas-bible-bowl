@@ -16,7 +16,6 @@ import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.SeasonDto
-import net.markdrew.biblebowl.api.TESTER_ID_SITE_BLOCK
 import net.markdrew.biblebowl.api.TesterListResponse
 import net.markdrew.biblebowl.api.TesterRowDto
 import net.markdrew.biblebowl.api.division
@@ -40,7 +39,7 @@ import net.markdrew.biblebowl.server.typst.TypstException
 /**
  * Tester IDs + the ZipGrade roster (registration backlog item 13, F7; scheme in shared-api's
  * TesterIds.kt), and the nametags PDF built on those IDs (item 14, F8). `GET /admin/testers`
- * lists every contestant this season with their per-site tester ID and ZipGrade external ID,
+ * lists every contestant this season with their season-wide tester ID and ZipGrade external ID,
  * lazily assigning numbers to any tester who doesn't have one yet (append-only — an assigned
  * number never changes, so nametags can print early). The ZipGrade CSV itself is built
  * client-side from this response, like the registration-desk CSV.
@@ -86,7 +85,7 @@ fun Route.testerRoutes(
             val season = seasons.current()
             val siteIdParam = call.request.queryParameters["siteId"]
 
-            // Testers (assigning any missing IDs) in per-site tester-ID order, then guests per
+            // Testers (assigning any missing IDs) in tester-ID order, then guests per
             // congregation — every tag carries its resolved site so the sheets group cleanly.
             data class SitedTag(val siteId: String?, val siteName: String, val tag: Nametag)
             val testerTags = testerList(season, registrations, testerIds).rows.map { row ->
@@ -265,20 +264,18 @@ private fun testerList(
                 siteName = seed.siteName,
             )
         }
-        // Tester-ID order within each site; the un-numbered (unpinned site) sort last, by name.
-        .sortedWith(compareBy({ it.testerId == null }, { it.siteName }, { it.testerId }, { it.name.lowercase() }))
+        // Tester-ID order (site-grouped by first assignment); any un-numbered rows sort last.
+        .sortedWith(compareBy({ it.testerId == null }, { it.testerId }, { it.name.lowercase() }))
 
     return TesterListResponse(seasonYear = season.eventYear, rows = rows)
 }
 
 /**
- * Assigns a tester ID to every seed that lacks one, per event site: site *i* (season order)
- * numbers from `i * TESTER_ID_SITE_BLOCK + 1`, each new tester taking the next number after the
- * site's highest (never below the base, never a number in use anywhere this season — so even an
- * overflowing site can't collide with another's block). First-time assignment follows desk order
- * (congregation, team — teamless last, name); later additions append after, keeping every earlier
- * number stable. Seeds with no resolvable site (unpinned in a multi-site season) stay un-numbered
- * until the registration pins one. A zero-site season numbers everyone as one implicit site.
+ * Assigns a tester ID to every seed that lacks one: a single season-wide sequence, each new
+ * tester taking the next number after the season's highest (an assigned number never changes or
+ * is reused, so removals leave gaps). First-time assignment follows desk order — site in season
+ * order (unpinned last), then congregation, team (teamless last), name — so the initial print
+ * comes out site-grouped; later additions append after, keeping every earlier number stable.
  */
 private fun assignMissingIds(
     season: SeasonDto,
@@ -286,31 +283,23 @@ private fun assignMissingIds(
     testerIds: TesterIdRepository,
 ): Map<String, Int> {
     val assigned = testerIds.forSeason(season.eventYear).toMutableMap()
-    val used = assigned.values.toMutableSet()
-
-    val siteIdsInOrder: List<String?> =
-        if (season.sites.isEmpty()) listOf(null) else season.sites.map { it.id }
-    siteIdsInOrder.forEachIndexed { siteIndex, siteId ->
-        val siteSeeds = seeds.filter { it.siteId == siteId }
-        val base = siteIndex * TESTER_ID_SITE_BLOCK + 1
-        var next = maxOf(base, (siteSeeds.mapNotNull { assigned[it.rosterEntryId] }.maxOrNull() ?: 0) + 1)
-        siteSeeds
-            .filter { it.rosterEntryId !in assigned }
-            .sortedWith(
-                compareBy(
-                    { it.congregationName.lowercase() },
-                    { it.teamName == null },
-                    { it.teamName?.lowercase() ?: "" },
-                    { it.name.lowercase() },
-                )
+    val siteOrder: Map<String?, Int> = season.sites.mapIndexed { i, s -> s.id to i }.toMap()
+    var next = (assigned.values.maxOrNull() ?: 0) + 1
+    seeds
+        .filter { it.rosterEntryId !in assigned }
+        .sortedWith(
+            compareBy(
+                { siteOrder[it.siteId] ?: season.sites.size },
+                { it.congregationName.lowercase() },
+                { it.teamName == null },
+                { it.teamName?.lowercase() ?: "" },
+                { it.name.lowercase() },
             )
-            .forEach { seed ->
-                while (next in used) next++
-                testerIds.assign(season.eventYear, seed.rosterEntryId, next)
-                assigned[seed.rosterEntryId] = next
-                used += next
-                next++
-            }
-    }
+        )
+        .forEach { seed ->
+            testerIds.assign(season.eventYear, seed.rosterEntryId, next)
+            assigned[seed.rosterEntryId] = next
+            next++
+        }
     return assigned
 }

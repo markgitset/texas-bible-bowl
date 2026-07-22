@@ -252,7 +252,7 @@ class TesterRoutesTest {
     }
 
     @Test
-    fun multiSiteSeasonsNumberEachSiteInItsOwnBlock() = testApplication {
+    fun multiSiteSeasonsNumberOneSeasonWideSequenceGroupedBySite() = testApplication {
         val users = InMemoryUserRepository()
         val season = openSeason.copy(
             sites = listOf(EventSiteDto("s1", "Bandina"), EventSiteDto("s2", "White River")),
@@ -277,18 +277,19 @@ class TesterRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${coach2.token}")
             setBody(SetRegistrationSiteRequest("s2"))
         }
-        // A third congregation that never picked a site — its testers can't be numbered yet.
+        // A third congregation that never picked a site — numbered too (IDs are site-agnostic),
+        // but sorted after the pinned sites on first assignment.
         api.coachWithTeam("three@tbb.org", "Undecided Church", "UN", listOf(juniorBirthdate))
 
         val admin = api.loginSeededAdmin(users)
         val testers = api.testers(admin.token)
 
-        // Site 1 numbers from 1, site 2 from TESTER_ID_SITE_BLOCK + 1 = 201, like 2026.
+        // One season-wide sequence from 1, site-grouped on first assignment (no per-site blocks).
         assertEquals(listOf(1, 2), testers.rows.filter { it.siteName == "Bandina" }.map { it.testerId })
-        assertEquals(listOf(201), testers.rows.filter { it.siteName == "White River" }.map { it.testerId })
+        assertEquals(listOf(3), testers.rows.filter { it.siteName == "White River" }.map { it.testerId })
         val unpinned = testers.rows.single { it.congregationName == "Undecided Church" }
-        assertNull(unpinned.testerId)
-        assertNull(unpinned.externalId)
+        assertEquals(4, unpinned.testerId)
+        assertEquals("JE-UN-JETEAM_A-4", unpinned.externalId)
         assertNull(unpinned.siteId)
     }
 

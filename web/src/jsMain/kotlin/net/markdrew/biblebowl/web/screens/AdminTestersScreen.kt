@@ -23,7 +23,7 @@ import org.w3c.dom.HTMLSelectElement
 
 /**
  * Tester IDs + ZipGrade export (registration backlog item 13, F7): every contestant this season
- * with their stable per-site tester ID, workbook-style external ID, and class (congregation code),
+ * with their stable season-wide tester ID, workbook-style external ID, and class (congregation code),
  * plus the per-site ZipGrade import CSV — ZipGrade is still the primary scan-grading path for
  * 2027. Loading the screen is what assigns numbers to new testers (append-only; existing numbers
  * never change, so nametags can print early). Route-gated (and server-enforced) on event-wide
@@ -98,7 +98,7 @@ object AdminTestersScreen {
         tbody.child("tr") {
             child("td") {
                 if (row.testerId != null) child("span", "fw-semibold", row.testerId.toString())
-                else child("span", "badge text-bg-warning", "no site")
+                else child("span", "text-muted", "—")
             }
             child("td", text = row.name)
             child("td", text = row.congregationName)
@@ -114,14 +114,14 @@ object AdminTestersScreen {
 
     /** Data problems a registrar should fix before exporting: missing site pins or class codes. */
     private fun warnings(rows: List<TesterRowDto>) {
-        val unpinned = rows.count { it.testerId == null }
+        val unpinned = if (multiSite) rows.count { it.siteId == null } else 0
         if (unpinned > 0) {
             content.errorLine(
-                "$unpinned tester(s) can't be numbered yet — their congregation hasn't picked an " +
-                    "event site. Pin the site on the registration desk.",
+                "$unpinned tester(s) have no event site — ZipGrade rosters and nametag sheets " +
+                    "are per site. Pin the site on the registration desk.",
             )
         }
-        val codeless = rows.filter { it.testerId != null && it.congregationCode.isBlank() }
+        val codeless = rows.filter { it.congregationCode.isBlank() }
             .map { it.congregationName }.distinct()
         if (codeless.isNotEmpty()) {
             content.errorLine(

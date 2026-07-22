@@ -34,7 +34,7 @@ import net.markdrew.biblebowl.client.TbbApi
 
 /**
  * Tester IDs + ZipGrade export (registration backlog item 13, F7): every contestant this season
- * with their stable per-site tester ID, workbook-style external ID, and class (congregation code),
+ * with their stable season-wide tester ID, workbook-style external ID, and class (congregation code),
  * plus the per-site ZipGrade import CSV — ZipGrade is still the primary scan-grading path for
  * 2027. Loading the screen is what assigns numbers to new testers (append-only; existing numbers
  * never change, so nametags can print early). Gated (and server-enforced) on event-wide
@@ -91,7 +91,7 @@ fun AdminTestersScreen(api: TbbApi) {
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Warnings(rows)
+        Warnings(season.multiSite, rows)
 
         LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             items(rows, key = { it.rosterEntryId }) { row -> TesterRow(season.multiSite, row) }
@@ -106,8 +106,7 @@ private fun TesterRow(multiSite: Boolean, row: TesterRowDto) {
             if (row.testerId != null) {
                 Text(row.testerId.toString(), fontWeight = FontWeight.SemiBold)
             } else {
-                Text("no site", style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.tertiary, fontWeight = FontWeight.SemiBold)
+                Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Column(Modifier.weight(1f)) {
@@ -129,16 +128,16 @@ private fun TesterRow(multiSite: Boolean, row: TesterRowDto) {
 
 /** Data problems a registrar should fix before exporting: missing site pins or class codes. */
 @Composable
-private fun Warnings(rows: List<TesterRowDto>) {
-    val unpinned = rows.count { it.testerId == null }
+private fun Warnings(multiSite: Boolean, rows: List<TesterRowDto>) {
+    val unpinned = if (multiSite) rows.count { it.siteId == null } else 0
     if (unpinned > 0) {
         Text(
-            "$unpinned tester(s) can't be numbered yet — their congregation hasn't picked an " +
-                "event site. Pin the site on the registration desk.",
+            "$unpinned tester(s) have no event site — ZipGrade rosters and nametag sheets " +
+                "are per site. Pin the site on the registration desk.",
             color = MaterialTheme.colorScheme.error,
         )
     }
-    val codeless = rows.filter { it.testerId != null && it.congregationCode.isBlank() }
+    val codeless = rows.filter { it.congregationCode.isBlank() }
         .map { it.congregationName }.distinct()
     if (codeless.isNotEmpty()) {
         Text(
@@ -151,7 +150,7 @@ private fun Warnings(rows: List<TesterRowDto>) {
 
 /**
  * The ZipGrade student-import sheet, exactly the 2026 workbook's ZipGrade-tab columns. Rows
- * without a tester ID yet (no site pinned) are left out — they aren't importable.
+ * without a tester ID (only possible against an old server) are left out — they aren't importable.
  */
 private fun zipGradeCsv(rows: List<TesterRowDto>): String {
     val header = listOf("Zip Grade ID", "external id", "First Name", "Last Name", "Class")
