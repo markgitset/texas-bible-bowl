@@ -26,6 +26,7 @@ object Routes {
     const val ADMIN_TRIBES = "admin/tribes"
     const val ADMIN_TESTERS = "admin/testers"
     const val ADMIN_USERS = "admin/users"
+    const val ADMIN_MERGE_PEOPLE = "admin/people"
 }
 
 /**
@@ -66,5 +67,6 @@ fun routeLabel(route: String): String = when (route) {
     Routes.ADMIN_TRIBES -> "Tribes"
     Routes.ADMIN_TESTERS -> "Tester IDs"
     Routes.ADMIN_USERS -> "Users"
+    Routes.ADMIN_MERGE_PEOPLE -> "Merge People"
     else -> "Study Resources"
 }

@@ -53,6 +53,7 @@ import net.markdrew.biblebowl.app.screens.AdminCountsScreen
 import net.markdrew.biblebowl.app.screens.AdminHousingScreen
 import net.markdrew.biblebowl.app.screens.AdminRegistrationsScreen
 import net.markdrew.biblebowl.app.screens.AdminTestersScreen
+import net.markdrew.biblebowl.app.screens.AdminMergePeopleScreen
 import net.markdrew.biblebowl.app.screens.AdminTribesScreen
 import net.markdrew.biblebowl.app.screens.AdminUsersScreen
 import net.markdrew.biblebowl.app.screens.AuthScreen
@@ -390,6 +391,13 @@ private fun AppNavHost(
             if (user != null && Permission.USER_MANAGE in user.permissions) {
                 AdminUsersScreen(api, currentUser = user, onUserChange = onUserChange)
             } else AuthScreen(api, onSignedIn = onUserChange)
+        }
+        composable(Routes.ADMIN_MERGE_PEOPLE) {
+            FeatureGate(LocalSeason.current.registrationEnabled, user) {
+                if (user != null && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
+                    AdminMergePeopleScreen(api)
+                } else AuthScreen(api, onSignedIn = onUserChange)
+            }
         }
     }
 

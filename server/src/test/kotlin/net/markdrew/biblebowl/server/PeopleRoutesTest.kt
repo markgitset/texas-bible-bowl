@@ -21,6 +21,7 @@ import net.markdrew.biblebowl.api.ClaimPersonRequest
 import net.markdrew.biblebowl.api.ClaimPersonResponse
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.MyPeopleResponse
+import net.markdrew.biblebowl.api.PeopleSearchResponse
 import net.markdrew.biblebowl.api.PersonRelation
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.Role
@@ -177,5 +178,54 @@ class PeopleRoutesTest {
         }.body()
         assertEquals(keepId, merged.person.person.id)
         assertEquals(setOf(season.eventYear, "2028"), merged.person.participations.map { it.seasonYear }.toSet())
+    }
+
+    @Test
+    fun searchPeopleIsRegistrarGatedAndMatchesByName() = testApplication {
+        val users = InMemoryUserRepository()
+        val congregations = InMemoryCongregationRepository()
+        val registrations = InMemoryRegistrationRepository(congregations)
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(season),
+                congregations = congregations, registrations = registrations)
+        }
+        val api = createClient {
+            install(ContentNegotiation) { json(json) }
+            defaultRequest { contentType(ContentType.Application.Json) }
+        }
+
+        val coach = users.create("srchcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = net.markdrew.biblebowl.server.security.Passwords.hash("password123"),
+            roles = listOf(RoleGrant(Role.COACH)))
+        val cong = (congregations.create(
+            CreateCongregationRequest("Search Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        ) as CreateCongregationResult.Created).congregation
+        val team = assertNotNull(registrations.addTeam(cong.id, season.eventYear, "Team A"))
+        listOf("Sam" to "2013-05-01", "Samuel" to "2013-05-02", "Bethany" to "2013-05-03").forEach { (n, b) ->
+            registrations.addMember(team.id, UpsertRosterEntryRequest(n, birthdate = b, shirtSize = ShirtSize.YM, gender = Gender.MALE))
+        }
+
+        // A non-registrar account is refused.
+        val parent: AuthResponse = api.post("/auth/register") {
+            setBody(RegisterRequest("srchparent@tbb.org", "password123", "Parent", adult = true))
+        }.body()
+        assertEquals(HttpStatusCode.Forbidden, api.get("/admin/people?query=sam") {
+            header(HttpHeaders.Authorization, "Bearer ${parent.token}")
+        }.status)
+
+        val registrar: AuthResponse = api.post("/auth/register") {
+            setBody(RegisterRequest("srchreg@tbb.org", "password123", "Reg", adult = true))
+        }.body()
+        users.addRoleGrant(registrar.user.id, RoleGrant(Role.REGISTRAR))
+        fun search(q: String): List<String> = kotlinx.coroutines.runBlocking {
+            api.get("/admin/people?query=$q") { header(HttpHeaders.Authorization, "Bearer ${registrar.token}") }
+                .body<PeopleSearchResponse>().people.map { it.person.name }
+        }
+        // Case-insensitive substring match, name-sorted.
+        assertEquals(listOf("Sam", "Samuel"), search("SAM"))
+        // A blank query lists everyone.
+        assertEquals(listOf("Bethany", "Sam", "Samuel"), search(""))
     }
 }

@@ -13,6 +13,7 @@ import net.markdrew.biblebowl.api.ClaimPersonResponse
 import net.markdrew.biblebowl.api.MergePeopleRequest
 import net.markdrew.biblebowl.api.MergePeopleResponse
 import net.markdrew.biblebowl.api.MyPeopleResponse
+import net.markdrew.biblebowl.api.PeopleSearchResponse
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.PersonRelation
 import net.markdrew.biblebowl.server.data.ClaimCodes
@@ -84,6 +85,16 @@ fun Route.peopleRoutes(
                 pw.copy(person = pw.person.copy(relation = relation))
             }
             call.respond(MyPeopleResponse(withRelation))
+        }
+
+        // Registrar tool: search people by name (blank lists all) to find merge candidates. The
+        // merge endpoint takes person ids, and nothing else exposes them, so this is the lookup.
+        get("/admin/people") {
+            val user = currentUser(users) ?: return@get
+            if (!requireRegistrationFeature(user, seasons)) return@get
+            if (!requireEventWidePermission(user, Permission.REGISTRATION_MANAGE)) return@get
+            val query = call.request.queryParameters["query"].orEmpty()
+            call.respond(PeopleSearchResponse(people.searchPeople(query)))
         }
 
         // Registrar tool (schema redesign phase 6): merge two duplicate people. Global person

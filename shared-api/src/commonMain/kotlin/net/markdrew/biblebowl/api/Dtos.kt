@@ -822,6 +822,13 @@ data class ClaimPersonResponse(val person: PersonDto, val relation: PersonRelati
 data class MyPeopleResponse(val people: List<PersonWithParticipationsDto> = emptyList())
 
 /**
+ * `GET /admin/people?query=` (registrar-gated): people whose name matches [query] (blank lists all),
+ * with participations — the lookup that feeds the merge-people tool. Capped server-side.
+ */
+@Serializable
+data class PeopleSearchResponse(val people: List<PersonWithParticipationsDto> = emptyList())
+
+/**
  * Merges two people (`POST /admin/people/merge`, registrar-gated) — the mitigation for the global
  * person-matching that makes duplicates likelier. [keepId] survives and absorbs [mergeId]'s
  * participations, claims, and identity gaps; [mergeId] is deleted. Refused (`409`) when the two
