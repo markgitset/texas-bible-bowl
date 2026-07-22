@@ -26,11 +26,28 @@ import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 private val json = Json { ignoreUnknownKeys = true }
 private val stringListSerializer = ListSerializer(String.serializer())
 
+/** How long a [PostgresUserRepository.findById] cache entry stays valid without a write. */
+private const val CACHE_TTL_MS = 30_000L
+
 class PostgresUserRepository(private val db: Database) : UserRepository {
+
+    /**
+     * [findById] cache: every authenticated request resolves its JWT subject here, costing 2 queries
+     * (user + role grants) against a not-co-located database. Correct on the single-instance server
+     * because every user/role mutation goes through this repository and invalidates; the short TTL
+     * is a backstop for out-of-band edits (manual SQL). Entries are (expiresAtEpochMs, record).
+     */
+    private val cache = ConcurrentHashMap<String, Pair<Long, UserRecord>>()
+
+    private fun cached(record: UserRecord): UserRecord {
+        cache[record.id] = System.currentTimeMillis() + CACHE_TTL_MS to record
+        return record
+    }
 
     override fun create(
         email: String, displayName: String, birthdate: String?, adult: Boolean, passwordHash: String, roles: List<RoleGrant>,
@@ -53,14 +70,18 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
             }
         }
         UserRecord(userId, email.lowercase(), displayName, birthdate, adult, passwordHash, roles.toMutableList())
-    }
+    }.let(::cached)
 
     override fun findByEmail(email: String): UserRecord? = transaction(db) {
         UsersTable.selectAll().where { UsersTable.email eq email.lowercase() }.singleOrNull()?.toUserRecord()
     }
 
-    override fun findById(id: String): UserRecord? = transaction(db) {
-        UsersTable.selectAll().where { UsersTable.id eq id }.singleOrNull()?.toUserRecord()
+    override fun findById(id: String): UserRecord? {
+        cache[id]?.let { (expiresAt, record) -> if (expiresAt > System.currentTimeMillis()) return record }
+        val record = transaction(db) {
+            UsersTable.selectAll().where { UsersTable.id eq id }.singleOrNull()?.toUserRecord()
+        }
+        return record?.let(::cached) ?: run { cache.remove(id); null }
     }
 
     override fun updateProfile(
@@ -82,8 +103,11 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
                 it[contactPhone] = contact?.phone?.trim() ?: ""
                 it[contactPreference] = contact?.preference?.name
             }
-            if (updated == 0) null else findById(userId)
-        }
+            if (updated == 0) null else {
+                cache.remove(userId)
+                UsersTable.selectAll().where { UsersTable.id eq userId }.singleOrNull()?.toUserRecord()
+            }
+        }?.let(::cached)
 
     override fun addRoleGrant(userId: String, grant: RoleGrant) {
         transaction(db) {
@@ -94,6 +118,7 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
                 it[scopeId] = grant.scopeId
             }
         }
+        cache.remove(userId)
     }
 
     override fun removeRoleGrant(userId: String, grant: RoleGrant): Boolean = transaction(db) {
@@ -105,7 +130,7 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
                 (scopeType eq grant.scopeType.name) and
                 (grant.scopeId?.let { scopeId eq it } ?: scopeId.isNull())
         } > 0
-    }
+    }.also { cache.remove(userId) }
 
     override fun search(query: String, limit: Int): List<UserRecord> {
         if (query.isBlank()) return emptyList()

@@ -2,6 +2,9 @@ package net.markdrew.biblebowl.server.routes
 
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.auth.authenticate
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import io.ktor.server.request.receive
 import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
@@ -368,15 +371,6 @@ fun Route.registrationRoutes(
             val contestantId = call.parameters["contestantId"]!!
             if (!requireCongregationEditor(user, congregationId, seasons)) return@post
             val season = seasons.current()
-            // Targeted lookup — don't recompute the whole candidate list to eligibility-check one id.
-            val eligible = registrations.returningContestant(congregationId, season.eventYear, contestantId)
-                ?.let { season.isEligibleReturningCandidate(it) } == true
-            if (!eligible) {
-                return@post call.respond(
-                    HttpStatusCode.Conflict,
-                    ApiError("not_eligible", "That contestant isn't an eligible returning contestant this season"),
-                )
-            }
             val req = call.receive<EnrollContestantRequest>()
             // A seeded youth's first enrollment supplies the real birthdate — validate it like any
             // new roster entry's (grades 3–12); the repository requires it when the seed lacks one.
@@ -386,8 +380,11 @@ fun Route.registrationRoutes(
                     ApiError("invalid_birthdate", "The birthdate (YYYY-MM-DD) must land in grades 3–12"),
                 )
             }
+            // Age eligibility is checked inside the enroll transaction (one fewer round of queries
+            // than prefetching the candidate); an unknown id answers like an ineligible one.
             when (registrations.enrollContestant(
                 congregationId, season.eventYear, contestantId, req.shirtSize, req.teamId, req.birthdate,
+                eligible = { season.isEligibleReturningCandidate(it) },
             )) {
                 EnrollResult.Enrolled ->
                     respondRegistrationUpdate(congregationId, seasons, registrations)
@@ -395,8 +392,11 @@ fun Route.registrationRoutes(
                     call.respond(HttpStatusCode.Conflict, ApiError("roster_full", "A team may have at most 4 contestants"))
                 EnrollResult.TeamNotFound ->
                     call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such team for this registration"))
-                EnrollResult.ContestantNotFound ->
-                    call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such contestant"))
+                EnrollResult.ContestantNotFound, EnrollResult.NotEligible ->
+                    call.respond(
+                        HttpStatusCode.Conflict,
+                        ApiError("not_eligible", "That contestant isn't an eligible returning contestant this season"),
+                    )
                 EnrollResult.AlreadyEnrolled ->
                     call.respond(HttpStatusCode.Conflict, ApiError("already_enrolled", "That contestant is already on this season's roster"))
                 EnrollResult.BirthdateRequired ->
@@ -594,10 +594,20 @@ private suspend fun RoutingContext.respondRegistrationUpdate(
     registrations: RegistrationRepository,
 ) {
     val season = seasons.current()
-    val registration = registrations.find(congregationId, season.eventYear)!!.withTotal(seasons)
-    val candidates = registrations.returningContestants(congregationId, season.eventYear)
-        .filter { season.isEligibleReturningCandidate(it) }
-    call.respond(RegistrationUpdateResponse(registration, candidates))
+    // The two reads are independent; against a remote database each is a stack of sequential
+    // statement round trips, so running them on parallel connections halves the read wall-time
+    // (and keeps the blocking JDBC work off the request dispatcher).
+    val response = coroutineScope {
+        val registration = async(Dispatchers.IO) {
+            registrations.find(congregationId, season.eventYear)!!.withTotal(seasons)
+        }
+        val candidates = async(Dispatchers.IO) {
+            registrations.returningContestants(congregationId, season.eventYear)
+                .filter { season.isEligibleReturningCandidate(it) }
+        }
+        RegistrationUpdateResponse(registration.await(), candidates.await())
+    }
+    call.respond(response)
 }
 
 /** Guest field rules shared by add and edit; null when the request is valid. */
