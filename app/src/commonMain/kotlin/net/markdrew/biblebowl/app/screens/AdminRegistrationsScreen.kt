@@ -442,20 +442,20 @@ private fun DeskDetail(model: DeskModel, row: RegistrationDeskRowDto) {
     ) {
         if (reg != null) {
             if (model.multiSite) SitePin(model, row.congregation.id, reg)
-            reg.teams.forEach { team -> TeamDetail(model.season, team) }
+            reg.teams.forEach { team -> TeamDetail(model.season, team, row.congregation.id) }
             UnassignedDetail(model, row.congregation.id, reg)
             if (reg.awayMembers.isNotEmpty()) {
                 DetailHeader("On combo teams")
                 reg.awayMembers.forEach { away ->
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
-                            "${away.entry.name} — on ${away.teamName} (${away.congregationName})",
+                            "${away.entry.person.name} — on ${away.teamName} (${away.congregationName})",
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.weight(1f),
                         )
                         // Pulling a member back home is the desk-side undo for a combo placement.
                         if (!model.viewingPast) OutlinedButton(onClick = {
-                            model.assignAndReload { assignMemberTeam(away.entry.id, null) }
+                            model.assignAndReload { assignMemberTeam(away.entry.participation.id, null) }
                         }) { Text("Unassign") }
                     }
                 }
@@ -464,8 +464,8 @@ private fun DeskDetail(model: DeskModel, row: RegistrationDeskRowDto) {
                 DetailHeader("Individual contestants (adults)")
                 reg.individuals.forEach { entry ->
                     Text(
-                        "${entry.name} — shirt ${entry.shirtSize.name}" +
-                            (if (entry.tribeLeaderWilling) " · tribe leader" else ""),
+                        "${entry.person.name} — shirt ${entry.participation.shirtSize?.name ?: "—"}" +
+                            (if (entry.participation.tribeLeaderWilling) " · tribe leader" else ""),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -474,14 +474,14 @@ private fun DeskDetail(model: DeskModel, row: RegistrationDeskRowDto) {
                 DetailHeader("Guests & volunteers")
                 reg.guests.forEach { guest ->
                     val details = listOfNotNull(
-                        model.season.ageTierFor(guest.birthdate).displayName.lowercase(),
-                        guest.gender?.displayName?.lowercase(),
-                        guest.shirtSize?.let { "shirt ${it.name}" } ?: "no shirt",
-                    ) + guest.positions + listOfNotNull("tribe leader".takeIf { guest.tribeLeaderWilling })
+                        model.season.ageTierFor(guest.person.birthdate).displayName.lowercase(),
+                        guest.person.gender?.displayName?.lowercase(),
+                        guest.participation.shirtSize?.let { "shirt ${it.name}" } ?: "no shirt",
+                    ) + guest.participation.positions + listOfNotNull("tribe leader".takeIf { guest.participation.tribeLeaderWilling })
                     Column {
-                        Text("${guest.name} — ${details.joinToString(", ")}",
+                        Text("${guest.person.name} — ${details.joinToString(", ")}",
                             style = MaterialTheme.typography.bodySmall)
-                        guest.contact?.let {
+                        guest.person.contact?.let {
                             Text(contactSummary(it), style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.padding(start = 12.dp))
@@ -516,7 +516,7 @@ private fun DetailHeader(text: String) {
 }
 
 @Composable
-private fun TeamDetail(season: SeasonDto, team: TeamDto) {
+private fun TeamDetail(season: SeasonDto, team: TeamDto, homeCongregationId: String) {
     val division = team.division(season)
     DetailHeader("${team.name} — ${division?.displayName ?: "Empty"}")
     if (team.members.isEmpty()) {
@@ -527,9 +527,9 @@ private fun TeamDetail(season: SeasonDto, team: TeamDto) {
     team.members.forEach { member ->
         val memberDivision = member.division(season)?.displayName ?: "division unknown"
         Text(
-            "${member.name} — $memberDivision, shirt ${member.shirtSize.name}" +
+            "${member.person.name} — $memberDivision, shirt ${member.participation.shirtSize?.name ?: "—"}" +
                 // A visiting (combo-team) member — registered and paid for by their own congregation.
-                (member.congregationName?.let { " · from $it" } ?: ""),
+                (if (member.participation.congregationId != homeCongregationId) " · from ${member.participation.congregationName}" else ""),
             style = MaterialTheme.typography.bodySmall,
         )
     }
@@ -569,7 +569,7 @@ private fun UnassignedDetail(model: DeskModel, congregationId: String, reg: Regi
         reg.unassigned.forEach { member ->
             val division = member.division(model.season)?.displayName ?: "division unknown"
             Text(
-                "${member.name} — $division, shirt ${member.shirtSize.name}",
+                "${member.person.name} — $division, shirt ${member.participation.shirtSize?.name ?: "—"}",
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -584,7 +584,7 @@ private fun UnassignedDetail(model: DeskModel, congregationId: String, reg: Regi
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             val division = member.division(model.season)?.displayName ?: "division unknown"
             Text(
-                "${member.name} — $division, shirt ${member.shirtSize.name}",
+                "${member.person.name} — $division, shirt ${member.participation.shirtSize?.name ?: "—"}",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f),
             )
@@ -600,7 +600,7 @@ private fun UnassignedDetail(model: DeskModel, congregationId: String, reg: Regi
                     enabled = true, placeholder = "Assign to team…",
                 ) { (teamId, _) ->
                     // A combo placement changes the hosting row too — reload the whole desk.
-                    model.assignAndReload { assignMemberTeam(member.id, teamId) }
+                    model.assignAndReload { assignMemberTeam(member.participation.id, teamId) }
                 }
             }
         }
@@ -801,14 +801,14 @@ private fun VolunteersSection(model: DeskModel, rows: List<RegistrationDeskRowDt
     rows.forEach { row ->
         val reg = row.registration ?: return@forEach
         reg.guests.forEach { guest ->
-            guest.positions.forEach { position ->
+            guest.participation.positions.forEach { position ->
                 // getOrPut keeps volunteers whose position was later removed from the season list.
-                byPosition.getOrPut(position) { mutableListOf() } += Volunteer(guest.name, row.congregation.name)
+                byPosition.getOrPut(position) { mutableListOf() } += Volunteer(guest.person.name, row.congregation.name)
             }
-            if (guest.tribeLeaderWilling) tribeLeaders += Volunteer(guest.name, row.congregation.name)
+            if (guest.participation.tribeLeaderWilling) tribeLeaders += Volunteer(guest.person.name, row.congregation.name)
         }
-        reg.individuals.filter { it.tribeLeaderWilling }
-            .forEach { tribeLeaders += Volunteer(it.name, row.congregation.name) }
+        reg.individuals.filter { it.participation.tribeLeaderWilling }
+            .forEach { tribeLeaders += Volunteer(it.person.name, row.congregation.name) }
     }
     if (byPosition.values.all { it.isEmpty() } && tribeLeaders.isEmpty()) return
 
@@ -845,7 +845,7 @@ private fun ShirtOrderSection(model: DeskModel, rows: List<RegistrationDeskRowDt
     if (counts.isEmpty()) return
     val totals: Map<ShirtSize, Int> =
         ShirtSize.entries.associateWith { size -> counts.sumOf { (_, bySize) -> bySize[size] ?: 0 } }
-    val noShirt = rows.sumOf { row -> row.registration?.guests?.count { it.shirtSize == null } ?: 0 }
+    val noShirt = rows.sumOf { row -> row.registration?.guests?.count { it.participation.shirtSize == null } ?: 0 }
 
     SectionHeader("Shirt order (${totals.values.sum()})")
     SaveCsvButton(
