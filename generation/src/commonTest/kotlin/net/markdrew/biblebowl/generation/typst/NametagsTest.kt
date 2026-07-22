@@ -14,7 +14,7 @@ class NametagsTest {
                 NametagSheet(
                     heading = "Texas Bible Bowl 2027 — Bandina",
                     tags = listOf(
-                        Nametag("Amy Kid", "First Church", role = "Junior", testerId = 1),
+                        Nametag("Amy Kid", "First Church", role = "Junior", testerId = 1, externalId = "JE-FC-JEEAGLES-1"),
                         Nametag("Helpful Aunt", "First Church", role = "Volunteer"),
                     ),
                 ),
@@ -25,9 +25,15 @@ class NametagsTest {
             )
         )
         assertContains(source, """(heading: "Texas Bible Bowl 2027 — Bandina", tags: (""")
-        assertContains(source, """(name: "Amy Kid", congregation: "First Church", role: "Junior", tester: "1"),""")
-        // A guest has no tester id — the empty string suppresses the badge's corner number.
-        assertContains(source, """(name: "Helpful Aunt", congregation: "First Church", role: "Volunteer", tester: ""),""")
+        assertContains(
+            source,
+            """(name: "Amy Kid", congregation: "First Church", role: "Junior", tester: "1", external: "JE-FC-JEEAGLES-1"),""",
+        )
+        // A guest has no tester id — the empty strings suppress the badge's corner IDs.
+        assertContains(
+            source,
+            """(name: "Helpful Aunt", congregation: "First Church", role: "Volunteer", tester: "", external: ""),""",
+        )
         assertContains(source, """(heading: "Texas Bible Bowl 2027 — White River", tags: (""")
         assertTrue(
             source.indexOf("Cal Kid") > source.indexOf("White River"),

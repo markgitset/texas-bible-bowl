@@ -2,14 +2,16 @@ package net.markdrew.biblebowl.generation.typst
 
 /**
  * One printable nametag: the attendee's [name] and [congregation], an optional [role] line
- * (division for testers, "Guest"/"Volunteer" for non-contestants), and the [testerId] for testers
- * (item 13, F7 — printed big for test-day seating and scan sheets).
+ * (division for testers, "Guest"/"Volunteer" for non-contestants), and for testers the [testerId]
+ * (item 13, F7 — printed big for test-day seating) with the full [externalId] (the scan-sheet /
+ * ZipGrade ID) in small print above it.
  */
 data class Nametag(
     val name: String,
     val congregation: String,
     val role: String = "",
     val testerId: Int? = null,
+    val externalId: String? = null,
 )
 
 /**
@@ -26,7 +28,8 @@ data class NametagSheet(
  * Emits printable nametags as Typst source (registration backlog item 14, F8 — replaces the
  * workbook's four nametag tabs): 4in × 3in badges (standard badge-insert size), six per US-Letter
  * page with dashed cut guides. Each badge shows the sheet heading, the attendee's name and
- * congregation, the role at bottom-left, and the tester ID big at bottom-right.
+ * congregation, the role at bottom-left, and the tester ID big at bottom-right with the external
+ * (scan-sheet) ID in small print above it.
  */
 fun nametagsTypst(sheets: List<NametagSheet>): String = buildString {
     appendLine(
@@ -48,7 +51,8 @@ fun nametagsTypst(sheets: List<NametagSheet>): String = buildString {
                 """(name: "${escapeTypstString(tag.name)}", """ +
                     """congregation: "${escapeTypstString(tag.congregation)}", """ +
                     """role: "${escapeTypstString(tag.role)}", """ +
-                    """tester: "${tag.testerId?.toString() ?: ""}"),"""
+                    """tester: "${tag.testerId?.toString() ?: ""}", """ +
+                    """external: "${escapeTypstString(tag.externalId ?: "")}"),"""
             )
         }
         appendLine(")),")
@@ -80,7 +84,16 @@ fun nametagsTypst(sheets: List<NametagSheet>): String = buildString {
                   place(bottom + left, text(size: 10pt, fill: gray, tag.role))
                 }
                 #if tag.tester != "" {
-                  place(bottom + right, text(size: 16pt, weight: "bold", "#" + tag.tester))
+                  let number = text(size: 16pt, weight: "bold", "#" + tag.tester)
+                  place(bottom + right, if tag.external != "" {
+                    stack(
+                      spacing: 4pt,
+                      align(right, text(size: 8pt, fill: gray, tag.external)),
+                      align(right, number),
+                    )
+                  } else {
+                    number
+                  })
                 }
               ]
             )

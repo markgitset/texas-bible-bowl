@@ -4,10 +4,12 @@ package net.markdrew.biblebowl.api
  * Tester IDs and the ZipGrade external-ID scheme (registration backlog item 13, F7), matching the
  * 2026 workbook exactly. Each tester (every contestant — youth and adult) gets:
  *
- *  - a **tester ID**: a small sequential number, assigned per event site in stable, append-only
- *    fashion (nametags print early, so a number never changes once assigned). Each site numbers
- *    from its own base so sites' ranges stay disjoint, like 2026 (Bandina 4–142, White River
- *    204–219): site *i* in [SeasonDto.sites] order starts at `i * TESTER_ID_SITE_BLOCK + 1`.
+ *  - a **tester ID**: a small sequential number from one season-wide sequence starting at 1,
+ *    assigned in stable, append-only fashion (nametags print early, so a number never changes
+ *    once assigned, and removals leave gaps rather than reuse). No per-site ranges — the 2026
+ *    workbook's disjoint site blocks were dropped 2026-07-21 (they don't scale); uniqueness is
+ *    simply per season. The first mass assignment orders by site so the initial print still
+ *    comes out site-grouped.
  *  - an **external ID** `{IndCat}-{CongCode}-{TeamPart}-{testerId}` (e.g. `EI-MR-ENT-4`,
  *    `JI-MR-JEMRLC-COMBO-12`): the contestant's OWN division+experience category, their
  *    congregation's two-letter code, the team part (see [testerTeamPart]), and the tester ID.
@@ -16,9 +18,6 @@ package net.markdrew.biblebowl.api
  * ZipGrade (still the primary scan-grading path for 2027, per Mark 2026-07-21) imports these as a
  * per-site CSV: Zip Grade ID, external id, First Name, Last Name, Class.
  */
-
-/** Per-site tester-ID block: site *i* (season order) numbers from `i * block + 1`. */
-const val TESTER_ID_SITE_BLOCK = 200
 
 /** The division's single-letter code in workbook category codes (E/J/S/A). */
 private val Division.codeLetter: Char

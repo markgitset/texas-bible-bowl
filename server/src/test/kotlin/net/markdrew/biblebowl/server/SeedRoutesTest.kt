@@ -38,7 +38,6 @@ import net.markdrew.biblebowl.api.SeedRequest
 import net.markdrew.biblebowl.api.SeedSummary
 import net.markdrew.biblebowl.api.SeedTeamDto
 import net.markdrew.biblebowl.api.ShirtSize
-import net.markdrew.biblebowl.api.TESTER_ID_SITE_BLOCK
 import net.markdrew.biblebowl.api.TesterListResponse
 import net.markdrew.biblebowl.server.data.DEFAULT_SEASON
 import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
@@ -257,12 +256,13 @@ class SeedRoutesTest {
         assertEquals("gone-fishing", regFor("Third Church")?.siteId)
         assertTrue(summary.warnings.single().startsWith("Third Church: site \"gone-fishing\""))
 
-        // End-to-end: every seeded tester numbers inside their resolved site's block.
+        // End-to-end: seeded testers number in the season-wide sequence, site-grouped in season
+        // order on first assignment (Bandina before White River).
         val testers: TesterListResponse = api.get("/admin/testers") {
             header(HttpHeaders.Authorization, "Bearer ${admin.token}")
         }.body()
         assertEquals(1, testers.rows.single { it.name == "Sam Senior" }.testerId)
-        assertEquals(TESTER_ID_SITE_BLOCK + 1, testers.rows.single { it.name == "Ursula Unassigned" }.testerId)
+        assertEquals(2, testers.rows.single { it.name == "Ursula Unassigned" }.testerId)
     }
 
     @Test
