@@ -9,6 +9,7 @@ datetime = "0.7.1"
 exposed = "1.0.0-beta-5"
 postgres = "42.7.7"
 hikari = "7.0.2"
+flyway = "11.8.2"
 logback = "1.5.19"
 koin = "4.1.1"
 activityCompose = "1.9.3"
@@ -49,6 +50,8 @@ exposed-jdbc = { module = "org.jetbrains.exposed:exposed-jdbc", version.ref = "e
 exposed-datetime = { module = "org.jetbrains.exposed:exposed-kotlin-datetime", version.ref = "exposed" }
 postgresql = { module = "org.postgresql:postgresql", version.ref = "postgres" }
 hikari = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
+flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
+flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
 
 # Android
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
