@@ -5,6 +5,9 @@ import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.GuestDto
+import net.markdrew.biblebowl.api.ParticipationDto
+import net.markdrew.biblebowl.api.PersonDto
+import net.markdrew.biblebowl.api.PersonWithParticipationsDto
 import net.markdrew.biblebowl.api.congregationCodeCandidates
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
@@ -120,6 +123,33 @@ sealed interface ClaimResult {
     data object NotFound : ClaimResult
     /** The code matches a person already claimed by a different account. */
     data object AlreadyClaimed : ClaimResult
+}
+
+/** Outcome of the person-centric [PeopleRepository.claimPerson]. */
+sealed interface PersonClaimResult {
+    /** [person] carries email/isAdult so the route can decide SELF vs MANAGED. */
+    data class Claimed(val person: PersonDto) : PersonClaimResult
+    data object NotFound : PersonClaimResult
+    /** The code matches a person already managed by a different account. */
+    data object AlreadyClaimed : PersonClaimResult
+}
+
+/**
+ * The person-centric read/claim surface (schema redesign phase 4) — additive alongside the
+ * roster-entry API. Implemented by the same repositories that own people/participants, so the
+ * two views share one store. The SELF-vs-MANAGED decision and the `users.person_id` link live in
+ * the route (it needs the account email); this layer only sets `people.managed_by_user_id`.
+ */
+interface PeopleRepository {
+    /**
+     * Sets the account [userId] as the manager of the person with claim [code] (idempotent for the
+     * same account). Returns the person so the route can decide whether it's a self-claim.
+     */
+    fun claimPerson(code: String, userId: String): PersonClaimResult
+    /** The person [personId] with their participations (newest season first), or null. */
+    fun personWithParticipations(personId: String): PersonWithParticipationsDto?
+    /** Every person the account manages (people.managed_by = [userId]), with participations. */
+    fun peopleManagedBy(userId: String): List<PersonWithParticipationsDto>
 }
 
 /**
@@ -309,7 +339,7 @@ class InMemoryCongregationRepository : CongregationRepository {
  */
 class InMemoryRegistrationRepository(
     private val congregations: CongregationRepository,
-) : RegistrationRepository {
+) : RegistrationRepository, PeopleRepository {
 
     private data class Reg(
         val id: String,
@@ -867,6 +897,58 @@ class InMemoryRegistrationRepository(
         val owned = contestants.values.filter { it.ownerUserId == userId }.map { it.id }.toSet()
         (memberContestant.filterValues { it in owned }.keys +
             individualContestant.filterValues { it in owned }.keys).toSet()
+    }
+
+    // --- person-centric API (PeopleRepository) --------------------------------
+
+    override fun claimPerson(code: String, userId: String): PersonClaimResult = synchronized(lock) {
+        val c = contestants.values.firstOrNull { it.claimCode == code } ?: return PersonClaimResult.NotFound
+        if (c.ownerUserId != null && c.ownerUserId != userId) return PersonClaimResult.AlreadyClaimed
+        c.ownerUserId = userId
+        PersonClaimResult.Claimed(personDtoOf(c))
+    }
+
+    override fun personWithParticipations(personId: String): PersonWithParticipationsDto? = synchronized(lock) {
+        contestants[personId]?.let { PersonWithParticipationsDto(personDtoOf(it), participationsOf(personId)) }
+    }
+
+    override fun peopleManagedBy(userId: String): List<PersonWithParticipationsDto> = synchronized(lock) {
+        contestants.values
+            .filter { it.ownerUserId == userId }
+            .sortedBy { it.name.lowercase() }
+            .map { PersonWithParticipationsDto(personDtoOf(it), participationsOf(it.id)) }
+    }
+
+    private fun personDtoOf(c: Contestant) = PersonDto(
+        id = c.id, name = c.name, birthdate = c.birthdate,
+        isAdult = c.birthdate == null && c.graduationYear == null,
+        gender = c.gender, graduationYear = c.graduationYear, firstSeasonYear = c.firstSeasonYear,
+        claimCode = c.claimCode,
+    )
+
+    /** A person's participations (team members + individual entries), newest season first. */
+    private fun participationsOf(personId: String): List<ParticipationDto> {
+        fun reg(regId: String?) = regId?.let { r -> regs.values.firstOrNull { it.id == r } }
+        val fromMembers = memberContestant.filterValues { it == personId }.keys.mapNotNull { mid ->
+            val entry = members[mid] ?: return@mapNotNull null
+            val r = reg(memberReg[mid]) ?: return@mapNotNull null
+            val team = memberTeam[mid]?.let { teams[it] }
+            ParticipationDto(
+                id = mid, seasonYear = r.seasonYear, congregationId = r.congregationId,
+                congregationName = congregations.findById(r.congregationId)?.name ?: "?",
+                isContestant = true, teamId = team?.id, teamName = team?.name, shirtSize = entry.shirtSize,
+            )
+        }
+        val fromIndividuals = individualContestant.filterValues { it == personId }.keys.mapNotNull { iid ->
+            val entry = individuals[iid] ?: return@mapNotNull null
+            val r = reg(individualReg[iid]) ?: return@mapNotNull null
+            ParticipationDto(
+                id = iid, seasonYear = r.seasonYear, congregationId = r.congregationId,
+                congregationName = congregations.findById(r.congregationId)?.name ?: "?",
+                isContestant = true, shirtSize = entry.shirtSize, tribeLeaderWilling = entry.tribeLeaderWilling,
+            )
+        }
+        return (fromMembers + fromIndividuals).sortedByDescending { it.seasonYear }
     }
 
     override fun participantIdByName(seasonYear: String, name: String): String? = synchronized(lock) {

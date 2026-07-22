@@ -67,6 +67,8 @@ import net.markdrew.biblebowl.server.routes.bibleRoutes
 import net.markdrew.biblebowl.server.routes.generateRoutes
 import net.markdrew.biblebowl.server.routes.housingRoutes
 import net.markdrew.biblebowl.server.routes.tribeRoutes
+import net.markdrew.biblebowl.server.data.PeopleRepository
+import net.markdrew.biblebowl.server.routes.peopleRoutes
 import net.markdrew.biblebowl.server.routes.questionRoutes
 import net.markdrew.biblebowl.server.routes.registrationRoutes
 import net.markdrew.biblebowl.server.routes.seedRoutes
@@ -208,6 +210,7 @@ fun Application.module(
         seasonRoutes(users, seasons)
         registrationRoutes(users, seasons, congregations, registrations)
         adminRegistrationRoutes(users, seasons, congregations, registrations)
+        (registrations as? PeopleRepository)?.let { peopleRoutes(users, seasons, it) }
         seedRoutes(users, congregations, registrations, seasons)
         housingRoutes(users, seasons, congregations, housing)
         tribeRoutes(users, seasons, tribes)

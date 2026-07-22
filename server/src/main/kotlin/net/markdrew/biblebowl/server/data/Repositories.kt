@@ -23,6 +23,8 @@ data class UserRecord(
     val roles: MutableList<RoleGrant>,
     /** Optional contact details (item 9, F3); null when the user has never provided any. */
     val contact: ContactInfoDto? = null,
+    /** The person this account IS (people.id), set by a self-claim or email match; null until then. */
+    val personId: String? = null,
 )
 
 interface UserRepository {
@@ -47,6 +49,12 @@ interface UserRepository {
         adult: Boolean,
         contact: ContactInfoDto?,
     ): UserRecord?
+    /**
+     * Links this account to the person it IS ([UserRecord.personId] / people.id) — the self side of
+     * the claim model (a self-claim or a signup email match). Idempotent; a no-op if the account
+     * doesn't exist.
+     */
+    fun linkPerson(userId: String, personId: String)
     /** Adds a role grant to an existing user (no-op if the identical grant is already held). */
     fun addRoleGrant(userId: String, grant: RoleGrant)
     /** Removes an exact grant (role + scopeType + scopeId). False if the user or grant wasn't found. */
@@ -113,6 +121,10 @@ class InMemoryUserRepository : UserRepository {
         byId.computeIfPresent(userId) { _, record ->
             record.copy(displayName = displayName, birthdate = birthdate, adult = adult, contact = contact)
         }
+
+    override fun linkPerson(userId: String, personId: String) {
+        byId.computeIfPresent(userId) { _, record -> record.copy(personId = personId) }
+    }
 
     override fun addRoleGrant(userId: String, grant: RoleGrant) {
         byId[userId]?.roles?.let { roles -> synchronized(roles) { if (grant !in roles) roles.add(grant) } }

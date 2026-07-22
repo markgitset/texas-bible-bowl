@@ -38,6 +38,7 @@ import net.markdrew.biblebowl.server.data.DatabaseFactory
 import net.markdrew.biblebowl.server.data.EnrollResult
 import net.markdrew.biblebowl.server.data.ParticipantsTable
 import net.markdrew.biblebowl.server.data.PeopleTable
+import net.markdrew.biblebowl.server.data.PersonClaimResult
 import net.markdrew.biblebowl.server.data.PostgresCongregationRepository
 import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
 import net.markdrew.biblebowl.server.data.PostgresRegistrationRepository
@@ -57,7 +58,9 @@ import net.markdrew.biblebowl.server.data.UsersTable
 import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.server.data.DEFAULT_SEASON
 import net.markdrew.biblebowl.server.security.Passwords
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.v1.jdbc.deleteAll
+import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import java.sql.DriverManager
@@ -799,6 +802,66 @@ class PostgresRepositoryTest {
         users.create("coach@seed.org", "Seed Coach", null, adult = true,
             passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
         assertTrue(users.pendingCoachGrants().isEmpty(), "linked coach no longer pending")
+    }
+
+    @Test
+    fun claimPersonAndManagedPeopleRoundTrip() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+
+        val coach = users.create("pcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("People Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+        val team = assertNotNull(registrations.addTeam(cong.id, "2027", "Team A"))
+        val child = assertIs<AddMemberResult.Added>(registrations.addMember(
+            team.id, UpsertRosterEntryRequest("Kid", birthdate = "2013-05-01", shirtSize = ShirtSize.YL, gender = Gender.FEMALE),
+        )).entry
+        // An adult volunteer person carries an email — the field that drives a SELF claim.
+        registrations.addGuest(cong.id, "2027", UpsertGuestRequest(
+            "Val Volunteer", ShirtSize.AM, gender = Gender.FEMALE,
+            contact = ContactInfoDto(email = "val@x.org"),
+        ))
+
+        val parent = users.create("pparent@tbb.org", "Parent", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
+
+        // Claiming the youth is MANAGED-shaped (not an adult, no email → route would not self-claim).
+        val childClaim = assertIs<PersonClaimResult.Claimed>(registrations.claimPerson(child.claimCode, parent.id)).person
+        assertEquals("Kid", childClaim.name)
+        assertTrue(!childClaim.isAdult)
+
+        // The volunteer person is adult + carries the matching email → the route self-claims them.
+        val valCode = transaction(db) {
+            PeopleTable.selectAll().where { PeopleTable.name eq "Val Volunteer" }.single()[PeopleTable.claimCode]
+        }
+        val valClaim = assertIs<PersonClaimResult.Claimed>(registrations.claimPerson(valCode, parent.id)).person
+        assertTrue(valClaim.isAdult)
+        assertEquals("val@x.org", valClaim.email)
+
+        // Re-claiming by the same account is idempotent; a different account is refused.
+        assertIs<PersonClaimResult.Claimed>(registrations.claimPerson(child.claimCode, parent.id))
+        val other = users.create("pother@tbb.org", "Other", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
+        assertIs<PersonClaimResult.AlreadyClaimed>(registrations.claimPerson(child.claimCode, other.id))
+        assertIs<PersonClaimResult.NotFound>(registrations.claimPerson("ZZZZ9999", parent.id))
+
+        // peopleManagedBy lists the account's own person (created at signup) plus both claimed
+        // people; the child carries her team.
+        val managed = registrations.peopleManagedBy(parent.id)
+        assertEquals(setOf("Parent", "Kid", "Val Volunteer"), managed.map { it.person.name }.toSet())
+        val kid = managed.single { it.person.name == "Kid" }
+        assertEquals(listOf("2027"), kid.participations.map { it.seasonYear })
+        assertEquals("Team A", kid.participations.single().teamName)
+        assertTrue(kid.participations.single().isContestant)
+
+        // linkPerson records the self identity, and it reads back on the user record.
+        users.linkPerson(parent.id, valClaim.id)
+        assertEquals(valClaim.id, users.findById(parent.id)?.personId)
     }
 
     @Test

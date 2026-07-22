@@ -8,6 +8,9 @@ import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.GuestDto
+import net.markdrew.biblebowl.api.ParticipationDto
+import net.markdrew.biblebowl.api.PersonDto
+import net.markdrew.biblebowl.api.PersonWithParticipationsDto
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.ReturningContestantDto
@@ -159,7 +162,73 @@ class PostgresCongregationRepository(private val db: Database) : CongregationRep
  * eligible for a team) and "individuals" (adults — birthdate null), matching the pre-V2 two-table
  * split the wire DTOs still assume. Guests are `is_contestant = false`.
  */
-class PostgresRegistrationRepository(private val db: Database) : RegistrationRepository {
+class PostgresRegistrationRepository(private val db: Database) : RegistrationRepository, PeopleRepository {
+
+    // --- person-centric API (PeopleRepository) --------------------------------
+
+    override fun claimPerson(code: String, userId: String): PersonClaimResult = transaction(db) {
+        val row = PeopleTable.selectAll().where { PeopleTable.claimCode eq code }.singleOrNull()
+            ?: return@transaction PersonClaimResult.NotFound
+        val manager = row[PeopleTable.managedByUserId]
+        if (manager != null && manager != userId) return@transaction PersonClaimResult.AlreadyClaimed
+        PeopleTable.update({ PeopleTable.id eq row[PeopleTable.id] }) { it[managedByUserId] = userId }
+        PersonClaimResult.Claimed(row.toPersonDto())
+    }
+
+    override fun personWithParticipations(personId: String): PersonWithParticipationsDto? = transaction(db) {
+        val row = PeopleTable.selectAll().where { PeopleTable.id eq personId }.singleOrNull()
+            ?: return@transaction null
+        PersonWithParticipationsDto(row.toPersonDto(), participationsOf(personId))
+    }
+
+    override fun peopleManagedBy(userId: String): List<PersonWithParticipationsDto> = transaction(db) {
+        PeopleTable.selectAll().where { PeopleTable.managedByUserId eq userId }
+            .orderBy(PeopleTable.name)
+            .map { it.toPersonDto() }
+            .map { PersonWithParticipationsDto(it, participationsOf(it.id)) }
+    }
+
+    private fun ResultRow.toPersonDto() = PersonDto(
+        id = this[PeopleTable.id],
+        name = this[PeopleTable.name],
+        birthdate = this[PeopleTable.birthdate]?.toString(),
+        isAdult = this[PeopleTable.isAdult],
+        gender = this[PeopleTable.gender]?.let { Gender.valueOf(it) },
+        graduationYear = this[PeopleTable.graduationYear],
+        firstSeasonYear = this[PeopleTable.firstSeasonYear]?.toString(),
+        email = this[PeopleTable.email],
+        contact = ContactInfoDto(
+            address = this[PeopleTable.contactAddress], city = this[PeopleTable.contactCity],
+            state = this[PeopleTable.contactState], zip = this[PeopleTable.contactZip],
+            phone = this[PeopleTable.contactPhone], email = this[PeopleTable.email].orEmpty(),
+            preference = this[PeopleTable.contactPreference]?.let { ContactPreference.valueOf(it) },
+        ).takeUnless { it.isEmpty() },
+        claimCode = this[PeopleTable.claimCode],
+    )
+
+    /** A person's participations (newest season first), joining team + congregation names. */
+    private fun participationsOf(personId: String): List<ParticipationDto> =
+        (ParticipantsTable innerJoin RegistrationsTable innerJoin CongregationsTable)
+            .join(TeamsTable, JoinType.LEFT, onColumn = ParticipantsTable.teamId, otherColumn = TeamsTable.id)
+            .selectAll()
+            .where { ParticipantsTable.personId eq personId }
+            .map { row ->
+                ParticipationDto(
+                    id = row[ParticipantsTable.id],
+                    seasonYear = row[ParticipantsTable.seasonYear].toString(),
+                    congregationId = row[RegistrationsTable.congregationId],
+                    congregationName = row[CongregationsTable.name],
+                    isContestant = row[ParticipantsTable.isContestant],
+                    isCoach = row[ParticipantsTable.isCoach],
+                    teamId = row.getOrNull(TeamsTable.id),
+                    teamName = row.getOrNull(TeamsTable.name),
+                    shirtSize = row[ParticipantsTable.shirtSize]?.let { ShirtSize.valueOf(it) },
+                    positions = decodePositions(row[ParticipantsTable.positions]),
+                    tribeLeaderWilling = row[ParticipantsTable.tribeLeader],
+                    testerId = row[ParticipantsTable.testerId],
+                )
+            }
+            .sortedByDescending { it.seasonYear }
 
     override fun find(congregationId: String, seasonYear: String): RegistrationDto? = transaction(db) {
         regRow(congregationId, seasonYear)?.toDto()
