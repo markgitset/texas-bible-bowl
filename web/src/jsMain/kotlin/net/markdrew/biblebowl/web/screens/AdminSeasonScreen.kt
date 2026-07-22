@@ -255,7 +255,9 @@ object AdminSeasonScreen {
                 list.child("button", "btn btn-outline-primary btn-sm", "Add site") {
                     setAttribute("type", "button")
                     onClick {
-                        draft = draft.copy(sites = draft.sites + EventSiteDto(newSiteId(), ""))
+                        // Blank id: the server assigns the slug of the name on save (stable
+                        // across renames), keeping site ids aligned with the workbook seed's.
+                        draft = draft.copy(sites = draft.sites + EventSiteDto("", ""))
                         renderSites()
                     }
                 }
@@ -263,9 +265,6 @@ object AdminSeasonScreen {
             renderSites()
         }
     }
-
-    private fun newSiteId(): String =
-        "site-" + (1..8).map { "abcdefghijklmnopqrstuvwxyz0123456789".random() }.joinToString("")
 
     /** Dropdown over the standard 10-year rotation; shows each set's name and chapter count. */
     private fun Element.studySetSelect() {

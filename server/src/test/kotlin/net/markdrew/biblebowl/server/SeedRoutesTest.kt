@@ -22,6 +22,7 @@ import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.EnrollContestantRequest
+import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.MyRegistrationResponse
@@ -37,6 +38,8 @@ import net.markdrew.biblebowl.api.SeedRequest
 import net.markdrew.biblebowl.api.SeedSummary
 import net.markdrew.biblebowl.api.SeedTeamDto
 import net.markdrew.biblebowl.api.ShirtSize
+import net.markdrew.biblebowl.api.TESTER_ID_SITE_BLOCK
+import net.markdrew.biblebowl.api.TesterListResponse
 import net.markdrew.biblebowl.server.data.DEFAULT_SEASON
 import net.markdrew.biblebowl.server.data.InMemoryCongregationRepository
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
@@ -201,6 +204,65 @@ class SeedRoutesTest {
         val ellie = candidates.single { it.name == "Ellie Elementary" }
         assertNull(ellie.birthdate)
         assertEquals(2026 + (12 - 4), ellie.graduationYear)
+    }
+
+    @Test
+    fun seedResolvesSiteSlugsSoMultiSiteTesterNumberingWorks() = testApplication {
+        // A multi-site current season whose sites carry pre-slug-convention random ids — exactly
+        // the setup where an unresolved seeded siteId would leave every tester un-numbered.
+        val bandina = EventSiteDto("site-x1y2z3w4", "Bandina")
+        val whiteRiver = EventSiteDto("site-a5b6c7d8", "White River Youth Camp")
+        val season = openSeason.copy(sites = listOf(bandina, whiteRiver))
+        val users = InMemoryUserRepository()
+        val congregations = InMemoryCongregationRepository()
+        val registrations: RegistrationRepository = InMemoryRegistrationRepository(congregations)
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(season),
+                congregations = congregations, registrations = registrations)
+        }
+        val api = jsonClient()
+        val admin = api.loginSeededAdmin(users)
+
+        // The first two siteIds are the converter's name-slugs; the third matches nothing.
+        val seed = SeedRequest(
+            seasonYear = season.eventYear,
+            congregations = listOf(
+                SeedCongregationDto(
+                    name = "First Church", city = "Austin", code = "FC", siteId = "bandina",
+                    teams = listOf(
+                        SeedTeamDto(
+                            "Torch Bearers",
+                            members = listOf(SeedMemberDto("Sam Senior", Gender.MALE, ShirtSize.AM, grade = 10)),
+                        )
+                    ),
+                ),
+                SeedCongregationDto(
+                    name = "Second Church", city = "Waco", code = "SC", siteId = "white-river-youth-camp",
+                    unassigned = listOf(SeedMemberDto("Ursula Unassigned", Gender.FEMALE, ShirtSize.YL, grade = 8)),
+                ),
+                SeedCongregationDto(name = "Third Church", city = "Tyler", code = "TC", siteId = "gone-fishing"),
+            ),
+        )
+        val summary: SeedSummary = api.post("/admin/seed") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(seed)
+        }.body()
+
+        // Slugged siteIds resolved to the season's real site ids; the unknown one is kept + warned.
+        fun regFor(name: String) =
+            registrations.find(congregations.listAll().single { it.name == name }.id, season.eventYear)
+        assertEquals(bandina.id, regFor("First Church")?.siteId)
+        assertEquals(whiteRiver.id, regFor("Second Church")?.siteId)
+        assertEquals("gone-fishing", regFor("Third Church")?.siteId)
+        assertTrue(summary.warnings.single().startsWith("Third Church: site \"gone-fishing\""))
+
+        // End-to-end: every seeded tester numbers inside their resolved site's block.
+        val testers: TesterListResponse = api.get("/admin/testers") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+        }.body()
+        assertEquals(1, testers.rows.single { it.name == "Sam Senior" }.testerId)
+        assertEquals(TESTER_ID_SITE_BLOCK + 1, testers.rows.single { it.name == "Ursula Unassigned" }.testerId)
     }
 
     @Test

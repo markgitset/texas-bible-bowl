@@ -214,12 +214,11 @@ private fun SitesEditor(sites: List<EventSiteDto>, onChange: (List<EventSiteDto>
                 }
             }
         }
-        OutlinedButton(onClick = { onChange(sites + EventSiteDto(newSiteId(), "")) }) { Text("Add site") }
+        // Blank id: the server assigns the slug of the name on save (stable across renames),
+        // keeping site ids aligned with the workbook seed's.
+        OutlinedButton(onClick = { onChange(sites + EventSiteDto("", "")) }) { Text("Add site") }
     }
 }
-
-private fun newSiteId(): String =
-    "site-" + (1..8).map { "abcdefghijklmnopqrstuvwxyz0123456789".random() }.joinToString("")
 
 /** Comma-separated volunteer-position list; keeps its own text so typing commas isn't reparsed. */
 @Composable

@@ -328,6 +328,28 @@ class ApplicationTest {
         assertEquals(HttpStatusCode.OK, sited.status)
         val sitedBack: SeasonDto = json.decodeFromString(api.get("/seasons/current").bodyAsText())
         assertEquals(listOf("Bandina", "White River Youth Camp"), sitedBack.sites.map { it.name })
+
+        // New sites arrive from the editors with a blank id and get the slug of their name — the
+        // same rule the workbook seed converter applies — deduped against ids already in the list.
+        val slugged = api.put("/seasons/current") {
+            header(HttpHeaders.Authorization, "Bearer ${admin.token}")
+            setBody(
+                updated.copy(
+                    sites = listOf(
+                        EventSiteDto("", "Bandina"),
+                        EventSiteDto("", "White River Youth Camp"),
+                        EventSiteDto("bandina-north", "Bandina North"),
+                        EventSiteDto("", "Bandina!"), // distinct name, colliding slug → suffixed
+                    )
+                )
+            )
+        }
+        assertEquals(HttpStatusCode.OK, slugged.status)
+        val sluggedBack: SeasonDto = json.decodeFromString(api.get("/seasons/current").bodyAsText())
+        assertEquals(
+            listOf("bandina", "white-river-youth-camp", "bandina-north", "bandina-2"),
+            sluggedBack.sites.map { it.id },
+        )
     }
 
     @Test
