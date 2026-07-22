@@ -16,6 +16,7 @@ import net.markdrew.biblebowl.api.GuestDto
 import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
+import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.ReturningContestantDto
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RosterEntryDto
@@ -47,6 +48,7 @@ import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.clear
 import net.markdrew.biblebowl.web.errorLine
 import net.markdrew.biblebowl.web.onClick
+import net.markdrew.biblebowl.web.showBusy
 import net.markdrew.biblebowl.web.spinner
 import net.markdrew.biblebowl.api.isValidBirthdate
 import org.w3c.dom.Element
@@ -516,7 +518,7 @@ object RegisterScreen {
                             if (site.address.isNotBlank()) child("span", "text-muted", " — ${site.address}")
                         }
                         input.addEventListener("change", {
-                            if (input.checked) mutate { Session.api.setRegistrationSite(cong.id, site.id) }
+                            if (input.checked) mutate(input) { Session.api.setRegistrationSite(cong.id, site.id) }
                         })
                     }
                 }
@@ -557,6 +559,7 @@ object RegisterScreen {
                 if (canEdit) {
                     child("button", "btn btn-outline-danger btn-sm", "Delete") {
                         setAttribute("type", "button")
+                        val btn = this
                         onClick {
                             if (team.members.isEmpty() ||
                                 window.confirm(
@@ -565,7 +568,7 @@ object RegisterScreen {
                                         "they'll move to Unassigned so you can place them on another team.",
                                 )
                             ) {
-                                mutate { Session.api.deleteTeam(team.id) }
+                                mutate(btn) { Session.api.deleteTeam(team.id) }
                             }
                         }
                     }
@@ -577,11 +580,11 @@ object RegisterScreen {
             parent.child("form", "d-flex gap-2 mt-3") {
                 val name = child("input", "form-control w-auto flex-grow-1") as HTMLInputElement
                 name.setAttribute("placeholder", "New team name")
-                child("button", "btn btn-primary", "Add team") { setAttribute("type", "submit") }
+                val addBtn = child("button", "btn btn-primary", "Add team") { setAttribute("type", "submit") }
                 addEventListener("submit", { event ->
                     event.preventDefault()
                     if (name.value.isBlank()) return@addEventListener
-                    mutate { Session.api.addTeam(cong.id, name.value) }
+                    mutate(addBtn) { Session.api.addTeam(cong.id, name.value) }
                 })
             }
         }
@@ -754,13 +757,14 @@ object RegisterScreen {
             }
             child("button", "btn btn-sm btn-primary", "Add") {
                 setAttribute("type", "button")
+                val btn = this
                 onClick {
                     if (birthdate != null && birthdate.value.isBlank()) {
                         error = "${candidate.name} needs a birthdate — the workbook only had a school grade"
                         renderContent()
                         return@onClick
                     }
-                    enroll {
+                    mutate(btn) {
                         Session.api.enrollContestant(
                             congregationId, candidate.contestantId,
                             ShirtSize.valueOf(shirt.value), teamSel.value.ifEmpty { null },
@@ -813,7 +817,8 @@ object RegisterScreen {
                         if (canEdit) {
                             child("button", "btn btn-outline-danger btn-sm", "Remove") {
                                 setAttribute("type", "button")
-                                onClick { mutate { Session.api.deleteIndividual(member.id) } }
+                                val btn = this
+                                onClick { mutate(btn) { Session.api.deleteIndividual(member.id) } }
                             }
                         }
                     }
@@ -833,8 +838,9 @@ object RegisterScreen {
                             val shirt = shirtSelect(this, candidate.lastShirtSize ?: ShirtSize.AM)
                             child("button", "btn btn-sm btn-primary", "Add") {
                                 setAttribute("type", "button")
+                                val btn = this
                                 onClick {
-                                    enroll {
+                                    mutate(btn) {
                                         Session.api.enrollContestant(cong.id, candidate.contestantId, ShirtSize.valueOf(shirt.value), null)
                                     }
                                 }
@@ -849,12 +855,12 @@ object RegisterScreen {
                         val shirt = shirtSelect(this, ShirtSize.AM)
                         val gender = genderSelect(this, null)
                         val tribe = tribeLeaderCheck(this, false)
-                        child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
+                        val addBtn = child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
                         addEventListener("submit", { event ->
                             event.preventDefault()
                             val chosenGender = genderOf(gender)
                             if (name.value.isBlank() || chosenGender == null) return@addEventListener
-                            mutate {
+                            mutate(addBtn) {
                                 Session.api.addIndividual(
                                     cong.id,
                                     UpsertIndividualRequest(
@@ -948,7 +954,8 @@ object RegisterScreen {
                         if (canEdit) {
                             row.child("button", "btn btn-outline-danger btn-sm", "Remove") {
                                 setAttribute("type", "button")
-                                onClick { mutate { Session.api.deleteGuest(guest.id) } }
+                                val btn = this
+                                onClick { mutate(btn) { Session.api.deleteGuest(guest.id) } }
                             }
                         }
                     }
@@ -970,12 +977,12 @@ object RegisterScreen {
                             volunteerLine.classList.toggle("d-none", tier != AgeTier.AGE_9_PLUS)
                             hint.textContent = tierHint(tier)
                         })
-                        addSlot.child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
+                        val addBtn = addSlot.child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
                         addEventListener("submit", { event ->
                             event.preventDefault()
                             val chosenGender = genderOf(gender)
                             if (name.value.isBlank() || chosenGender == null) return@addEventListener
-                            mutate {
+                            mutate(addBtn) {
                                 Session.api.addGuest(
                                     cong.id,
                                     UpsertGuestRequest(
@@ -1168,7 +1175,8 @@ object RegisterScreen {
             if (canEdit) {
                 child("button", "btn btn-outline-danger btn-sm", "Remove") {
                     setAttribute("type", "button")
-                    onClick { mutate { Session.api.deleteRosterEntry(member.id) } }
+                    val btn = this
+                    onClick { mutate(btn) { Session.api.deleteRosterEntry(member.id) } }
                 }
             }
         }
@@ -1206,7 +1214,7 @@ object RegisterScreen {
             option.selected = true
         }
         select.addEventListener("change", {
-            mutate { Session.api.assignMemberTeam(member.id, select.value.ifEmpty { null }) }
+            mutate(select) { Session.api.assignMemberTeam(member.id, select.value.ifEmpty { null }) }
         })
     }
 
@@ -1218,12 +1226,12 @@ object RegisterScreen {
             val shirt = shirtSelect(this, ShirtSize.YM)
             val gender = genderSelect(this, null)
             val firstYear = firstYearCheck(this, false)
-            child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
+            val addBtn = child("button", "btn btn-primary", "Add") { setAttribute("type", "submit") }
             addEventListener("submit", { event ->
                 event.preventDefault()
                 val chosenGender = genderOf(gender)
                 if (name.value.isBlank() || !isValidBirthdate(birthdate.value) || chosenGender == null) return@addEventListener
-                mutate {
+                mutate(addBtn) {
                     Session.api.addRosterEntry(
                         team.id,
                         UpsertRosterEntryRequest(
@@ -1491,6 +1499,7 @@ object RegisterScreen {
             val label = if (reg.status == RegistrationStatus.SUBMITTED) "Update registration" else "Submit registration"
             parent.child("button", "btn btn-primary btn-lg", label) {
                 setAttribute("type", "button")
+                val btn = this
                 onClick {
                     if (siteMissing) {
                         step = 1
@@ -1510,7 +1519,7 @@ object RegisterScreen {
                         renderContent()
                         return@onClick
                     }
-                    mutate { Session.api.submitRegistration(cong.id) }
+                    mutate(btn) { Session.api.submitRegistration(cong.id) }
                 }
             }
         }
@@ -1518,30 +1527,22 @@ object RegisterScreen {
 
     // --- shared -----------------------------------------------------------------------------
 
-    /** Runs a mutation, adopts the returned registration, and re-renders (API errors show inline). */
-    private fun mutate(call: suspend () -> RegistrationDto) {
+    /**
+     * Runs a mutation, adopts the returned registration + returning candidates, and re-renders
+     * (API errors show inline). Every mutation response carries the recomputed candidate list, so
+     * one round trip keeps the whole roster step in sync — enrolling consumes a candidate, and
+     * removing a prior-season contestant re-offers them. [trigger] (the clicked button or changed
+     * control) is disabled immediately — with a spinner on buttons — until the re-render.
+     */
+    private fun mutate(trigger: HTMLElement? = null, call: suspend () -> RegistrationUpdateResponse) {
+        trigger?.showBusy()
         Shell.scope.launch {
             try {
                 val updated = call()
-                loaded = loaded?.copy(registration = updated)
-                error = null
-            } catch (e: Throwable) {
-                error = e.message ?: "Something went wrong"
-            }
-            renderContent()
-        }
-    }
-
-    /**
-     * Like [mutate] but re-fetches the whole registration afterward — enrolling a returning
-     * contestant both updates the roster and removes them from the candidate list, so a plain
-     * registration swap isn't enough.
-     */
-    private fun enroll(call: suspend () -> RegistrationDto) {
-        Shell.scope.launch {
-            try {
-                call()
-                loaded = Session.api.myRegistration()
+                loaded = loaded?.copy(
+                    registration = updated.registration,
+                    returningCandidates = updated.returningCandidates,
+                )
                 error = null
             } catch (e: Throwable) {
                 error = e.message ?: "Something went wrong"

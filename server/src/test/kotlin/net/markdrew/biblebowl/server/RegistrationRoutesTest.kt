@@ -35,6 +35,7 @@ import net.markdrew.biblebowl.api.MyRegistrationResponse
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.RegistrationDto
+import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
@@ -377,13 +378,13 @@ class RegistrationRoutesTest {
         // Teams + roster.
         val withTeam: RegistrationDto = api.post("/registration/${congregation.id}/teams") {
             asCoach(); setBody(UpsertTeamRequest("Team Alpha"))
-        }.body()
+        }.regBody()
         assertEquals(RegistrationStatus.DRAFT, withTeam.status)
         val teamId = withTeam.teams.single().id
 
         val withMember: RegistrationDto = api.post("/registration/teams/$teamId/members") {
             asCoach(); setBody(UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE, inexperienced = true))
-        }.body()
+        }.regBody()
         val entry = withMember.teams.single().members.single()
         assertEquals("2013-05-01", entry.birthdate)
         assertEquals(Gender.MALE, entry.gender)
@@ -416,7 +417,7 @@ class RegistrationRoutesTest {
         // Adults can't be placed on a team — they register as individual contestants.
         val withAdult: RegistrationDto = api.post("/registration/${congregation.id}/individuals") {
             asCoach(); setBody(UpsertIndividualRequest("Pat Adult", ShirtSize.AXL, Gender.FEMALE))
-        }.body()
+        }.regBody()
         val adult = withAdult.individuals.single()
         assertNull(adult.birthdate, "individuals never carry a birthdate")
         assertEquals(Gender.FEMALE, adult.gender)
@@ -426,11 +427,11 @@ class RegistrationRoutesTest {
 
         val editedAdult: RegistrationDto = api.put("/registration/individuals/${adult.id}") {
             asCoach(); setBody(UpsertIndividualRequest("Pat A.", ShirtSize.AM, Gender.FEMALE))
-        }.body()
+        }.regBody()
         assertEquals("Pat A.", editedAdult.individuals.single().name)
 
         // Submit, then resume shows SUBMITTED with the full roster and total.
-        val submitted: RegistrationDto = api.post("/registration/${congregation.id}/submit") { asCoach() }.body()
+        val submitted: RegistrationDto = api.post("/registration/${congregation.id}/submit") { asCoach() }.regBody()
         assertEquals(RegistrationStatus.SUBMITTED, submitted.status)
         assertNotNull(submitted.submittedAt)
         assertEquals(5 * 8500, submitted.totalCents)
@@ -442,13 +443,13 @@ class RegistrationRoutesTest {
         // Still editable until the deadline: rename team, edit + delete a member, re-submit.
         val renamed: RegistrationDto = api.put("/registration/teams/$teamId") {
             asCoach(); setBody(UpsertTeamRequest("Team Omega"))
-        }.body()
+        }.regBody()
         assertEquals("Team Omega", renamed.teams.single().name)
         val memberId = renamed.teams.single().members.first().id
-        val afterDelete: RegistrationDto = api.delete("/registration/members/$memberId") { asCoach() }.body()
+        val afterDelete: RegistrationDto = api.delete("/registration/members/$memberId") { asCoach() }.regBody()
         assertEquals(3, afterDelete.teams.single().members.size)
         val afterAdultDelete: RegistrationDto =
-            api.delete("/registration/individuals/${adult.id}") { asCoach() }.body()
+            api.delete("/registration/individuals/${adult.id}") { asCoach() }.regBody()
         assertEquals(0, afterAdultDelete.individuals.size)
         assertEquals(3 * 8500, afterAdultDelete.totalCents)
         assertEquals(HttpStatusCode.OK, api.post("/registration/${congregation.id}/submit") { asCoach() }.status)
@@ -489,12 +490,12 @@ class RegistrationRoutesTest {
 
         val pinned: RegistrationDto = api.put("/registration/${congregation.id}/site") {
             asCoach(); setBody(SetRegistrationSiteRequest(whiteRiver.id))
-        }.body()
+        }.regBody()
         assertEquals(whiteRiver.id, pinned.siteId)
 
         val submitted = api.post("/registration/${congregation.id}/submit") { asCoach() }
         assertEquals(HttpStatusCode.OK, submitted.status)
-        assertEquals(whiteRiver.id, submitted.body<RegistrationDto>().siteId)
+        assertEquals(whiteRiver.id, submitted.body<RegistrationUpdateResponse>().registration.siteId)
 
         // Picking a site is part of the congregation step: for a fresh congregation it creates the
         // draft registration itself, before any team exists.
@@ -506,7 +507,7 @@ class RegistrationRoutesTest {
         }.body()
         val early: RegistrationDto = api.put("/registration/${cong2.id}/site") {
             asCoach2(); setBody(SetRegistrationSiteRequest(bandina.id))
-        }.body()
+        }.regBody()
         assertEquals(RegistrationStatus.DRAFT, early.status)
         assertEquals(bandina.id, early.siteId)
     }
@@ -544,7 +545,7 @@ class RegistrationRoutesTest {
         assertEquals(HttpStatusCode.BadRequest, noShirt.status, "a shirt size is required except for under-3s")
         val withVolunteer: RegistrationDto = api.post("/registration/${cong.id}/guests") {
             asCoach(); setBody(UpsertGuestRequest("Aunt Vol", ShirtSize.AM, gender = Gender.FEMALE))
-        }.body()
+        }.regBody()
         val volunteer = withVolunteer.guests.single()
         assertNull(volunteer.birthdate, "no birthdate collected for adult guests")
         assertEquals(Gender.FEMALE, volunteer.gender)
@@ -555,7 +556,7 @@ class RegistrationRoutesTest {
         // any stray shirt selection is dropped).
         val teamId = api.post("/registration/${cong.id}/teams") {
             asCoach(); setBody(UpsertTeamRequest("Team A"))
-        }.body<RegistrationDto>().teams.single().id
+        }.body<RegistrationUpdateResponse>().registration.teams.single().id
         api.post("/registration/teams/$teamId/members") {
             asCoach(); setBody(UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE))
         }
@@ -568,7 +569,7 @@ class RegistrationRoutesTest {
         }
         val withBaby: RegistrationDto = api.post("/registration/${cong.id}/guests") {
             asCoach(); setBody(UpsertGuestRequest("Baby Sib", ShirtSize.YS, birthdate = "2025-06-15", gender = Gender.FEMALE))
-        }.body()
+        }.regBody()
         assertEquals(1, withBaby.contestantCount)
         assertEquals(8500 + 4000 + 2500, withBaby.totalCents, "under-3 guests bill nothing")
         assertNull(withBaby.guests.first { it.name == "Baby Sib" }.shirtSize, "under-3s get no shirt")
@@ -578,15 +579,15 @@ class RegistrationRoutesTest {
         val contact = ContactInfoDto(phone = "555-0100", email = "aunt@vol.org", preference = ContactPreference.PHONE)
         val edited: RegistrationDto = api.put("/registration/guests/${volunteer.id}") {
             asCoach(); setBody(UpsertGuestRequest("Aunt V.", ShirtSize.AL, gender = Gender.FEMALE, contact = contact))
-        }.body()
+        }.regBody()
         assertEquals("Aunt V.", edited.guests.first { it.id == volunteer.id }.name)
         assertEquals(contact, edited.guests.first { it.id == volunteer.id }.contact)
         val contactCleared: RegistrationDto = api.put("/registration/guests/${volunteer.id}") {
             asCoach()
             setBody(UpsertGuestRequest("Aunt V.", ShirtSize.AL, gender = Gender.FEMALE, contact = ContactInfoDto()))
-        }.body()
+        }.regBody()
         assertNull(contactCleared.guests.first { it.id == volunteer.id }.contact, "all-blank contact collapses")
-        val afterDelete: RegistrationDto = api.delete("/registration/guests/${volunteer.id}") { asCoach() }.body()
+        val afterDelete: RegistrationDto = api.delete("/registration/guests/${volunteer.id}") { asCoach() }.regBody()
         assertEquals(8500 + 2500, afterDelete.totalCents)
         val missing = api.delete("/registration/guests/${volunteer.id}") { asCoach() }
         assertEquals(HttpStatusCode.NotFound, missing.status)
@@ -617,36 +618,36 @@ class RegistrationRoutesTest {
         }.body()
         val teamA = api.post("/registration/${cong.id}/teams") {
             asCoach(); setBody(UpsertTeamRequest("Team A"))
-        }.body<RegistrationDto>().teams.single().id
+        }.body<RegistrationUpdateResponse>().registration.teams.single().id
         val memberId = api.post("/registration/teams/$teamA/members") {
             asCoach(); setBody(UpsertRosterEntryRequest("Timothy", "2013-05-01", ShirtSize.YM, Gender.MALE))
-        }.body<RegistrationDto>().teams.single().members.single().id
+        }.body<RegistrationUpdateResponse>().registration.teams.single().members.single().id
 
         // Deleting the team frees the member to the unassigned pool — not deleted, still billed.
-        val afterDelete: RegistrationDto = api.delete("/registration/teams/$teamA") { asCoach() }.body()
+        val afterDelete: RegistrationDto = api.delete("/registration/teams/$teamA") { asCoach() }.regBody()
         assertTrue(afterDelete.teams.isEmpty())
         assertEquals(listOf("Timothy"), afterDelete.unassigned.map { it.name })
         assertEquals(8500, afterDelete.totalCents, "the unassigned contestant is still one paid contestant")
 
         // A registration may be submitted with unassigned contestants (a registrar places them).
-        val submitted: RegistrationDto = api.post("/registration/${cong.id}/submit") { asCoach() }.body()
+        val submitted: RegistrationDto = api.post("/registration/${cong.id}/submit") { asCoach() }.regBody()
         assertEquals(RegistrationStatus.SUBMITTED, submitted.status)
         assertEquals(1, submitted.unassigned.size)
 
         // Assigning the unassigned contestant onto a fresh team empties the pool.
         val teamB = api.post("/registration/${cong.id}/teams") {
             asCoach(); setBody(UpsertTeamRequest("Team B"))
-        }.body<RegistrationDto>().teams.single { it.name == "Team B" }.id
+        }.body<RegistrationUpdateResponse>().registration.teams.single { it.name == "Team B" }.id
         val assigned: RegistrationDto = api.put("/registration/members/$memberId/team") {
             asCoach(); setBody(AssignMemberTeamRequest(teamB))
-        }.body()
+        }.regBody()
         assertTrue(assigned.unassigned.isEmpty())
         assertEquals(listOf("Timothy"), assigned.teams.single { it.id == teamB }.members.map { it.name })
 
         // Unassigning again (null team) puts them back in the pool.
         val backInPool: RegistrationDto = api.put("/registration/members/$memberId/team") {
             asCoach(); setBody(AssignMemberTeamRequest(null))
-        }.body()
+        }.regBody()
         assertEquals(listOf("Timothy"), backInPool.unassigned.map { it.name })
     }
 
@@ -679,11 +680,14 @@ class RegistrationRoutesTest {
         val contestantId = mine.returningCandidates.single().contestantId
 
         // Enrolling him into 2027 puts him on the roster (unassigned) and starts billing him.
-        val afterEnroll: RegistrationDto = api.post("/registration/${cong.id}/contestants/$contestantId/enroll") {
+        val enrollResponse: RegistrationUpdateResponse = api.post("/registration/${cong.id}/contestants/$contestantId/enroll") {
             asCoach(); setBody(EnrollContestantRequest(ShirtSize.YL))
         }.body()
+        val afterEnroll = enrollResponse.registration
         assertEquals(listOf("Timothy"), afterEnroll.unassigned.map { it.name })
         assertEquals(8500, afterEnroll.totalCents, "enrolling counts him as one paid contestant")
+        assertTrue(enrollResponse.returningCandidates.isEmpty(),
+            "the mutation response itself carries the pared candidate list — no refetch needed")
 
         // He's no longer a candidate, and re-enrolling / a bogus contestant are both rejected.
         assertTrue(api.get("/registration/mine") { asCoach() }.body<MyRegistrationResponse>().returningCandidates.isEmpty())
@@ -701,8 +705,15 @@ class RegistrationRoutesTest {
         assertNull(adult.birthdate, "an adult candidate has no birthdate")
         val enrolledAdult: RegistrationDto = api.post("/registration/${cong.id}/contestants/${adult.contestantId}/enroll") {
             asCoach(); setBody(EnrollContestantRequest(ShirtSize.AM))
-        }.body()
+        }.regBody()
         assertEquals(listOf("Pat Adult"), enrolledAdult.individuals.map { it.name })
+
+        // Removing a prior-season contestant's entry re-offers them as a candidate — again on the
+        // mutation response itself (the durable contestant survives the entry).
+        val afterDelete: RegistrationUpdateResponse =
+            api.delete("/registration/members/${afterEnroll.unassigned.single().id}") { asCoach() }.body()
+        assertTrue(afterDelete.registration.unassigned.isEmpty())
+        assertEquals(listOf("Timothy"), afterDelete.returningCandidates.map { it.name })
     }
 
     @Test
@@ -722,7 +733,7 @@ class RegistrationRoutesTest {
         val teamA = api.post("/registration/${congA.id}/teams") {
             header(HttpHeaders.Authorization, "Bearer ${alice.token}")
             setBody(UpsertTeamRequest("Alpha Team"))
-        }.body<RegistrationDto>().teams.single()
+        }.body<RegistrationUpdateResponse>().registration.teams.single()
 
         val bob = api.signUp("bob@tbb.org", "Bob")
         api.post("/congregations") {
@@ -875,7 +886,7 @@ class RegistrationRoutesTest {
         }.body()
         val teamA = api.post("/registration/${congA.id}/teams") {
             asAlice(); setBody(UpsertTeamRequest("Alpha Team"))
-        }.body<RegistrationDto>().teams.single().id
+        }.body<RegistrationUpdateResponse>().registration.teams.single().id
         api.post("/registration/teams/$teamA/members") {
             asAlice(); setBody(UpsertRosterEntryRequest("Ann", "2013-05-01", ShirtSize.YM, Gender.FEMALE))
         }
@@ -888,10 +899,10 @@ class RegistrationRoutesTest {
         }.body()
         val teamB = api.post("/registration/${congB.id}/teams") {
             asBob(); setBody(UpsertTeamRequest("Beta Team"))
-        }.body<RegistrationDto>().teams.single().id
+        }.body<RegistrationUpdateResponse>().registration.teams.single().id
         val betsy = api.post("/registration/teams/$teamB/members") {
             asBob(); setBody(UpsertRosterEntryRequest("Betsy", "2012-05-01", ShirtSize.YM, Gender.FEMALE))
-        }.body<RegistrationDto>().teams.single().members.single().id
+        }.body<RegistrationUpdateResponse>().registration.teams.single().members.single().id
         api.delete("/registration/teams/$teamB") { asBob() }
 
         // Neither coach may place Betsy on Alpha's team — combo placement is registrar-only.
@@ -911,7 +922,7 @@ class RegistrationRoutesTest {
         val placed: RegistrationDto = api.put("/registration/members/$betsy/team") {
             header(HttpHeaders.Authorization, "Bearer ${registrar.token}")
             setBody(AssignMemberTeamRequest(teamA))
-        }.body()
+        }.regBody()
 
         // The response is Betsy's HOME registration: she left the pool for the away list, and
         // Beta still bills her (she's Beta's one contestant).
@@ -937,7 +948,7 @@ class RegistrationRoutesTest {
         // Betsy's home coach can pull her back to the unassigned pool.
         val pulledBack: RegistrationDto = api.put("/registration/members/$betsy/team") {
             asBob(); setBody(AssignMemberTeamRequest(null))
-        }.body()
+        }.regBody()
         assertEquals(listOf("Betsy"), pulledBack.unassigned.map { it.name })
         assertTrue(pulledBack.awayMembers.isEmpty())
     }
@@ -964,7 +975,7 @@ class RegistrationRoutesTest {
                 "Aunt Vol", ShirtSize.AM, gender = Gender.FEMALE,
                 positions = listOf("Test Grader", "Kitchen Helper"), tribeLeaderWilling = true,
             ))
-        }.body()
+        }.regBody()
         val guest = reg.guests.single()
         assertEquals(listOf("Test Grader", "Kitchen Helper"), guest.positions)
         assertTrue(guest.tribeLeaderWilling)
@@ -986,7 +997,7 @@ class RegistrationRoutesTest {
                 "Little Sib", ShirtSize.YS, birthdate = "2020-06-15", gender = Gender.MALE,
                 positions = listOf("Test Grader"), tribeLeaderWilling = true,
             ))
-        }.body()
+        }.regBody()
         val child = withChild.guests.single { it.name == "Little Sib" }
         assertTrue(child.positions.isEmpty())
         assertFalse(child.tribeLeaderWilling)
@@ -995,7 +1006,7 @@ class RegistrationRoutesTest {
         val withIndividual: RegistrationDto = api.post("/registration/${cong.id}/individuals") {
             asCoach()
             setBody(UpsertIndividualRequest("Adult Ace", ShirtSize.AL, Gender.MALE, tribeLeaderWilling = true))
-        }.body()
+        }.regBody()
         assertTrue(withIndividual.individuals.single().tribeLeaderWilling)
 
         // Editing keeps the volunteer answers editable (drop a position, keep leading).
@@ -1005,7 +1016,7 @@ class RegistrationRoutesTest {
                 "Aunt Vol", ShirtSize.AM, gender = Gender.FEMALE,
                 positions = listOf("Test Grader"), tribeLeaderWilling = true,
             ))
-        }.body()
+        }.regBody()
         assertEquals(listOf("Test Grader"), edited.guests.single { it.name == "Aunt Vol" }.positions)
     }
 }

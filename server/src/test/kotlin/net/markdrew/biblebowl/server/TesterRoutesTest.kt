@@ -29,6 +29,7 @@ import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.RegistrationDto
+import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.SetRegistrationSiteRequest
@@ -115,7 +116,7 @@ class TesterRoutesTest {
         var reg: RegistrationDto = post("/registration/${cong.id}/teams") {
             header(HttpHeaders.Authorization, "Bearer ${coach.token}")
             setBody(UpsertTeamRequest("Team A"))
-        }.body()
+        }.regBody()
         teamBirthdates.forEachIndexed { i, birthdate ->
             reg = post("/registration/teams/${reg.teams.single().id}/members") {
                 header(HttpHeaders.Authorization, "Bearer ${coach.token}")
@@ -125,13 +126,13 @@ class TesterRoutesTest {
                         shirtSize = ShirtSize.YL, gender = Gender.FEMALE,
                     )
                 )
-            }.body()
+            }.regBody()
         }
         if (individualName != null) {
             reg = post("/registration/${cong.id}/individuals") {
                 header(HttpHeaders.Authorization, "Bearer ${coach.token}")
                 setBody(UpsertIndividualRequest(individualName, ShirtSize.AL, Gender.MALE))
-            }.body()
+            }.regBody()
         }
         return Triple(coach, cong, reg)
     }

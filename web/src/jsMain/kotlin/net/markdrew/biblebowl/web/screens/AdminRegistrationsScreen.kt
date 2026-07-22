@@ -6,6 +6,7 @@ import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDeskRowDto
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
+import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.ReturningContestantDto
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.ScopeType
@@ -607,8 +608,8 @@ object AdminRegistrationsScreen {
         return select
     }
 
-    /** Enrolls a returning candidate and drops it from the row's candidate list (roster refreshes too). */
-    private fun deskEnroll(congregationId: String, contestantId: String, call: suspend () -> RegistrationDto) {
+    /** Enrolls a returning candidate — the response carries the row's pared candidate list. */
+    private fun deskEnroll(congregationId: String, contestantId: String, call: suspend () -> RegistrationUpdateResponse) {
         message = null
         Shell.scope.launch {
             try {
@@ -616,8 +617,8 @@ object AdminRegistrationsScreen {
                 data = data?.let { desk ->
                     desk.copy(rows = desk.rows.map { row ->
                         if (row.congregation.id == congregationId) row.copy(
-                            registration = updated,
-                            returningCandidates = row.returningCandidates.filterNot { it.contestantId == contestantId },
+                            registration = updated.registration,
+                            returningCandidates = updated.returningCandidates,
                         ) else row
                     })
                 }
@@ -702,7 +703,7 @@ object AdminRegistrationsScreen {
      * Runs a team assignment and reloads the whole desk: a combo placement touches two
      * congregations' rows (the member's and the hosting team's), so a single-row swap isn't enough.
      */
-    private fun deskAssign(call: suspend () -> RegistrationDto) {
+    private fun deskAssign(call: suspend () -> RegistrationUpdateResponse) {
         message = null
         Shell.scope.launch {
             try {
@@ -742,14 +743,17 @@ object AdminRegistrationsScreen {
     }
 
     /** Runs a desk-side registration mutation and swaps the refreshed registration into its row. */
-    private fun deskMutate(congregationId: String, call: suspend () -> RegistrationDto) {
+    private fun deskMutate(congregationId: String, call: suspend () -> RegistrationUpdateResponse) {
         message = null
         Shell.scope.launch {
             try {
                 val updated = call()
                 data = data?.let { desk ->
                     desk.copy(rows = desk.rows.map { row ->
-                        if (row.congregation.id == congregationId) row.copy(registration = updated) else row
+                        if (row.congregation.id == congregationId) row.copy(
+                            registration = updated.registration,
+                            returningCandidates = updated.returningCandidates,
+                        ) else row
                     })
                 }
             } catch (e: Throwable) {

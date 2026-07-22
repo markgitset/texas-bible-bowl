@@ -645,6 +645,18 @@ data class MyRegistrationResponse(
     val returningCandidates: List<ReturningContestantDto> = emptyList(),
 )
 
+/**
+ * Response of every registration mutation: the updated registration plus the recomputed
+ * returning-candidate list. Carrying the candidates on each response keeps clients in sync in one
+ * round trip — enrolling consumes a candidate, and removing a prior-season contestant makes them
+ * a candidate again (the durable contestant survives their roster entry).
+ */
+@Serializable
+data class RegistrationUpdateResponse(
+    val registration: RegistrationDto,
+    val returningCandidates: List<ReturningContestantDto> = emptyList(),
+)
+
 /** Minimal coach contact for the registration desk — deliberately not a full [UserDto]. */
 @Serializable
 data class CoachContactDto(

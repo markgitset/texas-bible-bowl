@@ -68,6 +68,13 @@ object SeasonsTable : Table("seasons") {
 class PostgresSeasonRepository(private val db: Database) : SeasonRepository {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
 
+    /**
+     * The current season, cached in-process: nearly every request reads it (feature gates, window
+     * checks, fee totals), often several times, so it must not cost a query each time. Safe because
+     * the server runs as a single instance and [update] is the only writer — it refreshes the cache.
+     */
+    private val cached = AtomicReference<SeasonDto?>(null)
+
     init {
         transaction(db) {
             if (SeasonsTable.selectAll().where { SeasonsTable.isCurrent eq true }.count() == 0L) {
@@ -80,12 +87,12 @@ class PostgresSeasonRepository(private val db: Database) : SeasonRepository {
         }
     }
 
-    override fun current(): SeasonDto = transaction(db) {
+    override fun current(): SeasonDto = cached.get() ?: transaction(db) {
         SeasonsTable.selectAll().where { SeasonsTable.isCurrent eq true }
             .firstOrNull()
             ?.let { json.decodeFromString<SeasonDto>(it[SeasonsTable.payload]) }
             ?: DEFAULT_SEASON
-    }
+    }.also(cached::set)
 
     override fun byYear(eventYear: String): SeasonDto? = transaction(db) {
         SeasonsTable.selectAll().where { SeasonsTable.eventYear eq eventYear }
@@ -103,5 +110,5 @@ class PostgresSeasonRepository(private val db: Database) : SeasonRepository {
             it[payload] = json.encodeToString(season)
         }
         season
-    }
+    }.also(cached::set)
 }

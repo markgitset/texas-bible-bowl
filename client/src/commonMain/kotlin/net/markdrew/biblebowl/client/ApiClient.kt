@@ -38,6 +38,7 @@ import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDto
+import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.SaveScoresRequest
@@ -331,44 +332,44 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         client.get("$baseUrl/registration/mine") { authorize() }.bodyOrThrow()
 
     /** Pins the congregation's registration to a season event site (multi-site seasons; creates the draft). */
-    suspend fun setRegistrationSite(congregationId: String, siteId: String): RegistrationDto =
+    suspend fun setRegistrationSite(congregationId: String, siteId: String): RegistrationUpdateResponse =
         client.put("$baseUrl/registration/$congregationId/site") {
             authorize(); contentType(ContentType.Application.Json); setBody(SetRegistrationSiteRequest(siteId))
         }.bodyOrThrow()
 
     /** Adds a team to the congregation's current-season registration (created on first team). */
-    suspend fun addTeam(congregationId: String, name: String): RegistrationDto =
+    suspend fun addTeam(congregationId: String, name: String): RegistrationUpdateResponse =
         client.post("$baseUrl/registration/$congregationId/teams") {
             authorize(); contentType(ContentType.Application.Json); setBody(UpsertTeamRequest(name))
         }.bodyOrThrow()
 
-    suspend fun renameTeam(teamId: String, name: String): RegistrationDto =
+    suspend fun renameTeam(teamId: String, name: String): RegistrationUpdateResponse =
         client.put("$baseUrl/registration/teams/$teamId") {
             authorize(); contentType(ContentType.Application.Json); setBody(UpsertTeamRequest(name))
         }.bodyOrThrow()
 
-    suspend fun deleteTeam(teamId: String): RegistrationDto =
+    suspend fun deleteTeam(teamId: String): RegistrationUpdateResponse =
         client.delete("$baseUrl/registration/teams/$teamId") { authorize() }.bodyOrThrow()
 
     /** Adds a roster entry (server enforces the 4-contestant cap and generates the claim code). */
-    suspend fun addRosterEntry(teamId: String, req: UpsertRosterEntryRequest): RegistrationDto =
+    suspend fun addRosterEntry(teamId: String, req: UpsertRosterEntryRequest): RegistrationUpdateResponse =
         client.post("$baseUrl/registration/teams/$teamId/members") {
             authorize(); contentType(ContentType.Application.Json); setBody(req)
         }.bodyOrThrow()
 
-    suspend fun updateRosterEntry(memberId: String, req: UpsertRosterEntryRequest): RegistrationDto =
+    suspend fun updateRosterEntry(memberId: String, req: UpsertRosterEntryRequest): RegistrationUpdateResponse =
         client.put("$baseUrl/registration/members/$memberId") {
             authorize(); contentType(ContentType.Application.Json); setBody(req)
         }.bodyOrThrow()
 
-    suspend fun deleteRosterEntry(memberId: String): RegistrationDto =
+    suspend fun deleteRosterEntry(memberId: String): RegistrationUpdateResponse =
         client.delete("$baseUrl/registration/members/$memberId") { authorize() }.bodyOrThrow()
 
     /**
      * Moves a youth contestant to [teamId] (same registration, ≤4), or frees it to the unassigned
      * pool when [teamId] is null. 409 when the target team is full. Also usable by a registrar.
      */
-    suspend fun assignMemberTeam(memberId: String, teamId: String?): RegistrationDto =
+    suspend fun assignMemberTeam(memberId: String, teamId: String?): RegistrationUpdateResponse =
         client.put("$baseUrl/registration/members/$memberId/team") {
             authorize(); contentType(ContentType.Application.Json); setBody(AssignMemberTeamRequest(teamId))
         }.bodyOrThrow()
@@ -376,7 +377,8 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     /**
      * Enrolls a returning contestant into the current season — creates this year's roster entry from
      * the durable contestant, on [teamId] (or unassigned when null), with a freshly-collected
-     * [shirtSize]. Returns the updated registration; refetch [myRegistration] for the pared candidate list.
+     * [shirtSize]. Like every registration mutation, the response carries the pared candidate list —
+     * no [myRegistration] refetch needed.
      */
     /** [birthdate] is required for a workbook-seeded youth's first enrollment (records the real one). */
     suspend fun enrollContestant(
@@ -385,42 +387,42 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         shirtSize: ShirtSize,
         teamId: String? = null,
         birthdate: String? = null,
-    ): RegistrationDto =
+    ): RegistrationUpdateResponse =
         client.post("$baseUrl/registration/$congregationId/contestants/$contestantId/enroll") {
             authorize(); contentType(ContentType.Application.Json)
             setBody(EnrollContestantRequest(shirtSize, teamId, birthdate?.takeIf { it.isNotBlank() }))
         }.bodyOrThrow()
 
     /** Adds an individual (adult) contestant — adults compete individually, never on a team. */
-    suspend fun addIndividual(congregationId: String, req: UpsertIndividualRequest): RegistrationDto =
+    suspend fun addIndividual(congregationId: String, req: UpsertIndividualRequest): RegistrationUpdateResponse =
         client.post("$baseUrl/registration/$congregationId/individuals") {
             authorize(); contentType(ContentType.Application.Json); setBody(req)
         }.bodyOrThrow()
 
-    suspend fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RegistrationDto =
+    suspend fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RegistrationUpdateResponse =
         client.put("$baseUrl/registration/individuals/$individualId") {
             authorize(); contentType(ContentType.Application.Json); setBody(req)
         }.bodyOrThrow()
 
-    suspend fun deleteIndividual(individualId: String): RegistrationDto =
+    suspend fun deleteIndividual(individualId: String): RegistrationUpdateResponse =
         client.delete("$baseUrl/registration/individuals/$individualId") { authorize() }.bodyOrThrow()
 
     /** Adds a registered guest — pays by age tier (9+ volunteer, 3–8 child, under-3 free) but is not a contestant. */
-    suspend fun addGuest(congregationId: String, req: UpsertGuestRequest): RegistrationDto =
+    suspend fun addGuest(congregationId: String, req: UpsertGuestRequest): RegistrationUpdateResponse =
         client.post("$baseUrl/registration/$congregationId/guests") {
             authorize(); contentType(ContentType.Application.Json); setBody(req)
         }.bodyOrThrow()
 
-    suspend fun updateGuest(guestId: String, req: UpsertGuestRequest): RegistrationDto =
+    suspend fun updateGuest(guestId: String, req: UpsertGuestRequest): RegistrationUpdateResponse =
         client.put("$baseUrl/registration/guests/$guestId") {
             authorize(); contentType(ContentType.Application.Json); setBody(req)
         }.bodyOrThrow()
 
-    suspend fun deleteGuest(guestId: String): RegistrationDto =
+    suspend fun deleteGuest(guestId: String): RegistrationUpdateResponse =
         client.delete("$baseUrl/registration/guests/$guestId") { authorize() }.bodyOrThrow()
 
     /** Submits (or re-submits) the congregation's registration for the current season. */
-    suspend fun submitRegistration(congregationId: String): RegistrationDto =
+    suspend fun submitRegistration(congregationId: String): RegistrationUpdateResponse =
         client.post("$baseUrl/registration/$congregationId/submit") { authorize() }.bodyOrThrow()
 
     /** Claims a roster entry by its coach-shared code (dashes/case ignored). 404/409 on bad codes. */
