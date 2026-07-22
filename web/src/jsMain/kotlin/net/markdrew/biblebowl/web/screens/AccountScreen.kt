@@ -3,6 +3,9 @@ package net.markdrew.biblebowl.web.screens
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.ContactPreference
+import net.markdrew.biblebowl.api.ParticipationDto
+import net.markdrew.biblebowl.api.PersonRelation
+import net.markdrew.biblebowl.api.PersonWithParticipationsDto
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.division
@@ -48,7 +51,10 @@ object AccountScreen {
         }
 
         profileCard(container, user)
-        if (Session.registrationVisible) claimCard(container)
+        if (Session.registrationVisible) {
+            val reloadPeople = peopleCard(container)
+            claimCard(container, onClaimed = reloadPeople)
+        }
 
         container.child("div", "card section-card mb-3") {
             child("div", "card-body") {
@@ -215,17 +221,96 @@ object AccountScreen {
     }
 
     /**
-     * Claim a roster entry by the coach-shared code, linking it to this account — that link is
-     * what My Scores' owner scoping keys off (dashes/case in the code are tolerated server-side).
+     * The people this account is or manages, with their per-season participations — the list the
+     * claim card feeds. Returns a reload function so a fresh claim can refresh it in place.
      */
-    private fun claimCard(container: Element) {
+    private fun peopleCard(container: Element): () -> Unit {
+        lateinit var body: HTMLElement
         container.child("div", "card section-card mb-3") {
             child("div", "card-body") {
-                child("h5", "card-title", "Claim your contestant entry")
+                child("h5", "card-title", "My people")
                 child(
                     "p", "text-muted",
-                    "On a roster this season? Enter the claim code your coach shared (like ABCD-2345) to " +
-                        "link that entry to this account and see your scores once they're released.",
+                    "Contestants and other attendees you've claimed. You'll see their scores here once " +
+                        "they're released.",
+                )
+                body = child("div") as HTMLElement
+            }
+        }
+
+        fun reload() {
+            body.clear()
+            body.child("p", "text-muted mb-0", "Loading…")
+            Shell.scope.launch {
+                try {
+                    val people = Session.api.myPeople().people
+                    body.clear()
+                    if (people.isEmpty()) {
+                        body.child("p", "text-muted mb-0", "You haven't claimed anyone yet.")
+                        return@launch
+                    }
+                    people.forEach { pwp -> renderPerson(body, pwp) }
+                } catch (e: Throwable) {
+                    body.clear()
+                    body.child("p", "text-danger mb-0", "Couldn't load your people: ${e.message}")
+                }
+            }
+        }
+        reload()
+        return ::reload
+    }
+
+    /** One claimed person: name + relation, division, and a line per season participation. */
+    private fun renderPerson(container: Element, pwp: PersonWithParticipationsDto) {
+        val person = pwp.person
+        container.child("div", "border-top pt-2 mt-2") {
+            child("div", "d-flex align-items-baseline gap-2") {
+                child("span", "fw-semibold", person.name)
+                val relation = if (person.relation == PersonRelation.SELF) "You" else "You manage"
+                child("span", "badge text-bg-secondary", relation)
+            }
+            person.division(Session.season)?.let { division ->
+                child("p", "text-muted small mb-1", "Division: ${division.displayName}")
+            }
+            if (pwp.participations.isEmpty()) {
+                child("p", "text-muted small mb-0", "Not registered for any season yet.")
+            } else {
+                pwp.participations.forEach { p ->
+                    child("p", "small mb-0", participationLine(p))
+                }
+            }
+        }
+    }
+
+    /** "2027 · First Baptist — Contestant, Coach · Team Lions · Tester #12" for one participation. */
+    private fun participationLine(p: ParticipationDto): String {
+        val roles = buildList {
+            if (p.isContestant) add("Contestant")
+            if (p.isCoach) add("Coach")
+            addAll(p.positions)
+        }.joinToString(", ").ifEmpty { "Attendee" }
+        return buildString {
+            append("${p.seasonYear} · ${p.congregationName} — $roles")
+            p.teamName?.let { append(" · Team $it") }
+            p.testerId?.let { append(" · Tester #$it") }
+        }
+    }
+
+    /**
+     * Claim a person by the coach-shared code, linking it to this account — that link is what My
+     * Scores' owner scoping keys off (dashes/case in the code are tolerated server-side). On success
+     * [onClaimed] refreshes the My-people list so the freshly-claimed person appears immediately.
+     */
+    private fun claimCard(container: Element, onClaimed: () -> Unit) {
+        container.child("div", "card section-card mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title", "Claim a contestant")
+                child(
+                    "p", "text-muted",
+                    "Enter the claim code your coach shared (like ABCD-2345) to link a contestant to this " +
+                        "account and see their scores once they're released. If the code is your own and " +
+                        "your email matches, it becomes you; otherwise you'll manage them (e.g. a parent " +
+                        "claiming a child).",
                 )
                 val form = child("form", "d-flex flex-wrap gap-2 align-items-start")
                 val code = (form.child("input", "form-control") as HTMLInputElement).apply {
@@ -244,12 +329,14 @@ object AccountScreen {
                     messageSlot.clear()
                     Shell.scope.launch {
                         try {
-                            val entry = Session.api.claimRosterEntry(code.value)
+                            val result = Session.api.claimPerson(code.value)
                             code.value = ""
+                            onClaimed()
+                            val who = if (result.relation == PersonRelation.SELF) "you" else result.person.name
                             messageSlot.child("p", "tbb-gold fw-semibold mt-2 mb-0") {
-                                append("Claimed ${entry.name}'s entry — see ")
+                                append("Claimed ${result.person.name} (as $who) — see ")
                                 child("a", text = "My scores") { setAttribute("href", "#${Routes.MY_SCORES}") }
-                                append(" once they're released.")
+                                append(" once scores are released.")
                             }
                         } catch (e: Throwable) {
                             messageSlot.child("p", "text-danger mt-2 mb-0", "Claim failed: ${e.message}")
