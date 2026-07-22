@@ -2,9 +2,10 @@ package net.markdrew.biblebowl.server.data
 
 import net.markdrew.biblebowl.api.AwayMemberDto
 import net.markdrew.biblebowl.api.CongregationDto
+import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Gender
-import net.markdrew.biblebowl.api.GuestDto
+import net.markdrew.biblebowl.api.ParticipantDto
 import net.markdrew.biblebowl.api.ParticipationDto
 import net.markdrew.biblebowl.api.PersonDto
 import net.markdrew.biblebowl.api.PersonWithParticipationsDto
@@ -12,7 +13,6 @@ import net.markdrew.biblebowl.api.congregationCodeCandidates
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.ReturningContestantDto
-import net.markdrew.biblebowl.api.RosterEntryDto
 import net.markdrew.biblebowl.api.SeedMemberDto
 import net.markdrew.biblebowl.api.graduationYearFor
 import net.markdrew.biblebowl.api.ShirtSize
@@ -87,7 +87,7 @@ interface CongregationRepository {
 
 /** Outcome of adding a roster entry — the roster cap is enforced inside the repository transaction. */
 sealed interface AddMemberResult {
-    data class Added(val entry: RosterEntryDto) : AddMemberResult
+    data class Added(val entry: ParticipantDto) : AddMemberResult
     data object RosterFull : AddMemberResult
     data object TeamNotFound : AddMemberResult
 }
@@ -115,14 +115,6 @@ sealed interface EnrollResult {
     data object RosterFull : EnrollResult
     /** A workbook-seeded youth (grade, no birthdate) needs a birthdate at first enrollment. */
     data object BirthdateRequired : EnrollResult
-}
-
-/** Outcome of claiming a person by their coach-shared code. */
-sealed interface ClaimResult {
-    data class Claimed(val entry: RosterEntryDto) : ClaimResult
-    data object NotFound : ClaimResult
-    /** The code matches a person already claimed by a different account. */
-    data object AlreadyClaimed : ClaimResult
 }
 
 /** Outcome of the person-centric [PeopleRepository.claimPerson]. */
@@ -190,7 +182,7 @@ interface RegistrationRepository {
     /** Deletes a team, freeing its members to the unassigned pool (they are kept, not deleted). */
     fun deleteTeam(teamId: String): Boolean
     fun addMember(teamId: String, req: UpsertRosterEntryRequest): AddMemberResult
-    fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto?
+    fun updateMember(memberId: String, req: UpsertRosterEntryRequest): ParticipantDto?
     fun deleteMember(memberId: String): Boolean
     /**
      * Moves a member to [teamId] (≤4), or frees it to the pool when null. The team may belong to
@@ -199,12 +191,12 @@ interface RegistrationRepository {
      */
     fun assignMemberToTeam(memberId: String, teamId: String?): AssignResult
     /** Adds an individual (adult) contestant, creating the draft registration if needed. */
-    fun addIndividual(congregationId: String, seasonYear: String, req: UpsertIndividualRequest): RosterEntryDto
-    fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RosterEntryDto?
+    fun addIndividual(congregationId: String, seasonYear: String, req: UpsertIndividualRequest): ParticipantDto
+    fun updateIndividual(individualId: String, req: UpsertIndividualRequest): ParticipantDto?
     fun deleteIndividual(individualId: String): Boolean
     /** Adds a registered guest (paying non-contestant), creating the draft registration if needed. */
-    fun addGuest(congregationId: String, seasonYear: String, req: UpsertGuestRequest): GuestDto
-    fun updateGuest(guestId: String, req: UpsertGuestRequest): GuestDto?
+    fun addGuest(congregationId: String, seasonYear: String, req: UpsertGuestRequest): ParticipantDto
+    fun updateGuest(guestId: String, req: UpsertGuestRequest): ParticipantDto?
     fun deleteGuest(guestId: String): Boolean
     /**
      * Pins the registration to the event site [siteId] (a season [net.markdrew.biblebowl.api.EventSiteDto] id),
@@ -266,15 +258,13 @@ interface RegistrationRepository {
      * (shirt size, team) rather than duplicated, and a person who already carries a birthdate
      * keeps it (the seed only fills identity gaps). Null when the team doesn't exist.
      */
-    fun seedMember(congregationId: String, seasonYear: String, teamId: String?, member: SeedMemberDto): RosterEntryDto?
+    fun seedMember(congregationId: String, seasonYear: String, teamId: String?, member: SeedMemberDto): ParticipantDto?
     /** Every registration for [seasonYear], with full teams/rosters (registration desk). */
     fun listForSeason(seasonYear: String): List<RegistrationDto>
     /** Every season year with at least one registration (any status) — the desk's year picker. */
     fun seasonYears(): List<String>
     /** Sets (non-null) or clears (null) payment received. Null return = no such registration. */
     fun setPaid(registrationId: String, paidAtEpochMs: Long?): RegistrationDto?
-    /** Links the person with claim code [code] to [userId] (durable across seasons). Idempotent for the same account. */
-    fun claimEntry(code: String, userId: String): ClaimResult
     /** Ids of every roster entry (team member or individual) of people claimed by [userId]. */
     fun entryIdsOwnedBy(userId: String): Set<String>
     /**
@@ -402,17 +392,54 @@ class InMemoryRegistrationRepository(
         var ownerUserId: String? = null,
     )
 
+    /**
+     * A youth team-member participation's per-season facts. Identity (name, birthdate, gender,
+     * experience, claim code) is sourced from the linked [Contestant] on read (see [memberDto]);
+     * the snapshot fields here are only fallbacks for the (never-hit) contestant-less case.
+     */
+    private data class MemberEntry(
+        val id: String,
+        var name: String,
+        var birthdate: String?,
+        var shirtSize: ShirtSize,
+        var gender: Gender?,
+        var firstSeasonYear: String?,
+        var claimCode: String,
+    )
+
+    /** An individual (adult) participation's per-season facts; identity from the [Contestant]. */
+    private data class IndividualEntry(
+        val id: String,
+        var name: String,
+        var shirtSize: ShirtSize,
+        var gender: Gender?,
+        var claimCode: String,
+        var tribeLeaderWilling: Boolean = false,
+    )
+
+    /** A guest participation — its own person (guests aren't durable contestants, have no claim code). */
+    private data class GuestEntry(
+        val id: String,
+        var name: String,
+        var shirtSize: ShirtSize?,
+        var birthdate: String?,
+        var gender: Gender?,
+        var positions: List<String> = emptyList(),
+        var tribeLeaderWilling: Boolean = false,
+        var contact: ContactInfoDto? = null,
+    )
+
     private val regs = mutableMapOf<String, Reg>() // key = "$congregationId|$seasonYear"
     private val teams = mutableMapOf<String, Team>()
-    private val members = mutableMapOf<String, RosterEntryDto>()
+    private val members = mutableMapOf<String, MemberEntry>()
     private val memberTeam = mutableMapOf<String, String>() // member id -> team id (absent = unassigned)
     private val memberReg = mutableMapOf<String, String>() // member id -> registration id (always set)
     private val contestants = mutableMapOf<String, Contestant>() // durable person id -> person
     private val memberContestant = mutableMapOf<String, String>() // team member id -> person id
     private val individualContestant = mutableMapOf<String, String>() // individual id -> person id
-    private val individuals = mutableMapOf<String, RosterEntryDto>()
+    private val individuals = mutableMapOf<String, IndividualEntry>()
     private val individualReg = mutableMapOf<String, String>()
-    private val guests = mutableMapOf<String, GuestDto>()
+    private val guests = mutableMapOf<String, GuestEntry>()
     private val guestReg = mutableMapOf<String, String>()
     private val lock = Any()
 
@@ -454,7 +481,7 @@ class InMemoryRegistrationRepository(
         if (team.memberIds.size >= MAX_TEAM_SIZE) return AddMemberResult.RosterFull
         val reg = regs.values.first { it.id == team.regId }
         val (contestantId, firstYear) = findOrCreateContestant(reg.congregationId, req, reg.seasonYear)
-        val entry = RosterEntryDto(
+        val entry = MemberEntry(
             id = UUID.randomUUID().toString(),
             name = req.name.trim(),
             birthdate = req.birthdate,
@@ -468,7 +495,7 @@ class InMemoryRegistrationRepository(
         memberReg[entry.id] = reg.id
         memberContestant[entry.id] = contestantId
         team.memberIds += entry.id
-        AddMemberResult.Added(memberDto(entry.id) ?: entry)
+        AddMemberResult.Added(memberDto(entry.id)!!)
     }
 
     /** True when [contestantId] has an enrollment in a season earlier than [seasonYear]. */
@@ -551,10 +578,10 @@ class InMemoryRegistrationRepository(
         AssignResult.Assigned
     }
 
-    override fun updateMember(memberId: String, req: UpsertRosterEntryRequest): RosterEntryDto? = synchronized(lock) {
+    override fun updateMember(memberId: String, req: UpsertRosterEntryRequest): ParticipantDto? = synchronized(lock) {
         val entry = members[memberId] ?: return null
         val reg = memberReg[memberId]?.let { regId -> regs.values.firstOrNull { it.id == regId } }
-            ?: return entry
+            ?: return memberDto(memberId)
         val (contestantId, firstYear) =
             findOrCreateContestant(reg.congregationId, req, reg.seasonYear, exceptEntryId = memberId)
         members[memberId] = entry.copy(
@@ -593,13 +620,12 @@ class InMemoryRegistrationRepository(
         congregationId: String,
         seasonYear: String,
         req: UpsertIndividualRequest,
-    ): RosterEntryDto = synchronized(lock) {
+    ): ParticipantDto = synchronized(lock) {
         val reg = regFor(congregationId, seasonYear)
         val contestantId = findOrCreateAdultContestant(congregationId, req, seasonYear)
-        val entry = RosterEntryDto(
+        val entry = IndividualEntry(
             id = UUID.randomUUID().toString(),
             name = req.name.trim(),
-            birthdate = null,
             shirtSize = req.shirtSize,
             gender = req.gender,
             claimCode = contestants.getValue(contestantId).claimCode,
@@ -637,7 +663,7 @@ class InMemoryRegistrationRepository(
         return contestant.id
     }
 
-    override fun updateIndividual(individualId: String, req: UpsertIndividualRequest): RosterEntryDto? =
+    override fun updateIndividual(individualId: String, req: UpsertIndividualRequest): ParticipantDto? =
         synchronized(lock) {
             val entry = individuals[individualId] ?: return null
             individuals[individualId] = entry.copy(
@@ -667,25 +693,25 @@ class InMemoryRegistrationRepository(
         true
     }
 
-    override fun addGuest(congregationId: String, seasonYear: String, req: UpsertGuestRequest): GuestDto =
+    override fun addGuest(congregationId: String, seasonYear: String, req: UpsertGuestRequest): ParticipantDto =
         synchronized(lock) {
             val reg = regFor(congregationId, seasonYear)
-            val guest = GuestDto(
+            val guest = GuestEntry(
                 UUID.randomUUID().toString(), req.name.trim(), req.shirtSize, req.birthdate, req.gender,
                 positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling, contact = req.contact,
             )
             guests[guest.id] = guest
             guestReg[guest.id] = reg.id
-            guest
+            guestDto(guest.id)!!
         }
 
-    override fun updateGuest(guestId: String, req: UpsertGuestRequest): GuestDto? = synchronized(lock) {
+    override fun updateGuest(guestId: String, req: UpsertGuestRequest): ParticipantDto? = synchronized(lock) {
         val guest = guests[guestId] ?: return null
         guests[guestId] = guest.copy(
             name = req.name.trim(), shirtSize = req.shirtSize, birthdate = req.birthdate, gender = req.gender,
             positions = req.positions, tribeLeaderWilling = req.tribeLeaderWilling, contact = req.contact,
         )
-        guests[guestId]
+        guestDto(guestId)
     }
 
     override fun deleteGuest(guestId: String): Boolean = synchronized(lock) {
@@ -812,8 +838,8 @@ class InMemoryRegistrationRepository(
         if (contestant.birthdate == null) {
             val already = individualContestant.any { (iid, cid) -> cid == contestantId && individualReg[iid] == reg.id }
             if (already) return EnrollResult.AlreadyEnrolled
-            val entry = RosterEntryDto(
-                id = UUID.randomUUID().toString(), name = contestant.name, birthdate = null,
+            val entry = IndividualEntry(
+                id = UUID.randomUUID().toString(), name = contestant.name,
                 shirtSize = shirtSize, gender = contestant.gender, claimCode = contestant.claimCode,
             )
             individuals[entry.id] = entry
@@ -826,7 +852,7 @@ class InMemoryRegistrationRepository(
         if (alreadyEnrolled) return EnrollResult.AlreadyEnrolled
         val team = teamId?.let { teams[it]?.takeIf { t -> t.regId == reg.id } ?: return EnrollResult.TeamNotFound }
         if (team != null && team.memberIds.size >= MAX_TEAM_SIZE) return EnrollResult.RosterFull
-        val entry = RosterEntryDto(
+        val entry = MemberEntry(
             id = UUID.randomUUID().toString(),
             name = contestant.name,
             birthdate = contestant.birthdate,
@@ -850,7 +876,7 @@ class InMemoryRegistrationRepository(
         seasonYear: String,
         teamId: String?,
         member: SeedMemberDto,
-    ): RosterEntryDto? = synchronized(lock) {
+    ): ParticipantDto? = synchronized(lock) {
         val reg = regFor(congregationId, seasonYear)
         // Combo rule (item 5): the team may belong to another congregation's same-season
         // registration — the member stays registered (and billed) by their own congregation.
@@ -875,7 +901,7 @@ class InMemoryRegistrationRepository(
         val entryId: String
         if (existingId == null) {
             entryId = UUID.randomUUID().toString()
-            members[entryId] = RosterEntryDto(
+            members[entryId] = MemberEntry(
                 id = entryId, name = trimmed, birthdate = contestant.birthdate,
                 shirtSize = member.shirtSize, gender = contestant.gender,
                 firstSeasonYear = contestant.firstSeasonYear, claimCode = contestant.claimCode,
@@ -909,19 +935,6 @@ class InMemoryRegistrationRepository(
         val reg = regs.values.firstOrNull { it.id == registrationId } ?: return null
         reg.paidAtMs = paidAtEpochMs
         reg.toDto()
-    }
-
-    override fun claimEntry(code: String, userId: String): ClaimResult = synchronized(lock) {
-        // Ownership is durable per person since V2: the claim code IS the person's, so claiming
-        // it owns every entry of theirs (across seasons) at once.
-        val contestant = contestants.values.firstOrNull { it.claimCode == code } ?: return ClaimResult.NotFound
-        if (contestant.ownerUserId != null && contestant.ownerUserId != userId) return ClaimResult.AlreadyClaimed
-        contestant.ownerUserId = userId
-        val latestEntry = (memberContestant.filterValues { it == contestant.id }.keys.mapNotNull { memberDto(it) } +
-            individualContestant.filterValues { it == contestant.id }.keys.mapNotNull { individualDto(it) })
-            .lastOrNull()
-            ?: return ClaimResult.NotFound
-        ClaimResult.Claimed(latestEntry)
     }
 
     override fun entryIdsOwnedBy(userId: String): Set<String> = synchronized(lock) {
@@ -1019,55 +1032,104 @@ class InMemoryRegistrationRepository(
         val trimmed = name.trim()
         val seasonRegIds = regs.values.filter { it.seasonYear == seasonYear }.map { it.id }.toSet()
         members.keys.firstOrNull { mid ->
-            memberReg[mid] in seasonRegIds && memberDto(mid)?.name.equals(trimmed, ignoreCase = true)
+            memberReg[mid] in seasonRegIds && memberDto(mid)?.person?.name.equals(trimmed, ignoreCase = true)
         } ?: individuals.keys.firstOrNull { iid ->
-            individualReg[iid] in seasonRegIds && individualDto(iid)?.name.equals(trimmed, ignoreCase = true)
+            individualReg[iid] in seasonRegIds && individualDto(iid)?.person?.name.equals(trimmed, ignoreCase = true)
         } ?: guests.keys.firstOrNull { gid ->
             guestReg[gid] in seasonRegIds && guests[gid]?.name.equals(trimmed, ignoreCase = true)
         }
     }
 
-    /** A team roster entry with its identity sourced from the durable person and ownership resolved. */
-    private fun memberDto(id: String): RosterEntryDto? {
-        val entry = members[id] ?: return null
-        val contestant = memberContestant[id]?.let { contestants[it] }
-        return entry.copy(
-            name = contestant?.name ?: entry.name,
-            birthdate = contestant?.birthdate ?: entry.birthdate,
-            gender = contestant?.gender ?: entry.gender,
-            firstSeasonYear = if (contestant != null) contestant.firstSeasonYear else entry.firstSeasonYear,
-            claimCode = contestant?.claimCode ?: entry.claimCode,
-            claimed = contestant?.ownerUserId != null,
-        )
-    }
-
-    /** An individual (adult) entry with its identity sourced from the durable person and claimed resolved. */
-    private fun individualDto(id: String): RosterEntryDto? {
-        val entry = individuals[id] ?: return null
-        val contestant = individualContestant[id]?.let { contestants[it] }
-        return entry.copy(
-            name = contestant?.name ?: entry.name,
-            gender = contestant?.gender ?: entry.gender,
-            claimCode = contestant?.claimCode ?: entry.claimCode,
-            claimed = contestant?.ownerUserId != null,
-        )
-    }
-
-    /** The congregation a registration row belongs to, for labeling cross-congregation members. */
+    /** The congregation name for a registration id (for a participation's own congregation). */
     private fun congregationNameForReg(regId: String): String =
         regs.values.firstOrNull { it.id == regId }?.let { congregations.findById(it.congregationId)?.name } ?: "?"
 
-    private fun Team.toDto() = TeamDto(id, name, memberIds.mapNotNull { mid ->
-        memberDto(mid)?.let { entry ->
-            val homeRegId = memberReg[mid]
-            // A visiting (combo-team) member carries their own congregation for display/billing.
-            if (homeRegId == null || homeRegId == regId) entry
-            else entry.copy(
-                congregationId = regs.values.firstOrNull { it.id == homeRegId }?.congregationId,
-                congregationName = congregationNameForReg(homeRegId),
-            )
-        }
-    })
+    /**
+     * A youth team-member participation as a [ParticipantDto]: identity from the linked durable
+     * person, per-season facts (team, shirt) from the entry. The participation's congregation is the
+     * member's HOME registration — so a visiting (combo-team) member's differs from the team's.
+     */
+    private fun memberDto(id: String): ParticipantDto? {
+        val entry = members[id] ?: return null
+        val c = memberContestant[id]?.let { contestants[it] }
+        val homeRegId = memberReg[id]
+        val homeReg = homeRegId?.let { r -> regs.values.firstOrNull { it.id == r } }
+        val team = memberTeam[id]?.let { teams[it] }
+        val person = PersonDto(
+            id = c?.id ?: id,
+            name = c?.name ?: entry.name,
+            birthdate = c?.birthdate ?: entry.birthdate,
+            isAdult = false,
+            gender = c?.gender ?: entry.gender,
+            graduationYear = c?.graduationYear,
+            firstSeasonYear = c?.firstSeasonYear ?: entry.firstSeasonYear,
+            claimCode = c?.claimCode ?: entry.claimCode,
+        )
+        val participation = ParticipationDto(
+            id = id,
+            seasonYear = homeReg?.seasonYear.orEmpty(),
+            congregationId = homeReg?.congregationId.orEmpty(),
+            congregationName = homeRegId?.let { congregationNameForReg(it) } ?: "?",
+            isContestant = true,
+            teamId = team?.id,
+            teamName = team?.name,
+            shirtSize = entry.shirtSize,
+        )
+        return ParticipantDto(person, participation)
+    }
+
+    /** An individual (adult) participation as a [ParticipantDto]; identity from the durable person. */
+    private fun individualDto(id: String): ParticipantDto? {
+        val entry = individuals[id] ?: return null
+        val c = individualContestant[id]?.let { contestants[it] }
+        val reg = individualReg[id]?.let { r -> regs.values.firstOrNull { it.id == r } }
+        val person = PersonDto(
+            id = c?.id ?: id,
+            name = c?.name ?: entry.name,
+            birthdate = null,
+            isAdult = true,
+            gender = c?.gender ?: entry.gender,
+            firstSeasonYear = c?.firstSeasonYear,
+            claimCode = c?.claimCode ?: entry.claimCode,
+        )
+        val participation = ParticipationDto(
+            id = id,
+            seasonYear = reg?.seasonYear.orEmpty(),
+            congregationId = reg?.congregationId.orEmpty(),
+            congregationName = reg?.let { congregationNameForReg(it.id) } ?: "?",
+            isContestant = true,
+            shirtSize = entry.shirtSize,
+            tribeLeaderWilling = entry.tribeLeaderWilling,
+        )
+        return ParticipantDto(person, participation)
+    }
+
+    /** A guest participation as a [ParticipantDto] — the guest is its own (claim-code-less) person. */
+    private fun guestDto(id: String): ParticipantDto? {
+        val entry = guests[id] ?: return null
+        val reg = guestReg[id]?.let { r -> regs.values.firstOrNull { it.id == r } }
+        val person = PersonDto(
+            id = id,
+            name = entry.name,
+            birthdate = entry.birthdate,
+            isAdult = entry.birthdate == null,
+            gender = entry.gender,
+            contact = entry.contact,
+        )
+        val participation = ParticipationDto(
+            id = id,
+            seasonYear = reg?.seasonYear.orEmpty(),
+            congregationId = reg?.congregationId.orEmpty(),
+            congregationName = reg?.let { congregationNameForReg(it.id) } ?: "?",
+            isContestant = false,
+            shirtSize = entry.shirtSize,
+            positions = entry.positions,
+            tribeLeaderWilling = entry.tribeLeaderWilling,
+        )
+        return ParticipantDto(person, participation)
+    }
+
+    private fun Team.toDto() = TeamDto(id, name, memberIds.mapNotNull { memberDto(it) })
 
     private fun Reg.toDto(): RegistrationDto = RegistrationDto(
         id = id,
@@ -1081,7 +1143,7 @@ class InMemoryRegistrationRepository(
         unassigned = members.keys
             .filter { memberReg[it] == id && it !in memberTeam }
             .mapNotNull { memberDto(it) }
-            .sortedBy { it.name.lowercase() },
+            .sortedBy { it.person.name.lowercase() },
         awayMembers = members.keys
             .filter { mid -> memberReg[mid] == id && memberTeam[mid]?.let { teams[it]?.regId != id } == true }
             .mapNotNull { mid ->
@@ -1090,10 +1152,11 @@ class InMemoryRegistrationRepository(
                     AwayMemberDto(it, team.id, team.name, congregationNameForReg(team.regId))
                 }
             }
-            .sortedBy { it.entry.name.lowercase() },
-        guests = guests.values
-            .filter { guestReg[it.id] == id }
-            .sortedBy { it.name.lowercase() },
+            .sortedBy { it.entry.person.name.lowercase() },
+        guests = guests.keys
+            .filter { guestReg[it] == id }
+            .mapNotNull { guestDto(it) }
+            .sortedBy { it.person.name.lowercase() },
         submittedAt = submittedAtMs?.let { Instant.ofEpochMilli(it).toString() },
         paidAt = paidAtMs?.let { Instant.ofEpochMilli(it).toString() },
     )

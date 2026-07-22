@@ -192,12 +192,12 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
                     // A visiting (combo-team) member scopes and displays under their OWN
                     // congregation — only the team round uses the hosting team's identity.
                     RowSeed(
-                        member.congregationId ?: reg.congregation.id,
+                        member.participation.congregationId,
                         team.id,
                         ScoreRowDto(
-                            rosterEntryId = member.id,
-                            contestantName = member.name,
-                            congregationName = member.congregationName ?: reg.congregation.name,
+                            rosterEntryId = member.participation.id,
+                            contestantName = member.person.name,
+                            congregationName = member.participation.congregationName,
                             teamName = team.name,
                             division = member.division(season),
                             inexperienced = member.isInexperienced(season.eventYear.toString()),
@@ -212,8 +212,8 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
                     reg.congregation.id,
                     null,
                     ScoreRowDto(
-                        rosterEntryId = individual.id,
-                        contestantName = individual.name,
+                        rosterEntryId = individual.participation.id,
+                        contestantName = individual.person.name,
                         congregationName = reg.congregation.name,
                         teamName = null,
                         division = Division.ADULT,
@@ -225,8 +225,8 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
                     reg.congregation.id,
                     null,
                     ScoreRowDto(
-                        rosterEntryId = entry.id,
-                        contestantName = entry.name,
+                        rosterEntryId = entry.participation.id,
+                        contestantName = entry.person.name,
                         congregationName = reg.congregation.name,
                         teamName = null,
                         division = entry.division(season),

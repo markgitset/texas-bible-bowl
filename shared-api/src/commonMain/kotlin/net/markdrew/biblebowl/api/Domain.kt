@@ -134,12 +134,12 @@ fun PersonDto.division(season: SeasonDto): Division? = when {
 }
 
 /**
- * A roster entry's own division this [season]: by birthdate, or [Division.ADULT] for an
- * individual (adult) entry, which carries none. Server validation keeps new team entries in a
- * youth division; null is possible only for an unparseable legacy birthdate.
+ * A participant's own division this [season] — delegates to [PersonDto.division]: by birthdate,
+ * [Division.ADULT] for an adult (individual) participant, or the seeded-grade fallback. Server
+ * validation keeps new team entries in a youth division; null is possible only for an unparseable
+ * legacy birthdate or a youth aged out of the divisions.
  */
-fun RosterEntryDto.division(season: SeasonDto): Division? =
-    birthdate?.let { season.divisionForBirthdate(it) } ?: Division.ADULT
+fun ParticipantDto.division(season: SeasonDto): Division? = person.division(season)
 
 /**
  * The division a team competes in — that of its highest member (declaration order of [Division]
@@ -151,8 +151,8 @@ fun RosterEntryDto.division(season: SeasonDto): Division? =
 fun TeamDto.division(season: SeasonDto): Division? =
     members.mapNotNull { it.division(season) }.maxOrNull()?.coerceAtLeast(Division.JUNIOR)
 
-/** True when [seasonYear] is this contestant's first — their inexperienced season. */
-fun RosterEntryDto.isInexperienced(seasonYear: String): Boolean = firstSeasonYear == seasonYear
+/** True when [seasonYear] is this participant's first — their inexperienced season. */
+fun ParticipantDto.isInexperienced(seasonYear: String): Boolean = person.firstSeasonYear == seasonYear
 
 /**
  * Each non-adult division splits into experienced and inexperienced brackets, and a team never
@@ -217,11 +217,11 @@ fun ordinal(n: Int): String {
  * All contestants in a registration: every HOME team member, every individual (adult) contestant,
  * every unassigned (teamless-but-eligible) youth contestant, and every member away on another
  * congregation's combo team — all are registered and paid for here. Visiting members on this
- * registration's teams (marked by [RosterEntryDto.congregationId]) are excluded: their own
- * congregation counts and bills them.
+ * registration's teams (whose [ParticipationDto.congregationId] differs from this registration's)
+ * are excluded: their own congregation counts and bills them.
  */
 val RegistrationDto.contestantCount: Int
-    get() = teams.sumOf { team -> team.members.count { it.congregationId == null } } +
+    get() = teams.sumOf { team -> team.members.count { it.participation.congregationId == congregation.id } } +
         individuals.size + unassigned.size + awayMembers.size
 
 /**
@@ -233,11 +233,12 @@ val RegistrationDto.contestantCount: Int
  * contestant entry.
  */
 val RegistrationDto.shirtSizes: List<ShirtSize>
-    get() = teams.flatMap { team -> team.members.filter { it.congregationId == null } }.map { it.shirtSize } +
-        individuals.map { it.shirtSize } +
-        unassigned.map { it.shirtSize } +
-        awayMembers.map { it.entry.shirtSize } +
-        guests.mapNotNull { it.shirtSize }
+    get() = teams.flatMap { team -> team.members.filter { it.participation.congregationId == congregation.id } }
+        .mapNotNull { it.participation.shirtSize } +
+        individuals.mapNotNull { it.participation.shirtSize } +
+        unassigned.mapNotNull { it.participation.shirtSize } +
+        awayMembers.mapNotNull { it.entry.participation.shirtSize } +
+        guests.mapNotNull { it.participation.shirtSize }
 
 // ---------------------------------------------------------------------------
 // Age-tiered fees (the 2026 schedule: 9+ full fee, 3–8 child fee, under 3 free)
@@ -288,10 +289,12 @@ data class FeeLine(val tier: AgeTier, val contestant: Boolean, val count: Int, v
  * contestant pays the child fee, exactly as in 2026.
  */
 fun registrationFeeLines(season: SeasonDto, registration: RegistrationDto): List<FeeLine> {
-    val contestants = registration.teams.flatMap { team -> team.members.filter { it.congregationId == null } } +
+    val homeCongregationId = registration.congregation.id
+    val contestants = registration.teams
+        .flatMap { team -> team.members.filter { it.participation.congregationId == homeCongregationId } } +
         registration.unassigned + registration.awayMembers.map { it.entry } + registration.individuals
-    val contestantTiers = contestants.groupingBy { season.ageTierFor(it.birthdate) }.eachCount()
-    val guestTiers = registration.guests.groupingBy { season.ageTierFor(it.birthdate) }.eachCount()
+    val contestantTiers = contestants.groupingBy { season.ageTierFor(it.person.birthdate) }.eachCount()
+    val guestTiers = registration.guests.groupingBy { season.ageTierFor(it.person.birthdate) }.eachCount()
     fun lines(tiers: Map<AgeTier, Int>, contestant: Boolean): List<FeeLine> =
         AgeTier.entries.mapNotNull { tier ->
             tiers[tier]?.let { count -> FeeLine(tier, contestant, count, season.feeCentsFor(tier, contestant)) }
