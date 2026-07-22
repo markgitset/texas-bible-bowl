@@ -36,6 +36,16 @@ object Shell {
     val scope = MainScope()
     private lateinit var app: HTMLElement
 
+    /**
+     * Screen-registered dirty check (e.g. the season editor's unsaved draft). While it reports
+     * true, leaving the route — by hash navigation or by unloading the page for a static-site
+     * link — first asks the user. Cleared on every route change, so a screen must re-register
+     * it each render.
+     */
+    var unsavedChanges: (() -> Boolean)? = null
+    private var routeShown: String? = null
+    private var restoringHash = false
+
     /** The Hugo study hub page, sibling of /app/ — resolves correctly under the GH Pages subpath. */
     private const val STUDY_OVERVIEW_HREF = "../study-resources/"
 
@@ -47,6 +57,14 @@ object Shell {
         Session.onChange = { render() }
         Session.boot(scope)
         window.addEventListener("hashchange", { render() })
+        // Static-site links leave by unloading the page, not by hashchange — same guard applies
+        // (the browser shows its own generic leave prompt).
+        window.addEventListener("beforeunload", { event ->
+            if (unsavedChanges?.invoke() == true) {
+                event.preventDefault()
+                event.asDynamic().returnValue = ""
+            }
+        })
         render()
     }
 
@@ -63,6 +81,23 @@ object Shell {
 
     private fun render() {
         val route = currentRoute()
+        if (restoringHash) {
+            // The hashchange we triggered ourselves while vetoing a navigation — swallow it.
+            restoringHash = false
+            return
+        }
+        val previous = routeShown
+        if (previous != null && previous != route && unsavedChanges?.invoke() == true &&
+            !window.confirm("You have unsaved changes on this page. Leave without saving?")
+        ) {
+            restoringHash = true
+            window.location.hash = previous
+            return
+        }
+        // Cleared on every render (not just route changes): whatever screen renders below
+        // re-registers its own check, so a replaced screen can't leave a stale one behind.
+        unsavedChanges = null
+        routeShown = route
         updateNav(route)
         document.title = "${routeLabel(route)} | Texas Bible Bowl"
         app.clear()

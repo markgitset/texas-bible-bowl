@@ -145,6 +145,18 @@ fun AdminSeasonScreen(api: TbbApi, onSaved: (SeasonDto) -> Unit) {
             }
         }
 
+        if (draft != current) {
+            // Everything above is a draft until Save — make that visible so an added site
+            // isn't mistaken for saved (leaving this screen discards the draft).
+            Text(
+                "Unsaved changes — tap \"Save season\" to apply them.",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+
         Button(
             onClick = {
                 busy = true; message = null
@@ -189,7 +201,8 @@ private fun SitesEditor(sites: List<EventSiteDto>, onChange: (List<EventSiteDto>
         Text("Event sites", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
         Text(
             "With one site there's nothing to pick during registration; with two or more, each " +
-                "congregation chooses its site. Removing a site un-pins congregations that chose it.",
+                "congregation chooses its site. Removing a site un-pins congregations that chose it. " +
+                "Sites carry over from season to season until changed here.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
