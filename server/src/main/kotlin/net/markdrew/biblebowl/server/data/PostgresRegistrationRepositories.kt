@@ -773,9 +773,12 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         teamId: String?,
         birthdate: String?,
         eligible: (ReturningContestantDto) -> Boolean,
+        allowNewCongregation: Boolean,
     ): EnrollResult = transaction(db) {
         val year = seasonYear.toIntOrNull() ?: return@transaction EnrollResult.ContestantNotFound
-        val hasHistory = (ParticipantsTable innerJoin RegistrationsTable).selectAll()
+        // Coaches may only enroll their own congregation's returning contestants; the registrar
+        // cross-congregation attach ([allowNewCongregation]) waives that history requirement.
+        val hasHistory = allowNewCongregation || (ParticipantsTable innerJoin RegistrationsTable).selectAll()
             .where {
                 (ParticipantsTable.personId eq contestantId) and (ParticipantsTable.isContestant eq true) and
                     (RegistrationsTable.congregationId eq congregationId)

@@ -5,6 +5,7 @@ import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDeskRowDto
 import net.markdrew.biblebowl.api.RegistrationDto
+import net.markdrew.biblebowl.api.PersonWithParticipationsDto
 import net.markdrew.biblebowl.api.RegistrationStatus
 import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.ReturningContestantDto
@@ -527,6 +528,7 @@ object AdminRegistrationsScreen {
             }
         }
         renderReturningCandidatesAdmin(parent, row)
+        renderAttachPersonAdmin(parent, row)
         val rosterEmpty = reg == null ||
             (reg.teams.isEmpty() && reg.individuals.isEmpty() && reg.unassigned.isEmpty() && reg.awayMembers.isEmpty())
         if (rosterEmpty && row.returningCandidates.isEmpty()) {
@@ -592,6 +594,91 @@ object AdminRegistrationsScreen {
                                 birthdate?.value,
                             )
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Registrar-only cross-congregation attach: find an existing person (any congregation) and add
+     * them to this congregation's current-season roster — for someone who moved congregations.
+     * Coaches never reach this; the desk is registrar-gated. Hidden while reviewing a past year, and
+     * people already registered this season anywhere are filtered out (they can't be attached).
+     */
+    private fun renderAttachPersonAdmin(parent: Element, row: RegistrationDeskRowDto) {
+        if (viewingPast) return
+        val congregationId = row.congregation.id
+        val currentYear = Session.season.eventYear.toString()
+        parent.child("h6", "mt-3", "Attach an existing person")
+        parent.child("p", "text-muted small mb-1",
+            "Search anyone already in the system (e.g. moved from another congregation) and add them here.")
+        val search = parent.child("input", "form-control form-control-sm mb-1") as HTMLInputElement
+        search.setAttribute("placeholder", "Search people by name…")
+        val results = parent.child("div")
+        var seq = 0
+        search.addEventListener("input", {
+            val query = search.value.trim()
+            val mySeq = ++seq
+            results.clear()
+            if (query.length < 2) return@addEventListener
+            Shell.scope.launch {
+                runCatching { Session.api.searchPeople(query) }.onSuccess { found ->
+                    if (mySeq != seq) return@onSuccess
+                    results.clear()
+                    val attachable = found.filter { pwp -> pwp.participations.none { it.seasonYear == currentYear } }
+                    if (attachable.isEmpty()) {
+                        results.child("p", "text-muted small mb-0",
+                            "No attachable matches — anyone already registered this season is hidden.")
+                        return@onSuccess
+                    }
+                    val teams = data?.rows?.firstOrNull { it.congregation.id == congregationId }
+                        ?.registration?.teams.orEmpty()
+                    attachable.forEach { pwp -> renderAttachRow(results, congregationId, teams, pwp) }
+                }
+            }
+        })
+    }
+
+    private fun renderAttachRow(
+        parent: Element,
+        congregationId: String,
+        teams: List<TeamDto>,
+        pwp: PersonWithParticipationsDto,
+    ) {
+        val person = pwp.person
+        parent.child("div", "d-flex flex-wrap align-items-center gap-2 small mb-1") {
+            val div = person.division(Session.season)?.displayName ?: "—"
+            val last = pwp.participations.firstOrNull()?.let { " · last ${it.seasonYear} ${it.congregationName}" } ?: ""
+            child("span", text = "${person.name} — $div$last")
+            // A workbook-seeded youth (grade only) needs a real birthdate at first enrollment.
+            val needsBirthdate = person.birthdate == null && person.graduationYear != null
+            val birthdate = if (needsBirthdate) {
+                (child("input", "form-control form-control-sm w-auto") as HTMLInputElement).apply {
+                    type = "date"; setAttribute("title", "Birthdate (first enrollment records it)")
+                }
+            } else null
+            val shirt = adminShirtSelect(this, pwp.participations.firstOrNull()?.shirtSize)
+            // Youth may go straight onto a team (or the unassigned pool); adults attach as individuals.
+            val teamSel = if (!person.isAdult && teams.isNotEmpty()) {
+                val sel = child("select", "form-select form-select-sm w-auto") as HTMLSelectElement
+                (sel.child("option", text = "— Unassigned —") as HTMLOptionElement).value = ""
+                teams.forEach { (sel.child("option", text = it.name) as HTMLOptionElement).value = it.id }
+                sel
+            } else null
+            child("button", "btn btn-sm btn-primary", "Attach") {
+                setAttribute("type", "button")
+                onClick {
+                    if (needsBirthdate && birthdate!!.value.isBlank()) {
+                        message = "${person.name} needs a birthdate — the workbook only had a school grade"
+                        renderContent()
+                        return@onClick
+                    }
+                    deskMutate(congregationId) {
+                        Session.api.attachPerson(
+                            congregationId, person.id, ShirtSize.valueOf(shirt.value),
+                            teamSel?.value?.ifEmpty { null }, birthdate?.value,
+                        )
                     }
                 }
             }

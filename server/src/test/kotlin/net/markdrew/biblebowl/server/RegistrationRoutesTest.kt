@@ -21,6 +21,7 @@ import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AssignMemberTeamRequest
+import net.markdrew.biblebowl.api.AttachPersonRequest
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.ContactInfoDto
@@ -714,6 +715,59 @@ class RegistrationRoutesTest {
             api.delete("/registration/members/${afterEnroll.unassigned.single().id}") { asCoach() }.body()
         assertTrue(afterDelete.registration.unassigned.isEmpty())
         assertEquals(listOf("Timothy"), afterDelete.returningCandidates.map { it.name })
+    }
+
+    @Test
+    fun registrarAttachesACrossCongregationPerson() = testApplication {
+        val users = InMemoryUserRepository()
+        val congregations = InMemoryCongregationRepository()
+        val registrations = InMemoryRegistrationRepository(congregations)
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason), congregations = congregations, registrations = registrations)
+        }
+        val api = jsonClient()
+        val coach = api.signUp("coacha@tbb.org", "Coach A")
+        fun io.ktor.client.request.HttpRequestBuilder.asCoach() =
+            header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+
+        // Congregation A has a person who competed there in a prior season.
+        val congA: CongregationDto = api.post("/congregations") {
+            asCoach(); setBody(congregationRequest("A Church", "Waco"))
+        }.body()
+        val oldTeam = registrations.addTeam(congA.id, "2026", "Old")!!
+        registrations.addMember(oldTeam.id, UpsertRosterEntryRequest("Mover Kid", "2013-05-01", ShirtSize.YM, Gender.MALE))
+        val personId = api.get("/registration/mine") { asCoach() }
+            .body<MyRegistrationResponse>().returningCandidates.single().contestantId
+
+        // Congregation B is a different congregation (created by a different coach).
+        val coachB = api.signUp("coachb@tbb.org", "Coach B")
+        val congB: CongregationDto = api.post("/congregations") {
+            header(HttpHeaders.Authorization, "Bearer ${coachB.token}"); setBody(congregationRequest("B Church", "Austin"))
+        }.body()
+
+        // A coach can't attach a person into another congregation — the path is registrar-only.
+        assertEquals(HttpStatusCode.Forbidden, api.post("/admin/registration/${congB.id}/attach-person") {
+            asCoach(); setBody(AttachPersonRequest(personId, ShirtSize.YL))
+        }.status)
+
+        // A registrar attaches the mover to B for the current season, no prior history at B required.
+        val registrar = api.signUp("attachreg@tbb.org", "Reg")
+        users.addRoleGrant(registrar.user.id, RoleGrant(Role.REGISTRAR))
+        fun io.ktor.client.request.HttpRequestBuilder.asRegistrar() =
+            header(HttpHeaders.Authorization, "Bearer ${registrar.token}")
+        val attached: RegistrationUpdateResponse = api.post("/admin/registration/${congB.id}/attach-person") {
+            asRegistrar(); setBody(AttachPersonRequest(personId, ShirtSize.YL))
+        }.body()
+        assertEquals(listOf("Mover Kid"), attached.registration.unassigned.map { it.name })
+
+        // One participation per season: re-attaching is refused, and a bogus person id is a 404.
+        assertEquals(HttpStatusCode.Conflict, api.post("/admin/registration/${congB.id}/attach-person") {
+            asRegistrar(); setBody(AttachPersonRequest(personId, ShirtSize.YL))
+        }.status)
+        assertEquals(HttpStatusCode.NotFound, api.post("/admin/registration/${congB.id}/attach-person") {
+            asRegistrar(); setBody(AttachPersonRequest("nope", ShirtSize.YL))
+        }.status)
     }
 
     @Test

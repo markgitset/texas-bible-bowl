@@ -15,6 +15,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AssignMemberTeamRequest
+import net.markdrew.biblebowl.api.AttachPersonRequest
 import net.markdrew.biblebowl.api.CodeSuggestionResponse
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.EnrollContestantRequest
@@ -403,6 +404,57 @@ fun Route.registrationRoutes(
                     call.respond(
                         HttpStatusCode.BadRequest,
                         ApiError("birthdate_required", "This contestant was seeded without a birthdate — provide one to enroll them"),
+                    )
+            }
+        }
+
+        // Registrar-only cross-congregation attach: enroll an existing person (found via
+        // GET /admin/people) into this congregation even with no prior history here — the person
+        // moved congregations. Coaches can't reach this; their reuse stays scoped to their own
+        // returning candidates. The one-participation-per-season rule still applies.
+        post("/admin/registration/{congregationId}/attach-person") {
+            val user = currentUser(users) ?: return@post
+            if (!requireRegistrationFeature(user, seasons)) return@post
+            if (!requireEventWidePermission(user, Permission.REGISTRATION_MANAGE)) return@post
+            val congregationId = call.parameters["congregationId"]!!
+            if (congregations.findById(congregationId) == null) {
+                return@post call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such congregation"))
+            }
+            val season = seasons.current()
+            val req = call.receive<AttachPersonRequest>()
+            if (req.birthdate != null && (season.gradeForBirthdate(req.birthdate!!) ?: -1) !in 3..12) {
+                return@post call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError("invalid_birthdate", "The birthdate (YYYY-MM-DD) must land in grades 3–12"),
+                )
+            }
+            when (registrations.enrollContestant(
+                congregationId, season.eventYear.toString(), req.personId, req.shirtSize, req.teamId, req.birthdate,
+                eligible = { season.isEligibleReturningCandidate(it) },
+                allowNewCongregation = true,
+            )) {
+                EnrollResult.Enrolled ->
+                    respondRegistrationUpdate(congregationId, seasons, registrations)
+                EnrollResult.RosterFull ->
+                    call.respond(HttpStatusCode.Conflict, ApiError("roster_full", "A team may have at most 4 contestants"))
+                EnrollResult.TeamNotFound ->
+                    call.respond(HttpStatusCode.NotFound, ApiError("not_found", "No such team for this registration"))
+                EnrollResult.ContestantNotFound ->
+                    call.respond(HttpStatusCode.NotFound, ApiError("person_not_found", "No such person"))
+                EnrollResult.NotEligible ->
+                    call.respond(
+                        HttpStatusCode.Conflict,
+                        ApiError("not_eligible", "That person isn't eligible to compete this season"),
+                    )
+                EnrollResult.AlreadyEnrolled ->
+                    call.respond(
+                        HttpStatusCode.Conflict,
+                        ApiError("already_registered", "That person is already registered for this season (in this or another congregation)"),
+                    )
+                EnrollResult.BirthdateRequired ->
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        ApiError("birthdate_required", "This person was seeded without a birthdate — provide one to attach them"),
                     )
             }
         }

@@ -31,10 +31,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.Gender
+import net.markdrew.biblebowl.api.PersonWithParticipationsDto
 import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDeskRowDto
 import net.markdrew.biblebowl.api.RegistrationDto
@@ -497,6 +499,7 @@ private fun DeskDetail(model: DeskModel, row: RegistrationDeskRowDto) {
             }
         }
         ReturningCandidatesDetail(model, row)
+        AttachPersonDetail(model, row)
         val rosterEmpty = reg == null ||
             (reg.teams.isEmpty() && reg.individuals.isEmpty() && reg.unassigned.isEmpty() &&
                 reg.awayMembers.isEmpty())
@@ -689,6 +692,93 @@ private fun ReturningCandidateRow(
                     )
                 }
             }) { Text("Add") }
+        }
+    }
+}
+
+/**
+ * Registrar-only cross-congregation attach: find an existing person (any congregation) and add them
+ * to this congregation's current-season roster — for someone who moved congregations. Coaches never
+ * reach the desk. Hidden while reviewing a past year; people already registered this season anywhere
+ * are filtered out (they can't be attached).
+ */
+@Composable
+private fun AttachPersonDetail(model: DeskModel, row: RegistrationDeskRowDto) {
+    if (model.viewingPast) return
+    val congregationId = row.congregation.id
+    val currentYear = model.season.eventYear.toString()
+    var query by remember(congregationId) { mutableStateOf("") }
+    var results by remember(congregationId) { mutableStateOf<List<PersonWithParticipationsDto>>(emptyList()) }
+    var searched by remember(congregationId) { mutableStateOf(false) }
+
+    LaunchedEffect(query) {
+        val q = query.trim()
+        if (q.length < 2) { results = emptyList(); searched = false; return@LaunchedEffect }
+        delay(300)
+        runCatching { model.api.searchPeople(q) }.onSuccess {
+            results = it.filter { pwp -> pwp.participations.none { p -> p.seasonYear == currentYear } }
+            searched = true
+        }
+    }
+
+    DetailHeader("Attach an existing person")
+    Text(
+        "Search anyone already in the system (e.g. moved from another congregation) and add them here.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedTextField(query, { query = it }, placeholder = { Text("Search people by name…") },
+        singleLine = true, modifier = Modifier.fillMaxWidth())
+    if (searched && results.isEmpty()) {
+        Text("No attachable matches — anyone already registered this season is hidden.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+    results.forEach { pwp ->
+        AttachPersonRow(model, congregationId, row.registration?.teams.orEmpty(), pwp)
+    }
+}
+
+@Composable
+private fun AttachPersonRow(
+    model: DeskModel,
+    congregationId: String,
+    teams: List<TeamDto>,
+    pwp: PersonWithParticipationsDto,
+) {
+    val person = pwp.person
+    val needsBirthdate = person.birthdate == null && person.graduationYear != null
+    var birthdate by remember(person.id) { mutableStateOf("") }
+    var shirt by remember(person.id) {
+        mutableStateOf(pwp.participations.firstOrNull()?.shirtSize ?: if (person.isAdult) ShirtSize.AM else ShirtSize.YM)
+    }
+    var teamId by remember(person.id) { mutableStateOf<String?>(null) }
+    val divisionLabel = person.division(model.season)?.displayName ?: "—"
+    val last = pwp.participations.firstOrNull()?.let { " · last ${it.seasonYear} ${it.congregationName}" } ?: ""
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("${person.name} — $divisionLabel$last", style = MaterialTheme.typography.bodySmall)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (needsBirthdate) {
+                OutlinedTextField(birthdate, { birthdate = it }, label = { Text("Birthdate") },
+                    placeholder = { Text("YYYY-MM-DD") }, singleLine = true, modifier = Modifier.weight(1f))
+            }
+            ShirtPicker(shirt, enabled = true) { shirt = it }
+            if (!person.isAdult && teams.isNotEmpty()) {
+                val options: List<Pair<String?, String>> =
+                    listOf<Pair<String?, String>>(null to "— Unassigned —") + teams.map { it.id to it.name }
+                DropdownPicker(
+                    options, options.firstOrNull { it.first == teamId }, { it.second },
+                    enabled = true, placeholder = "Team…",
+                ) { teamId = it.first }
+            }
+            Button(onClick = {
+                if (needsBirthdate && !isValidBirthdate(birthdate)) {
+                    model.message = "${person.name} needs a birthdate — the workbook only had a school grade"
+                    return@Button
+                }
+                model.mutateRow(congregationId) {
+                    attachPerson(congregationId, person.id, shirt, teamId.takeUnless { person.isAdult },
+                        birthdate.takeIf { needsBirthdate })
+                }
+            }) { Text("Attach") }
         }
     }
 }

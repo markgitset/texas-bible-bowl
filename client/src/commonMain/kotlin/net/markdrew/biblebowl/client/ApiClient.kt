@@ -19,6 +19,7 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AssignMemberTeamRequest
+import net.markdrew.biblebowl.api.AttachPersonRequest
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ClaimEntryRequest
 import net.markdrew.biblebowl.api.ClaimPersonRequest
@@ -399,6 +400,23 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         client.post("$baseUrl/registration/$congregationId/contestants/$contestantId/enroll") {
             authorize(); contentType(ContentType.Application.Json)
             setBody(EnrollContestantRequest(shirtSize, teamId, birthdate?.takeIf { it.isNotBlank() }))
+        }.bodyOrThrow()
+
+    /**
+     * Registrar-only: attaches an existing [personId] (found via [searchPeople]) to [congregationId]'s
+     * current-season registration as a contestant — the cross-congregation reuse path for a person
+     * who moved congregations. 409 if they're already registered this season anywhere.
+     */
+    suspend fun attachPerson(
+        congregationId: String,
+        personId: String,
+        shirtSize: ShirtSize,
+        teamId: String? = null,
+        birthdate: String? = null,
+    ): RegistrationUpdateResponse =
+        client.post("$baseUrl/admin/registration/$congregationId/attach-person") {
+            authorize(); contentType(ContentType.Application.Json)
+            setBody(AttachPersonRequest(personId, shirtSize, teamId, birthdate?.takeIf { it.isNotBlank() }))
         }.bodyOrThrow()
 
     /** Adds an individual (adult) contestant — adults compete individually, never on a team. */
