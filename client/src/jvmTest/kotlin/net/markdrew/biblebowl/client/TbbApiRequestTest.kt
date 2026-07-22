@@ -230,6 +230,8 @@ class TbbApiRequestTest {
         val desk = api.registrationDesk()
         assertEquals("2027", desk.seasonYear)
         assertEquals("GET" to "/admin/registrations", methods.last() to requests.last())
+        api.registrationDesk(year = "2026")
+        assertEquals("GET" to "/admin/registrations?year=2026", methods.last() to requests.last())
 
         val tribes = api.tribes()
         assertEquals("GET" to "/admin/tribes", methods.last() to requests.last())
