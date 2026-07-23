@@ -40,7 +40,11 @@ object GradingScreen {
     private var round: Round = allRounds.first()
     private var message: String? = null
     private var messageIsError: Boolean = false
+    /** Sort the grid by tester ID (the order the hand-graded paper stack is in) rather than desk order. */
+    private var sortByTesterId: Boolean = false
     private val inputs = mutableListOf<Pair<String, HTMLInputElement>>() // rosterEntryId → cell input
+    private val rowByTesterId = mutableMapOf<Int, HTMLElement>() // tester ID → its <tr>, for jump-to-ID
+    private val inputByTesterId = mutableMapOf<Int, HTMLInputElement>() // tester ID → its score cell
     private lateinit var content: HTMLElement
 
     fun render(container: HTMLElement) {
@@ -64,6 +68,8 @@ object GradingScreen {
         val data = sheet ?: return
         content.clear()
         inputs.clear()
+        rowByTesterId.clear()
+        inputByTesterId.clear()
 
         renderReleaseBar(content, data)
         message?.let {
@@ -92,20 +98,60 @@ object GradingScreen {
                     renderContent()
                 })
             }
+            child("div") {
+                child("label", "form-label mb-1", "Sort by")
+                val select = child("select", "form-select") as HTMLSelectElement
+                listOf(false to "Desk order", true to "Tester ID").forEach { (byId, label) ->
+                    select.child("option", text = label) {
+                        setAttribute("value", byId.toString())
+                        if (byId == sortByTesterId) setAttribute("selected", "selected")
+                    }
+                }
+                select.addEventListener("change", {
+                    sortByTesterId = select.value.toBoolean()
+                    renderContent()
+                })
+            }
+            child("div") {
+                child("label", "form-label mb-1") {
+                    setAttribute("for", "grading-jump")
+                    append("Jump to ID")
+                }
+                val jump = child("input", "form-control") as HTMLInputElement
+                jump.id = "grading-jump"
+                jump.type = "number"
+                jump.setAttribute("min", "1")
+                jump.setAttribute("inputmode", "numeric")
+                jump.setAttribute("placeholder", "#")
+                jump.style.maxWidth = "6rem"
+                // Enter jumps to (and focuses) that tester's score cell — the grader types the ID off
+                // the paper in front of them and lands on the right row without scrolling.
+                jump.addEventListener("keydown", { e ->
+                    if ((e as org.w3c.dom.events.KeyboardEvent).key == "Enter") {
+                        e.preventDefault()
+                        jumpToTester(jump.value.trim().toIntOrNull())
+                    }
+                })
+            }
             child("span", "text-muted mb-2", "Season ${data.seasonYear} · ${data.rows.size} contestants")
         }
 
+        val rows = if (sortByTesterId) {
+            data.rows.sortedWith(compareBy({ it.testerId == null }, { it.testerId }))
+        } else {
+            data.rows
+        }
         content.child("div", "table-responsive") {
             child("table", "table table-hover align-middle") {
                 child("thead") {
                     child("tr") {
-                        listOf("Congregation", "Team", "Contestant", "Division").forEach { child("th", text = it) }
+                        listOf("ID", "Congregation", "Team", "Contestant", "Division").forEach { child("th", text = it) }
                         child("th", text = "${roundLabel(round)} points (0–${round.maxPoints})")
                         child("th", text = "Total")
                     }
                 }
                 val tbody = child("tbody")
-                data.rows.forEach { row -> renderRow(tbody, row) }
+                rows.forEach { row -> renderRow(tbody, row) }
             }
         }
 
@@ -117,6 +163,16 @@ object GradingScreen {
 
     private fun renderRow(tbody: Element, row: ScoreRowDto) {
         tbody.child("tr") {
+            row.testerId?.let { rowByTesterId[it] = this }
+            child("td", "fw-semibold") {
+                if (row.testerId != null) {
+                    append(row.testerId.toString())
+                    // The full ZipGrade external ID is a tooltip so the column stays a scannable number.
+                    row.externalId?.let { setAttribute("title", it) }
+                } else {
+                    child("span", "text-muted", "—")
+                }
+            }
             child("td", text = row.congregationName)
             child("td") {
                 if (row.teamName != null) append(row.teamName!!)
@@ -152,6 +208,7 @@ object GradingScreen {
                     input.style.maxWidth = "6rem"
                     input.value = row.scores[round]?.toString() ?: ""
                     inputs += row.rosterEntryId to input
+                    row.testerId?.let { inputByTesterId[it] = input }
                 } else {
                     child("span", "text-muted", "—") {
                         setAttribute("title", "${row.division?.displayName} contestants don't take this round")
@@ -164,6 +221,28 @@ object GradingScreen {
 
     /** Whether this contestant takes [r] — unknown divisions grade everything (server allows it). */
     private fun ScoreRowDto.takes(r: Round): Boolean = division?.let { r in it.rounds } ?: true
+
+    /**
+     * Scrolls the tester with [testerId] into view and focuses their score cell (or the row, when the
+     * contestant doesn't take the selected round). No-op with a brief message when the ID isn't found.
+     */
+    private fun jumpToTester(testerId: Int?) {
+        if (testerId == null) return
+        val input = inputByTesterId[testerId]
+        val row = rowByTesterId[testerId]
+        when {
+            input != null -> {
+                input.focus() // focusing scrolls the cell into view
+                input.select()
+            }
+            row != null -> row.scrollIntoView()
+            else -> {
+                message = "No tester #$testerId on this sheet."
+                messageIsError = true
+                renderContent()
+            }
+        }
+    }
 
     /** Collects the changed cells of the selected round and batch-saves them. */
     private fun saveRound(save: HTMLButtonElement) {

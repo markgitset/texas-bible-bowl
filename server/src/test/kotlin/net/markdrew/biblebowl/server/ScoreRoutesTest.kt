@@ -40,6 +40,7 @@ import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.StandingsResponse
+import net.markdrew.biblebowl.api.TesterListResponse
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
@@ -320,6 +321,46 @@ class ScoreRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${grader.token}")
         }.body()
         assertNull(after.rows.single { it.rosterEntryId == junior.rosterEntryId }.scores[Round.QUOTES])
+    }
+
+    @Test
+    fun gradingSheetRowsCarryTesterIdsMatchingTheTesterList() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+
+        api.coachWithTeam(
+            "coach@tbb.org", "Grace Church",
+            teamBirthdates = listOf(juniorBirthdate, seniorBirthdate),
+            individualName = "Adult Ann",
+        )
+
+        val grader = api.grader(users)
+        val sheet: GradingSheetResponse = api.get("/admin/scores") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+
+        // Every contestant on the desk carries a tester ID — one season-wide sequence, contiguous 1..N.
+        assertEquals(3, sheet.rows.size)
+        assertTrue(sheet.rows.all { it.testerId != null }, "every row is numbered")
+        assertEquals((1..3).toSet(), sheet.rows.mapNotNull { it.testerId }.toSet())
+        // A known-division row carries the ZipGrade external ID, which ends in that tester ID.
+        val known = sheet.rows.first { it.division != null }
+        assertNotNull(known.externalId)
+        assertTrue(known.externalId!!.endsWith("-${known.testerId}"), "external id ends in the tester id")
+
+        // The desk shows exactly the (testerId, externalId) the ZipGrade export / nametags do — the
+        // grading desk and /admin/testers share one numbering, so the paper stack and the desk agree.
+        val testers: TesterListResponse = api.get("/admin/testers") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        val fromTesters = testers.rows.associate { it.rosterEntryId to (it.testerId to it.externalId) }
+        sheet.rows.forEach { row ->
+            assertEquals(fromTesters[row.rosterEntryId], row.testerId to row.externalId)
+        }
     }
 
     @Test

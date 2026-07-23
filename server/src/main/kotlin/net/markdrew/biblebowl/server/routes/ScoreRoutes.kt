@@ -32,6 +32,7 @@ import net.markdrew.biblebowl.api.totalPoints
 import net.markdrew.biblebowl.server.data.RegistrationRepository
 import net.markdrew.biblebowl.server.data.ScoreRepository
 import net.markdrew.biblebowl.server.data.SeasonRepository
+import net.markdrew.biblebowl.server.data.TesterIdRepository
 import net.markdrew.biblebowl.server.data.UserRecord
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.currentUser
@@ -49,13 +50,14 @@ fun Route.scoreRoutes(
     seasons: SeasonRepository,
     registrations: RegistrationRepository,
     scores: ScoreRepository,
+    testerIds: TesterIdRepository,
 ) {
     authenticate {
         get("/admin/scores") {
             val user = currentUser(users) ?: return@get
             if (!requireGradingFeature(user, seasons)) return@get
             if (!requireEventWidePermission(user, Permission.SCORE_ENTER)) return@get
-            call.respond(gradingSheet(seasons.current(), registrations, scores))
+            call.respond(gradingSheet(seasons.current(), registrations, scores, testerIds))
         }
 
         put("/admin/scores") {
@@ -96,7 +98,7 @@ fun Route.scoreRoutes(
                 }
             }
             req.scores.forEach { scores.set(it.rosterEntryId, it.round, it.points, user.id) }
-            call.respond(gradingSheet(season, registrations, scores))
+            call.respond(gradingSheet(season, registrations, scores, testerIds))
         }
 
         put("/admin/scores/release") {
@@ -106,7 +108,7 @@ fun Route.scoreRoutes(
             val season = seasons.current()
             val req = call.receive<SetScoresReleasedRequest>()
             scores.setReleased(season.eventYear.toString(), user.id, req.released)
-            call.respond(gradingSheet(season, registrations, scores))
+            call.respond(gradingSheet(season, registrations, scores, testerIds))
         }
 
         get("/admin/scores/standings") {
@@ -254,11 +256,20 @@ private fun gradingSheet(
     season: SeasonDto,
     registrations: RegistrationRepository,
     scores: ScoreRepository,
-): GradingSheetResponse = GradingSheetResponse(
-    seasonYear = season.eventYear.toString(),
-    releasedAt = scores.releasedAt(season.eventYear.toString()),
-    rows = rowSeeds(season, registrations).withScores(scores),
-)
+    testerIds: TesterIdRepository,
+): GradingSheetResponse {
+    // The desk shows the same tester + ZipGrade IDs as the nametags and the ZipGrade export — reuse
+    // the tester list (which lazily assigns any missing numbers, append-only) rather than recomputing.
+    val idByEntry = testerList(season, registrations, testerIds).rows.associateBy { it.rosterEntryId }
+    return GradingSheetResponse(
+        seasonYear = season.eventYear.toString(),
+        releasedAt = scores.releasedAt(season.eventYear.toString()),
+        rows = rowSeeds(season, registrations).withScores(scores).map { row ->
+            val id = idByEntry[row.rosterEntryId]
+            row.copy(testerId = id?.testerId, externalId = id?.externalId)
+        },
+    )
+}
 
 // --- Standings (the division tally) ---------------------------------------------------------
 

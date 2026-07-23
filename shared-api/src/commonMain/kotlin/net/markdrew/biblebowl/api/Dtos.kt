@@ -1056,6 +1056,10 @@ data class TribesResponse(
 @Serializable
 data class ScoreRowDto(
     val rosterEntryId: String,
+    /** Season-wide tester ID (F7); null until assigned. Populated on the grading desk, not on My Scores. */
+    val testerId: Int? = null,
+    /** ZipGrade external ID ("EI-MR-ENT-4"); null without a tester ID or a known division. Grading desk only. */
+    val externalId: String? = null,
     val contestantName: String,
     val congregationName: String,
     /** Team name, or null for an individual (adult) contestant. */
