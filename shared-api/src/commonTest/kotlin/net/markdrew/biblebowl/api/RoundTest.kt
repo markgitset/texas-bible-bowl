@@ -33,6 +33,38 @@ class RoundTest {
     }
 
     @Test
+    fun roundsTwoThroughFiveAreScanGradedAndTheRestAreHandGraded() {
+        // 2026 ran R2–R5 through ZipGrade (R4/R5 answers are bubbled chapter numbers); only
+        // Find the Verse and the Power Round were hand-entered.
+        assertTrue(Round.FACT_FINDER.scanGraded)
+        assertTrue(Round.IDENTIFICATION.scanGraded)
+        assertTrue(Round.QUOTES.scanGraded)
+        assertTrue(Round.EVENTS.scanGraded)
+        assertFalse(Round.FIND_THE_VERSE.scanGraded)
+        assertFalse(Round.POWER.scanGraded)
+        Round.entries.forEach { assertEquals(!it.scanGraded, it.handGraded, "$it handGraded is the complement") }
+    }
+
+    @Test
+    fun scanGradedIsBroaderThanMultipleChoice() {
+        // multipleChoice is answer-format (R2/R3 only); scanGraded is grading method (R2–R5).
+        // Quotes and Events are scan-graded but NOT multiple-choice — the distinction G7 fixes.
+        assertTrue(Round.QUOTES.scanGraded && !Round.QUOTES.multipleChoice)
+        assertTrue(Round.EVENTS.scanGraded && !Round.EVENTS.multipleChoice)
+        Round.entries.forEach { assertTrue(!it.multipleChoice || it.scanGraded, "$it: multipleChoice implies scanGraded") }
+    }
+
+    @Test
+    fun scanGradedAndHandGradedRoundHelpersPartitionAllRounds() {
+        assertEquals(
+            listOf(Round.FACT_FINDER, Round.IDENTIFICATION, Round.QUOTES, Round.EVENTS),
+            Round.scanGradedRounds,
+        )
+        assertEquals(listOf(Round.FIND_THE_VERSE, Round.POWER), Round.handGradedRounds)
+        assertEquals(Round.entries.size, Round.scanGradedRounds.size + Round.handGradedRounds.size)
+    }
+
+    @Test
     fun pointValuesMatchTheOfficialRoundDescription() {
         // site/content/event/round-description.md: rounds 1-5 are 40 points, the Power Round 50.
         assertEquals(40, Round.FIND_THE_VERSE.maxPoints)

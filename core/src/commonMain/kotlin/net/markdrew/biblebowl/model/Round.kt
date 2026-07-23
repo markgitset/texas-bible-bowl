@@ -18,7 +18,8 @@ enum class BibleUse {
  * @param questions standard question count for the round
  * @param minutes standard time limit in minutes
  * @param openBible whether contestants may consult the Bible during the round
- * @param multipleChoice whether answers are multiple-choice (scantron-graded)
+ * @param multipleChoice whether answers are multiple-choice (A/B/C/D choices) — an answer-*format*
+ *        flag driving question rendering, NOT how the round is graded; see [scanGraded]
  * @param maxPoints the maximum points available in the round
  */
 @Serializable
@@ -114,11 +115,33 @@ enum class Round(
     val textGenerated: Boolean
         get() = this == FIND_THE_VERSE || this == QUOTES || this == EVENTS
 
+    /**
+     * Whether this round's scores arrive from a scanned bubble sheet (ZipGrade) rather than by hand.
+     *
+     * All four of Fact Finder (R2), Identification (R3), Know the Chapter — Quotations (R4) and
+     * — Headings/Events (R5) come off the scanner with earned points: R4/R5 answers are chapter
+     * numbers, still bubbled. Only Find the Verse (R1) and the Power Round are hand-graded. This is
+     * the authoritative "which rounds arrive by scan" list the ZipGrade import and grading-completeness
+     * view depend on. Distinct from [multipleChoice] (R2/R3), which is about answer *format*, not
+     * grading method — R4/R5 are scan-graded but not multiple-choice.
+     */
+    val scanGraded: Boolean
+        get() = this == FACT_FINDER || this == IDENTIFICATION || this == QUOTES || this == EVENTS
+
+    /** Whether this round is scored by hand: Find the Verse (R1) and the Power Round. Complement of [scanGraded]. */
+    val handGraded: Boolean get() = !scanGraded
+
     /** Time limit in minutes for a test of [questions] question(s) at this round's standard pace. */
     fun minutesAtPaceFor(questions: Int): Int = questions * minutes / this.questions
 
     companion object {
         /** The rounds contestants may contribute to the question bank (R2, R3). */
         val crowdSourcedRounds: List<Round> get() = entries.filter { it.crowdSourced }
+
+        /** The rounds whose scores arrive from the ZipGrade scanner (R2–R5). */
+        val scanGradedRounds: List<Round> get() = entries.filter { it.scanGraded }
+
+        /** The rounds scored by hand (Find the Verse and the Power Round). */
+        val handGradedRounds: List<Round> get() = entries.filter { it.handGraded }
     }
 }
