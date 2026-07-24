@@ -1,10 +1,24 @@
 package net.markdrew.biblebowl.server.routes
 
+import io.ktor.http.ContentDisposition
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.auth.authenticate
 import io.ktor.server.request.receive
+import io.ktor.server.response.header
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import net.markdrew.biblebowl.api.divisionLabel
+import net.markdrew.biblebowl.generation.typst.AwardBracket
+import net.markdrew.biblebowl.generation.typst.AwardRow
+import net.markdrew.biblebowl.generation.typst.AwardSite
+import net.markdrew.biblebowl.generation.typst.awardsTypst
+import net.markdrew.biblebowl.server.typst.TypstCompiler
+import net.markdrew.biblebowl.server.typst.TypstException
 import io.ktor.server.routing.RoutingContext
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
@@ -156,6 +170,53 @@ fun Route.scoreRoutes(
                     divisions = divisions,
                 )
             )
+        }
+
+        // The awards/ceremony booklet (G5): top-N per bracket in reverse announcement order (10th
+        // read first, champion last), one page stack per site, team member lists spelled out.
+        // GET /admin/scores/awards.pdf?siteId=<id>&topN=<n>
+        get("/admin/scores/awards.pdf") {
+            val user = currentUser(users) ?: return@get
+            if (!requireGradingFeature(user, seasons)) return@get
+            if (!requireEventWidePermission(user, Permission.SCORE_VIEW_ALL)) return@get
+            val season = seasons.current()
+            val siteFilter = call.request.queryParameters["siteId"]
+            val topN = call.request.queryParameters["topN"]?.toIntOrNull()?.coerceIn(1, 100) ?: 10
+            val divisions = computeStandings(rowSeeds(season, registrations), scores).divisions
+                .let { all -> if (siteFilter == null) all else all.filter { it.siteId == siteFilter } }
+            val sites = divisions.groupBy { it.siteId to it.siteName }.entries
+                .sortedWith(compareBy({ it.key.first == null }, { it.key.second }))
+                .map { (key, brackets) ->
+                    AwardSite(
+                        heading = key.second.ifBlank { "Texas Bible Bowl" },
+                        brackets = brackets.map { bracket ->
+                            AwardBracket(
+                                title = divisionLabel(bracket.division, bracket.inexperienced),
+                                individuals = awardRows(bracket.individuals, topN, teamRow = false),
+                                teams = awardRows(bracket.teams, topN, teamRow = true),
+                            )
+                        },
+                    )
+                }
+            if (sites.all { s -> s.brackets.all { it.individuals.isEmpty() && it.teams.isEmpty() } }) {
+                return@get call.respond(HttpStatusCode.NotFound, ApiError("no_results", "No ranked results to print yet"))
+            }
+            val title = "Texas Bible Bowl ${season.eventYear} — Awards"
+            try {
+                val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(awardsTypst(title, sites)) }
+                call.response.header(
+                    HttpHeaders.ContentDisposition,
+                    ContentDisposition.Attachment
+                        .withParameter(ContentDisposition.Parameters.FileName, "tbb-awards-${season.eventYear}.pdf")
+                        .toString(),
+                )
+                call.respondBytes(pdf, ContentType.Application.Pdf)
+            } catch (e: TypstException) {
+                call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ApiError("typst_failed", e.message ?: "PDF generation failed"),
+                )
+            }
         }
 
         get("/scores/mine") {
@@ -475,6 +536,24 @@ private fun importZipGrade(
 }
 
 /**
+ * The top-[topN] rows of a bracket, in reverse announcement order (highest place first, champion
+ * last) — the order the emcee reads. Individual rows carry their congregation as detail; team rows
+ * carry their member list (already on the standing row).
+ */
+private fun awardRows(rows: List<StandingRowDto>, topN: Int, teamRow: Boolean): List<AwardRow> =
+    rows.filter { it.rank <= topN }
+        .sortedByDescending { it.rank }
+        .map { r ->
+            AwardRow(
+                place = r.rank,
+                name = r.name,
+                detail = if (teamRow) "" else r.congregationName,
+                score = "${r.points} / ${r.maxPoints}",
+                members = r.members,
+            )
+        }
+
+/**
  * Per-site release state for the desk/standings: one entry per configured event site (its own
  * release stamp), or — in a site-less season — a single "" entry standing for the whole season.
  */
@@ -579,6 +658,7 @@ private fun computeStandings(seeds: List<RowSeed>, scores: ScoreRepository): Sta
                         rosterEntryId = null,
                         points = agg.points,
                         maxPoints = TEAM_MEMBER_MAX_POINTS * agg.members.size,
+                        members = agg.members.map { it.contestantName }.sorted(),
                     )
                 }
         }
