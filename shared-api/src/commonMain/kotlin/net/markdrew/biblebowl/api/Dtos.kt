@@ -1162,6 +1162,41 @@ data class ScoreEntryDto(
     val points: Int? = null,
 )
 
+/** A pasted/uploaded ZipGrade CSV export to apply to the grading desk (`POST /admin/scores/import`). */
+@Serializable
+data class ImportScoresRequest(val csv: String)
+
+/** One import row that didn't cleanly apply (or applied with a caveat): the export id, name, and why. */
+@Serializable
+data class ImportIssueDto(
+    /** The Student/ZipGrade ID cell from the export (may be blank or garbage). */
+    val id: String,
+    /** The contestant name from the export, so the grader can chase it down. */
+    val name: String = "",
+    val detail: String,
+)
+
+/**
+ * The reconciliation report from a ZipGrade import — never a silent success. Scores are applied by
+ * tester id through the same validation as manual entry (idempotent — re-importing updates in
+ * place); everything that didn't cleanly apply is listed so the grader can chase it down.
+ */
+@Serializable
+data class ImportScoresReport(
+    /** Scores applied, counted per round. */
+    val appliedByRound: Map<Round, Int> = emptyMap(),
+    /** Total scores applied. */
+    val appliedTotal: Int = 0,
+    /** Rows whose id matched no tester this season — normal (the export is statewide), but listed. */
+    val unknownIds: List<ImportIssueDto> = emptyList(),
+    /** Rows applied by id whose export name didn't match the roster name — a possible mis-bubbled id. */
+    val nameMismatches: List<ImportIssueDto> = emptyList(),
+    /** Repeat scans of the same (tester, round) in the file — last value won; listed for review. */
+    val duplicates: List<ImportIssueDto> = emptyList(),
+    /** Rows skipped: unparseable, points out of range, unmapped quiz, or a round the contestant doesn't take. */
+    val skipped: List<ImportIssueDto> = emptyList(),
+)
+
 /** Batch save from the grading grid — each cell is validated (0..maxPoints, round eligibility). */
 @Serializable
 data class SaveScoresRequest(val scores: List<ScoreEntryDto>)

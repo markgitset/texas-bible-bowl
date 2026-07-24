@@ -29,6 +29,8 @@ import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.GradingSheetResponse
+import net.markdrew.biblebowl.api.ImportScoresReport
+import net.markdrew.biblebowl.api.ImportScoresRequest
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.MyScoresResponse
 import net.markdrew.biblebowl.api.RegisterRequest
@@ -561,6 +563,66 @@ class ScoreRoutesTest {
         assertEquals(1, juniorRow.teamRank)
         assertEquals(1, juniorRow.teamRankOf)
         assertEquals(90, juniorRow.teamPoints)
+    }
+
+    @Test
+    fun zipGradeImportAppliesByIdAndReconcilesEverythingElse() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+        api.coachWithTeam("coach@tbb.org", "Score Church", listOf(juniorBirthdate, juniorBirthdate))
+        val grader = api.grader(users)
+
+        // Tester ids (the "Zip Grade ID" the export round-trips on) come from the tester list.
+        val testers: TesterListResponse = api.get("/admin/testers") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        val (a, b) = testers.rows.sortedBy { it.testerId }
+        val idA = a.testerId!!
+        val idB = b.testerId!!
+
+        // ZipGrade quiz names carry a "Round N:" prefix; match the number, not the display name.
+        val csv = buildString {
+            appendLine("Quiz Name,Student First Name,Student Last Name,Student ID,Earned Points")
+            appendLine("Round 2: Fact Finder,${a.name},,$idA,35")           // applied
+            appendLine("Round 2: Fact Finder,${a.name},,$idA,38")           // duplicate — last wins (38)
+            appendLine("Round 4: Quotes,${b.name},,$idB,30")                // applied (R4 is scan-graded)
+            appendLine("Round 2: Fact Finder,Some Body,,999999,20")         // unknown id (other site)
+            appendLine("Round 2: Fact Finder,Wrong Name,,$idB,25")          // name mismatch — still applied
+            appendLine("Round 2: Fact Finder,${a.name},,$idA,99")           // out of range — skipped
+            appendLine("Warmup Quiz,${a.name},,$idA,10")                    // unrecognized quiz — skipped
+        }
+        val report: ImportScoresReport = api.post("/admin/scores/import") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+            setBody(ImportScoresRequest(csv))
+        }.body()
+
+        assertEquals(3, report.appliedTotal) // A:R2, B:R4, B:R2
+        assertEquals(mapOf(Round.FACT_FINDER to 2, Round.QUOTES to 1), report.appliedByRound)
+        assertEquals(listOf("999999"), report.unknownIds.map { it.id })
+        assertEquals(listOf(idB.toString()), report.nameMismatches.map { it.id })
+        assertEquals(1, report.duplicates.size)
+        assertEquals(2, report.skipped.size) // out-of-range + unrecognized quiz
+
+        // Scores actually landed, with the duplicate's last value winning.
+        val sheet: GradingSheetResponse = api.get("/admin/scores") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        assertEquals(38, sheet.rows.single { it.testerId == idA }.scores[Round.FACT_FINDER])
+        sheet.rows.single { it.testerId == idB }.also {
+            assertEquals(30, it.scores[Round.QUOTES])
+            assertEquals(25, it.scores[Round.FACT_FINDER])
+        }
+
+        // Idempotent: re-importing the same export updates in place, same counts.
+        val again: ImportScoresReport = api.post("/admin/scores/import") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+            setBody(ImportScoresRequest(csv))
+        }.body()
+        assertEquals(3, again.appliedTotal)
     }
 
     @Test

@@ -38,6 +38,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.GradingSheetResponse
+import net.markdrew.biblebowl.api.ImportIssueDto
+import net.markdrew.biblebowl.api.ImportScoresReport
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.ScoreRowDto
@@ -69,6 +71,10 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
     var jumpText by remember { mutableStateOf("") }
     // Narrows the grid to one event site (a multi-site season); null = all sites.
     var siteFilter by remember { mutableStateOf<String?>(null) }
+    // ZipGrade import: panel visibility, the pasted CSV, and the last reconciliation report.
+    var showImport by remember { mutableStateOf(false) }
+    var importText by remember { mutableStateOf("") }
+    var importReport by remember { mutableStateOf<ImportScoresReport?>(null) }
     // Unsaved edits keyed by (rosterEntryId, round), so switching rounds keeps pending cells.
     val cells = remember { mutableStateMapOf<Pair<String, Round>, String>() }
     val scope = rememberCoroutineScope()
@@ -152,6 +158,37 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
                 }
             },
         )
+        // ZipGrade import (any desk viewer holds SCORE_ENTER — server-gated).
+        OutlinedButton(onClick = { showImport = !showImport }) {
+            Text(if (showImport) "Hide import" else "Import ZipGrade CSV")
+        }
+        if (showImport) {
+            OutlinedTextField(
+                value = importText,
+                onValueChange = { importText = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Paste ZipGrade CSV export") },
+                minLines = 3,
+                maxLines = 6,
+            )
+            Button(
+                onClick = {
+                    scope.launch {
+                        try {
+                            val r = api.importScores(importText)
+                            importReport = r
+                            report("Imported ${r.appliedTotal} score(s).", isError = false)
+                            sheet = api.gradingSheet(siteFilter) // refresh with applied scores
+                        } catch (e: Throwable) {
+                            report("Import failed: ${e.message}", isError = true)
+                        }
+                    }
+                },
+                enabled = importText.isNotBlank(),
+            ) { Text("Apply import") }
+        }
+        importReport?.let { ImportReport(it) }
+
         message?.let {
             Text(
                 it,
@@ -319,6 +356,34 @@ private fun GradingRow(row: ScoreRowDto, round: Round, value: String, onValueCha
             }
         }
     }
+}
+
+/** The ZipGrade import reconciliation report: applied counts, then each issue category. */
+@Composable
+private fun ImportReport(report: ImportScoresReport) {
+    val applied = report.appliedByRound.entries.joinToString(", ") { "${roundLabel(it.key)}: ${it.value}" }
+    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(
+            "Applied ${report.appliedTotal} score(s)" + if (applied.isBlank()) "" else " ($applied)",
+            fontWeight = FontWeight.SemiBold,
+        )
+        importIssueLine("Unknown IDs (skipped)", report.unknownIds)
+        importIssueLine("Name mismatches (applied by ID — verify)", report.nameMismatches)
+        importIssueLine("Duplicate scans (last kept)", report.duplicates)
+        importIssueLine("Skipped (unreadable / out of range / round not taken)", report.skipped)
+    }
+}
+
+@Composable
+private fun importIssueLine(title: String, issues: List<ImportIssueDto>) {
+    if (issues.isEmpty()) return
+    Text(
+        "$title — ${issues.size}: " + issues.take(8).joinToString("; ") {
+            listOf(it.id, it.name, it.detail).filter { s -> s.isNotBlank() }.joinToString(" · ")
+        } + if (issues.size > 8) " …" else "",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /** The contestant's own bracket, plus the team's when the team competes above it. */

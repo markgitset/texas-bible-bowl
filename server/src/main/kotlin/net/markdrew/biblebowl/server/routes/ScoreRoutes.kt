@@ -7,8 +7,13 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.RoutingContext
 import io.ktor.server.routing.get
+import io.ktor.server.routing.post
 import io.ktor.server.routing.put
 import net.markdrew.biblebowl.api.ApiError
+import net.markdrew.biblebowl.api.ImportIssueDto
+import net.markdrew.biblebowl.api.ImportScoresReport
+import net.markdrew.biblebowl.api.ImportScoresRequest
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.GradingSheetResponse
 import net.markdrew.biblebowl.api.MyScoresResponse
@@ -103,6 +108,26 @@ fun Route.scoreRoutes(
             }
             req.scores.forEach { scores.set(it.rosterEntryId, it.round, it.points, user.id) }
             call.respond(gradingSheet(season, registrations, scores, testerIds))
+        }
+
+        // Apply a pasted/uploaded ZipGrade CSV export (grading backlog G1). Idempotent — scores go
+        // in by tester id through the same validation as manual entry — and returns a reconciliation
+        // report rather than a silent success. The client re-fetches the sheet afterward.
+        post("/admin/scores/import") {
+            val user = currentUser(users) ?: return@post
+            if (!requireGradingFeature(user, seasons)) return@post
+            if (!requireEventWidePermission(user, Permission.SCORE_ENTER)) return@post
+            val season = seasons.current()
+            val csv = call.receive<ImportScoresRequest>().csv
+            val report = importZipGrade(csv, season, registrations, scores, testerIds, user.id)
+                ?: return@post call.respond(
+                    HttpStatusCode.BadRequest,
+                    ApiError(
+                        "bad_csv",
+                        "Couldn't find the ZipGrade columns — need a Quiz Name, an ID, and an Earned Points column",
+                    ),
+                )
+            call.respond(report)
         }
 
         put("/admin/scores/release") {
@@ -306,6 +331,146 @@ private fun gradingSheet(
         seasonYear = season.eventYear.toString(),
         releases = siteReleases(season, scores),
         rows = rows,
+    )
+}
+
+// --- ZipGrade import (G1) -------------------------------------------------------------------
+
+/** "Round 4: Quotes" → the Round with number 4. Match the stable number, never the display name. */
+private val QUIZ_ROUND = Regex("""round\s*0*(\d+)""", RegexOption.IGNORE_CASE)
+
+private fun quizToRound(quiz: String): Round? {
+    val n = QUIZ_ROUND.find(quiz.trim())?.groupValues?.get(1)?.toIntOrNull() ?: return null
+    return Round.entries.firstOrNull { it.number == n }
+}
+
+private fun namesMatch(a: String, b: String): Boolean {
+    fun norm(s: String) = s.trim().lowercase().replace(Regex("\\s+"), " ")
+    return norm(a) == norm(b)
+}
+
+/** A tolerant CSV reader: handles quoted fields, doubled quotes, and CRLF/LF; drops blank lines. */
+private fun parseCsv(text: String): List<List<String>> {
+    val rows = mutableListOf<List<String>>()
+    var row = mutableListOf<String>()
+    val field = StringBuilder()
+    var inQuotes = false
+    var i = 0
+    while (i < text.length) {
+        val c = text[i]
+        when {
+            inQuotes -> when {
+                c == '"' && i + 1 < text.length && text[i + 1] == '"' -> { field.append('"'); i++ }
+                c == '"' -> inQuotes = false
+                else -> field.append(c)
+            }
+            c == '"' -> inQuotes = true
+            c == ',' -> { row.add(field.toString()); field.clear() }
+            c == '\r' -> {}
+            c == '\n' -> { row.add(field.toString()); field.clear(); rows.add(row); row = mutableListOf() }
+            else -> field.append(c)
+        }
+        i++
+    }
+    if (field.isNotEmpty() || row.isNotEmpty()) { row.add(field.toString()); rows.add(row) }
+    return rows.filter { cells -> cells.any { it.isNotBlank() } }
+}
+
+/**
+ * Parses a ZipGrade CSV export and applies its scores to the grading desk by tester id, returning
+ * a reconciliation report (or null when the header has no recognizable Quiz/ID/Points columns).
+ * Matching reuses the same tester list the export was built from — an id cell matches by numeric
+ * tester id or by external id — so the statewide export's other-site rows fall out as unknown ids
+ * rather than errors. Duplicate (tester, round) scans keep the last value (the re-paste rhythm);
+ * scores apply through [ScoreRepository.set], so a re-import updates in place.
+ */
+private fun importZipGrade(
+    csv: String,
+    season: SeasonDto,
+    registrations: RegistrationRepository,
+    scores: ScoreRepository,
+    testerIds: TesterIdRepository,
+    userId: String,
+): ImportScoresReport? {
+    val grid = parseCsv(csv)
+    if (grid.size < 2) return null
+    val header = grid.first().map { it.trim().lowercase() }
+    val quizCol = header.indexOfFirst { it.contains("quiz") }
+    val firstCol = header.indexOfFirst { it.contains("first") }
+    val lastCol = header.indexOfFirst { it.contains("last") }
+    val pointsCol = header.indexOfFirst { it.contains("earned") }
+        .let { if (it >= 0) it else header.indexOfFirst { h -> h.contains("point") && !h.contains("possible") } }
+    val idCols = header.indices.filter { header[it].contains("id") }
+    if (quizCol < 0 || pointsCol < 0 || idCols.isEmpty()) return null
+
+    val testers = testerList(season, registrations, testerIds).rows
+    val byTesterId = testers.mapNotNull { r -> r.testerId?.let { it to r } }.toMap()
+    val byExternalId = testers.mapNotNull { r -> r.externalId?.let { it.uppercase() to r } }.toMap()
+
+    val appliedByRound = mutableMapOf<Round, Int>()
+    val unknownIds = mutableListOf<ImportIssueDto>()
+    val nameMismatches = mutableListOf<ImportIssueDto>()
+    val duplicates = mutableListOf<ImportIssueDto>()
+    val skipped = mutableListOf<ImportIssueDto>()
+    // (participant, round) -> points to apply; a later row overwrites an earlier one (last wins).
+    val winners = LinkedHashMap<Pair<String, Round>, Int>()
+
+    for (line in grid.drop(1)) {
+        fun cell(i: Int) = if (i in line.indices) line[i].trim() else ""
+        val idCells = idCols.map { cell(it) }.filter { it.isNotEmpty() }
+        val idShown = idCells.firstOrNull().orEmpty()
+        val name = listOfNotNull(
+            firstCol.takeIf { it >= 0 }?.let { cell(it) },
+            lastCol.takeIf { it >= 0 }?.let { cell(it) },
+        ).filter { it.isNotBlank() }.joinToString(" ")
+
+        val round = quizToRound(cell(quizCol))
+        if (round == null) {
+            skipped += ImportIssueDto(idShown, name, "unrecognized quiz \"${cell(quizCol)}\"")
+            continue
+        }
+        val tester = idCells.firstNotNullOfOrNull { c ->
+            c.toIntOrNull()?.let { byTesterId[it] } ?: byExternalId[c.uppercase()]
+        }
+        if (tester == null) {
+            unknownIds += ImportIssueDto(idShown, name, "no tester with this id this season")
+            continue
+        }
+        val points = cell(pointsCol).toIntOrNull()
+        if (points == null) {
+            skipped += ImportIssueDto(idShown, name, "unreadable points \"${cell(pointsCol)}\"")
+            continue
+        }
+        if (points !in 0..round.maxPoints) {
+            skipped += ImportIssueDto(idShown, name, "${round.displayName} points $points out of 0..${round.maxPoints}")
+            continue
+        }
+        val division = tester.division
+        if (division != null && round !in division.rounds) {
+            skipped += ImportIssueDto(idShown, name, "${division.displayName} doesn't take ${round.displayName}")
+            continue
+        }
+        if (name.isNotBlank() && !namesMatch(name, tester.name)) {
+            nameMismatches += ImportIssueDto(idShown, name, "roster has \"${tester.name}\"")
+        }
+        val key = tester.rosterEntryId to round
+        if (winners.containsKey(key)) {
+            duplicates += ImportIssueDto(idShown, name, "repeat ${round.displayName} scan; kept $points")
+        }
+        winners[key] = points
+    }
+
+    winners.forEach { (key, points) ->
+        scores.set(key.first, key.second, points, userId)
+        appliedByRound[key.second] = (appliedByRound[key.second] ?: 0) + 1
+    }
+    return ImportScoresReport(
+        appliedByRound = appliedByRound,
+        appliedTotal = winners.size,
+        unknownIds = unknownIds,
+        nameMismatches = nameMismatches,
+        duplicates = duplicates,
+        skipped = skipped,
     )
 }
 
