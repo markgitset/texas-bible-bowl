@@ -47,7 +47,7 @@ ceremony view is last because it's needed last on event day.
 |---|-------|------|--------|
 | 1 | G7 | Rounds 4–5 are scan-graded (model correction) | done |
 | 2 | G3 | Tester IDs on the grading desk | done |
-| 3 | G2 | Site-scoped grading (filter + release semantics) | |
+| 3 | G2 | Site-scoped grading (filter + release semantics) | done — per-site rankings + per-site release |
 | 4 | G1 | ZipGrade score import | |
 | 5 | G4 | Grading-completeness view | |
 | 6 | G6 | Hand-entry sanity checks | |
@@ -91,14 +91,15 @@ ceremonies — but the app's grading desk, standings, and My Scores have no site
 one statewide list, and one season-global release switch.
 
 - **Change:** the same site filter the registration desk got (F6) on the grading desk and
-  standings; graders at a site see their site's stack. Placement math is already
-  per-bracket and unaffected by display filtering — but decide whether *ranking* should
-  ever be per-site (2026 awarded per site) or stays statewide with a site lens.
-- **Open question (resolve during refinement):** should release be per-site? A 20-person
-  site finishes grading long before a 200-person one; a single switch either blocks the
-  small site's families or leaks the big site's half-graded tally. Options: per-site
-  release stamps, or keep one switch and accept the delay (2026 announced at the ceremony
-  anyway, so release timing may not matter much in practice).
+  standings; graders at a site see their site's stack.
+- **Resolved (Mark, 2026-07-23):** ranking is **per-site** — brackets key on
+  (site, division, experience), matching 2026's independent per-site awards. Individuals
+  rank at their own registration's site, teams at their host registration's. Statewide is
+  deferred as a future second lens (per-site is the priority). Release is **per-site**
+  too: each site carries its own release stamp (`score_releases.site_id`, "" = the
+  season-wide/site-less/legacy stamp), and a contestant sees their scores once their own
+  site — or the season-wide stamp — is released. So a finished small site's families
+  aren't blocked by a still-grading big one. Shipped in the G2 PR.
 - **Dependencies:** none hard (F6 sites exist); before item 4 so the import can scope its
   reconciliation to a site.
 

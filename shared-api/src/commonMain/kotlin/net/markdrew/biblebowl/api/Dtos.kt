@@ -1060,6 +1060,9 @@ data class ScoreRowDto(
     val testerId: Int? = null,
     /** ZipGrade external ID ("EI-MR-ENT-4"); null without a tester ID or a known division. Grading desk only. */
     val externalId: String? = null,
+    /** The contestant's resolved event site; null while unpinned in a multi-site season. Scoping key for the desk, per-site rankings, and per-site release. */
+    val siteId: String? = null,
+    val siteName: String = "",
     val contestantName: String,
     val congregationName: String,
     /** Team name, or null for an individual (adult) contestant. */
@@ -1089,6 +1092,19 @@ data class ScoreRowDto(
     val teamPoints: Int? = null,
 )
 
+/**
+ * One site's score-release state. [siteId] is "" for the season-wide release (also used by a
+ * site-less season). A contestant sees their scores once their own site — or the season-wide
+ * stamp — is released.
+ */
+@Serializable
+data class SiteReleaseDto(
+    val siteId: String,
+    val siteName: String,
+    /** ISO-8601 instant this site's scores were released, or null while unreleased. */
+    val releasedAt: String? = null,
+)
+
 /** One line of a division-bracket standings table — an individual contestant or a whole team. */
 @Serializable
 data class StandingRowDto(
@@ -1105,11 +1121,14 @@ data class StandingRowDto(
     val maxPoints: Int,
 )
 
-/** Standings for one division bracket, e.g. "Junior (Inexperienced)". */
+/** Standings for one division bracket at one site, e.g. "Bandina · Junior (Inexperienced)". */
 @Serializable
 data class DivisionStandingsDto(
     val division: Division,
     val inexperienced: Boolean = false,
+    /** The site this bracket is scoped to; null in a site-less season (one statewide bracket). */
+    val siteId: String? = null,
+    val siteName: String = "",
     val individuals: List<StandingRowDto> = emptyList(),
     val teams: List<StandingRowDto> = emptyList(),
 )
@@ -1121,8 +1140,8 @@ data class DivisionStandingsDto(
 @Serializable
 data class StandingsResponse(
     val seasonYear: String,
-    /** ISO-8601 instant the season's scores were released, or null while unreleased. */
-    val releasedAt: String? = null,
+    /** Per-site release state (one entry per configured site; a single "" entry in a site-less season). */
+    val releases: List<SiteReleaseDto> = emptyList(),
     val divisions: List<DivisionStandingsDto> = emptyList(),
 )
 
@@ -1130,8 +1149,8 @@ data class StandingsResponse(
 @Serializable
 data class GradingSheetResponse(
     val seasonYear: String,
-    /** ISO-8601 instant the season's scores were released, or null while unreleased. */
-    val releasedAt: String? = null,
+    /** Per-site release state (one entry per configured site; a single "" entry in a site-less season). */
+    val releases: List<SiteReleaseDto> = emptyList(),
     val rows: List<ScoreRowDto> = emptyList(),
 )
 
@@ -1147,9 +1166,13 @@ data class ScoreEntryDto(
 @Serializable
 data class SaveScoresRequest(val scores: List<ScoreEntryDto>)
 
-/** Releases (true) or retracts (false) the current season's scores. */
+/**
+ * Releases (true) or retracts (false) one site's scores. [siteId] null (or "") targets the
+ * season-wide release — the only option in a site-less season; a multi-site desk sends a specific
+ * site id.
+ */
 @Serializable
-data class SetScoresReleasedRequest(val released: Boolean)
+data class SetScoresReleasedRequest(val released: Boolean, val siteId: String? = null)
 
 /**
  * The signed-in user's visible scores (`GET /scores/mine`): rows for every contestant they own or

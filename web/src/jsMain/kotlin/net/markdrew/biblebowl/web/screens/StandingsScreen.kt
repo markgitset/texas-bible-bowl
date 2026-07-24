@@ -43,10 +43,14 @@ object StandingsScreen {
     private fun renderContent(content: HTMLElement, data: StandingsResponse) {
         content.child("div", "d-flex flex-wrap align-items-center gap-3 mb-3") {
             child("span", "text-muted", "Season ${data.seasonYear} · updates as grading progresses")
-            if (data.releasedAt != null) {
-                child("span", "badge text-bg-success", "Released ${data.releasedAt!!.take(10)}")
-            } else {
-                child("span", "badge text-bg-secondary", "Not released")
+            // One release badge per site (each releases on its own clock); site-less season shows one.
+            data.releases.forEach { site ->
+                val prefix = site.siteName.takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
+                if (site.releasedAt != null) {
+                    child("span", "badge text-bg-success", "${prefix}Released ${site.releasedAt!!.take(10)}")
+                } else {
+                    child("span", "badge text-bg-secondary", "${prefix}Not released")
+                }
             }
             child("a", "btn btn-outline-primary btn-sm", "Grading desk") {
                 setAttribute("href", "#${Routes.GRADING}")
@@ -62,7 +66,12 @@ object StandingsScreen {
     }
 
     private fun renderBracket(content: HTMLElement, bracket: DivisionStandingsDto) {
-        content.child("h3", "mt-4", divisionLabel(bracket.division, bracket.inexperienced))
+        // Brackets are per-site: label with the site when there is one ("Bandina · Junior").
+        val label = listOfNotNull(
+            bracket.siteName.takeIf { it.isNotBlank() },
+            divisionLabel(bracket.division, bracket.inexperienced),
+        ).joinToString(" · ")
+        content.child("h3", "mt-4", label)
         content.child("div", "row g-4") {
             child("div", "col-lg-7") {
                 // A bracket can hold only teams (members individually bracketed lower) — skip then.
