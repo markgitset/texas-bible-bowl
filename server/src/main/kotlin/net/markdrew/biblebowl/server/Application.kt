@@ -214,7 +214,7 @@ fun Application.module(
         seedRoutes(users, congregations, registrations, seasons)
         housingRoutes(users, seasons, congregations, housing)
         tribeRoutes(users, seasons, tribes)
-        scoreRoutes(users, seasons, registrations, scores)
+        scoreRoutes(users, seasons, registrations, scores, testerIds)
         testerRoutes(users, seasons, registrations, testerIds)
         userRoutes(users, congregations)
     }

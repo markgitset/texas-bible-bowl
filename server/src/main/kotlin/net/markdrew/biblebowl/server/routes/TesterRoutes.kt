@@ -185,7 +185,7 @@ private data class TesterSeed(
  * Every contestant this season (team members — visiting combo members under their OWN
  * congregation and site — plus adult individuals and unassigned youth), numbered per site.
  */
-private fun testerList(
+internal fun testerList(
     season: SeasonDto,
     registrations: RegistrationRepository,
     testerIds: TesterIdRepository,

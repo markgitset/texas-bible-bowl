@@ -46,7 +46,7 @@ ceremony view is last because it's needed last on event day.
 | # | Label | Item | Status |
 |---|-------|------|--------|
 | 1 | G7 | Rounds 4–5 are scan-graded (model correction) | done |
-| 2 | G3 | Tester IDs on the grading desk | |
+| 2 | G3 | Tester IDs on the grading desk | done |
 | 3 | G2 | Site-scoped grading (filter + release semantics) | |
 | 4 | G1 | ZipGrade score import | |
 | 5 | G4 | Grading-completeness view | |

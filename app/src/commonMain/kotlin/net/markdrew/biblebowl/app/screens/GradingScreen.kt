@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -61,9 +64,13 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
     var message by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    // Sort the grid by tester ID (the order the hand-graded paper stack is in) rather than desk order.
+    var sortByTesterId by remember { mutableStateOf(false) }
+    var jumpText by remember { mutableStateOf("") }
     // Unsaved edits keyed by (rosterEntryId, round), so switching rounds keeps pending cells.
     val cells = remember { mutableStateMapOf<Pair<String, Round>, String>() }
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
 
     fun report(text: String, isError: Boolean) {
         message = text
@@ -180,8 +187,52 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            items(data.rows, key = { it.rosterEntryId }) { row ->
+        val rows = if (sortByTesterId) {
+            data.rows.sortedWith(compareBy({ it.testerId == null }, { it.testerId }))
+        } else {
+            data.rows
+        }
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterChip(
+                selected = !sortByTesterId,
+                onClick = { sortByTesterId = false },
+                label = { Text("Desk order") },
+            )
+            FilterChip(
+                selected = sortByTesterId,
+                onClick = { sortByTesterId = true },
+                label = { Text("Tester ID") },
+            )
+            OutlinedTextField(
+                value = jumpText,
+                onValueChange = { jumpText = it },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                label = { Text("Jump to ID") },
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = KeyboardType.Number,
+                    imeAction = ImeAction.Go,
+                ),
+                // The grader types the ID off the paper in front of them and the list scrolls to it.
+                keyboardActions = KeyboardActions(onGo = {
+                    val target = jumpText.trim().toIntOrNull()
+                    val index = rows.indexOfFirst { it.testerId == target }
+                    if (index >= 0) scope.launch { listState.animateScrollToItem(index) }
+                    else if (target != null) report("No tester #$target on this sheet.", isError = true)
+                }),
+            )
+        }
+
+        LazyColumn(
+            Modifier.weight(1f),
+            state = listState,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            items(rows, key = { it.rosterEntryId }) { row ->
                 GradingRow(
                     row = row,
                     round = round,
@@ -200,6 +251,22 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
 @Composable
 private fun GradingRow(row: ScoreRowDto, round: Round, value: String, onValueChange: (String) -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // Tester ID (the number on the paper), with the ZipGrade external ID beneath it.
+        Column(Modifier.width(64.dp)) {
+            Text(
+                row.testerId?.let { "#$it" } ?: "—",
+                fontWeight = FontWeight.SemiBold,
+                color = if (row.testerId == null) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.onSurface,
+            )
+            row.externalId?.let {
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Column(Modifier.weight(1f)) {
             Text(row.contestantName, fontWeight = FontWeight.SemiBold)
             Text(
