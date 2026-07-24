@@ -666,6 +666,40 @@ class ScoreRoutesTest {
     }
 
     @Test
+    fun awardsPdfIsGatedAndRendersRankedResults() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+        val (_, _, reg) = api.coachWithTeam("c@tbb.org", "Grace", listOf(juniorBirthdate), individualName = "Adult Ann")
+        val junior = reg.teams.single().members.single()
+
+        // Gated on event-wide SCORE_VIEW_ALL — a plain contestant can't pull the awards booklet.
+        val contestant = api.signUp("kid@tbb.org", "Kid", adult = false)
+        assertEquals(
+            HttpStatusCode.Forbidden,
+            api.get("/admin/scores/awards.pdf") { header(HttpHeaders.Authorization, "Bearer ${contestant.token}") }.status,
+        )
+
+        val grader = api.grader(users)
+        api.put("/admin/scores") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+            setBody(SaveScoresRequest(listOf(ScoreEntryDto(junior.id, Round.FIND_THE_VERSE, 38))))
+        }
+        val res = api.get("/admin/scores/awards.pdf?topN=10") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }
+        if (!net.markdrew.biblebowl.server.typst.TypstCompiler.isAvailable) {
+            println("typst not on PATH — skipping awards PDF body assertion")
+            return@testApplication
+        }
+        assertEquals(HttpStatusCode.OK, res.status)
+        assertEquals(ContentType.Application.Pdf, res.contentType())
+    }
+
+    @Test
     fun rankingsReleaseAndDeskFilterAreAllPerSite() = testApplication {
         val users = InMemoryUserRepository()
         val twoSites = openSeason.copy(

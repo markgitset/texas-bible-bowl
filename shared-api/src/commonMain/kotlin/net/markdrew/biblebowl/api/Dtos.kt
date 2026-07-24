@@ -1119,6 +1119,8 @@ data class StandingRowDto(
     val points: Int,
     /** The best possible score: the division max for individuals, 200 × member count for teams. */
     val maxPoints: Int,
+    /** Member names on a team row (for the ceremony view / awards PDF); empty on individual rows. */
+    val members: List<String> = emptyList(),
 )
 
 /** Standings for one division bracket at one site, e.g. "Bandina · Junior (Inexperienced)". */

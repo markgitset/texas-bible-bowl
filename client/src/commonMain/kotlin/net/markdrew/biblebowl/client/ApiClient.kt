@@ -564,6 +564,18 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
             if (siteId != null) parameter("siteId", siteId)
         }.bodyOrThrow()
 
+    /**
+     * The awards/ceremony booklet PDF (G5): top-[topN] per bracket in reverse announcement order,
+     * one page stack per site, team member lists spelled out. Event-wide SCORE_VIEW_ALL. Null
+     * [siteId] = every site.
+     */
+    suspend fun awardsPdf(siteId: String? = null, topN: Int = 10): ByteArray =
+        client.get("$baseUrl/admin/scores/awards.pdf") {
+            authorize()
+            if (siteId != null) parameter("siteId", siteId)
+            parameter("topN", topN)
+        }.bodyOrThrow()
+
     /** Marks a registration's payment received, or clears it. Requires event-wide REGISTRATION_MANAGE. */
     suspend fun setRegistrationPaid(registrationId: String, paid: Boolean): RegistrationDto =
         client.put("$baseUrl/admin/registrations/$registrationId/paid") {
