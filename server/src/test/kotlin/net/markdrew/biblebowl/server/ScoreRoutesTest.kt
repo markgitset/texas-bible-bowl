@@ -45,6 +45,7 @@ import net.markdrew.biblebowl.api.SetScoresReleasedRequest
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.StandingsResponse
 import net.markdrew.biblebowl.api.TesterListResponse
+import net.markdrew.biblebowl.api.totalUngraded
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
@@ -563,6 +564,45 @@ class ScoreRoutesTest {
         assertEquals(1, juniorRow.teamRank)
         assertEquals(1, juniorRow.teamRankOf)
         assertEquals(90, juniorRow.teamPoints)
+    }
+
+    @Test
+    fun completenessCountsUngradedEligibleCellsSplitHandVsScan() = testApplication {
+        val users = InMemoryUserRepository()
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(openSeason))
+        }
+        val api = jsonClient()
+        // A Junior (takes all 6 rounds) and an Elementary kid (no Power) on one team; each keeps
+        // their OWN division for eligibility, so the Elementary kid's absent Power isn't a gap.
+        val (_, _, reg) = api.coachWithTeam("c@tbb.org", "Grace", listOf(juniorBirthdate, elementaryBirthdate))
+        val junior = reg.teams.single().members.single { it.birthdate == juniorBirthdate }
+        val grader = api.grader(users)
+        api.put("/admin/scores") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+            setBody(
+                SaveScoresRequest(
+                    listOf(
+                        ScoreEntryDto(junior.id, Round.FIND_THE_VERSE, 40), // a hand cell
+                        ScoreEntryDto(junior.id, Round.FACT_FINDER, 30),     // a scan cell
+                    )
+                )
+            )
+        }
+
+        val sheet: GradingSheetResponse = api.get("/admin/scores") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        val comp = sheet.completeness.single() // site-less season → one bucket
+        assertEquals(2, comp.contestants)
+        // Scan rounds R2–R5: junior graded R2 → R3,R4,R5 ungraded (3) + elementary all 4 = 7.
+        assertEquals(7, comp.scanGaps.sumOf { it.ungraded })
+        // Hand rounds: junior graded R1 → Power ungraded (1); elementary R1 ungraded (1) = 2.
+        assertEquals(2, comp.handGaps.sumOf { it.ungraded })
+        // The Power gap counts only the Junior — the Elementary kid never takes it.
+        assertEquals(1, comp.handGaps.single { it.round == Round.POWER }.ungraded)
+        assertEquals(9, comp.totalUngraded)
     }
 
     @Test

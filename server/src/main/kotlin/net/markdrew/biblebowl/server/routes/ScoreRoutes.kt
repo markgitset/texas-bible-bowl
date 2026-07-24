@@ -13,6 +13,8 @@ import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.ImportIssueDto
 import net.markdrew.biblebowl.api.ImportScoresReport
 import net.markdrew.biblebowl.api.ImportScoresRequest
+import net.markdrew.biblebowl.api.RoundGapDto
+import net.markdrew.biblebowl.api.SiteCompletenessDto
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.GradingSheetResponse
@@ -321,7 +323,8 @@ private fun gradingSheet(
     // The desk shows the same tester + ZipGrade IDs as the nametags and the ZipGrade export — reuse
     // the tester list (which lazily assigns any missing numbers, append-only) rather than recomputing.
     val idByEntry = testerList(season, registrations, testerIds).rows.associateBy { it.rosterEntryId }
-    val rows = rowSeeds(season, registrations).withScores(scores)
+    val scored = rowSeeds(season, registrations).withScores(scores)
+    val rows = scored
         .let { all -> if (siteFilter == null) all else all.filter { it.siteId == siteFilter } }
         .map { row ->
             val id = idByEntry[row.rosterEntryId]
@@ -330,9 +333,38 @@ private fun gradingSheet(
     return GradingSheetResponse(
         seasonYear = season.eventYear.toString(),
         releases = siteReleases(season, scores),
+        completeness = completenessBySite(scored), // over all sites, independent of the row filter
         rows = rows,
     )
 }
+
+/**
+ * Per-site grading progress (G4): eligible cells still ungraded, split scan-graded (R2–R5) vs
+ * hand-graded (Find the Verse, Power). Round eligibility is respected — an Elementary contestant's
+ * absent Power Round isn't counted a gap — and unknown-division rows (unbracketable) are skipped.
+ */
+private fun completenessBySite(allRows: List<ScoreRowDto>): List<SiteCompletenessDto> =
+    allRows.groupBy { it.siteId to it.siteName }.entries
+        .sortedWith(compareBy({ it.key.first == null }, { it.key.second }))
+        .map { (key, rows) ->
+            fun gaps(kind: (Round) -> Boolean): List<RoundGapDto> {
+                val counts = linkedMapOf<Round, Int>()
+                for (row in rows) {
+                    val division = row.division ?: continue
+                    for (round in division.rounds) {
+                        if (kind(round) && row.scores[round] == null) counts[round] = (counts[round] ?: 0) + 1
+                    }
+                }
+                return counts.entries.sortedBy { it.key.number }.map { RoundGapDto(it.key, it.value) }
+            }
+            SiteCompletenessDto(
+                siteId = key.first,
+                siteName = key.second,
+                contestants = rows.size,
+                scanGaps = gaps { it.scanGraded },
+                handGaps = gaps { it.handGraded },
+            )
+        }
 
 // --- ZipGrade import (G1) -------------------------------------------------------------------
 

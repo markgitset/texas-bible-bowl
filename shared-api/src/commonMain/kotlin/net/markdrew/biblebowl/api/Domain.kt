@@ -189,6 +189,10 @@ val Division.maxScore: Int
 val ScoreRowDto.totalPoints: Int
     get() = scores.values.sum()
 
+/** Total ungraded eligible cells at a site (scan gaps + hand gaps). */
+val SiteCompletenessDto.totalUngraded: Int
+    get() = (scanGaps + handGaps).sumOf { it.ungraded }
+
 /**
  * What one member can contribute to a team score: rounds 1–5 only (200 points). The Power Round
  * never counts toward team totals — that's why the published team maximum is 800 = 4 × 200.

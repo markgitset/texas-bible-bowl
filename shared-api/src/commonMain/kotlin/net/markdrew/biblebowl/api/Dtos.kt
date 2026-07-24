@@ -1145,12 +1145,33 @@ data class StandingsResponse(
     val divisions: List<DivisionStandingsDto> = emptyList(),
 )
 
+/** Ungraded eligible cells for one round (grading-completeness, G4). */
+@Serializable
+data class RoundGapDto(val round: Round, val ungraded: Int)
+
+/**
+ * Per-site grading progress (G4): how many *eligible* cells are still ungraded, split into
+ * scan-graded rounds (R2–R5 — chase by re-scan) and hand-graded rounds (Find the Verse, Power —
+ * chase by finding the paper). Round eligibility is respected: an Elementary contestant's absent
+ * Power Round isn't a gap.
+ */
+@Serializable
+data class SiteCompletenessDto(
+    val siteId: String? = null,
+    val siteName: String = "",
+    val contestants: Int = 0,
+    val scanGaps: List<RoundGapDto> = emptyList(),
+    val handGaps: List<RoundGapDto> = emptyList(),
+)
+
 /** The grading desk for the current season (`GET /admin/scores`): every contestant, every round. */
 @Serializable
 data class GradingSheetResponse(
     val seasonYear: String,
     /** Per-site release state (one entry per configured site; a single "" entry in a site-less season). */
     val releases: List<SiteReleaseDto> = emptyList(),
+    /** Per-site grading progress (all sites, regardless of any row site filter). */
+    val completeness: List<SiteCompletenessDto> = emptyList(),
     val rows: List<ScoreRowDto> = emptyList(),
 )
 
