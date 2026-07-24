@@ -45,6 +45,7 @@ import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.ScoreRowDto
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.divisionLabel
+import net.markdrew.biblebowl.api.handEntryWarnings
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.rounds
 import net.markdrew.biblebowl.api.totalPoints
@@ -158,6 +159,7 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
                 }
             },
         )
+        SanityWarnings(data)
         // ZipGrade import (any desk viewer holds SCORE_ENTER — server-gated).
         OutlinedButton(onClick = { showImport = !showImport }) {
             Text(if (showImport) "Hide import" else "Import ZipGrade CSV")
@@ -354,6 +356,24 @@ private fun GradingRow(row: ScoreRowDto, round: Round, value: String, onValueCha
             Box(Modifier.width(96.dp), contentAlignment = Alignment.Center) {
                 Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+    }
+}
+
+/** Hand-entry sanity warnings (G6): score == tester ID or Find the Verse == Power. Not blocks. */
+@Composable
+private fun SanityWarnings(data: GradingSheetResponse) {
+    val warnings = handEntryWarnings(data.rows)
+    if (warnings.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Text(
+            "Hand-entry check — ${warnings.size} to review",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.error,
+        )
+        warnings.take(20).forEach {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

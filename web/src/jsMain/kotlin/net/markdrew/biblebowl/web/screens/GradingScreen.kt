@@ -9,6 +9,7 @@ import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.ScoreRowDto
 import net.markdrew.biblebowl.api.divisionLabel
+import net.markdrew.biblebowl.api.handEntryWarnings
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.rounds
 import net.markdrew.biblebowl.api.totalPoints
@@ -87,6 +88,7 @@ object GradingScreen {
         inputByTesterId.clear()
 
         renderReleaseBar(content, data)
+        renderSanityWarnings(content, data)
         renderImport(content)
         message?.let {
             if (messageIsError) content.errorLine(it)
@@ -319,6 +321,22 @@ object GradingScreen {
                 messageIsError = true
             }
             renderContent()
+        }
+    }
+
+    /**
+     * Hand-entry sanity warnings (G6): a filled hand-round score equal to the tester ID, or Find
+     * the Verse == Power. Warnings, not blocks — the grader reviews and moves on.
+     */
+    private fun renderSanityWarnings(parent: Element, data: GradingSheetResponse) {
+        val warnings = handEntryWarnings(data.rows)
+        if (warnings.isEmpty()) return
+        parent.child("div", "alert alert-warning py-2 px-3 mb-3") {
+            child("div", "fw-semibold small", "Hand-entry check — ${warnings.size} to review")
+            child("ul", "small mb-0") {
+                warnings.take(50).forEach { child("li", text = it) }
+                if (warnings.size > 50) child("li", "fst-italic", "…and ${warnings.size - 50} more")
+            }
         }
     }
 
