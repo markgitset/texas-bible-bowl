@@ -48,7 +48,7 @@ ceremony view is last because it's needed last on event day.
 | 1 | G7 | Rounds 4–5 are scan-graded (model correction) | done |
 | 2 | G3 | Tester IDs on the grading desk | done |
 | 3 | G2 | Site-scoped grading (filter + release semantics) | done — per-site rankings + per-site release |
-| 4 | G1 | ZipGrade score import | |
+| 4 | G1 | ZipGrade score import | done |
 | 5 | G4 | Grading-completeness view | |
 | 6 | G6 | Hand-entry sanity checks | |
 | 7 | G5 | Awards / ceremony view + PDF | |
@@ -120,9 +120,11 @@ scan-grading path (decided during F7).
     IDs are normal, but list them;
   - name mismatches: rows whose ID matched a roster entry but whose name doesn't (catches
     a mis-bubbled ID crediting the wrong contestant — the workbook had no defense here);
-  - duplicate scans of the same (ID, round) — pick a rule (last wins? highest? reject the
-    file?) during refinement;
+  - duplicate scans of the same (ID, round) — **resolved: last value wins** (matches the
+    re-paste-a-fresh-export rhythm), listed for review;
   - out-of-range or unparseable rows.
+  - **Name mismatches are applied by ID and flagged** (the bubbled ID is the match key),
+    not skipped — a real score isn't lost to a nickname, but the grader sees the flag.
 - **Quiz-name mapping:** match on the `"Round N:"` prefix, not display names — ZipGrade
   says "Round 4: Quotes" while the app says "Know the Chapter — Quotations". Round
   numbers are stable; names aren't.

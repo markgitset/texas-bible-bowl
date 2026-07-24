@@ -49,6 +49,8 @@ import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationUpdateResponse
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.SaveScoresRequest
+import net.markdrew.biblebowl.api.ImportScoresReport
+import net.markdrew.biblebowl.api.ImportScoresRequest
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.AddCabinAssignmentRequest
@@ -497,6 +499,15 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun saveScores(scores: List<ScoreEntryDto>): GradingSheetResponse =
         client.put("$baseUrl/admin/scores") {
             authorize(); contentType(ContentType.Application.Json); setBody(SaveScoresRequest(scores))
+        }.bodyOrThrow()
+
+    /**
+     * Applies a pasted/uploaded ZipGrade CSV export to the grading desk (event-wide SCORE_ENTER),
+     * returning a reconciliation report. Idempotent — re-importing updates in place.
+     */
+    suspend fun importScores(csv: String): ImportScoresReport =
+        client.post("$baseUrl/admin/scores/import") {
+            authorize(); contentType(ContentType.Application.Json); setBody(ImportScoresRequest(csv))
         }.bodyOrThrow()
 
     /**

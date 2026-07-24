@@ -3,6 +3,8 @@ package net.markdrew.biblebowl.web.screens
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.GradingSheetResponse
+import net.markdrew.biblebowl.api.ImportIssueDto
+import net.markdrew.biblebowl.api.ImportScoresReport
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.ScoreRowDto
@@ -24,6 +26,7 @@ import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLSelectElement
+import org.w3c.dom.HTMLTextAreaElement
 
 /**
  * Grading desk (docs/gui-redesign.md §5F): pick a round, enter every contestant's points in a
@@ -44,6 +47,9 @@ object GradingScreen {
     private var sortByTesterId: Boolean = false
     /** Narrows the grid to one event site (a multi-site season); null = all sites. */
     private var siteFilter: String? = null
+    /** Whether the ZipGrade import panel is open, and the last import's reconciliation report. */
+    private var showImport: Boolean = false
+    private var importReport: ImportScoresReport? = null
     private val inputs = mutableListOf<Pair<String, HTMLInputElement>>() // rosterEntryId → cell input
     private val rowByTesterId = mutableMapOf<Int, HTMLElement>() // tester ID → its <tr>, for jump-to-ID
     private val inputByTesterId = mutableMapOf<Int, HTMLInputElement>() // tester ID → its score cell
@@ -81,6 +87,7 @@ object GradingScreen {
         inputByTesterId.clear()
 
         renderReleaseBar(content, data)
+        renderImport(content)
         message?.let {
             if (messageIsError) content.errorLine(it)
             else content.child("p", "tbb-gold fw-semibold mb-2", it)
@@ -312,6 +319,81 @@ object GradingScreen {
                 messageIsError = true
             }
             renderContent()
+        }
+    }
+
+    /**
+     * ZipGrade import: a toggle, a paste box / file picker, and — after applying — the
+     * reconciliation report. Any desk viewer holds SCORE_ENTER (server-gated), so no extra gate.
+     */
+    private fun renderImport(parent: Element) {
+        parent.child("div", "mb-3") {
+            child("button", "btn btn-outline-secondary btn-sm", if (showImport) "Hide import" else "Import ZipGrade CSV") {
+                setAttribute("type", "button")
+            }.let { (it as HTMLButtonElement).onClick { showImport = !showImport; renderContent() } }
+
+            if (showImport) child("div", "card card-body mt-2") {
+                child("p", "small text-muted mb-2", "Paste a ZipGrade CSV export or choose a file, then Apply. " +
+                    "Scores match by tester ID and update in place — re-import a fresh export anytime.")
+                val textarea = child("textarea", "form-control mb-2") {
+                    setAttribute("rows", "4")
+                    setAttribute("placeholder", "Quiz Name,Student First Name,Student Last Name,Student ID,Earned Points…")
+                } as HTMLTextAreaElement
+                val file = child("input", "form-control form-control-sm mb-2") as HTMLInputElement
+                file.type = "file"
+                file.setAttribute("accept", ".csv,text/csv")
+                file.addEventListener("change", {
+                    val f = file.files?.item(0)
+                    if (f != null) (f.asDynamic().text() as kotlin.js.Promise<String>).then { textarea.value = it }
+                })
+                val apply = child("button", "btn btn-primary btn-sm", "Apply import") {
+                    setAttribute("type", "button")
+                } as HTMLButtonElement
+                apply.onClick {
+                    val csv = textarea.value
+                    if (csv.isBlank()) {
+                        message = "Paste or choose a ZipGrade CSV first."; messageIsError = true; renderContent()
+                    } else {
+                        apply.disabled = true
+                        Shell.scope.launch {
+                            try {
+                                importReport = Session.api.importScores(csv)
+                                message = "Imported ${importReport!!.appliedTotal} score(s)."
+                                messageIsError = false
+                                reload() // refresh the grid; renderContent re-shows the report
+                            } catch (e: Throwable) {
+                                message = "Import failed: ${e.message}"; messageIsError = true; renderContent()
+                            }
+                        }
+                    }
+                }
+            }
+
+            importReport?.let { renderImportReport(this, it) }
+        }
+    }
+
+    private fun renderImportReport(parent: Element, report: ImportScoresReport) {
+        parent.child("div", "mt-2") {
+            val applied = report.appliedByRound.entries.joinToString(", ") { "${roundLabel(it.key)}: ${it.value}" }
+            child("p", "mb-1 fw-semibold", "Applied ${report.appliedTotal} score(s)${if (applied.isBlank()) "" else " ($applied)"}.")
+            issueList(this, "Unknown IDs (skipped — likely another site's scans)", report.unknownIds)
+            issueList(this, "Name mismatches (applied by ID — verify)", report.nameMismatches)
+            issueList(this, "Duplicate scans (last value kept)", report.duplicates)
+            issueList(this, "Skipped (unreadable / out of range / round not taken)", report.skipped)
+        }
+    }
+
+    private fun issueList(parent: Element, title: String, issues: List<ImportIssueDto>) {
+        if (issues.isEmpty()) return
+        parent.child("details", "mb-1") {
+            child("summary", "small", "$title — ${issues.size}")
+            child("ul", "small text-muted mb-0") {
+                issues.take(50).forEach { issue ->
+                    child("li", text = listOf(issue.id, issue.name, issue.detail).filter { it.isNotBlank() }.joinToString(" · "))
+                }
+                if (issues.size > 50) child("li", "fst-italic", "…and ${issues.size - 50} more")
+            }
         }
     }
 
