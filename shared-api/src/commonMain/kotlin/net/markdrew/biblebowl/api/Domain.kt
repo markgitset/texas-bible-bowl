@@ -189,6 +189,10 @@ val Division.maxScore: Int
 val ScoreRowDto.totalPoints: Int
     get() = scores.values.sum()
 
+/** Total ungraded eligible cells at a site (scan gaps + hand gaps). */
+val SiteCompletenessDto.totalUngraded: Int
+    get() = (scanGaps + handGaps).sumOf { it.ungraded }
+
 /**
  * Cheap hand-entry sanity warnings (G6) for the two hand-graded rounds (Find the Verse and the
  * Power Round): a filled score that equals the contestant's tester id (the classic wrong-column
