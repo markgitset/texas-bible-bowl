@@ -54,12 +54,27 @@ fun ageOn(birthdateIso: String, dateIso: String): Int? {
 }
 
 /**
- * The date this season maps ages to school grades on: the configured [SeasonDto.gradeCutoffDate],
- * or September 1 before the event (the Texas school-entry cutoff) when unset.
+ * Normalizes a stored [SeasonDto.gradeCutoffDate] to its "MM-DD" month-day, or null when it doesn't
+ * parse. Accepts the current "MM-DD" form and legacy full-ISO "YYYY-MM-DD" values (year ignored, so
+ * both resolve to the same cutoff once the season year is applied).
+ */
+private fun monthDayOf(value: String): String? {
+    val parts = value.split('-').filter { it.isNotBlank() }
+    if (parts.size < 2) return null
+    val month = parts[parts.size - 2].toIntOrNull() ?: return null
+    val day = parts[parts.size - 1].toIntOrNull() ?: return null
+    if (month !in 1..12 || day !in 1..31) return null
+    return "${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}"
+}
+
+/**
+ * The date this season maps ages to school grades on, ISO-8601: the configured
+ * [SeasonDto.gradeCutoffDate] month-day applied to the year before the event, or September 1 before
+ * the event (the Texas school-entry cutoff) when unset. The year is always the event year minus one
+ * — only the month-day is configurable.
  */
 val SeasonDto.gradeCutoff: String
-    get() = gradeCutoffDate?.takeIf { it.isNotBlank() }
-        ?: "${eventYear - 1}-09-01"
+    get() = "${eventYear - 1}-${gradeCutoffDate?.takeIf { it.isNotBlank() }?.let(::monthDayOf) ?: "09-01"}"
 
 /**
  * The school grade implied by [birthdateIso] this season: age on [gradeCutoff] minus 5, since a

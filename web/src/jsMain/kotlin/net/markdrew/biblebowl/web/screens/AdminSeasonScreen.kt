@@ -29,6 +29,11 @@ import org.w3c.dom.HTMLSelectElement
  */
 object AdminSeasonScreen {
 
+    private val MONTH_NAMES = listOf(
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December",
+    )
+
     private var draft: SeasonDto = Session.season
     private var message: String? = null
     private var isError = false
@@ -69,7 +74,7 @@ object AdminSeasonScreen {
         form.dateField("Registration closes (last day to register)", draft.registrationClosesOn) {
             draft = draft.copy(registrationClosesOn = it)
         }
-        form.dateField("Grade cutoff — ages on this date map to grades (blank = Sept 1 before the event)", draft.gradeCutoffDate) {
+        form.monthDayField("Grade cutoff — ages on this month/day map to grades (blank = Sept 1 before the event)", draft.gradeCutoffDate) {
             draft = draft.copy(gradeCutoffDate = it)
         }
         form.field("Scholarship deadline", draft.scholarshipDeadline) { draft = draft.copy(scholarshipDeadline = it) }
@@ -205,6 +210,42 @@ object AdminSeasonScreen {
             input.type = "date"
             input.value = value ?: ""
             input.addEventListener("input", { onChange(input.value.ifBlank { null }) })
+        }
+    }
+
+    /**
+     * Month + day picker stored as "MM-DD" (the year is implied by the season, so it isn't asked
+     * for). Both parts blank ↔ null (falls back to the default cutoff). A legacy full-ISO value is
+     * shown by its month/day; the year is dropped on the next save.
+     */
+    private fun Element.monthDayField(label: String, value: String?, onChange: (String?) -> Unit) {
+        // Reuse the same MM-DD parse as the server: last two dash-parts are month, day.
+        val parts = value?.split('-')?.filter(String::isNotBlank).orEmpty()
+        val initialMonth = parts.getOrNull(parts.size - 2)?.toIntOrNull()?.takeIf { it in 1..12 }
+        val initialDay = parts.getOrNull(parts.size - 1)?.toIntOrNull()?.takeIf { it in 1..31 }
+        child("div", "mb-3") {
+            child("label", "form-label", label)
+            val group = child("div", "input-group")
+            val month = group.child("select", "form-select") as HTMLSelectElement
+            (month.child("option", text = "Month") as HTMLOptionElement).value = ""
+            MONTH_NAMES.forEachIndexed { i, name ->
+                val option = month.child("option", text = name) as HTMLOptionElement
+                option.value = (i + 1).toString()
+                if (i + 1 == initialMonth) option.selected = true
+            }
+            val day = group.child("input", "form-control") as HTMLInputElement
+            day.type = "number"
+            day.min = "1"
+            day.max = "31"
+            day.placeholder = "Day"
+            day.value = initialDay?.toString() ?: ""
+            fun emit() {
+                val m = month.value.toIntOrNull()
+                val d = day.value.toIntOrNull()?.takeIf { it in 1..31 }
+                onChange(if (m == null || d == null) null else "${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}")
+            }
+            month.addEventListener("change", { emit() })
+            day.addEventListener("input", { emit() })
         }
     }
 
