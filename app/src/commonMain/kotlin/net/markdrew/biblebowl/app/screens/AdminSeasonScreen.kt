@@ -97,8 +97,8 @@ fun AdminSeasonScreen(api: TbbApi, onSaved: (SeasonDto) -> Unit) {
             Field("Registration closes (yyyy-MM-dd, blank = TBD)", draft.registrationClosesOn ?: "") {
                 draft = draft.copy(registrationClosesOn = it.trim().ifBlank { null })
             }
-            Field("Grade cutoff (yyyy-MM-dd, blank = Sept 1 before the event)", draft.gradeCutoffDate ?: "") {
-                draft = draft.copy(gradeCutoffDate = it.trim().ifBlank { null })
+            MonthDayField("Grade cutoff — ages on this month/day map to grades (blank = Sept 1 before the event)", draft.gradeCutoffDate) {
+                draft = draft.copy(gradeCutoffDate = it)
             }
             Field("Scholarship deadline", draft.scholarshipDeadline) { draft = draft.copy(scholarshipDeadline = it) }
             DollarField("Fee — contestant, dollars (blank = TBD)", draft.priceContestantCents) {
@@ -290,6 +290,74 @@ private fun Field(label: String, value: String, onChange: (String) -> Unit) {
         singleLine = true,
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+private val MONTH_NAMES = listOf(
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+)
+
+/**
+ * Month + day editor stored as "MM-DD" (the year is implied by the season, so it isn't asked for).
+ * Both parts unset ↔ null (falls back to the default cutoff). A legacy full-ISO value is shown by
+ * its month/day; the year is dropped on the next save.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MonthDayField(label: String, value: String?, onChange: (String?) -> Unit) {
+    // Same MM-DD parse as the server: last two dash-parts are month, day.
+    val parts = value?.split('-')?.filter(String::isNotBlank).orEmpty()
+    var month by remember { mutableStateOf(parts.getOrNull(parts.size - 2)?.toIntOrNull()?.takeIf { it in 1..12 }) }
+    var dayText by remember { mutableStateOf(parts.getOrNull(parts.size - 1)?.toIntOrNull()?.takeIf { it in 1..31 }?.toString() ?: "") }
+
+    fun emit() {
+        val m = month
+        val d = dayText.trim().toIntOrNull()?.takeIf { it in 1..31 }
+        onChange(if (m == null || d == null) null else "${m.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}")
+    }
+
+    Column {
+        Text(label, style = MaterialTheme.typography.bodySmall)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            var expanded by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(
+                expanded = expanded,
+                onExpandedChange = { expanded = it },
+                modifier = Modifier.weight(1f),
+            ) {
+                OutlinedTextField(
+                    value = month?.let { MONTH_NAMES[it - 1] } ?: "",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Month") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    modifier = Modifier.fillMaxWidth().menuAnchor(),
+                )
+                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                    MONTH_NAMES.forEachIndexed { i, name ->
+                        DropdownMenuItem(
+                            text = { Text(name) },
+                            onClick = {
+                                month = i + 1
+                                expanded = false
+                                emit()
+                            },
+                        )
+                    }
+                }
+            }
+            OutlinedTextField(
+                value = dayText,
+                onValueChange = {
+                    dayText = it.filter(Char::isDigit).take(2)
+                    emit()
+                },
+                label = { Text("Day") },
+                singleLine = true,
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
 }
 
 /** Dollar-amount editor over integer cents; keeps its own text so typing "12.50" isn't reformatted mid-keystroke. */
