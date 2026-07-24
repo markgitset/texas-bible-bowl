@@ -27,16 +27,28 @@ interface ScoreRepository {
     /** Upserts one score cell, or deletes it when [points] is null (an emptied grid cell). */
     fun set(rosterEntryId: String, round: Round, points: Int?, enteredByUserId: String)
 
-    /** ISO-8601 instant [seasonYear]'s scores were released, or null while unreleased. */
-    fun releasedAt(seasonYear: String): String?
+    /**
+     * Release stamps for [seasonYear] by site id → ISO-8601 instant. The key "" is the season-wide
+     * release (also the only key a site-less season uses); a per-site release keys on the site id.
+     * A site's *effective* release is its own stamp or, failing that, the season-wide one — see
+     * [releasedAtFor].
+     */
+    fun releases(seasonYear: String): Map<String, String>
 
-    /** Releases or retracts [seasonYear]'s scores; returns the new releasedAt (null after retract). */
-    fun setReleased(seasonYear: String, releasedByUserId: String, released: Boolean): String?
+    /**
+     * Releases or retracts one site's scores ([siteId] "" = season-wide); returns the new
+     * releasedAt for that key (null after retract).
+     */
+    fun setReleased(seasonYear: String, siteId: String, releasedByUserId: String, released: Boolean): String?
 }
+
+/** A [siteId]'s effective release instant: its own stamp, else the season-wide ("") stamp, else null. */
+fun Map<String, String>.releasedAtFor(siteId: String?): String? = this[siteId ?: ""] ?: this[""]
 
 class InMemoryScoreRepository : ScoreRepository {
     private val cells = ConcurrentHashMap<String, MutableMap<Round, Int>>()
-    private val releases = ConcurrentHashMap<String, Long>()
+    // (seasonYear, siteId) -> releasedAt epoch ms; siteId "" is the season-wide release.
+    private val releases = ConcurrentHashMap<Pair<String, String>, Long>()
     private val lock = Any()
 
     override fun forEntries(entryIds: Collection<String>): Map<String, Map<Round, Int>> = synchronized(lock) {
@@ -53,13 +65,15 @@ class InMemoryScoreRepository : ScoreRepository {
         }
     }
 
-    override fun releasedAt(seasonYear: String): String? =
-        releases[seasonYear]?.let { Instant.ofEpochMilli(it).toString() }
+    override fun releases(seasonYear: String): Map<String, String> =
+        releases.filterKeys { it.first == seasonYear }
+            .entries.associate { (key, ms) -> key.second to Instant.ofEpochMilli(ms).toString() }
 
-    override fun setReleased(seasonYear: String, releasedByUserId: String, released: Boolean): String? {
-        if (released) releases.putIfAbsent(seasonYear, System.currentTimeMillis())
-        else releases.remove(seasonYear)
-        return releasedAt(seasonYear)
+    override fun setReleased(seasonYear: String, siteId: String, releasedByUserId: String, released: Boolean): String? {
+        val key = seasonYear to siteId
+        if (released) releases.putIfAbsent(key, System.currentTimeMillis())
+        else releases.remove(key)
+        return releases[key]?.let { Instant.ofEpochMilli(it).toString() }
     }
 }
 
@@ -102,29 +116,31 @@ class PostgresScoreRepository(private val db: Database) : ScoreRepository {
             }
         }
 
-    override fun releasedAt(seasonYear: String): String? = transaction(db) {
-        val year = seasonYear.toIntOrNull() ?: return@transaction null
+    override fun releases(seasonYear: String): Map<String, String> = transaction(db) {
+        val year = seasonYear.toIntOrNull() ?: return@transaction emptyMap()
         ScoreReleasesTable.selectAll()
             .where { ScoreReleasesTable.seasonYear eq year }
-            .singleOrNull()
-            ?.let { Instant.ofEpochMilli(it[ScoreReleasesTable.releasedAtEpochMs]).toString() }
+            .associate { it[ScoreReleasesTable.siteId] to Instant.ofEpochMilli(it[ScoreReleasesTable.releasedAtEpochMs]).toString() }
     }
 
-    override fun setReleased(seasonYear: String, releasedByUserId: String, released: Boolean): String? =
+    override fun setReleased(seasonYear: String, siteId: String, releasedByUserId: String, released: Boolean): String? =
         transaction(db) {
             val year = seasonYear.toIntOrNull() ?: return@transaction null
             if (!released) {
-                ScoreReleasesTable.deleteWhere { ScoreReleasesTable.seasonYear eq year }
+                ScoreReleasesTable.deleteWhere {
+                    (ScoreReleasesTable.seasonYear eq year) and (ScoreReleasesTable.siteId eq siteId)
+                }
                 return@transaction null
             }
             ensureSeasonRow(year)
             val existing = ScoreReleasesTable.selectAll()
-                .where { ScoreReleasesTable.seasonYear eq year }
+                .where { (ScoreReleasesTable.seasonYear eq year) and (ScoreReleasesTable.siteId eq siteId) }
                 .singleOrNull()
             val releasedMs = existing?.get(ScoreReleasesTable.releasedAtEpochMs) ?: run {
                 val now = System.currentTimeMillis()
                 ScoreReleasesTable.insert {
                     it[ScoreReleasesTable.seasonYear] = year
+                    it[ScoreReleasesTable.siteId] = siteId
                     it[releasedAtEpochMs] = now
                     it[ScoreReleasesTable.releasedByUserId] = releasedByUserId
                 }

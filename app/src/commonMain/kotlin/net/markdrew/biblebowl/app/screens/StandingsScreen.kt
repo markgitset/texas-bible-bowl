@@ -77,7 +77,15 @@ private fun StandingsContent(data: StandingsResponse, onOpenGrading: () -> Unit)
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            ReleasedBadge(data.releasedAt)
+            // One release badge per site (each releases on its own clock); site-less season shows one.
+            data.releases.forEach { site ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (site.siteName.isNotBlank()) {
+                        Text(site.siteName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                    }
+                    ReleasedBadge(site.releasedAt)
+                }
+            }
         }
         OutlinedButton(onClick = onOpenGrading) { Text("Grading desk") }
     }
@@ -115,9 +123,14 @@ internal fun ReleasedBadge(releasedAt: String?) {
 }
 
 private fun androidx.compose.foundation.lazy.LazyListScope.bracketItems(bracket: DivisionStandingsDto) {
-    item(key = "${bracket.division}-${bracket.inexperienced}") {
+    // Brackets are per-site: label with the site when there is one ("Bandina · Junior").
+    val label = listOfNotNull(
+        bracket.siteName.takeIf { it.isNotBlank() },
+        divisionLabel(bracket.division, bracket.inexperienced),
+    ).joinToString(" · ")
+    item(key = "${bracket.siteId}-${bracket.division}-${bracket.inexperienced}") {
         Text(
-            divisionLabel(bracket.division, bracket.inexperienced),
+            label,
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold,
             color = MaterialTheme.colorScheme.primary,

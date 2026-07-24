@@ -67,6 +67,8 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
     // Sort the grid by tester ID (the order the hand-graded paper stack is in) rather than desk order.
     var sortByTesterId by remember { mutableStateOf(false) }
     var jumpText by remember { mutableStateOf("") }
+    // Narrows the grid to one event site (a multi-site season); null = all sites.
+    var siteFilter by remember { mutableStateOf<String?>(null) }
     // Unsaved edits keyed by (rosterEntryId, round), so switching rounds keeps pending cells.
     val cells = remember { mutableStateMapOf<Pair<String, Round>, String>() }
     val scope = rememberCoroutineScope()
@@ -77,9 +79,11 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
         messageIsError = isError
     }
 
-    LaunchedEffect(Unit) {
+    // Reloads whenever the site filter changes; the server scopes the rows.
+    LaunchedEffect(siteFilter) {
+        sheet = null
         try {
-            sheet = api.gradingSheet()
+            sheet = api.gradingSheet(siteFilter)
         } catch (e: Throwable) {
             report("Could not load the grading sheet: ${e.message}", isError = true)
         }
@@ -137,10 +141,10 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
             data = data,
             user = user,
             onOpenStandings = onOpenStandings,
-            onReleaseChange = { releasing ->
+            onReleaseChange = { siteId, releasing ->
                 scope.launch {
                     try {
-                        sheet = api.setScoresReleased(releasing)
+                        sheet = api.setScoresReleased(releasing, siteId.ifEmpty { null })
                         report(if (releasing) "Scores released." else "Release retracted.", isError = false)
                     } catch (e: Throwable) {
                         report("Could not update the release: ${e.message}", isError = true)
@@ -191,6 +195,26 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
             data.rows.sortedWith(compareBy({ it.testerId == null }, { it.testerId }))
         } else {
             data.rows
+        }
+        // Site filter — only meaningful in a multi-site season; graders scope to their stack.
+        if (data.releases.any { it.siteId.isNotEmpty() }) {
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                FilterChip(
+                    selected = siteFilter == null,
+                    onClick = { siteFilter = null },
+                    label = { Text("All sites") },
+                )
+                data.releases.forEach { site ->
+                    FilterChip(
+                        selected = siteFilter == site.siteId,
+                        onClick = { siteFilter = site.siteId },
+                        label = { Text(site.siteName.ifBlank { site.siteId }) },
+                    )
+                }
+            }
         }
         Row(
             Modifier.fillMaxWidth(),
@@ -309,35 +333,48 @@ private fun divisionLine(row: ScoreRowDto): String {
 /** Whether this contestant takes [r] — unknown divisions grade everything (server allows it). */
 private fun ScoreRowDto.takes(r: Round): Boolean = division?.let { r in it.rounds } ?: true
 
-/** The released state plus — for SCORE_RELEASE holders — the release/retract switch. */
+/**
+ * Per-site release state plus — for SCORE_RELEASE holders — a release/retract switch per site
+ * (each site releases on its own clock). A site-less season shows one unlabelled row.
+ */
 @Composable
 private fun ReleaseBar(
     data: GradingSheetResponse,
     user: UserDto?,
     onOpenStandings: () -> Unit,
-    onReleaseChange: (Boolean) -> Unit,
+    onReleaseChange: (siteId: String, releasing: Boolean) -> Unit,
 ) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            ReleasedBadge(data.releasedAt)
+    val canRelease = user != null && hasEventWidePermission(user.roles, Permission.SCORE_RELEASE)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        data.releases.forEach { site ->
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    if (site.siteName.isNotBlank()) {
+                        Text(site.siteName, fontWeight = FontWeight.SemiBold)
+                    }
+                    ReleasedBadge(site.releasedAt)
+                }
+                if (canRelease) {
+                    val releasing = site.releasedAt == null
+                    OutlinedButton(onClick = { onReleaseChange(site.siteId, releasing) }) {
+                        Text(if (releasing) "Release" else "Retract")
+                    }
+                }
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
-                if (data.releasedAt != null) "Contestants and coaches can see their scores."
-                else "Nothing is visible outside this desk until release.",
+                "Each site's families see scores once that site is released.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
             )
-        }
-        if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
-            OutlinedButton(onClick = onOpenStandings) { Text("Standings") }
-        }
-        if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_RELEASE)) {
-            val releasing = data.releasedAt == null
-            OutlinedButton(onClick = { onReleaseChange(releasing) }) {
-                Text(if (releasing) "Release scores" else "Retract release")
+            if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
+                OutlinedButton(onClick = onOpenStandings) { Text("Standings") }
             }
         }
     }

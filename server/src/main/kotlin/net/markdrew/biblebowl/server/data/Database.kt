@@ -271,12 +271,14 @@ object TribeLeadersTable : Table("tribe_leaders") {
     override val primaryKey = PrimaryKey(id)
 }
 
-/** A season's score release — present while released; retracting deletes the row. */
+/** A per-site score release — one row per released site; retracting deletes the row. */
 object ScoreReleasesTable : Table("score_releases") {
     val seasonYear = integer("season_year").references(SeasonsTable.year)
+    // "" is the season-wide release (site-less seasons, and the legacy single-switch); otherwise an EventSiteDto.id.
+    val siteId = varchar("site_id", 64).default("")
     val releasedAtEpochMs = long("released_at_epoch_ms")
     val releasedByUserId = varchar("released_by_user_id", 36).references(UsersTable.id)
-    override val primaryKey = PrimaryKey(seasonYear)
+    override val primaryKey = PrimaryKey(seasonYear, siteId)
 }
 
 /** Cached ESV chapter text (licensed; server-side only). Key = (book code, chapter). */

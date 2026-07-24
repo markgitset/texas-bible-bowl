@@ -26,6 +26,7 @@ import net.markdrew.biblebowl.api.ClaimPersonResponse
 import net.markdrew.biblebowl.api.CongregationDto
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.Division
+import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.GradingSheetResponse
 import net.markdrew.biblebowl.api.LoginRequest
@@ -37,6 +38,7 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.SaveScoresRequest
 import net.markdrew.biblebowl.api.ScoreEntryDto
+import net.markdrew.biblebowl.api.SetRegistrationSiteRequest
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.StandingsResponse
@@ -221,7 +223,7 @@ class ScoreRoutesTest {
         }.body()
 
         assertEquals(openSeason.eventYear.toString(), sheet.seasonYear)
-        assertNull(sheet.releasedAt)
+        assertTrue(sheet.releases.all { it.releasedAt == null }) // site-less season, nothing released yet
         assertEquals(5, sheet.rows.size)
         // Each Mixed Church member keeps their OWN division; the team's (Junior) rides alongside.
         sheet.rows.filter { it.teamName == "Team A" && it.congregationName == "Mixed Church" }.also { team ->
@@ -422,7 +424,7 @@ class ScoreRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${grader.token}")
         }.body()
         assertEquals(openSeason.eventYear.toString(), standings.seasonYear)
-        assertNull(standings.releasedAt)
+        assertTrue(standings.releases.all { it.releasedAt == null })
         assertEquals(
             listOf(Division.ELEMENTARY, Division.JUNIOR, Division.ADULT),
             standings.divisions.map { it.division },
@@ -562,6 +564,87 @@ class ScoreRoutesTest {
     }
 
     @Test
+    fun rankingsReleaseAndDeskFilterAreAllPerSite() = testApplication {
+        val users = InMemoryUserRepository()
+        val twoSites = openSeason.copy(
+            sites = listOf(EventSiteDto("bandina", "Bandina"), EventSiteDto("white-river", "White River")),
+        )
+        application {
+            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"),
+                seasons = InMemorySeasonRepository(twoSites))
+        }
+        val api = jsonClient()
+
+        // One Junior at each site, same score — but they rank in separate per-site brackets.
+        val (coachA, congA, regA) = api.coachWithTeam("a@tbb.org", "Alpha Church", listOf(juniorBirthdate))
+        val (coachB, congB, regB) = api.coachWithTeam("b@tbb.org", "Beta Church", listOf(juniorBirthdate))
+        val kidA = regA.teams.single().members.single()
+        val kidB = regB.teams.single().members.single()
+        for ((coach, cong, site) in listOf(Triple(coachA, congA, "bandina"), Triple(coachB, congB, "white-river"))) {
+            api.put("/registration/${cong.id}/site") {
+                header(HttpHeaders.Authorization, "Bearer ${coach.token}")
+                setBody(SetRegistrationSiteRequest(site))
+            }
+        }
+
+        val grader = api.grader(users)
+        api.put("/admin/scores") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+            setBody(
+                SaveScoresRequest(
+                    listOf(
+                        ScoreEntryDto(kidA.id, Round.FIND_THE_VERSE, 40),
+                        ScoreEntryDto(kidB.id, Round.FIND_THE_VERSE, 40),
+                    )
+                )
+            )
+        }
+
+        // Every row carries its site; the ?siteId filter narrows to one stack; both sites are listed.
+        val full: GradingSheetResponse = api.get("/admin/scores") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        assertEquals(setOf("bandina", "white-river"), full.rows.mapNotNull { it.siteId }.toSet())
+        assertEquals(setOf("bandina", "white-river"), full.releases.map { it.siteId }.toSet())
+        val onlyBandina: GradingSheetResponse = api.get("/admin/scores?siteId=bandina") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        assertEquals(listOf(kidA.id), onlyBandina.rows.map { it.rosterEntryId })
+
+        // Per-site rankings: two Junior brackets, each with its own #1 despite equal scores.
+        val standings: StandingsResponse = api.get("/admin/scores/standings") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        val juniorBrackets = standings.divisions.filter { it.division == Division.JUNIOR }
+        assertEquals(setOf("bandina", "white-river"), juniorBrackets.mapNotNull { it.siteId }.toSet())
+        juniorBrackets.forEach { bracket ->
+            assertEquals(1, bracket.individuals.single().rank)
+        }
+
+        // Release Bandina only: its family sees scores while White River stays dark.
+        api.put("/admin/scores/release") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+            setBody(SetScoresReleasedRequest(released = true, siteId = "bandina"))
+        }
+        val afterRelease: GradingSheetResponse = api.get("/admin/scores") {
+            header(HttpHeaders.Authorization, "Bearer ${grader.token}")
+        }.body()
+        assertNotNull(afterRelease.releases.single { it.siteId == "bandina" }.releasedAt)
+        assertNull(afterRelease.releases.single { it.siteId == "white-river" }.releasedAt)
+
+        val aView: MyScoresResponse = api.get("/scores/mine") {
+            header(HttpHeaders.Authorization, "Bearer ${coachA.token}")
+        }.body()
+        assertTrue(aView.released)
+        assertEquals(listOf(kidA.id), aView.rows.map { it.rosterEntryId })
+        val bView: MyScoresResponse = api.get("/scores/mine") {
+            header(HttpHeaders.Authorization, "Bearer ${coachB.token}")
+        }.body()
+        assertEquals(false, bView.released)
+        assertTrue(bView.rows.isEmpty())
+    }
+
+    @Test
     fun claimReleaseAndMyScoresScoping() = testApplication {
         val users = InMemoryUserRepository()
         application {
@@ -639,7 +722,7 @@ class ScoreRoutesTest {
             header(HttpHeaders.Authorization, "Bearer ${grader.token}")
             setBody(SetScoresReleasedRequest(released = true))
         }.body()
-        assertNotNull(releasedSheet.releasedAt)
+        assertTrue(releasedSheet.releases.any { it.releasedAt != null })
 
         // Owner sees exactly their own row; the coach sees the whole congregation.
         val kidView: MyScoresResponse = api.get("/scores/mine") {

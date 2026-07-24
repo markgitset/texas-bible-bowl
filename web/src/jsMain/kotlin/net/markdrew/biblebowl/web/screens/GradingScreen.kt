@@ -42,6 +42,8 @@ object GradingScreen {
     private var messageIsError: Boolean = false
     /** Sort the grid by tester ID (the order the hand-graded paper stack is in) rather than desk order. */
     private var sortByTesterId: Boolean = false
+    /** Narrows the grid to one event site (a multi-site season); null = all sites. */
+    private var siteFilter: String? = null
     private val inputs = mutableListOf<Pair<String, HTMLInputElement>>() // rosterEntryId → cell input
     private val rowByTesterId = mutableMapOf<Int, HTMLElement>() // tester ID → its <tr>, for jump-to-ID
     private val inputByTesterId = mutableMapOf<Int, HTMLInputElement>() // tester ID → its score cell
@@ -50,12 +52,19 @@ object GradingScreen {
     fun render(container: HTMLElement) {
         container.child("h1", "page-title", "Grading")
         content = container.child("div")
+        message = null
+        siteFilter = null
+        reload()
+    }
+
+    /** (Re)fetches the sheet for the current [siteFilter] and re-renders. */
+    private fun reload() {
+        content.clear()
         content.spinner()
         sheet = null
-        message = null
         Shell.scope.launch {
             try {
-                sheet = Session.api.gradingSheet()
+                sheet = Session.api.gradingSheet(siteFilter)
                 renderContent()
             } catch (e: Throwable) {
                 content.clear()
@@ -111,6 +120,28 @@ object GradingScreen {
                     sortByTesterId = select.value.toBoolean()
                     renderContent()
                 })
+            }
+            // Site filter — only meaningful in a multi-site season; graders scope to their stack.
+            if (data.releases.any { it.siteId.isNotEmpty() }) {
+                child("div") {
+                    child("label", "form-label mb-1", "Site")
+                    val select = child("select", "form-select") as HTMLSelectElement
+                    select.child("option", text = "All sites") {
+                        setAttribute("value", "")
+                        if (siteFilter == null) setAttribute("selected", "selected")
+                    }
+                    data.releases.forEach { s ->
+                        select.child("option", text = s.siteName.ifBlank { s.siteId }) {
+                            setAttribute("value", s.siteId)
+                            if (siteFilter == s.siteId) setAttribute("selected", "selected")
+                        }
+                    }
+                    select.addEventListener("change", {
+                        siteFilter = select.value.ifEmpty { null }
+                        message = null
+                        reload()
+                    })
+                }
             }
             child("div") {
                 child("label", "form-label mb-1") {
@@ -284,44 +315,54 @@ object GradingScreen {
         }
     }
 
-    /** The released state plus — for SCORE_RELEASE holders — the release/retract switch. */
+    /**
+     * Per-site release state plus — for SCORE_RELEASE holders — a release/retract switch for each
+     * site (each site releases on its own clock). A site-less season shows one unlabelled switch.
+     */
     private fun renderReleaseBar(parent: Element, data: GradingSheetResponse) {
+        val user = Session.user
         parent.child("div", "d-flex flex-wrap align-items-center gap-3 mb-3") {
-            if (data.releasedAt != null) {
-                child("span", "badge text-bg-success", "Released ${data.releasedAt!!.take(10)}")
-                child("span", "text-muted small", "Contestants and coaches can see their scores.")
-            } else {
-                child("span", "badge text-bg-secondary", "Not released")
-                child("span", "text-muted small", "Nothing is visible outside this desk until release.")
+            data.releases.forEach { site ->
+                child("div", "d-flex align-items-center gap-2") {
+                    if (site.siteName.isNotBlank()) child("span", "fw-semibold", site.siteName)
+                    if (site.releasedAt != null) {
+                        child("span", "badge text-bg-success", "Released ${site.releasedAt!!.take(10)}")
+                    } else {
+                        child("span", "badge text-bg-secondary", "Not released")
+                    }
+                    if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_RELEASE)) {
+                        val releasing = site.releasedAt == null
+                        val button = child(
+                            "button",
+                            if (releasing) "btn btn-warning btn-sm fw-bold" else "btn btn-outline-secondary btn-sm",
+                            if (releasing) "Release" else "Retract",
+                        ) { setAttribute("type", "button") } as HTMLButtonElement
+                        button.onClick { releaseSite(button, site.siteId, site.siteName, releasing) }
+                    }
+                }
             }
-            val user = Session.user
+            child("span", "text-muted small", "Each site's contestants and coaches see scores once that site is released.")
             if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
                 child("a", "btn btn-outline-primary btn-sm", "Standings") {
                     setAttribute("href", "#${Routes.STANDINGS}")
                 }
             }
-            if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_RELEASE)) {
-                val releasing = data.releasedAt == null
-                val button = child(
-                    "button",
-                    if (releasing) "btn btn-warning btn-sm fw-bold" else "btn btn-outline-secondary btn-sm",
-                    if (releasing) "Release scores" else "Retract release",
-                ) { setAttribute("type", "button") } as HTMLButtonElement
-                button.onClick {
-                    button.disabled = true
-                    Shell.scope.launch {
-                        try {
-                            sheet = Session.api.setScoresReleased(releasing)
-                            message = if (releasing) "Scores released." else "Release retracted."
-                            messageIsError = false
-                        } catch (e: Throwable) {
-                            message = "Could not update the release: ${e.message}"
-                            messageIsError = true
-                        }
-                        renderContent()
-                    }
-                }
+        }
+    }
+
+    private fun releaseSite(button: HTMLButtonElement, siteId: String, siteName: String, releasing: Boolean) {
+        button.disabled = true
+        val label = siteName.ifBlank { "scores" }
+        Shell.scope.launch {
+            try {
+                sheet = Session.api.setScoresReleased(releasing, siteId.ifEmpty { null })
+                message = if (releasing) "Released $label." else "Retracted $label."
+                messageIsError = false
+            } catch (e: Throwable) {
+                message = "Could not update the release: ${e.message}"
+                messageIsError = true
             }
+            renderContent()
         }
     }
 

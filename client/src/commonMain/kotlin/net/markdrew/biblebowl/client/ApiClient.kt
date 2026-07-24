@@ -484,9 +484,14 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
 
     // --- Scoring (grading desk, release, my scores; docs/gui-redesign.md §5F) ---
 
-    /** The grading desk: every contestant this season with their entered scores (event-wide SCORE_ENTER). */
-    suspend fun gradingSheet(): GradingSheetResponse =
-        client.get("$baseUrl/admin/scores") { authorize() }.bodyOrThrow()
+    /**
+     * The grading desk: every contestant this season with their entered scores (event-wide
+     * SCORE_ENTER). [siteId] narrows the rows to one event site (a multi-site season); null = all.
+     */
+    suspend fun gradingSheet(siteId: String? = null): GradingSheetResponse =
+        client.get("$baseUrl/admin/scores") {
+            authorize(); if (siteId != null) parameter("siteId", siteId)
+        }.bodyOrThrow()
 
     /** Batch-saves grading grid cells (null points clears one); returns the refreshed sheet. */
     suspend fun saveScores(scores: List<ScoreEntryDto>): GradingSheetResponse =
@@ -494,19 +499,27 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
             authorize(); contentType(ContentType.Application.Json); setBody(SaveScoresRequest(scores))
         }.bodyOrThrow()
 
-    /** Releases or retracts the current season's scores (event-wide SCORE_RELEASE). */
-    suspend fun setScoresReleased(released: Boolean): GradingSheetResponse =
+    /**
+     * Releases or retracts one site's scores (event-wide SCORE_RELEASE). [siteId] null (or "")
+     * targets the season-wide release — the only option in a site-less season.
+     */
+    suspend fun setScoresReleased(released: Boolean, siteId: String? = null): GradingSheetResponse =
         client.put("$baseUrl/admin/scores/release") {
-            authorize(); contentType(ContentType.Application.Json); setBody(SetScoresReleasedRequest(released))
+            authorize(); contentType(ContentType.Application.Json); setBody(SetScoresReleasedRequest(released, siteId))
         }.bodyOrThrow()
 
     /** The signed-in user's visible released scores (owned entries + coached congregations). */
     suspend fun myScores(): MyScoresResponse =
         client.get("$baseUrl/scores/mine") { authorize() }.bodyOrThrow()
 
-    /** The division tally (event-wide SCORE_VIEW_ALL): every bracket ranked as grading progresses. */
-    suspend fun standings(): StandingsResponse =
-        client.get("$baseUrl/admin/scores/standings") { authorize() }.bodyOrThrow()
+    /**
+     * The division tally (event-wide SCORE_VIEW_ALL): every bracket ranked as grading progresses.
+     * [siteId] narrows to one site's brackets (a multi-site season); null = all sites.
+     */
+    suspend fun standings(siteId: String? = null): StandingsResponse =
+        client.get("$baseUrl/admin/scores/standings") {
+            authorize(); if (siteId != null) parameter("siteId", siteId)
+        }.bodyOrThrow()
 
     // --- Admin: registration desk & user management (docs/gui-redesign.md §5G) ---
 

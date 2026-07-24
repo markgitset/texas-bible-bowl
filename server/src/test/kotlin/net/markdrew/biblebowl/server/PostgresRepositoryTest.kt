@@ -258,14 +258,16 @@ class PostgresRepositoryTest {
             scores.forEntries(listOf(e1))[e1],
         )
 
-        assertNull(scores.releasedAt("2027"))
-        val releasedAt = scores.setReleased("2027", grader.id, released = true)
+        // Per-site release: Bandina releases while White River stays dark.
+        assertNull(scores.releases("2027")["bandina"])
+        val releasedAt = scores.setReleased("2027", "bandina", grader.id, released = true)
         assertNotNull(releasedAt)
-        assertEquals(releasedAt, scores.releasedAt("2027"))
-        // Re-releasing keeps the original timestamp; retracting clears it.
-        assertEquals(releasedAt, scores.setReleased("2027", grader.id, released = true))
-        assertNull(scores.setReleased("2027", grader.id, released = false))
-        assertNull(scores.releasedAt("2027"))
+        assertEquals(releasedAt, scores.releases("2027")["bandina"])
+        assertNull(scores.releases("2027")["white-river"]) // the other site is independent
+        // Re-releasing keeps the original timestamp; retracting clears just that site.
+        assertEquals(releasedAt, scores.setReleased("2027", "bandina", grader.id, released = true))
+        assertNull(scores.setReleased("2027", "bandina", grader.id, released = false))
+        assertNull(scores.releases("2027")["bandina"])
     }
 
     @Test

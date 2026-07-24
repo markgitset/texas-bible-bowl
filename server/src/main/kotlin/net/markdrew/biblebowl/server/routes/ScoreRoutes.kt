@@ -17,8 +17,10 @@ import net.markdrew.biblebowl.api.SaveScoresRequest
 import net.markdrew.biblebowl.api.ScoreRowDto
 import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.SetScoresReleasedRequest
+import net.markdrew.biblebowl.api.SiteReleaseDto
 import net.markdrew.biblebowl.api.StandingRowDto
 import net.markdrew.biblebowl.api.StandingsResponse
+import net.markdrew.biblebowl.api.siteFor
 import net.markdrew.biblebowl.api.TEAM_MEMBER_MAX_POINTS
 import net.markdrew.biblebowl.api.coachedCongregationIds
 import net.markdrew.biblebowl.api.division
@@ -33,6 +35,7 @@ import net.markdrew.biblebowl.server.data.RegistrationRepository
 import net.markdrew.biblebowl.server.data.ScoreRepository
 import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.TesterIdRepository
+import net.markdrew.biblebowl.server.data.releasedAtFor
 import net.markdrew.biblebowl.server.data.UserRecord
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.currentUser
@@ -57,7 +60,8 @@ fun Route.scoreRoutes(
             val user = currentUser(users) ?: return@get
             if (!requireGradingFeature(user, seasons)) return@get
             if (!requireEventWidePermission(user, Permission.SCORE_ENTER)) return@get
-            call.respond(gradingSheet(seasons.current(), registrations, scores, testerIds))
+            val siteFilter = call.request.queryParameters["siteId"]
+            call.respond(gradingSheet(seasons.current(), registrations, scores, testerIds, siteFilter))
         }
 
         put("/admin/scores") {
@@ -107,7 +111,8 @@ fun Route.scoreRoutes(
             if (!requireEventWidePermission(user, Permission.SCORE_RELEASE)) return@put
             val season = seasons.current()
             val req = call.receive<SetScoresReleasedRequest>()
-            scores.setReleased(season.eventYear.toString(), user.id, req.released)
+            // A null siteId targets the season-wide ("") key — the only option for a site-less season.
+            scores.setReleased(season.eventYear.toString(), req.siteId ?: "", user.id, req.released)
             call.respond(gradingSheet(season, registrations, scores, testerIds))
         }
 
@@ -116,11 +121,14 @@ fun Route.scoreRoutes(
             if (!requireGradingFeature(user, seasons)) return@get
             if (!requireEventWidePermission(user, Permission.SCORE_VIEW_ALL)) return@get
             val season = seasons.current()
+            val siteFilter = call.request.queryParameters["siteId"]
+            val divisions = computeStandings(rowSeeds(season, registrations), scores).divisions
+                .let { all -> if (siteFilter == null) all else all.filter { it.siteId == siteFilter } }
             call.respond(
                 StandingsResponse(
                     seasonYear = season.eventYear.toString(),
-                    releasedAt = scores.releasedAt(season.eventYear.toString()),
-                    divisions = computeStandings(rowSeeds(season, registrations), scores).divisions,
+                    releases = siteReleases(season, scores),
+                    divisions = divisions,
                 )
             )
         }
@@ -129,18 +137,24 @@ fun Route.scoreRoutes(
             val user = currentUser(users) ?: return@get
             if (!requireGradingFeature(user, seasons)) return@get
             val season = seasons.current()
-            val released = scores.releasedAt(season.eventYear.toString()) != null
-            if (!released) {
+            val releases = scores.releases(season.eventYear.toString())
+            if (releases.isEmpty()) {
                 // Nothing is visible pre-release — not even to the entries' owners.
                 return@get call.respond(MyScoresResponse(season.eventYear.toString(), released = false))
             }
             val seeds = rowSeeds(season, registrations)
-            val visible = if (hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
+            val owns = if (hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
                 seeds
             } else {
                 val coached = coachedCongregationIds(user.roles).toSet()
                 val owned = registrations.entryIdsOwnedBy(user.id)
                 seeds.filter { it.congregationId in coached || it.row.rosterEntryId in owned }
+            }
+            // A contestant's row appears only once THEIR site (or the season-wide "" stamp) is released,
+            // so a finished site's families see scores while a still-grading site stays dark.
+            val visible = owns.filter { releases.releasedAtFor(it.row.siteId) != null }
+            if (visible.isEmpty()) {
+                return@get call.respond(MyScoresResponse(season.eventYear.toString(), released = false))
             }
             // Placement is ranked against the WHOLE field (all seeds), not just the visible rows.
             val standings = computeStandings(seeds, scores)
@@ -169,10 +183,17 @@ private suspend fun RoutingContext.requireGradingFeature(user: UserRecord, seaso
     requireFeatureEnabled(user, seasons.current().gradingEnabled, "Scoring")
 
 /**
- * A grading/My-Scores row plus the ids scoping needs: the congregation (coach scoping) and the
- * team (standings grouping; null for individual contestants).
+ * A grading/My-Scores row plus the ids scoping needs: the congregation (coach scoping), the team
+ * (standings grouping; null for individual contestants), and the team's host site (teams rank
+ * within their host's site, which can differ from a visiting combo member's own site).
  */
-private data class RowSeed(val congregationId: String, val teamId: String?, val row: ScoreRowDto)
+private data class RowSeed(
+    val congregationId: String,
+    val teamId: String?,
+    val teamSiteId: String?,
+    val teamSiteName: String,
+    val row: ScoreRowDto,
+)
 
 /**
  * One row per contestant registered this season, in desk order (congregation, team — teamless
@@ -181,23 +202,33 @@ private data class RowSeed(val congregationId: String, val teamId: String?, val 
  * for the team round — a Junior on a Senior team tests and ranks as a Junior individually while
  * the team competes Senior. Unassigned (teamless) youths compete individually in their own
  * bracket — the normal case for elementary contestants, since there are no Elementary teams.
- * Scores are attached separately (see [withScores]) so save-validation can reuse the seeds
- * without a scores fetch.
+ * Each contestant's site is their OWN congregation's resolved event site (a visiting combo member
+ * included), while a team's site is its host registration's — the two differ only for a combo team
+ * whose congregations sit at different sites. Scores are attached separately (see [withScores]) so
+ * save-validation can reuse the seeds without a scores fetch.
  */
-private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): List<RowSeed> =
-    registrations.listForSeason(season.eventYear.toString())
+private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): List<RowSeed> {
+    val regs = registrations.listForSeason(season.eventYear.toString())
+    val siteByCongregation = regs.associate { it.congregation.id to season.siteFor(it.siteId) }
+    return regs
         .flatMap { reg ->
+            val hostSite = season.siteFor(reg.siteId)
             val teamRows = reg.teams.flatMap { team ->
                 val teamDivision = team.division(season)
                 val teamInexperienced = team.isInexperienced(season.eventYear.toString())
                 team.members.map { member ->
                     // A visiting (combo-team) member scopes and displays under their OWN
-                    // congregation — only the team round uses the hosting team's identity.
+                    // congregation and site — only the team round uses the hosting team's identity.
+                    val ownSite = siteByCongregation[member.participation.congregationId]
                     RowSeed(
                         member.participation.congregationId,
                         team.id,
+                        hostSite?.id,
+                        hostSite?.name.orEmpty(),
                         ScoreRowDto(
                             rosterEntryId = member.participation.id,
+                            siteId = ownSite?.id,
+                            siteName = ownSite?.name.orEmpty(),
                             contestantName = member.person.name,
                             congregationName = member.participation.congregationName,
                             teamName = team.name,
@@ -211,10 +242,11 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
             }
             val individualRows = reg.individuals.map { individual ->
                 RowSeed(
-                    reg.congregation.id,
-                    null,
+                    reg.congregation.id, null, null, "",
                     ScoreRowDto(
                         rosterEntryId = individual.participation.id,
+                        siteId = hostSite?.id,
+                        siteName = hostSite?.name.orEmpty(),
                         contestantName = individual.person.name,
                         congregationName = reg.congregation.name,
                         teamName = null,
@@ -224,10 +256,11 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
             }
             val unassignedRows = reg.unassigned.map { entry ->
                 RowSeed(
-                    reg.congregation.id,
-                    null,
+                    reg.congregation.id, null, null, "",
                     ScoreRowDto(
                         rosterEntryId = entry.participation.id,
+                        siteId = hostSite?.id,
+                        siteName = hostSite?.name.orEmpty(),
                         contestantName = entry.person.name,
                         congregationName = reg.congregation.name,
                         teamName = null,
@@ -246,6 +279,7 @@ private fun rowSeeds(season: SeasonDto, registrations: RegistrationRepository): 
                 { it.row.contestantName.lowercase() },
             )
         )
+}
 
 private fun List<RowSeed>.withScores(scores: ScoreRepository): List<ScoreRowDto> {
     val byEntry = scores.forEntries(map { it.row.rosterEntryId })
@@ -257,23 +291,40 @@ private fun gradingSheet(
     registrations: RegistrationRepository,
     scores: ScoreRepository,
     testerIds: TesterIdRepository,
+    siteFilter: String? = null,
 ): GradingSheetResponse {
     // The desk shows the same tester + ZipGrade IDs as the nametags and the ZipGrade export — reuse
     // the tester list (which lazily assigns any missing numbers, append-only) rather than recomputing.
     val idByEntry = testerList(season, registrations, testerIds).rows.associateBy { it.rosterEntryId }
-    return GradingSheetResponse(
-        seasonYear = season.eventYear.toString(),
-        releasedAt = scores.releasedAt(season.eventYear.toString()),
-        rows = rowSeeds(season, registrations).withScores(scores).map { row ->
+    val rows = rowSeeds(season, registrations).withScores(scores)
+        .let { all -> if (siteFilter == null) all else all.filter { it.siteId == siteFilter } }
+        .map { row ->
             val id = idByEntry[row.rosterEntryId]
             row.copy(testerId = id?.testerId, externalId = id?.externalId)
-        },
+        }
+    return GradingSheetResponse(
+        seasonYear = season.eventYear.toString(),
+        releases = siteReleases(season, scores),
+        rows = rows,
     )
+}
+
+/**
+ * Per-site release state for the desk/standings: one entry per configured event site (its own
+ * release stamp), or — in a site-less season — a single "" entry standing for the whole season.
+ */
+private fun siteReleases(season: SeasonDto, scores: ScoreRepository): List<SiteReleaseDto> {
+    val releases = scores.releases(season.eventYear.toString())
+    return if (season.sites.isEmpty()) {
+        listOf(SiteReleaseDto("", "", releases[""]))
+    } else {
+        season.sites.map { SiteReleaseDto(it.id, it.name, releases[it.id]) }
+    }
 }
 
 // --- Standings (the division tally) ---------------------------------------------------------
 
-private data class BracketKey(val division: Division, val inexperienced: Boolean)
+private data class BracketKey(val siteId: String?, val siteName: String, val division: Division, val inexperienced: Boolean)
 
 private data class Placement(val rank: Int, val of: Int)
 
@@ -292,10 +343,11 @@ private class StandingsData(
 
 /**
  * The division tally, ranked by points — competition ranking, so ties share a rank and the next
- * rank skips. A contestant's INDIVIDUAL placement is within their own (division, experience)
- * bracket; their TEAM competes in the team's bracket — its highest member's division and
+ * rank skips. Brackets are per SITE (2026 ran two sites that awarded independently): a contestant's
+ * INDIVIDUAL placement is within their own (site, division, experience) bracket; their TEAM competes
+ * in its host site's (division, experience) bracket — its highest member's division and
  * most-experienced member's level — so the two can differ (a Junior on a Senior team ranks
- * individually among Juniors). Individual totals span every eligible round; team totals are the
+ * individually among Juniors at their site). Individual totals span every eligible round; team totals are the
  * members' rounds 1–5 only (the Power Round never counts toward team scores — the published 800
  * team max is 4 × 200). Ungraded rounds simply count 0, so the tally is meaningful mid-grading.
  * Rows whose division is unknown (legacy unparseable birthdates) can't be bracketed and are left
@@ -308,7 +360,7 @@ private fun computeStandings(seeds: List<RowSeed>, scores: ScoreRepository): Sta
 
     val individualsByBracket: Map<BracketKey, List<StandingRowDto>> = scored
         .filter { (_, row) -> row.division != null }
-        .groupBy { (_, row) -> BracketKey(row.division!!, row.inexperienced) }
+        .groupBy { (_, row) -> BracketKey(row.siteId, row.siteName, row.division!!, row.inexperienced) }
         .mapValues { (key, entries) ->
             val allPoints = entries.map { (_, row) -> row.totalPoints }
             entries
@@ -333,7 +385,7 @@ private fun computeStandings(seeds: List<RowSeed>, scores: ScoreRepository): Sta
 
     val teamsByBracket: Map<BracketKey, List<StandingRowDto>> = scored
         .filter { (seed, row) -> seed.teamId != null && row.teamDivision != null }
-        .groupBy { (_, row) -> BracketKey(row.teamDivision!!, row.teamInexperienced) }
+        .groupBy { (seed, row) -> BracketKey(seed.teamSiteId, seed.teamSiteName, row.teamDivision!!, row.teamInexperienced) }
         .mapValues { (_, entries) ->
             val teamAggs = entries
                 .groupBy { (seed, _) -> seed.teamId!! }
@@ -367,13 +419,16 @@ private fun computeStandings(seeds: List<RowSeed>, scores: ScoreRepository): Sta
         }
 
     val divisions = (individualsByBracket.keys + teamsByBracket.keys)
-        .sortedWith(compareBy({ it.division.ordinal }, { it.inexperienced }))
+        // Real sites first (in name order), unpinned last; then division, then experience.
+        .sortedWith(compareBy({ it.siteId == null }, { it.siteName }, { it.division.ordinal }, { it.inexperienced }))
         .map { key ->
             DivisionStandingsDto(
-                key.division,
-                key.inexperienced,
-                individualsByBracket[key].orEmpty(),
-                teamsByBracket[key].orEmpty(),
+                division = key.division,
+                inexperienced = key.inexperienced,
+                siteId = key.siteId,
+                siteName = key.siteName,
+                individuals = individualsByBracket[key].orEmpty(),
+                teams = teamsByBracket[key].orEmpty(),
             )
         }
 
