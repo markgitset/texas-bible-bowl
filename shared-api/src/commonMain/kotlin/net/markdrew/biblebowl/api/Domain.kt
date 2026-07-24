@@ -189,6 +189,37 @@ val Division.maxScore: Int
 val ScoreRowDto.totalPoints: Int
     get() = scores.values.sum()
 
+/** Total ungraded eligible cells at a site (scan gaps + hand gaps). */
+val SiteCompletenessDto.totalUngraded: Int
+    get() = (scanGaps + handGaps).sumOf { it.ungraded }
+
+/**
+ * Cheap hand-entry sanity warnings (G6) for the two hand-graded rounds (Find the Verse and the
+ * Power Round): a filled score that equals the contestant's tester id (the classic wrong-column
+ * paste) and Find-the-Verse == Power for the same contestant (a double paste). Warnings, not
+ * blocks — and only on *filled* cells, so blank rows never fire (the 2026 sheet's false positive).
+ * Returns one human-readable line per flag.
+ */
+fun handEntryWarnings(rows: List<ScoreRowDto>): List<String> {
+    val out = mutableListOf<String>()
+    for (row in rows) {
+        val who = row.testerId?.let { "${row.contestantName} (#$it)" } ?: row.contestantName
+        val verseFind = row.scores[Round.FIND_THE_VERSE]
+        val power = row.scores[Round.POWER]
+        val testerId = row.testerId
+        if (testerId != null && verseFind == testerId) {
+            out += "$who: Find the Verse score $verseFind equals the tester ID — wrong column?"
+        }
+        if (testerId != null && power == testerId) {
+            out += "$who: Power score $power equals the tester ID — wrong column?"
+        }
+        if (verseFind != null && verseFind == power) {
+            out += "$who: Find the Verse and Power are both $verseFind — double paste?"
+        }
+    }
+    return out
+}
+
 /**
  * What one member can contribute to a team score: rounds 1–5 only (200 points). The Power Round
  * never counts toward team totals — that's why the published team maximum is 800 = 4 × 200.

@@ -15,9 +15,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -45,9 +47,11 @@ import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.ScoreRowDto
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.divisionLabel
+import net.markdrew.biblebowl.api.handEntryWarnings
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.rounds
 import net.markdrew.biblebowl.api.totalPoints
+import net.markdrew.biblebowl.api.totalUngraded
 import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.model.Round
 
@@ -75,6 +79,8 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
     var showImport by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
     var importReport by remember { mutableStateOf<ImportScoresReport?>(null) }
+    // Pending per-site release awaiting confirmation because the site still has ungraded cells (G4).
+    var pendingRelease by remember { mutableStateOf<Triple<String, String, Int>?>(null) }
     // Unsaved edits keyed by (rosterEntryId, round), so switching rounds keeps pending cells.
     val cells = remember { mutableStateMapOf<Pair<String, Round>, String>() }
     val scope = rememberCoroutineScope()
@@ -143,21 +149,43 @@ fun GradingScreen(api: TbbApi, user: UserDto?, onOpenStandings: () -> Unit) {
             return@Column
         }
 
+        fun applyRelease(siteId: String, releasing: Boolean) {
+            scope.launch {
+                try {
+                    sheet = api.setScoresReleased(releasing, siteId.ifEmpty { null })
+                    report(if (releasing) "Scores released." else "Release retracted.", isError = false)
+                } catch (e: Throwable) {
+                    report("Could not update the release: ${e.message}", isError = true)
+                }
+            }
+        }
         ReleaseBar(
             data = data,
             user = user,
             onOpenStandings = onOpenStandings,
             onReleaseChange = { siteId, releasing ->
-                scope.launch {
-                    try {
-                        sheet = api.setScoresReleased(releasing, siteId.ifEmpty { null })
-                        report(if (releasing) "Scores released." else "Release retracted.", isError = false)
-                    } catch (e: Throwable) {
-                        report("Could not update the release: ${e.message}", isError = true)
-                    }
+                // G4: warn before releasing a site that still has ungraded eligible cells.
+                val gaps = data.completeness.firstOrNull { (it.siteId ?: "") == siteId }?.totalUngraded ?: 0
+                if (releasing && gaps > 0) {
+                    pendingRelease = Triple(siteId, data.releases.firstOrNull { it.siteId == siteId }?.siteName.orEmpty(), gaps)
+                } else {
+                    applyRelease(siteId, releasing)
                 }
             },
         )
+        pendingRelease?.let { (siteId, siteName, gaps) ->
+            AlertDialog(
+                onDismissRequest = { pendingRelease = null },
+                title = { Text("Release with gaps?") },
+                text = { Text("Release ${siteName.ifBlank { "these scores" }} with $gaps ungraded cell(s)?") },
+                confirmButton = {
+                    TextButton(onClick = { pendingRelease = null; applyRelease(siteId, true) }) { Text("Release") }
+                },
+                dismissButton = { TextButton(onClick = { pendingRelease = null }) { Text("Cancel") } },
+            )
+        }
+        CompletenessSummary(data)
+        SanityWarnings(data)
         // ZipGrade import (any desk viewer holds SCORE_ENTER — server-gated).
         OutlinedButton(onClick = { showImport = !showImport }) {
             Text(if (showImport) "Hide import" else "Import ZipGrade CSV")
@@ -354,6 +382,54 @@ private fun GradingRow(row: ScoreRowDto, round: Round, value: String, onValueCha
             Box(Modifier.width(96.dp), contentAlignment = Alignment.Center) {
                 Text("—", color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        }
+    }
+}
+
+/** Hand-entry sanity warnings (G6): score == tester ID or Find the Verse == Power. Not blocks. */
+@Composable
+private fun SanityWarnings(data: GradingSheetResponse) {
+    val warnings = handEntryWarnings(data.rows)
+    if (warnings.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Text(
+            "Hand-entry check — ${warnings.size} to review",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.error,
+        )
+        warnings.take(20).forEach {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Grading progress (G4): ungraded eligible cells per site, split scan vs hand. */
+@Composable
+private fun CompletenessSummary(data: GradingSheetResponse) {
+    if (data.completeness.isEmpty()) return
+    val total = data.completeness.sumOf { it.totalUngraded }
+    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+        Text(
+            if (total == 0) "Grading complete — every eligible cell has a score"
+            else "Grading progress — $total eligible cell(s) still ungraded",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = if (total == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+        )
+        data.completeness.forEach { site ->
+            val scan = site.scanGaps.joinToString(" ") { "${roundLabel(it.round)}:${it.ungraded}" }
+            val hand = site.handGaps.joinToString(" ") { "${roundLabel(it.round)}:${it.ungraded}" }
+            val gaps = listOfNotNull(
+                scan.takeIf { site.scanGaps.isNotEmpty() }?.let { "scan $it" },
+                hand.takeIf { site.handGaps.isNotEmpty() }?.let { "hand $it" },
+            )
+            Text(
+                "${site.siteName.ifBlank { "All contestants" }} — ${site.contestants} · " +
+                    if (gaps.isEmpty()) "complete" else "ungraded ${gaps.joinToString("; ")}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }

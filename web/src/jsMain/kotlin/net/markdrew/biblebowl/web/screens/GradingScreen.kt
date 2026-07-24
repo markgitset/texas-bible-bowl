@@ -9,9 +9,11 @@ import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.ScoreEntryDto
 import net.markdrew.biblebowl.api.ScoreRowDto
 import net.markdrew.biblebowl.api.divisionLabel
+import net.markdrew.biblebowl.api.handEntryWarnings
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.rounds
 import net.markdrew.biblebowl.api.totalPoints
+import net.markdrew.biblebowl.api.totalUngraded
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.web.Routes
 import net.markdrew.biblebowl.web.Session
@@ -87,6 +89,8 @@ object GradingScreen {
         inputByTesterId.clear()
 
         renderReleaseBar(content, data)
+        renderCompleteness(content, data)
+        renderSanityWarnings(content, data)
         renderImport(content)
         message?.let {
             if (messageIsError) content.errorLine(it)
@@ -323,6 +327,51 @@ object GradingScreen {
     }
 
     /**
+     * Grading progress (G4): eligible cells still ungraded, per site, split scan vs hand (chased
+     * differently — re-scan vs. find the paper). Collapsed by default; "complete" when nothing's left.
+     */
+    private fun renderCompleteness(parent: Element, data: GradingSheetResponse) {
+        if (data.completeness.isEmpty()) return
+        val totalGaps = data.completeness.sumOf { it.totalUngraded }
+        parent.child("details", "mb-3") {
+            child("summary", if (totalGaps == 0) "small text-success" else "small") {
+                append(
+                    if (totalGaps == 0) "Grading complete — every eligible cell has a score"
+                    else "Grading progress — $totalGaps eligible cell(s) still ungraded",
+                )
+            }
+            child("div", "small text-muted mt-1") {
+                data.completeness.forEach { site ->
+                    val scan = site.scanGaps.joinToString(" ") { "${roundLabel(it.round)}:${it.ungraded}" }
+                    val hand = site.handGaps.joinToString(" ") { "${roundLabel(it.round)}:${it.ungraded}" }
+                    val gaps = listOfNotNull(
+                        scan.takeIf { site.scanGaps.isNotEmpty() }?.let { "scan $it" },
+                        hand.takeIf { site.handGaps.isNotEmpty() }?.let { "hand $it" },
+                    )
+                    child("div", text = "${site.siteName.ifBlank { "All contestants" }} — ${site.contestants} contestant(s)" +
+                        if (gaps.isEmpty()) " · complete" else " · ungraded ${gaps.joinToString("; ")}")
+                }
+            }
+        }
+    }
+
+    /**
+     * Hand-entry sanity warnings (G6): a filled hand-round score equal to the tester ID, or Find
+     * the Verse == Power. Warnings, not blocks — the grader reviews and moves on.
+     */
+    private fun renderSanityWarnings(parent: Element, data: GradingSheetResponse) {
+        val warnings = handEntryWarnings(data.rows)
+        if (warnings.isEmpty()) return
+        parent.child("div", "alert alert-warning py-2 px-3 mb-3") {
+            child("div", "fw-semibold small", "Hand-entry check — ${warnings.size} to review")
+            child("ul", "small mb-0") {
+                warnings.take(50).forEach { child("li", text = it) }
+                if (warnings.size > 50) child("li", "fst-italic", "…and ${warnings.size - 50} more")
+            }
+        }
+    }
+
+    /**
      * ZipGrade import: a toggle, a paste box / file picker, and — after applying — the
      * reconciliation report. Any desk viewer holds SCORE_ENTER (server-gated), so no extra gate.
      */
@@ -433,6 +482,12 @@ object GradingScreen {
     }
 
     private fun releaseSite(button: HTMLButtonElement, siteId: String, siteName: String, releasing: Boolean) {
+        // G4 pre-release warning: releasing a site with ungraded eligible cells hides real gaps.
+        val gaps = sheet?.completeness?.firstOrNull { (it.siteId ?: "") == siteId }?.totalUngraded ?: 0
+        if (releasing && gaps > 0) {
+            val label = siteName.ifBlank { "these scores" }
+            if (!kotlinx.browser.window.confirm("Release $label with $gaps ungraded cell(s)?")) return
+        }
         button.disabled = true
         val label = siteName.ifBlank { "scores" }
         Shell.scope.launch {
