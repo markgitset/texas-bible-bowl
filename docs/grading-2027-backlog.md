@@ -49,7 +49,7 @@ ceremony view is last because it's needed last on event day.
 | 2 | G3 | Tester IDs on the grading desk | done |
 | 3 | G2 | Site-scoped grading (filter + release semantics) | done — per-site rankings + per-site release |
 | 4 | G1 | ZipGrade score import | done |
-| 5 | G4 | Grading-completeness view | |
+| 5 | G4 | Grading-completeness view | done |
 | 6 | G6 | Hand-entry sanity checks | |
 | 7 | G5 | Awards / ceremony view + PDF | |
 
