@@ -241,9 +241,11 @@ data class SeasonDto(
     /** Last day to register, ISO-8601, inclusive through end of day America/Chicago; null = TBD. */
     val registrationClosesOn: String? = null,
     /**
-     * The date ages are mapped to school grades on, ISO-8601. Null defaults to September 1 before
-     * the event — the Texas school-entry cutoff, so a contestant's age on this date implies their
-     * grade (see [gradeCutoff]/[divisionForBirthdate] in Domain.kt).
+     * The month-day ages are mapped to school grades on, "MM-DD" (the year is always the event year
+     * minus one, so only the month-day is configurable). Null defaults to September 1 ("09-01") —
+     * the Texas school-entry cutoff, so a contestant's age on this date implies their grade (see
+     * [gradeCutoff]/[divisionForBirthdate] in Domain.kt). Legacy full-ISO values are still accepted
+     * (their year is ignored).
      */
     val gradeCutoffDate: String? = null,
     val scholarshipDeadline: String,

@@ -56,8 +56,10 @@ class RegistrationDomainTest {
     @Test
     fun gradeCutoffDefaultsToSeptemberFirstBeforeTheEvent() {
         assertEquals("2026-09-01", season.gradeCutoff)
-        assertEquals("2026-08-15", season.copy(gradeCutoffDate = "2026-08-15").gradeCutoff, "explicit override wins")
+        assertEquals("2026-08-15", season.copy(gradeCutoffDate = "08-15").gradeCutoff, "month-day override wins, year from season")
+        assertEquals("2026-08-15", season.copy(gradeCutoffDate = "2030-08-15").gradeCutoff, "legacy full-ISO year is ignored")
         assertEquals("2026-09-01", season.copy(gradeCutoffDate = "").gradeCutoff, "blank falls back")
+        assertEquals("2026-09-01", season.copy(gradeCutoffDate = "garbage").gradeCutoff, "unparseable falls back")
     }
 
     @Test
