@@ -4,8 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   {{/* The site is light-only. Declaring this before first paint stops browsers on a dark OS theme
-       from painting a dark default canvas between page loads — the dark flash on tab navigation. */}}
+       from painting a dark default canvas between page loads — the dark flash on tab navigation.
+       The inline style makes the white canvas independent of stylesheet fetch timing (custom.css
+       loads LAST, after two CDN sheets, so it can't be relied on for the very first paint). */}}
   <meta name="color-scheme" content="light">
+  <style>html{color-scheme:light;background-color:#fff}</style>
   {{ $title := cond .IsHome .Site.Title (printf "%s | %s" .Title .Site.Title) }}
   {{ $desc := cond (ne (string .Description) "") (string .Description) .Site.Params.description }}
   {{ $ogImage := printf "%simages/%s" .Site.BaseURL .Site.Params.shareImage }}
