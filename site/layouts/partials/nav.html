@@ -36,15 +36,15 @@
               </ul>
             </li>
           {{ else if eq .Name "Study & Practice" }}
-            <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
-              {{/* The single study entry doubles as the primary CTA: one always-visible
-                   one-click path to the app's #study hub (data-route lets the app mark it
-                   active on study-family hashes). */}}
-              <a class="btn btn-warning btn-sm fw-bold px-3" data-route="study" href="{{ .URL }}">{{ .Name }}</a>
+            {{/* An ordinary nav link like the others; data-route lets the app mark it active on
+                 study-family hashes (it points into the /app/ shell, not a static page). */}}
+            <li class="nav-item">
+              <a class="nav-link{{ if $active }} active{{ end }}" data-route="study" href="{{ .URL }}"
+                 {{ if $active }}aria-current="page"{{ end }}>{{ .Name }}</a>
             </li>
           {{ else if eq .Name "Donate" }}
             <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
-              <a class="btn btn-outline-light btn-sm fw-bold px-3" href="{{ .URL }}">{{ .Name }}</a>
+              <a class="btn btn-warning btn-sm fw-bold px-3" href="{{ .URL }}">{{ .Name }}</a>
             </li>
             {{/* Site-wide account slot: params.js swaps in the cached signed-in user menu
                  (localStorage "tbb.nav"); on /app/ the Shell owns it. Keep the id/markup in
