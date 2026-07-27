@@ -3,6 +3,15 @@ package net.markdrew.biblebowl.generate.studyguide
 import net.markdrew.biblebowl.model.StudyGuideQuestion
 import net.markdrew.biblebowl.model.StudySet
 
+/** Filename the cover references for the logo; the caller stages these bytes next to the compiled source. */
+const val STUDY_GUIDE_LOGO_FILE: String = "tbb-logo.png"
+
+private object StudyGuideAssets
+
+/** The bundled Texas Bible Bowl logo bytes for the cover, or null if the asset is missing from the classpath. */
+fun tbbLogoBytes(): ByteArray? =
+    StudyGuideAssets.javaClass.getResourceAsStream("/images/$STUDY_GUIDE_LOGO_FILE")?.use { it.readBytes() }
+
 /** Escapes the Typst structural delimiters (backslash first so escapes aren't double-escaped). */
 private fun escapeTypst(s: String): String =
     s.replace("\\", "\\\\")
@@ -75,28 +84,40 @@ private val PREAMBLE = """
 /**
  * Renders the multiple-choice study guide as Typst source: a text cover page, the questions grouped by book
  * and chapter (with a running header and per-question A–D choices), and a compact answer key at the end.
- * Ported from bible-bowl's StudyGuidePdf, minus its file I/O and cover logo (the server compiles a lone
- * string with no bundled assets). [coverYear] prints on the cover and in the copyright line.
+ * Ported from bible-bowl's StudyGuidePdf, minus its file I/O. [coverYear] prints on the cover and copyright
+ * line. When [logoFile] is given, the cover shows `#image("<logoFile>")` — the caller must stage those bytes
+ * next to the compiled source (see [tbbLogoBytes]); pass null for a text-only cover (e.g. no logo bundled).
  */
-fun studyGuideTypst(questions: List<StudyGuideQuestion>, studySet: StudySet, coverYear: Int): String {
+fun studyGuideTypst(
+    questions: List<StudyGuideQuestion>,
+    studySet: StudySet,
+    coverYear: Int,
+    logoFile: String? = null,
+): String {
     // groupBy preserves first-encounter order, so books/chapters stay in the guide's natural order.
     val byBook: Map<String, List<StudyGuideQuestion>> = questions.groupBy { it.chapterRef.bookName }
     return buildString {
         appendLine(PREAMBLE)
-        appendCover(studySet, coverYear)
+        appendCover(studySet, coverYear, logoFile)
         appendQuestions(byBook)
         appendAnswerKey(byBook)
     }
 }
 
-/** The (header-less) cover page — title, subtitle, and copyright — then restarts page numbering. */
-private fun StringBuilder.appendCover(studySet: StudySet, coverYear: Int) {
+/** The (header-less) cover page — optional logo, title, subtitle, and copyright — then restarts page numbering. */
+private fun StringBuilder.appendCover(studySet: StudySet, coverYear: Int, logoFile: String?) {
     val title = escapeTypst(studySet.name.uppercase())
+    // With a logo: a small top gap, the logo, then the label. Without: a larger gap so the title still centers.
+    val masthead = if (logoFile != null) {
+        "#v(0.7in)\n          #image(\"$logoFile\", width: 1.7in)\n          #v(0.35in)"
+    } else {
+        "#v(2.2in)"
+    }
     appendLine(
         """
         #page(header: none, footer: none, margin: (x: 1in, y: 1in))[
           #set align(center)
-          #v(2.2in)
+          $masthead
           #text(font: sans, size: 13pt, tracking: 3pt, fill: luma(90))[STUDY GUIDE]
           #v(0.15in)
           #line(length: 40%, stroke: 0.8pt + accent)
