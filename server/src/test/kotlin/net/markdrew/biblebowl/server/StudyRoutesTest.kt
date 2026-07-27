@@ -200,6 +200,33 @@ class StudyRoutesTest {
     }
 
     @Test
+    fun studyGuidePdfAndTsvServeTheBundledGuide() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+            )
+        }
+        val api = createClient { }
+
+        // The TSV is the raw curated source — served with no ESV/Typst dependency.
+        val tsv = api.get("/generate/study-guide.tsv")
+        assertEquals(HttpStatusCode.OK, tsv.status)
+        assertTrue("Theophilus" in tsv.bodyAsText(), "raw study-guide.tsv should stream the curated content")
+        assertTrue("study-guide.tsv" in tsv.headers[HttpHeaders.ContentDisposition].orEmpty())
+
+        if (!TypstCompiler.isAvailable) {
+            println("typst not on PATH; skipping study-guide PDF compile assertion")
+            return@testApplication
+        }
+        val pdf = api.get("/generate/study-guide.pdf")
+        assertEquals(HttpStatusCode.OK, pdf.status)
+        val bytes = pdf.bodyAsBytes()
+        assertTrue(bytes.size > 4 && bytes.decodeToString(0, 4) == "%PDF", "study guide should be a PDF")
+        assertTrue("study-guide.pdf" in pdf.headers[HttpHeaders.ContentDisposition].orEmpty())
+    }
+
+    @Test
     fun categoryIndexReturns503WithoutStudyService() = testApplication {
         application {
             module(

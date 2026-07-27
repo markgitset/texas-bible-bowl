@@ -33,6 +33,8 @@ import net.markdrew.biblebowl.analysis.wordListIndex
 import net.markdrew.biblebowl.generate.indices.indexTypst
 import net.markdrew.biblebowl.generate.indices.numbersIndexTypst
 import net.markdrew.biblebowl.generate.indices.oneTimeWordsIndexTypst
+import net.markdrew.biblebowl.generate.studyguide.studyGuideTypst
+import net.markdrew.biblebowl.model.StudyGuideParser
 import net.markdrew.biblebowl.generate.text.TextOptions
 import net.markdrew.biblebowl.generate.text.highlightedBibleTextTypst
 import net.markdrew.biblebowl.generate.text.typst.bibleTextTypst
@@ -338,6 +340,44 @@ fun Route.generateRoutes(
             } catch (e: EsvUpstreamException) {
                 call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
             }
+        }
+
+        // GET /generate/study-guide.pdf — the multiple-choice study guide. Pure curated TSV (no ESV), so it
+        // is gated only on having a study set, and cached under a stamp derived from the questions + year.
+        get("/generate/study-guide.pdf") {
+            val svc = study ?: return@get call.respond(
+                HttpStatusCode.ServiceUnavailable,
+                ApiError("esv_unconfigured", "Study set is not configured"),
+            )
+            val guide = StudyGuideParser.loadStudyGuideOrNull(svc.studySet) ?: return@get call.respond(
+                HttpStatusCode.NotFound,
+                ApiError("no_study_guide", "This season has no study guide"),
+            )
+            val year = seasons.current().eventYear
+            val fileName = PdfFileNames.studyGuide()
+            val stamp = 31 * guide.hashCode() + year
+            val cached = pdfCache?.let { c -> withContext(Dispatchers.IO) { c.get(svc.studySet.simpleName, fileName, stamp) } }
+            if (cached != null) return@get respondAttachment(cached, fileName, ContentType.Application.Pdf)
+            try {
+                val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(studyGuideTypst(guide, svc.studySet, year)) }
+                pdfCache?.let { c -> withContext(Dispatchers.IO) { c.put(svc.studySet.simpleName, fileName, stamp, pdf) } }
+                respondAttachment(pdf, fileName, ContentType.Application.Pdf)
+            } catch (e: TypstException) {
+                call.respond(HttpStatusCode.ServiceUnavailable, ApiError("typst_failed", e.message ?: "PDF generation failed"))
+            }
+        }
+
+        // GET /generate/study-guide.tsv — the raw curated source, for other creators (Data & Source Files)
+        get("/generate/study-guide.tsv") {
+            val svc = study ?: return@get call.respond(
+                HttpStatusCode.ServiceUnavailable,
+                ApiError("esv_unconfigured", "Study set is not configured"),
+            )
+            val tsv = StudyGuideParser.rawTsvOrNull(svc.studySet) ?: return@get call.respond(
+                HttpStatusCode.NotFound,
+                ApiError("no_study_guide", "This season has no study guide"),
+            )
+            respondAttachment(tsv, "study-guide.tsv", TSV_CONTENT_TYPE)
         }
     }
 

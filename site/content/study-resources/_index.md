@@ -8,9 +8,9 @@ free — no sign-in needed.
 
 - **The Text** — the full season text with names, numbers, and more highlighted by
   category. [Print, read, or listen](/app/#downloads).
-- **General Knowledge** — drill the facts and events: question
-  [flashcards](/app/#downloads), [Quiz Me](/app/#quiz),
-  [community questions](/app/#questions), and study games.
+- **General Knowledge** — drill the facts and events: the official
+  [study guide](/app/#downloads), question [flashcards](/app/#downloads),
+  [Quiz Me](/app/#quiz), [community questions](/app/#questions), and study games.
 - **Chapter Headings** — the Round 5 material: heading [flashcards](/app/#downloads), the
   [headings browser](/app/#study/headings), quizzes, and Kahoots.
 - **Unique Words** — master the words that appear only once:
