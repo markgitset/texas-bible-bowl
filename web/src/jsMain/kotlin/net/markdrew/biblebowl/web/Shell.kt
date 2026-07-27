@@ -47,12 +47,6 @@ object Shell {
     private var routeShown: String? = null
     private var restoringHash = false
 
-    /** The Hugo study hub page, sibling of /app/ — resolves correctly under the GH Pages subpath. */
-    private const val STUDY_OVERVIEW_HREF = "../study-resources/"
-
-    /** True only under the dev-only web/index.html shell, where no Hugo site surrounds the app. */
-    private val standalone: Boolean get() = window.asDynamic().TBB_STANDALONE == true
-
     fun start() {
         app = document.getElementById("app") as HTMLElement
         Session.onChange = { render() }
@@ -70,8 +64,8 @@ object Shell {
     }
 
     /**
-     * The route encoded in the URL hash; a blank hash falls back to [Routes.STUDY], which
-     * (like any unknown route) redirects to the site's study hub page.
+     * The route encoded in the URL hash; a blank hash falls back to [Routes.STUDY] — the hub —
+     * where unknown routes also land.
      */
     private fun currentRoute(): String =
         window.location.hash.substringAfter('#', "").ifBlank { Routes.STUDY }
@@ -112,11 +106,10 @@ object Shell {
     /**
      * Site-style breadcrumb trail — the app shares the site's navbar, so in-app wayfinding
      * rides on breadcrumbs instead of a tab row. Study-family routes trace back through the
-     * site's hub page (Home › Study Resources › …); account/event/admin routes are entered
-     * from the user menu, so they get just Home › {label}.
+     * hub (Home › Study & Practice › …), which is the app's own `#study` page; account/event/
+     * admin routes are entered from the user menu, so they get just Home › {label}.
      */
     private fun breadcrumbs(route: String) {
-        if (route == Routes.STUDY) return // redirecting to the site's hub page
         app.child("nav") {
             setAttribute("aria-label", "breadcrumb")
             child("ol", "breadcrumb small mb-3") {
@@ -124,9 +117,9 @@ object Shell {
                     child("a", text = "Home") { setAttribute("href", "../") }
                 }
                 val top = topDestinationOf(route)
-                if (top != null || route.startsWith("study/")) {
+                if (route != Routes.STUDY && (top != null || route.startsWith("study/"))) {
                     child("li", "breadcrumb-item") {
-                        child("a", text = "Study & Practice") { setAttribute("href", STUDY_OVERVIEW_HREF) }
+                        child("a", text = "Study & Practice") { setAttribute("href", "#${Routes.STUDY}") }
                     }
                 }
                 if (top != null && top.route != route) {
@@ -142,11 +135,14 @@ object Shell {
     }
 
     private fun updateNav(route: String) {
-        // The merged navbar's app links (Study Resources dropdown items) carry data-route.
+        // The merged navbar's app links (the Study & Practice button) carry data-route. The study
+        // entry lights for the whole study family — the hub, its sub-screens, and the hub-reached
+        // tools (quiz, questions) — since it is the one nav path to all of them.
         document.querySelectorAll("[data-route]").asList().forEach { node ->
             val el = node as? HTMLElement ?: return@forEach
             val dest = el.getAttribute("data-route") ?: return@forEach
-            el.classList.toggle("active", route == dest || route.startsWith("$dest/"))
+            val studyFamily = dest == Routes.STUDY && (topDestinationOf(route) != null || route == Routes.DOWNLOADS)
+            el.classList.toggle("active", route == dest || route.startsWith("$dest/") || studyFamily)
         }
         // Collapse the mobile menu after navigating — a hash change doesn't reload the page,
         // so Bootstrap would otherwise leave it open over the new screen.
@@ -199,12 +195,13 @@ object Shell {
 
     private fun renderScreen(route: String, container: HTMLElement) {
         when (route) {
-            Routes.STUDY -> studyOverview(container)
+            Routes.STUDY -> DownloadsScreen.render(container) // the Study & Practice hub
             Routes.STUDY_INDICES -> IndexScreen.render(container)
             Routes.STUDY_HEADINGS -> HeadingsScreen.render(container)
             Routes.QUIZ -> QuizScreen.render(container)
             Routes.QUESTIONS -> QuestionsScreen.render(container)
-            Routes.DOWNLOADS -> DownloadsScreen.render(container)
+            // Legacy alias: the download center grew into the hub. replace() keeps Back working.
+            Routes.DOWNLOADS -> window.location.replace("#${Routes.STUDY}")
             Routes.SIGN_IN -> AuthScreen.render(container)
             Routes.ACCOUNT -> AccountScreen.render(container)
             // Sign-in only, no permission: step 1 is where a signed-in user *becomes* a coach
@@ -266,37 +263,7 @@ object Shell {
                     AdminMergePeopleScreen.render(container)
                 }
             }
-            else -> studyOverview(container) // unknown deep link → the site's hub page
-        }
-    }
-
-    /**
-     * The study hub is the site's /study-resources/ page since the nav redesign — legacy
-     * `#study` links, a blank hash, and unknown routes all land there. The dev shell has no
-     * site around it, so it renders a plain tool list instead of redirecting into a 404.
-     */
-    private fun studyOverview(container: HTMLElement) {
-        if (!standalone) {
-            window.location.replace(STUDY_OVERVIEW_HREF) // replace: Back skips the bounce
-            return
-        }
-        container.child("h1", "page-title", "Study tools")
-        container.child(
-            "p", "text-muted",
-            "Dev shell only — in production this route redirects to the site's Study Resources page.",
-        )
-        container.child("div", "list-group") {
-            listOf(
-                Routes.DOWNLOADS to "Downloads",
-                Routes.QUIZ to "Quiz Me",
-                Routes.STUDY_INDICES to "Names & Numbers Indices",
-                Routes.STUDY_HEADINGS to "Chapter Headings",
-                Routes.QUESTIONS to "Community Questions",
-            ).forEach { (route, label) ->
-                child("a", "list-group-item list-group-item-action", label) {
-                    setAttribute("href", "#$route")
-                }
-            }
+            else -> window.location.replace("#${Routes.STUDY}") // unknown deep link → the hub
         }
     }
 

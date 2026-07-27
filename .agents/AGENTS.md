@@ -74,9 +74,15 @@ build with "Lock file was changed" — run `./gradlew kotlinUpgradeYarnLock` and
 
 ## App navigation (Compose apps + web app)
 Top-level destinations (`Routes.kt` per app): the Compose app has five — study, quiz,
-questions, downloads, event; the web app has four — the event tab was removed from `:web`
-2026-07 because the Hugo site already shows season info (the Android app has no site around
-it, so its Event tab stays). Both also have signin, account, gated admin routes, and the full
+questions, downloads, event; the web app consolidated 2026-07 onto ONE study destination —
+`#study`, the Study & Practice hub (DownloadsScreen: per-subject groups holding downloads AND
+links to the interactive tools; scroll chips for wayfinding). The navbar's single yellow
+"Study & Practice" button is the only study entry (no dropdown/CTA duplicates); quiz,
+questions, and the browsers are reached from the hub's groups and carry Home › Study &
+Practice breadcrumbs. `#downloads` and unknown hashes redirect to `#study`; the
+`/study-resources/*` Hugo pages are redirects into the hub. The event tab was removed from
+`:web` 2026-07 because the Hugo site already shows season info (the Android app has no site
+around it, so its Event tab stays). Both also have signin, account, gated admin routes, and the full
 registration/event-ops route set (`event/register`, `event/grading`, `event/standings`,
 `event/my-scores`, `admin/registrations`, `admin/counts`, `admin/housing`, `admin/tribes`,
 `admin/testers`, `admin/users`) with identical route strings and gating — the Compose app

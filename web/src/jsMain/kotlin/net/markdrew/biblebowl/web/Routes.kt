@@ -30,14 +30,13 @@ object Routes {
 }
 
 /**
- * The top-level app destinations (dropdown items under "Study & Practice" in the merged
- * navbar); they anchor breadcrumb grouping and active-state matching. The study hub itself
- * is the Hugo overview page (/study-resources/), not an app route.
+ * Study-family destinations reached from the hub (`#study`, the app's Study & Practice page);
+ * they anchor breadcrumb grouping (Home › Study & Practice › X). The navbar has a single
+ * Study & Practice entry — these are not nav items.
  */
 enum class TopDestination(val route: String, val label: String) {
     QUIZ(Routes.QUIZ, "Quiz Me"),
     QUESTIONS(Routes.QUESTIONS, "Community Questions"),
-    DOWNLOADS(Routes.DOWNLOADS, "Downloads"),
 }
 
 /** The top-level parent of [route] (e.g. `questions/new` → QUESTIONS), or null for signin/account/admin. */
@@ -46,7 +45,7 @@ fun topDestinationOf(route: String): TopDestination? =
 
 /** Human label for [route], used for breadcrumbs and the document title. */
 fun routeLabel(route: String): String = when (route) {
-    Routes.STUDY -> "Study & Practice" // legacy hash; redirects to the site overview page
+    Routes.STUDY -> "Study & Practice" // the hub: every study resource, grouped by study focus
     Routes.STUDY_INDICES -> "Names & Numbers"
     Routes.STUDY_HEADINGS -> "Chapter Headings"
     Routes.QUIZ -> "Quiz Me"

@@ -1,5 +1,6 @@
 package net.markdrew.biblebowl.web.screens
 
+import kotlinx.browser.document
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.child
@@ -44,16 +45,24 @@ private data class StudyTextChoices(
 )
 
 /**
- * Download center (docs/gui-redesign.md §5B): one scrolling page of preset cards, grouped by study
- * focus (The Text, General Knowledge, Chapter Headings, Unique Words, Practice Tests, Reference
- * Documents) with a separate creators' commons (Data & Source Files) below. Each card is one click to a sensible
- * default, with options behind a "Customize" panel. Public.
+ * The Study & Practice hub (`#study`) — the single destination for every study resource, grouped by
+ * study focus (The Text, General Knowledge, Chapter Headings, Unique Words, Practice Tests, Reference
+ * Documents) with a separate creators' commons (Data & Source Files) below. Each group holds its
+ * download cards (one click to a sensible default, options behind "Customize") AND links to its
+ * interactive tools (quiz, browsers, community questions), so nothing about a subject lives anywhere
+ * else. A chip row up top scrolls to each group. Public.
  *
  * Every download is a plain link to the backend (the generate endpoints are public and send
  * Content-Disposition: attachment), opened in a new tab so a generation error shows its message
  * there instead of navigating the app away; on success the tab closes into a normal download.
  */
 object DownloadsScreen {
+
+    /** The group titles in page order — drives both the section headers and the scroll chips. */
+    private val GROUPS = listOf(
+        "The Text", "General Knowledge", "Chapter Headings", "Unique Words",
+        "Practice Tests", "Reference Documents", "Data & Source Files",
+    )
 
     // Sticky for the whole page session, deliberately outliving route changes. Chapter scope is
     // per card group: each customize panel's chips affect only the cards that panel belongs to.
@@ -80,10 +89,24 @@ object DownloadsScreen {
         root.clear()
         val season = Session.season
 
-        root.child("h1", "page-title", "Downloads")
+        root.child("h1", "page-title", "Study & Practice")
+        root.child(
+            "p", "text-muted",
+            "Everything you need to prepare for ${season.eventScripture}, organized by what you're " +
+                "studying. Every resource is free — no sign-in needed.",
+        )
+        // In-page wayfinding: one chip per group; buttons (not #-links) so the router isn't involved.
+        root.child("div", "d-flex flex-wrap gap-1 mb-4") {
+            GROUPS.forEach { title ->
+                child("button", "btn btn-outline-primary btn-sm rounded-pill", title) {
+                    setAttribute("type", "button")
+                    onClick { document.getElementById(groupId(title))?.scrollIntoView() }
+                }
+            }
+        }
 
         // Studier resources are grouped by STUDY FOCUS (the subject you're drilling), not by format.
-        // Cross-cutting tools (quiz, games, community questions) live on the study hub, not here.
+        // Each group carries its downloads AND its interactive tools, so a subject has one home.
         groupHeader("The Text")
         downloadCard(
             title = "Highlighted study text",
@@ -97,14 +120,16 @@ object DownloadsScreen {
         // audio belong to their publishers (license is server-side only), so these link out to
         // Crossway's ESV.org reader and BibleGateway's licensed ESV audio rather than serving either.
         val book = primaryBook(season.eventScripture)
-        externalCard(
+        linkCard(
             title = "Read or listen online",
             subtitle = "Read ${season.eventScripture} in your browser or play the audio narration — " +
                 "opens the publisher's site in a new tab.",
             links = listOf(
                 "Read on ESV.org" to "https://www.esv.org/${encodeURIComponent(book)}/",
+                "YouVersion" to "https://www.bible.com/bible/59/${season.bookCode}.1.ESV",
                 "Listen (audio)" to "https://www.biblegateway.com/audio/mclean/esv/${encodeURIComponent(book)}.1",
             ),
+            newTab = true,
         )
 
         groupHeader("General Knowledge")
@@ -131,6 +156,17 @@ object DownloadsScreen {
             ),
             customize = Customize.QuestionFlashcards,
         )
+        linkCard(
+            title = "Quiz me",
+            subtitle = "Drill the community question bank online with instant feedback — the interactive " +
+                "twin of the flashcards and practice tests.",
+            links = listOf("Open Quiz Me" to "#quiz"),
+        )
+        linkCard(
+            title = "Community questions",
+            subtitle = "Browse the community question bank, vote for the best questions, and submit your own.",
+            links = listOf("Browse questions" to "#questions"),
+        )
 
         groupHeader("Chapter Headings")
         downloadCard(
@@ -139,6 +175,12 @@ object DownloadsScreen {
                 (headingChapter?.let { " Through chapter $it." } ?: ""),
             href = generateUrl("/generate/heading-flashcards.pdf", "throughChapter" to headingChapter),
             customize = Customize.HeadingFlashcards,
+        )
+        linkCard(
+            title = "Headings browser & self-check",
+            subtitle = "Browse every ESV section heading online, or flip to self-check mode — the " +
+                "interactive twin of the flashcards. Quiz Me can also drill headings.",
+            links = listOf("Open browser" to "#study/headings", "Quiz headings" to "#quiz"),
         )
 
         groupHeader("Unique Words")
@@ -199,6 +241,11 @@ object DownloadsScreen {
             title = "Full word index",
             subtitle = "A complete concordance — every significant word in ${season.eventScripture} with its verses.",
             href = generateUrl("/generate/full-index.pdf"),
+        )
+        linkCard(
+            title = "Names & numbers browser",
+            subtitle = "Search and filter the names and numbers indices online — the interactive twin of the PDFs.",
+            links = listOf("Open browser" to "#study/indices"),
         )
 
         // Separate "commons" for a different audience — builders, not studiers (docs/study-materials-organization.md).
@@ -272,19 +319,25 @@ object DownloadsScreen {
 
     // --- rendering ---
 
+    /** Stable element id for a group title, targeted by the scroll chips (e.g. "Unique Words" → "unique-words"). */
+    private fun groupId(title: String): String = title.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
+
     private fun groupHeader(title: String) {
-        root.child("h2", "h5 fw-bold mt-4", title)
+        root.child("h2", "h5 fw-bold mt-4", title) { setAttribute("id", groupId(title)) }
     }
 
     /** A study-focus group's twin for the creators' commons: a rule + intro sets it apart from the studier groups above. */
     private fun commonsHeader(title: String, intro: String) {
         root.child("hr", "mt-5")
-        root.child("h2", "h5 fw-bold", title)
+        root.child("h2", "h5 fw-bold", title) { setAttribute("id", groupId(title)) }
         root.child("p", "text-muted small", intro)
     }
 
-    /** A card whose actions are external links (each opens in a new tab) — e.g. read/listen on a publisher's site. */
-    private fun externalCard(title: String, subtitle: String, links: List<Pair<String, String>>) {
+    /**
+     * A card whose actions are links rather than downloads: in-app tools (hash routes) or, with
+     * [newTab], external sites (e.g. read/listen on a publisher's site).
+     */
+    private fun linkCard(title: String, subtitle: String, links: List<Pair<String, String>>, newTab: Boolean = false) {
         root.child("div", "card section-card mb-3") {
             child("div", "card-body") {
                 child("h5", "card-title", title)
@@ -293,8 +346,10 @@ object DownloadsScreen {
                     links.forEach { (label, url) ->
                         child("a", "btn btn-outline-primary btn-sm", label) {
                             setAttribute("href", url)
-                            setAttribute("target", "_blank")
-                            setAttribute("rel", "noopener")
+                            if (newTab) {
+                                setAttribute("target", "_blank")
+                                setAttribute("rel", "noopener")
+                            }
                         }
                     }
                 }

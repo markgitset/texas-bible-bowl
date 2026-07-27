@@ -54,5 +54,5 @@ covers {{< param eventScripture >}}.*
 
 ---
 
-Practice more with [Practice Tests & Games](/study-resources/practice-tests/) or
-download a full practice test from the [Downloads](/study-resources/downloads/) page.
+Practice more — quizzes, flashcards, and full practice tests for every round are in
+[Study & Practice](/app/#study).
