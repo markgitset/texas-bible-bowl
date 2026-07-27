@@ -73,8 +73,10 @@ build with "Lock file was changed" — run `./gradlew kotlinUpgradeYarnLock` and
 `kotlin-js-store/yarn.lock`.
 
 ## App navigation (Compose apps + web app)
-Top-level destinations (`Routes.kt` per app): the Compose app has five — study, quiz,
-questions, downloads, event; the web app consolidated 2026-07 onto ONE study destination —
+Top-level destinations (`Routes.kt` per app): the Compose app has four — study, quiz,
+questions, event — where the Study tab IS the Study & Practice hub (DownloadsScreen took over
+from the deleted StudyHubScreen; `downloads` survives as a deep-link alias route rendering the
+same hub); the web app consolidated 2026-07 onto ONE study destination —
 `#study`, the Study & Practice hub (DownloadsScreen: per-subject groups holding downloads AND
 links to the interactive tools; scroll chips for wayfinding). The navbar's single yellow
 "Study & Practice" button is the only study entry (no dropdown/CTA duplicates); quiz,

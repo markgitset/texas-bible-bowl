@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,17 +25,22 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.PdfFileNames
+import net.markdrew.biblebowl.api.schoolYear
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.platform.Mime
@@ -70,16 +76,29 @@ private data class StudyTextChoices(
     val underlineUniqueWords: Boolean = false,
 )
 
+/** The group titles in page order — drives both the section headers and the scroll chips. */
+private val GROUPS = listOf(
+    "The Text", "General Knowledge", "Chapter Headings", "Unique Words",
+    "Practice Tests", "Reference Documents", "Data & Source Files",
+)
+
 /**
- * Download center (docs/gui-redesign.md §5B): one scrolling page of preset cards in five groups —
- * each card is one click to a sensible default, with options behind a "Customize" sheet. Public.
- * Chapter scope lives in each chapter-aware card's sheet and covers only that card's group
- * (question flashcards, heading flashcards, the practice tests, the exports); each card's
- * subtitle names its current scope.
+ * The Study & Practice hub — the Study tab's screen and the app's default landing, mirroring the
+ * web app's `#study`: one scrolling page grouped by study focus, each group holding its download
+ * cards (one click to a sensible default, options behind a "Customize" sheet) AND its interactive
+ * tools (quiz, browsers, community questions). A chip row up top scrolls to each group. Public.
+ * Chapter scope lives in each chapter-aware card's sheet and covers only that card's group;
+ * each card's subtitle names its current scope.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DownloadsScreen(api: TbbApi) {
+fun DownloadsScreen(
+    api: TbbApi,
+    onOpenIndices: () -> Unit,
+    onOpenHeadings: () -> Unit,
+    onOpenQuiz: () -> Unit,
+    onOpenQuestions: () -> Unit,
+) {
     var busyCard by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
@@ -190,10 +209,40 @@ fun DownloadsScreen(api: TbbApi) {
         }
     }
 
+    val season = LocalSeason.current
+    val scrollState = rememberScrollState()
+    // Group-header Y offsets in the scrolled column's content coordinates, for the scroll chips.
+    val groupOffsets = remember { mutableStateMapOf<String, Int>() }
+
     Column(
-        Modifier.verticalScroll(rememberScrollState()),
+        Modifier.verticalScroll(scrollState),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        Text(
+            "This season: ${season.eventScripture}",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            "${season.schoolYear} · all ${season.chapterCount} chapters (ESV) — everything you need, " +
+                "organized by what you're studying. Free, no sign-in needed.",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        // In-page wayfinding: one chip per group scrolls to it.
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            GROUPS.forEach { title ->
+                AssistChip(
+                    onClick = { groupOffsets[title]?.let { y -> scope.launch { scrollState.animateScrollTo(y) } } },
+                    label = { Text(title) },
+                )
+            }
+        }
+
         message?.let {
             Text(
                 it,
@@ -202,17 +251,34 @@ fun DownloadsScreen(api: TbbApi) {
             )
         }
 
-        GroupHeader("Study text")
+        // Studier resources are grouped by STUDY FOCUS (the subject you're drilling), not by format.
+        // Each group carries its downloads AND its interactive tools, so a subject has one home.
+        GroupHeader("The Text", groupOffsets)
         DownloadCard(
             title = "Highlighted study text",
-            subtitle = "The full text of ${LocalSeason.current.eventScripture} with names, numbers, and more " +
+            subtitle = "The full text of ${season.eventScripture} with names, numbers, and more " +
                 "highlighted by category — the flagship study document." + customizedNote(textChoices != StudyTextChoices()),
             busyCard = busyCard,
             onClick = ::downloadStudyText,
             onCustomize = { customize = Customize.StudyText },
         )
+        ReadListenCard()
 
-        GroupHeader("Flashcards")
+        GroupHeader("General Knowledge", groupOffsets)
+        DownloadCard(
+            title = "Study guide",
+            subtitle = "The official multiple-choice study guide for ${season.eventScripture} — every chapter's " +
+                "review questions with an answer key. The single best place to start.",
+            busyCard = busyCard,
+            onClick = { download("Study guide", PdfFileNames.studyGuide()) { api.studyGuidePdf() } },
+        )
+        DownloadCard(
+            title = "Study guide — answer copy",
+            subtitle = "The same guide with each correct answer marked (★) and no separate key — handy for " +
+                "coaches, parents, and self-checking.",
+            busyCard = busyCard,
+            onClick = { download("Study guide — answer copy", PdfFileNames.studyGuideAnswers()) { api.studyGuideAnswersPdf() } },
+        )
         DownloadCard(
             title = "Question flashcards",
             subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardChapter) +
@@ -221,6 +287,21 @@ fun DownloadsScreen(api: TbbApi) {
             onClick = ::downloadQuestionFlashcards,
             onCustomize = { customize = Customize.QuestionFlashcards },
         )
+        LinkCard(
+            title = "Quiz me",
+            subtitle = "Drill the community question bank with instant feedback — the interactive twin " +
+                "of the flashcards and practice tests.",
+            actionLabel = "Open Quiz",
+            onClick = onOpenQuiz,
+        )
+        LinkCard(
+            title = "Community questions",
+            subtitle = "Browse the community question bank, vote for the best questions, and submit your own.",
+            actionLabel = "Browse questions",
+            onClick = onOpenQuestions,
+        )
+
+        GroupHeader("Chapter Headings", groupOffsets)
         DownloadCard(
             title = "Chapter-heading flashcards",
             subtitle = "One card per ESV section heading (Round 5 material)." +
@@ -229,22 +310,31 @@ fun DownloadsScreen(api: TbbApi) {
             onClick = ::downloadHeadingFlashcards,
             onCustomize = { customize = Customize.HeadingFlashcards },
         )
-
-        GroupHeader("Indices")
-        DownloadCard(
-            title = "Names index",
-            subtitle = "Every proper name in ${LocalSeason.current.eventScripture} with its verses — alphabetical and by frequency.",
-            busyCard = busyCard,
-            onClick = { download("Names index", PdfFileNames.namesIndex()) { api.namesIndexPdf() } },
-        )
-        DownloadCard(
-            title = "Numbers index",
-            subtitle = "Every number in ${LocalSeason.current.eventScripture} with its verses — alphabetical and by frequency.",
-            busyCard = busyCard,
-            onClick = { download("Numbers index", PdfFileNames.numbersIndex()) { api.numbersIndexPdf() } },
+        LinkCard(
+            title = "Headings browser & self-check",
+            subtitle = "Browse every ESV section heading, or flip to self-check mode — the interactive " +
+                "twin of the flashcards. Quiz can also drill headings.",
+            actionLabel = "Open browser",
+            onClick = onOpenHeadings,
         )
 
-        GroupHeader("Practice tests")
+        GroupHeader("Unique Words", groupOffsets)
+        DownloadCard(
+            title = "Unique-word flashcards",
+            subtitle = "One card per word that appears only once in ${season.eventScripture} — the word up " +
+                "front, its verse on the back. A powerful memory hook for pinpointing chapters.",
+            busyCard = busyCard,
+            onClick = { download("Unique-word flashcards", PdfFileNames.uniqueWordFlashcards()) { api.uniqueWordFlashcardsPdf() } },
+        )
+        DownloadCard(
+            title = "Unique words index",
+            subtitle = "Every word that appears only once in ${season.eventScripture} — alphabetical and " +
+                "in order of appearance.",
+            busyCard = busyCard,
+            onClick = { download("Unique words index", PdfFileNames.uniqueWordsIndex()) { api.uniqueWordsIndexPdf() } },
+        )
+
+        GroupHeader("Practice Tests", groupOffsets)
         // R1–R5 only: the Power Round has no generator or question bank behind it.
         Round.entries.filter { it.number in 1..5 }.forEach { round ->
             val roundCustomized =
@@ -259,7 +349,57 @@ fun DownloadsScreen(api: TbbApi) {
             )
         }
 
-        GroupHeader("Exports")
+        GroupHeader("Reference Documents", groupOffsets)
+        DownloadCard(
+            title = "Names index",
+            subtitle = "Every proper name in ${season.eventScripture} with its verses — alphabetical and by frequency.",
+            busyCard = busyCard,
+            onClick = { download("Names index", PdfFileNames.namesIndex()) { api.namesIndexPdf() } },
+        )
+        DownloadCard(
+            title = "Numbers index",
+            subtitle = "Every number in ${season.eventScripture} with its verses — alphabetical and by frequency.",
+            busyCard = busyCard,
+            onClick = { download("Numbers index", PdfFileNames.numbersIndex()) { api.numbersIndexPdf() } },
+        )
+        DownloadCard(
+            title = "Men index",
+            subtitle = "Every man named in ${season.eventScripture} with the verses he appears in.",
+            busyCard = busyCard,
+            onClick = { download("Men index", PdfFileNames.menIndex()) { api.menIndexPdf() } },
+        )
+        DownloadCard(
+            title = "Women index",
+            subtitle = "Every woman named in ${season.eventScripture} with the verses she appears in.",
+            busyCard = busyCard,
+            onClick = { download("Women index", PdfFileNames.womenIndex()) { api.womenIndexPdf() } },
+        )
+        DownloadCard(
+            title = "Places index",
+            subtitle = "Every place named in ${season.eventScripture} with the verses it appears in.",
+            busyCard = busyCard,
+            onClick = { download("Places index", PdfFileNames.placesIndex()) { api.placesIndexPdf() } },
+        )
+        DownloadCard(
+            title = "Full word index",
+            subtitle = "A complete concordance — every significant word in ${season.eventScripture} with its verses.",
+            busyCard = busyCard,
+            onClick = { download("Full word index", PdfFileNames.fullIndex()) { api.fullIndexPdf() } },
+        )
+        LinkCard(
+            title = "Names & numbers browser",
+            subtitle = "Search and filter the names and numbers indices — the interactive twin of the PDFs.",
+            actionLabel = "Open browser",
+            onClick = onOpenIndices,
+        )
+
+        // Separate "commons" for a different audience — builders, not studiers.
+        GroupHeader("Data & Source Files", groupOffsets)
+        Text(
+            "For coaches and question writers — reusable source files for building your own study material.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
         val exportCustomized = exportHeadings || exportRound != null
         DownloadCard(
             title = "Kahoot spreadsheet",
@@ -276,6 +416,13 @@ fun DownloadsScreen(api: TbbApi) {
             busyCard = busyCard,
             onClick = { downloadExport(kahoot = false) },
             onCustomize = { customize = Customize.Export(kahoot = false) },
+        )
+        DownloadCard(
+            title = "Study guide (TSV)",
+            subtitle = "The full study-guide question bank as tab-separated text — every question, its " +
+                "choices, answer, and reference — for building your own materials.",
+            busyCard = busyCard,
+            onClick = { download("Study guide (TSV)", "study-guide.tsv", Mime.TSV) { api.studyGuideTsv() } },
         )
     }
 
@@ -505,14 +652,72 @@ private fun customizedNote(customized: Boolean): String =
     if (customized) " Using your customized settings." else ""
 
 @Composable
-private fun GroupHeader(title: String) {
+private fun GroupHeader(title: String, offsets: MutableMap<String, Int>) {
     Text(
         title,
         style = MaterialTheme.typography.titleMedium,
         fontWeight = FontWeight.Bold,
         color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 8.dp),
+        modifier = Modifier.padding(top = 8.dp)
+            // Content-coordinate Y within the scrolled column, so a chip can scroll here.
+            .onGloballyPositioned { offsets[title] = it.positionInParent().y.toInt() },
     )
+}
+
+/** A card whose action opens an in-app tool rather than downloading — the interactive twin of a download. */
+@Composable
+private fun LinkCard(title: String, subtitle: String, actionLabel: String, onClick: () -> Unit) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            FilledTonalButton(onClick = onClick) { Text(actionLabel) }
+        }
+    }
+}
+
+/** The first book of the season's display scripture ("Joshua, Judges & Ruth" → "Joshua"), for reader links. */
+private fun primaryBook(eventScripture: String): String =
+    eventScripture.split(',', '&').first().replace(" and ", " ").trim()
+
+/**
+ * Read/listen links for the season text — the text is the hub, not just a download. The ESV text
+ * and audio belong to their publishers (license is server-side only), so these link out.
+ */
+@Composable
+private fun ReadListenCard() {
+    val uriHandler = LocalUriHandler.current
+    val season = LocalSeason.current
+    val book = primaryBook(season.eventScripture).replace(" ", "%20")
+    val links = listOf(
+        "Read on ESV.org" to "https://www.esv.org/$book/",
+        "YouVersion" to "https://www.bible.com/bible/59/${season.bookCode}.1.ESV",
+        "Listen (audio)" to "https://www.biblegateway.com/audio/mclean/esv/$book.1",
+    )
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Read or listen online", style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold)
+            Text(
+                "Read ${LocalSeason.current.eventScripture} or play the audio narration — opens the " +
+                    "publisher's site.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                links.forEach { (name, url) ->
+                    AssistChip(onClick = { uriHandler.openUri(url) }, label = { Text(name) })
+                }
+            }
+        }
+    }
 }
 
 @Composable
