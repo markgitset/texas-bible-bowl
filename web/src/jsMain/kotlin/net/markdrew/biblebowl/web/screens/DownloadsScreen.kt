@@ -109,6 +109,12 @@ object DownloadsScreen {
 
         groupHeader("General Knowledge")
         downloadCard(
+            title = "Study guide",
+            subtitle = "The official multiple-choice study guide for ${season.eventScripture} — every chapter's " +
+                "review questions with an answer key. The single best place to start.",
+            href = generateUrl("/generate/study-guide.pdf"),
+        )
+        downloadCard(
             title = "Question flashcards",
             subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardChapter) +
                 customizedNote(flashcardRound != null),
@@ -209,6 +215,13 @@ object DownloadsScreen {
                 "Quizlet, Space, or Anki." + scopeNote(exportChapter) + customizedNote(exportCustomized),
             href = exportUrl(kahoot = false),
             customize = Customize.Export(kahoot = false),
+            buttonLabel = "Download",
+        )
+        downloadCard(
+            title = "Study guide (TSV)",
+            subtitle = "The full study-guide question bank as tab-separated text — every question, its " +
+                "choices, answer, and reference — for building your own materials.",
+            href = generateUrl("/generate/study-guide.tsv"),
             buttonLabel = "Download",
         )
     }

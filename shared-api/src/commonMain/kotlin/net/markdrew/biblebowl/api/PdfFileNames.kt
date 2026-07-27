@@ -54,6 +54,9 @@ object PdfFileNames {
     /** The one-time-words flashcard deck (word on the front, its verse on the back). */
     fun uniqueWordFlashcards(): String = "unique-word-flashcards.pdf"
 
+    /** The multiple-choice study guide (cover, questions by chapter, answer key). */
+    fun studyGuide(): String = "study-guide.pdf"
+
     /** The Round 5 headings deck, cumulatively scoped, e.g. `heading-flashcards-through-ch5.pdf`. */
     fun headingFlashcards(throughChapter: Int? = null): String =
         "heading-flashcards${throughChapter?.let { "-through-ch$it" } ?: ""}.pdf"
