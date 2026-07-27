@@ -25,7 +25,10 @@ import net.markdrew.biblebowl.generate.practice.PracticeTest
 import net.markdrew.biblebowl.generate.practice.eventsTypst
 import net.markdrew.biblebowl.generate.practice.findTheVerseTypst
 import net.markdrew.biblebowl.generate.practice.quotesTypst
+import net.markdrew.biblebowl.analysis.WordList
+import net.markdrew.biblebowl.analysis.fullIndex
 import net.markdrew.biblebowl.analysis.namesIndex
+import net.markdrew.biblebowl.analysis.wordListIndex
 import net.markdrew.biblebowl.generate.indices.indexTypst
 import net.markdrew.biblebowl.generate.indices.numbersIndexTypst
 import net.markdrew.biblebowl.generate.text.TextOptions
@@ -217,6 +220,47 @@ fun Route.generateRoutes(
                 }
             } catch (e: EsvUpstreamException) {
                 call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+            }
+        }
+
+        // GET /generate/men-index.pdf — the men named in the season, one index (alphabetical + by frequency)
+        get("/generate/men-index.pdf") {
+            respondIndexPdf(study, pdfCache, PdfFileNames.menIndex()) { s ->
+                val sd = s.studyData()
+                indexTypst(
+                    sd, wordListIndex(sd, s.categoryResolution(), WordList.MEN),
+                    "Man", plural = "Men", title = "${sd.studySet.name} Men Index",
+                )
+            }
+        }
+
+        // GET /generate/women-index.pdf
+        get("/generate/women-index.pdf") {
+            respondIndexPdf(study, pdfCache, PdfFileNames.womenIndex()) { s ->
+                val sd = s.studyData()
+                indexTypst(
+                    sd, wordListIndex(sd, s.categoryResolution(), WordList.WOMEN),
+                    "Woman", plural = "Women", title = "${sd.studySet.name} Women Index",
+                )
+            }
+        }
+
+        // GET /generate/places-index.pdf
+        get("/generate/places-index.pdf") {
+            respondIndexPdf(study, pdfCache, PdfFileNames.placesIndex()) { s ->
+                val sd = s.studyData()
+                indexTypst(
+                    sd, wordListIndex(sd, s.categoryResolution(), WordList.PLACES),
+                    "Place", title = "${sd.studySet.name} Places Index",
+                )
+            }
+        }
+
+        // GET /generate/full-index.pdf — a complete word concordance for the season
+        get("/generate/full-index.pdf") {
+            respondIndexPdf(study, pdfCache, PdfFileNames.fullIndex()) { s ->
+                val sd = s.studyData()
+                indexTypst(sd, fullIndex(sd), "Word", title = "${sd.studySet.name} Complete Word Index")
             }
         }
 
@@ -455,6 +499,29 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(typstSource
  * upsert makes that benign. May throw [EsvUpstreamException] (resolving the stamp needs the study
  * text) — callers already catch it.
  */
+/**
+ * The shared shape of the season index PDFs: ESV-gated (503 if unconfigured), cached, Typst-compiled,
+ * with upstream ESV failures mapped to 502. [typstSource] receives the non-null, configured study service.
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.respondIndexPdf(
+    study: StudyDataService?,
+    pdfCache: PdfCache?,
+    fileName: String,
+    typstSource: suspend (StudyDataService) -> String,
+) {
+    if (study == null || !study.isConfigured) {
+        return call.respond(
+            HttpStatusCode.ServiceUnavailable,
+            ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+        )
+    }
+    try {
+        respondCachedPdf(study, pdfCache, fileName) { typstSource(study) }
+    } catch (e: EsvUpstreamException) {
+        call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+    }
+}
+
 private suspend fun io.ktor.server.routing.RoutingContext.respondCachedPdf(
     study: StudyDataService,
     pdfCache: PdfCache?,
