@@ -39,6 +39,15 @@ object PdfFileNames {
 
     fun numbersIndex(): String = "numbers-index.pdf"
 
+    fun menIndex(): String = "men-index.pdf"
+
+    fun womenIndex(): String = "women-index.pdf"
+
+    fun placesIndex(): String = "places-index.pdf"
+
+    /** The complete word concordance. */
+    fun fullIndex(): String = "full-index.pdf"
+
     /** The Round 5 headings deck, cumulatively scoped, e.g. `heading-flashcards-through-ch5.pdf`. */
     fun headingFlashcards(throughChapter: Int? = null): String =
         "heading-flashcards${throughChapter?.let { "-through-ch$it" } ?: ""}.pdf"

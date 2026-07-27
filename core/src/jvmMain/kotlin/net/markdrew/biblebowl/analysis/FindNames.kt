@@ -37,3 +37,24 @@ fun namesIndex(studyData: StudyData, resolution: DisjointRangeMap<String>): List
         }
         .sortedBy { it.key.lowercase() }
 }
+
+/**
+ * A single-category name index: every occurrence of one [wordList] (e.g. [WordList.MEN]) → the verses it
+ * appears in, with per-verse counts. Same machinery as [namesIndex] but narrowed to one list, reading the
+ * same shared category [resolution] so a Men/Women/Places index agrees with the highlighting.
+ */
+fun wordListIndex(
+    studyData: StudyData,
+    resolution: DisjointRangeMap<String>,
+    wordList: WordList,
+): List<WordIndexEntryC> {
+    val ranges: List<IntRange> = resolution.entries.filter { (_, token) -> token == wordList.token }.map { it.key }
+    return buildNamesIndex(studyData, ranges)
+        .map { entry ->
+            WordIndexEntryC(
+                entry.key,
+                entry.values.groupingBy { it }.eachCount().map { (verseRef, count) -> WithCount(verseRef, count) },
+            )
+        }
+        .sortedBy { it.key.lowercase() }
+}

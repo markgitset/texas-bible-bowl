@@ -68,14 +68,21 @@ private fun <K, V> StringBuilder.appendIndex(
  * Renders a complete Typst index document for [entries] — an alphabetical section (3 cols, with verse
  * references) followed by an increasing-frequency section (4 cols) — and returns the source.
  *
- * @param singular label for one entry, e.g. "Number" or "Name" (pluralized with "s")
+ * @param singular label for one entry, e.g. "Number" or "Name"
+ * @param plural label for many; defaults to [singular] + "s" (supply for irregulars like "Men"/"Women")
+ * @param title the document title; defaults to "<set> <singular> Index" (override for e.g. "Acts Men Index")
  */
-fun indexTypst(studyData: StudyData, entries: List<WordIndexEntryC>, singular: String): String {
-    val plural = "${singular}s"
+fun indexTypst(
+    studyData: StudyData,
+    entries: List<WordIndexEntryC>,
+    singular: String,
+    plural: String = "${singular}s",
+    title: String = "${studyData.studySet.name} $singular Index",
+): String {
     val name = studyData.studySet.name
     val longName = studyData.studySet.longName
     return buildString {
-        appendDoc("$name $singular Index", "The following is a complete index of all ${plural.lowercase()} in $longName.") {
+        appendDoc(title, "The following is a complete index of all ${plural.lowercase()} in $longName.") {
             appendIndex(
                 entries.sortedBy { it.key.lowercase() },
                 columns = 3,
