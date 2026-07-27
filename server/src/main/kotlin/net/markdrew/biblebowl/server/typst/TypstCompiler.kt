@@ -44,14 +44,26 @@ object TypstCompiler {
                 pdfFile.absolutePathString(),
             ).redirectErrorStream(true).start()
 
+            // Drain the merged stdout/stderr on a separate thread while typst runs. A big compile can emit
+            // thousands of warnings (e.g. an unknown font → one per glyph run); if we only read the pipe
+            // after waitFor, its ~64KB OS buffer fills, typst blocks on write, and we deadlock to the
+            // timeout. Draining concurrently keeps typst unblocked and preserves the output for errors.
+            val output = StringBuilder()
+            val drainer = Thread {
+                process.inputStream.bufferedReader().forEachLine { line ->
+                    synchronized(output) { if (output.length < 4000) output.appendLine(line) }
+                }
+            }.apply { isDaemon = true; start() }
+
             val finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
             if (!finished) {
                 process.destroyForcibly()
                 throw TypstException("typst compile timed out after ${timeoutSeconds}s")
             }
+            drainer.join(5_000)
             if (process.exitValue() != 0) {
-                val output = process.inputStream.bufferedReader().readText().take(2000)
-                throw TypstException("typst compile failed (exit ${process.exitValue()}): $output")
+                val tail = synchronized(output) { output.toString() }.take(2000)
+                throw TypstException("typst compile failed (exit ${process.exitValue()}): $tail")
             }
             return pdfFile.readBytes()
         } finally {
