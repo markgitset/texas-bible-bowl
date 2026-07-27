@@ -3,15 +3,29 @@ package net.markdrew.biblebowl.generation.typst
 import net.markdrew.biblebowl.api.QuestionDto
 
 /**
+ * A flashcard field: either literal text or basic Markdown (bold, italics, `<u>underline</u>`,
+ * strikethrough, lists, headings — see [markdownToTypst] for the supported subset). Plain fields
+ * render exactly as given; Markdown fields are translated to the deck's output format.
+ */
+sealed interface CardText {
+    data class Plain(val text: String) : CardText
+    data class Markdown(val markdown: String) : CardText
+}
+
+/**
  * One duplex flashcard: [front] shows the prompt, [back] the answer, with an optional smaller
  * [note] under the answer (e.g. verse references) and a bottom-right [footer] (e.g. "3 of 40").
  */
 data class Flashcard(
-    val front: String,
-    val back: String,
-    val note: String = "",
+    val front: CardText,
+    val back: CardText,
+    val note: CardText = CardText.Plain(""),
     val footer: String = "",
-)
+) {
+    /** Plain-text convenience: the common case of literal front/back/note. */
+    constructor(front: String, back: String, note: String = "", footer: String = "") :
+        this(CardText.Plain(front), CardText.Plain(back), CardText.Plain(note), footer)
+}
 
 /** Builds flashcards from approved community questions: prompt on the front, answer + refs on the back. */
 fun List<QuestionDto>.toFlashcards(): List<Flashcard> = mapIndexed { i, q ->
@@ -25,6 +39,12 @@ fun List<QuestionDto>.toFlashcards(): List<Flashcard> = mapIndexed { i, q ->
 
 /** Escapes Typst *string-literal* content (different from markup escaping): backslash and double quote. */
 fun escapeTypstString(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"")
+
+/** A card field as a Typst dict value: plain → string literal; markdown → content block. */
+private fun typstFieldValue(field: CardText): String = when (field) {
+    is CardText.Plain -> "\"${escapeTypstString(field.text)}\""
+    is CardText.Markdown -> "[${markdownToTypst(field.markdown)}]"
+}
 
 /**
  * Emits a duplex flashcard deck as Typst source, on 2×5 Avery-5870-style card stock.
@@ -47,9 +67,9 @@ fun flashcardsTypst(cards: List<Flashcard>): String = buildString {
 
     cards.forEach { card ->
         appendLine(
-            """(question: "${escapeTypstString(card.front)}", """ +
-                """answer: "${escapeTypstString(card.back)}", """ +
-                """note: "${escapeTypstString(card.note)}", """ +
+            "(question: ${typstFieldValue(card.front)}, " +
+                "answer: ${typstFieldValue(card.back)}, " +
+                "note: ${typstFieldValue(card.note)}, " +
                 """footer: "${escapeTypstString(card.footer)}"),"""
         )
     }
