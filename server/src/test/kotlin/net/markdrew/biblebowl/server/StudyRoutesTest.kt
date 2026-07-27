@@ -219,11 +219,13 @@ class StudyRoutesTest {
             println("typst not on PATH; skipping study-guide PDF compile assertion")
             return@testApplication
         }
-        val pdf = api.get("/generate/study-guide.pdf")
-        assertEquals(HttpStatusCode.OK, pdf.status)
-        val bytes = pdf.bodyAsBytes()
-        assertTrue(bytes.size > 4 && bytes.decodeToString(0, 4) == "%PDF", "study guide should be a PDF")
-        assertTrue("study-guide.pdf" in pdf.headers[HttpHeaders.ContentDisposition].orEmpty())
+        listOf("study-guide", "study-guide-answers").forEach { name ->
+            val pdf = api.get("/generate/$name.pdf")
+            assertEquals(HttpStatusCode.OK, pdf.status, "$name should return 200")
+            val bytes = pdf.bodyAsBytes()
+            assertTrue(bytes.size > 4 && bytes.decodeToString(0, 4) == "%PDF", "$name should be a PDF")
+            assertTrue("$name.pdf" in pdf.headers[HttpHeaders.ContentDisposition].orEmpty())
+        }
     }
 
     @Test

@@ -344,34 +344,11 @@ fun Route.generateRoutes(
             }
         }
 
-        // GET /generate/study-guide.pdf — the multiple-choice study guide. Pure curated TSV (no ESV), so it
-        // is gated only on having a study set, and cached under a stamp derived from the questions + year.
-        get("/generate/study-guide.pdf") {
-            val svc = study ?: return@get call.respond(
-                HttpStatusCode.ServiceUnavailable,
-                ApiError("esv_unconfigured", "Study set is not configured"),
-            )
-            val guide = StudyGuideParser.loadStudyGuideOrNull(svc.studySet) ?: return@get call.respond(
-                HttpStatusCode.NotFound,
-                ApiError("no_study_guide", "This season has no study guide"),
-            )
-            val year = seasons.current().eventYear
-            val logo = tbbLogoBytes()
-            val fileName = PdfFileNames.studyGuide()
-            // Fold the logo into the stamp so adding/replacing it invalidates any pre-logo cached PDF.
-            val stamp = 31 * guide.hashCode() + year + (logo?.contentHashCode() ?: 0)
-            val cached = pdfCache?.let { c -> withContext(Dispatchers.IO) { c.get(svc.studySet.simpleName, fileName, stamp) } }
-            if (cached != null) return@get respondAttachment(cached, fileName, ContentType.Application.Pdf)
-            try {
-                val source = studyGuideTypst(guide, svc.studySet, year, logoFile = logo?.let { STUDY_GUIDE_LOGO_FILE })
-                val assets = logo?.let { mapOf(STUDY_GUIDE_LOGO_FILE to it) } ?: emptyMap()
-                val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(source, assets = assets) }
-                pdfCache?.let { c -> withContext(Dispatchers.IO) { c.put(svc.studySet.simpleName, fileName, stamp, pdf) } }
-                respondAttachment(pdf, fileName, ContentType.Application.Pdf)
-            } catch (e: TypstException) {
-                call.respond(HttpStatusCode.ServiceUnavailable, ApiError("typst_failed", e.message ?: "PDF generation failed"))
-            }
-        }
+        // GET /generate/study-guide.pdf — the multiple-choice study guide (student copy, answer key at the end).
+        get("/generate/study-guide.pdf") { respondStudyGuidePdf(study, pdfCache, seasons, markAnswers = false) }
+
+        // GET /generate/study-guide-answers.pdf — the answer copy: each correct choice starred inline, no key.
+        get("/generate/study-guide-answers.pdf") { respondStudyGuidePdf(study, pdfCache, seasons, markAnswers = true) }
 
         // GET /generate/study-guide.tsv — the raw curated source, for other creators (Data & Source Files)
         get("/generate/study-guide.tsv") {
@@ -596,6 +573,45 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondIndexPdf(
         respondCachedPdf(study, pdfCache, fileName) { typstSource(study) }
     } catch (e: EsvUpstreamException) {
         call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+    }
+}
+
+/**
+ * The study guide PDF — the student copy ([markAnswers] false) or the answer copy ([markAnswers] true, each
+ * correct choice starred inline with no key at the end). Pure curated TSV (no ESV), so it is gated only on a
+ * study set and cached under a stamp of the questions + year + logo + which copy (so the two never collide).
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.respondStudyGuidePdf(
+    study: StudyDataService?,
+    pdfCache: PdfCache?,
+    seasons: SeasonRepository,
+    markAnswers: Boolean,
+) {
+    val svc = study ?: return call.respond(
+        HttpStatusCode.ServiceUnavailable,
+        ApiError("esv_unconfigured", "Study set is not configured"),
+    )
+    val guide = StudyGuideParser.loadStudyGuideOrNull(svc.studySet) ?: return call.respond(
+        HttpStatusCode.NotFound,
+        ApiError("no_study_guide", "This season has no study guide"),
+    )
+    val year = seasons.current().eventYear
+    val logo = tbbLogoBytes()
+    val fileName = if (markAnswers) PdfFileNames.studyGuideAnswers() else PdfFileNames.studyGuide()
+    // Fold the logo + copy flag into the stamp so a new logo, or the other copy, never serves a stale PDF.
+    val stamp = 31 * guide.hashCode() + year + (logo?.contentHashCode() ?: 0) + if (markAnswers) 1 else 0
+    val cached = pdfCache?.let { c -> withContext(Dispatchers.IO) { c.get(svc.studySet.simpleName, fileName, stamp) } }
+    if (cached != null) return respondAttachment(cached, fileName, ContentType.Application.Pdf)
+    try {
+        val source = studyGuideTypst(
+            guide, svc.studySet, year, logoFile = logo?.let { STUDY_GUIDE_LOGO_FILE }, markAnswers = markAnswers,
+        )
+        val assets = logo?.let { mapOf(STUDY_GUIDE_LOGO_FILE to it) } ?: emptyMap()
+        val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(source, assets = assets) }
+        pdfCache?.let { c -> withContext(Dispatchers.IO) { c.put(svc.studySet.simpleName, fileName, stamp, pdf) } }
+        respondAttachment(pdf, fileName, ContentType.Application.Pdf)
+    } catch (e: TypstException) {
+        call.respond(HttpStatusCode.ServiceUnavailable, ApiError("typst_failed", e.message ?: "PDF generation failed"))
     }
 }
 

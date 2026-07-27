@@ -93,19 +93,21 @@ fun studyGuideTypst(
     studySet: StudySet,
     coverYear: Int,
     logoFile: String? = null,
+    markAnswers: Boolean = false,
 ): String {
     // groupBy preserves first-encounter order, so books/chapters stay in the guide's natural order.
     val byBook: Map<String, List<StudyGuideQuestion>> = questions.groupBy { it.chapterRef.bookName }
     return buildString {
         appendLine(PREAMBLE)
-        appendCover(studySet, coverYear, logoFile)
-        appendQuestions(byBook)
-        appendAnswerKey(byBook)
+        appendCover(studySet, coverYear, logoFile, markAnswers)
+        appendQuestions(byBook, markAnswers)
+        // The answer-copy marks each correct choice inline, so it drops the separate key at the end.
+        if (!markAnswers) appendAnswerKey(byBook)
     }
 }
 
 /** The (header-less) cover page — optional logo, title, subtitle, and copyright — then restarts page numbering. */
-private fun StringBuilder.appendCover(studySet: StudySet, coverYear: Int, logoFile: String?) {
+private fun StringBuilder.appendCover(studySet: StudySet, coverYear: Int, logoFile: String?, markAnswers: Boolean) {
     val title = escapeTypst(studySet.name.uppercase())
     // With a logo: a small top gap, the logo, then the label. Without: a larger gap so the title still centers.
     val masthead = if (logoFile != null) {
@@ -127,6 +129,7 @@ private fun StringBuilder.appendCover(studySet: StudySet, coverYear: Int, logoFi
           #text(size: 13pt, style: "italic")[Chapter Questions to Review]
           #v(0.15in)
           #text(font: sans, size: 12pt)[for Texas Bible Bowl $coverYear]
+          ${if (markAnswers) "#v(0.25in)\n          #text(font: sans, size: 12pt, weight: \"bold\", fill: accent, tracking: 2pt)[ANSWER COPY]" else ""}
           #v(1fr)
           #line(length: 30%, stroke: 0.5pt + luma(160))
           #v(0.15in)
@@ -144,12 +147,12 @@ private fun StringBuilder.appendCover(studySet: StudySet, coverYear: Int, logoFi
 }
 
 /** Every question, grouped under a level-1 heading per book and a level-2 heading per chapter. */
-private fun StringBuilder.appendQuestions(byBook: Map<String, List<StudyGuideQuestion>>) {
+private fun StringBuilder.appendQuestions(byBook: Map<String, List<StudyGuideQuestion>>, markAnswers: Boolean) {
     for ((bookName, bookQuestions) in byBook) {
         if (byBook.size > 1) appendLine("= ${escapeTypst(bookName)}")
         for ((chapter, chapterQuestions) in bookQuestions.groupBy { it.chapterRef.chapter }) {
             appendLine("== Chapter $chapter")
-            chapterQuestions.forEach { appendQuestion(it) }
+            chapterQuestions.forEach { appendQuestion(it, markAnswers) }
         }
     }
 }
@@ -158,7 +161,7 @@ private fun StringBuilder.appendQuestions(byBook: Map<String, List<StudyGuideQue
  * One question as an unbreakable, hanging-indented block: the number sits in a narrow left column while the
  * prompt (with a grey verse reference) and the A–D choices align in the wider right column.
  */
-private fun StringBuilder.appendQuestion(q: StudyGuideQuestion) {
+private fun StringBuilder.appendQuestion(q: StudyGuideQuestion, markAnswers: Boolean) {
     val verseLabel = if (q.verseRefString.any { it == '-' || it == ',' || it == '–' }) "vv." else "v."
     val ref = escapeTypst(q.verseRefString)
     appendLine("#block(breakable: false, spacing: 1.2em)[")
@@ -169,10 +172,13 @@ private fun StringBuilder.appendQuestion(q: StudyGuideQuestion) {
     appendLine("      ${escapeTypst(q.question)} #text(size: 9pt, fill: luma(110))[($verseLabel~$ref)]")
     appendLine("      #grid(columns: (1.4em, 1fr), row-gutter: 2.5pt,")
     q.choices.forEachIndexed { i, choice ->
-        appendLine(
-            "        text(font: sans, size: 9.5pt, weight: \"bold\", fill: accent)[${choiceLabel(i)}.], " +
-                "[${escapeTypst(choice)}],"
-        )
+        // In the answer copy, the correct choice is bolded in the accent colour with a trailing star.
+        val cell = if (markAnswers && i == q.correctAnswer) {
+            "[#text(weight: \"bold\", fill: accent)[${escapeTypst(choice)}] #text(fill: accent)[★]]"
+        } else {
+            "[${escapeTypst(choice)}]"
+        }
+        appendLine("        text(font: sans, size: 9.5pt, weight: \"bold\", fill: accent)[${choiceLabel(i)}.], $cell,")
     }
     appendLine("      )")
     appendLine("    ],")
