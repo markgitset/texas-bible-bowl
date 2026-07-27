@@ -30,7 +30,7 @@ object Routes {
 }
 
 /**
- * The top-level app destinations (dropdown items under "Study Resources" in the merged
+ * The top-level app destinations (dropdown items under "Study & Practice" in the merged
  * navbar); they anchor breadcrumb grouping and active-state matching. The study hub itself
  * is the Hugo overview page (/study-resources/), not an app route.
  */
@@ -46,7 +46,7 @@ fun topDestinationOf(route: String): TopDestination? =
 
 /** Human label for [route], used for breadcrumbs and the document title. */
 fun routeLabel(route: String): String = when (route) {
-    Routes.STUDY -> "Study Resources" // legacy hash; redirects to the site overview page
+    Routes.STUDY -> "Study & Practice" // legacy hash; redirects to the site overview page
     Routes.STUDY_INDICES -> "Names & Numbers"
     Routes.STUDY_HEADINGS -> "Chapter Headings"
     Routes.QUIZ -> "Quiz Me"
@@ -68,5 +68,5 @@ fun routeLabel(route: String): String = when (route) {
     Routes.ADMIN_TESTERS -> "Tester IDs"
     Routes.ADMIN_USERS -> "Users"
     Routes.ADMIN_MERGE_PEOPLE -> "Merge People"
-    else -> "Study Resources"
+    else -> "Study & Practice"
 }
