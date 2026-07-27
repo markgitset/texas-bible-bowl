@@ -28,9 +28,11 @@ import net.markdrew.biblebowl.generate.practice.quotesTypst
 import net.markdrew.biblebowl.analysis.WordList
 import net.markdrew.biblebowl.analysis.fullIndex
 import net.markdrew.biblebowl.analysis.namesIndex
+import net.markdrew.biblebowl.analysis.oneTimeWords
 import net.markdrew.biblebowl.analysis.wordListIndex
 import net.markdrew.biblebowl.generate.indices.indexTypst
 import net.markdrew.biblebowl.generate.indices.numbersIndexTypst
+import net.markdrew.biblebowl.generate.indices.oneTimeWordsIndexTypst
 import net.markdrew.biblebowl.generate.text.TextOptions
 import net.markdrew.biblebowl.generate.text.highlightedBibleTextTypst
 import net.markdrew.biblebowl.generate.text.typst.bibleTextTypst
@@ -261,6 +263,35 @@ fun Route.generateRoutes(
             respondIndexPdf(study, pdfCache, PdfFileNames.fullIndex()) { s ->
                 val sd = s.studyData()
                 indexTypst(sd, fullIndex(sd), "Word", title = "${sd.studySet.name} Complete Word Index")
+            }
+        }
+
+        // GET /generate/unique-words-index.pdf — the hapax index (alphabetical + in order of appearance)
+        get("/generate/unique-words-index.pdf") {
+            respondIndexPdf(study, pdfCache, PdfFileNames.uniqueWordsIndex()) { s ->
+                oneTimeWordsIndexTypst(s.studyData())
+            }
+        }
+
+        // GET /generate/unique-word-flashcards.pdf — one card per one-time word: the word up front, its
+        // verse (with the verse text as context) on the back. Cards run in the word's order of appearance.
+        get("/generate/unique-word-flashcards.pdf") {
+            respondIndexPdf(study, pdfCache, PdfFileNames.uniqueWordFlashcards()) { s ->
+                val sd = s.studyData()
+                val ranges = oneTimeWords(sd).sortedBy { it.first }
+                val cards = ranges.mapIndexedNotNull { i, range ->
+                    val verse = sd.verseEnclosing(range) ?: return@mapIndexedNotNull null
+                    val verseText = sd.verseIndex[verse]
+                        ?.let { sd.excerpt(it).excerptText.replace(Regex("\\s+"), " ").trim() }
+                        .orEmpty()
+                    Flashcard(
+                        front = sd.excerpt(range).excerptText,
+                        back = sd.verseRefFormat(verse),
+                        note = verseText,
+                        footer = "${i + 1} of ${ranges.size}",
+                    )
+                }
+                flashcardsTypst(cards)
             }
         }
 

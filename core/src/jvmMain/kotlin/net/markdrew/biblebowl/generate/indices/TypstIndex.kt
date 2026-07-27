@@ -2,6 +2,8 @@ package net.markdrew.biblebowl.generate.indices
 
 import net.markdrew.biblebowl.analysis.WordIndexEntryC
 import net.markdrew.biblebowl.analysis.numbersIndex
+import net.markdrew.biblebowl.analysis.oneTimeWordsIndexByVerse
+import net.markdrew.biblebowl.analysis.oneTimeWordsIndexByWord
 import net.markdrew.biblebowl.model.IndexEntry
 import net.markdrew.biblebowl.model.StudyData
 
@@ -105,3 +107,32 @@ fun indexTypst(
 
 /** The season's numbers index (alphabetical + by frequency) as a Typst document. */
 fun numbersIndexTypst(studyData: StudyData): String = indexTypst(studyData, numbersIndex(studyData), "Number")
+
+/**
+ * The season's one-time-words (hapax) index as a Typst document: an alphabetical section (word → its verse)
+ * followed by an in-order-of-appearance section (verse → its once-only words). Every hapax has count 1, so
+ * this uses appearance order instead of [indexTypst]'s frequency section. Ported from bible-bowl.
+ */
+fun oneTimeWordsIndexTypst(studyData: StudyData): String {
+    val name = studyData.studySet.name
+    val longName = studyData.studySet.longName
+    return buildString {
+        appendDoc("$name One-Time Words Index", "The following words appear only once in $longName.") {
+            appendIndex(
+                oneTimeWordsIndexByWord(studyData).sortedBy { it.key.lowercase() },
+                indexTitle = "Alphabetical",
+                columns = 4,
+                formatValues = studyData.compactVerseRefListFormat,
+            )
+            appendLine("#pagebreak()")
+            appendLine()
+            appendIndex(
+                oneTimeWordsIndexByVerse(studyData).sortedBy { it.key },
+                indexTitle = "In Order of Appearance",
+                columns = 4,
+                formatKey = studyData.verseRefFormat,
+                formatValues = { it.joinToString(", ") },
+            )
+        }
+    }
+}
