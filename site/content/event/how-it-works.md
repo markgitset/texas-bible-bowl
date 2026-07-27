@@ -62,5 +62,5 @@ See the [Curriculum](/event/curriculum/) page for the full 10-year rotation.
 
 ## Ready to Compete?
 
-Grab the [study materials](/study-resources/downloads/) to start preparing, then
+Grab the [study materials](/app/#study) to start preparing, then
 [register your congregation](/registration/) when registration opens.

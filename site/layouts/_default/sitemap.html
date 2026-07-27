@@ -17,7 +17,8 @@
       <h2 class="h5 sitemap-section"><a href="{{ $.Site.BaseURL }}">Main Pages</a></h2>
       <ul class="list-unstyled small">
         {{ range .ByTitle }}
-        {{ if and (ne .RelPermalink $.RelPermalink) (ne .RelPermalink "/search/") }}
+        {{/* Redirect stubs (moved pages) would list several links that bounce to one place. */}}
+        {{ if and (ne .RelPermalink $.RelPermalink) (ne .RelPermalink "/search/") (ne .Layout "redirect") }}
         <li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>
         {{ end }}
         {{ end }}
@@ -29,7 +30,7 @@
     {{ range .Site.Sections.ByWeight }}
     <div class="col-md-6 col-lg-4">
       <h2 class="h5 sitemap-section"><a href="{{ .RelPermalink }}">{{ .Title }}</a></h2>
-      {{ with .RegularPages }}
+      {{ with where .RegularPages "Layout" "ne" "redirect" }}
       <ul class="list-unstyled small">
         {{ range .ByWeight }}
         <li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>

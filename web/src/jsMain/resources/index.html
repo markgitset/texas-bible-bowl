@@ -36,30 +36,14 @@
         <ul class="navbar-nav ms-auto">
           <li class="nav-item"><a class="nav-link" href="../registration/">Registration</a></li>
           <li class="nav-item"><a class="nav-link" href="../event/">Event</a></li>
-          <li class="nav-item dropdown">
-            <a class="nav-link dropdown-toggle active" href="../study-resources/"
-               role="button" data-bs-toggle="dropdown" aria-expanded="false" aria-current="page">
-              Study Resources
-            </a>
-            <ul class="dropdown-menu dropdown-menu-end">
-              <li><a class="dropdown-item" href="../study-resources/">Study Resources overview</a></li>
-              <li><hr class="dropdown-divider"></li>
-              <li><a class="dropdown-item" data-route="quiz" href="#quiz">Quiz Me</a></li>
-              <li><a class="dropdown-item" data-route="study/indices" href="#study/indices">Names &amp; Numbers Indices</a></li>
-              <li><a class="dropdown-item" data-route="study/headings" href="#study/headings">Chapter Headings</a></li>
-              <li><a class="dropdown-item" data-route="downloads" href="#downloads">Downloads</a></li>
-              <li><a class="dropdown-item" data-route="questions" href="#questions">Community Questions</a></li>
-              <li><a class="dropdown-item" href="../study-resources/practice-tests/">Study Games</a></li>
-            </ul>
+          <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
+            <!-- The single study entry: the app's #study hub, styled as the primary CTA. -->
+            <a class="btn btn-warning btn-sm fw-bold px-3" data-route="study" href="#study">Study &amp; Practice</a>
           </li>
           <li class="nav-item"><a class="nav-link" href="../scholarships/">Scholarships</a></li>
           <li class="nav-item"><a class="nav-link" href="../about/">About</a></li>
           <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
             <a class="btn btn-outline-light btn-sm fw-bold px-3" href="../donate/">Donate</a>
-          </li>
-          <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
-            <!-- Points at the Hugo hub page in prod; 404s in this standalone dev shell. -->
-            <a class="btn btn-warning btn-sm fw-bold px-3" href="../study-resources/">Study</a>
           </li>
           <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center" id="accountSlot">
             <a class="btn btn-outline-light btn-sm px-3" href="#signin">Sign in</a>

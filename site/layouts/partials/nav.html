@@ -35,14 +35,16 @@
                 {{ end }}
               </ul>
             </li>
+          {{ else if eq .Name "Study & Practice" }}
+            <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
+              {{/* The single study entry doubles as the primary CTA: one always-visible
+                   one-click path to the app's #study hub (data-route lets the app mark it
+                   active on study-family hashes). */}}
+              <a class="btn btn-warning btn-sm fw-bold px-3" data-route="study" href="{{ .URL }}">{{ .Name }}</a>
+            </li>
           {{ else if eq .Name "Donate" }}
             <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
               <a class="btn btn-outline-light btn-sm fw-bold px-3" href="{{ .URL }}">{{ .Name }}</a>
-            </li>
-            <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
-              {{/* Primary CTA: the single study hub. Dropdown parents only toggle (data-bs-toggle),
-                   so this is the one always-visible one-click path to /study-resources/. */}}
-              <a class="btn btn-warning btn-sm fw-bold px-3" href="{{ $.Site.BaseURL }}study-resources/">Study</a>
             </li>
             {{/* Site-wide account slot: params.js swaps in the cached signed-in user menu
                  (localStorage "tbb.nav"); on /app/ the Shell owns it. Keep the id/markup in

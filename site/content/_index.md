@@ -13,5 +13,5 @@ in a series of written tests.
 
 Whether you're a returning coach or a family hearing about us for the first time,
 here's how to get started: explore [how the competition works](/event/how-it-works/),
-download the [study materials](/study-resources/downloads/), and
+download the [study materials](/app/#study), and
 [register your congregation](/registration/) when registration opens.
