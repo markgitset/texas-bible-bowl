@@ -136,6 +136,12 @@ object DownloadsScreen {
                 "front, its verse on the back. A powerful memory hook for pinpointing chapters.",
             href = generateUrl("/generate/unique-word-flashcards.pdf"),
         )
+        downloadCard(
+            title = "Unique words index",
+            subtitle = "Every word that appears only once in ${season.eventScripture} — alphabetical and " +
+                "in order of appearance.",
+            href = generateUrl("/generate/unique-words-index.pdf"),
+        )
 
         groupHeader("Practice Tests")
         // R1–R5 only: the Power Round has no generator or question bank behind it.
@@ -181,12 +187,6 @@ object DownloadsScreen {
             title = "Full word index",
             subtitle = "A complete concordance — every significant word in ${season.eventScripture} with its verses.",
             href = generateUrl("/generate/full-index.pdf"),
-        )
-        downloadCard(
-            title = "Unique words index",
-            subtitle = "Every word that appears only once in ${season.eventScripture} — alphabetical and " +
-                "in order of appearance.",
-            href = generateUrl("/generate/unique-words-index.pdf"),
         )
 
         // Separate "commons" for a different audience — builders, not studiers (docs/study-materials-organization.md).
