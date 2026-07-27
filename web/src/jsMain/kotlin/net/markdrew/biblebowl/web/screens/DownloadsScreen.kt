@@ -12,6 +12,9 @@ import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 
+/** JS global for URL-encoding a book name into the external reader/audio links (e.g. "1 Samuel" → "1%20Samuel"). */
+private external fun encodeURIComponent(value: String): String
+
 /** Which card's customize panel is expanded. */
 private sealed interface Customize {
     data object StudyText : Customize
@@ -89,6 +92,19 @@ object DownloadsScreen {
                 customizedNote(textChoices != StudyTextChoices()),
             href = studyTextUrl(),
             customize = Customize.StudyText,
+        )
+        // The text is the hub, not just a download: read/listen sit inline on it. The ESV text and
+        // audio belong to their publishers (license is server-side only), so these link out to
+        // Crossway's ESV.org reader and BibleGateway's licensed ESV audio rather than serving either.
+        val book = primaryBook(season.eventScripture)
+        externalCard(
+            title = "Read or listen online",
+            subtitle = "Read ${season.eventScripture} in your browser or play the audio narration — " +
+                "opens the publisher's site in a new tab.",
+            links = listOf(
+                "Read on ESV.org" to "https://www.esv.org/${encodeURIComponent(book)}/",
+                "Listen (audio)" to "https://www.biblegateway.com/audio/mclean/esv/${encodeURIComponent(book)}.1",
+            ),
         )
 
         groupHeader("General Knowledge")
@@ -213,6 +229,33 @@ object DownloadsScreen {
         root.child("h2", "h5 fw-bold", title)
         root.child("p", "text-muted small", intro)
     }
+
+    /** A card whose actions are external links (each opens in a new tab) — e.g. read/listen on a publisher's site. */
+    private fun externalCard(title: String, subtitle: String, links: List<Pair<String, String>>) {
+        root.child("div", "card section-card mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title", title)
+                child("p", "card-text text-muted", subtitle)
+                child("div", "d-flex align-items-center gap-2 flex-wrap") {
+                    links.forEach { (label, url) ->
+                        child("a", "btn btn-outline-primary btn-sm", label) {
+                            setAttribute("href", url)
+                            setAttribute("target", "_blank")
+                            setAttribute("rel", "noopener")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * The season's primary book for the external reader/audio links. [eventScripture] is a display string
+     * ("Acts", or "Joshua, Judges & Ruth" for a multi-book season); take the first book so both links always
+     * resolve — a multi-book season opens at book one, and the reader/audio pages navigate on from there.
+     */
+    private fun primaryBook(eventScripture: String): String =
+        eventScripture.split(',', '&').first().replace(" and ", " ").trim()
 
     private fun downloadCard(
         title: String,

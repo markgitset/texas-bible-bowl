@@ -7,7 +7,7 @@ Everything you need to prepare, organized by **what you're studying**. Every res
 free — no sign-in needed.
 
 - **The Text** — the full season text with names, numbers, and more highlighted by
-  category. [Print it](/app/#downloads) — read and listen options are coming.
+  category. [Print, read, or listen](/app/#downloads).
 - **General Knowledge** — drill the facts and events: question
   [flashcards](/app/#downloads), [Quiz Me](/app/#quiz),
   [community questions](/app/#questions), and study games.
