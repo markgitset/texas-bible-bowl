@@ -1,8 +1,12 @@
 /* ── Brand variables ──────────────────────────────────────────────────────── */
 :root {
+  /* Light-only site: keep the browser canvas light so there's no dark flash between page loads
+     on a dark OS theme (paired with the color-scheme meta in baseof.html head). */
+  color-scheme: light;
   --tbb-navy: #1a3a5c;
   --tbb-gold: #c9952a;
 }
+html { background-color: #fff; }
 
 /* ── Typography ──────────────────────────────────────────────────────────── */
 body {

@@ -1,6 +1,9 @@
 ---
 title: "About"
 description: "About Texas Bible Bowl — our story, leadership, locations, and more."
+menuActive: "About"
+cascade:
+  menuActive: "About"
 ---
 
 Learn about Texas Bible Bowl — who we are, where we came from, who leads the organization,
