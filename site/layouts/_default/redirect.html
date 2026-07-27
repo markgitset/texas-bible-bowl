@@ -2,6 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  {{/* This layout bypasses baseof.html, so it needs its own light-canvas declaration — a stub
+       flashing dark on a dark OS theme defeats the site-wide fix (see baseof.html). */}}
+  <meta name="color-scheme" content="light">
+  <style>html{color-scheme:light;background-color:#fff}</style>
   <title>{{ .Title }} | {{ .Site.Title }}</title>
   {{ $target := .Params.redirect | absURL }}
   <meta http-equiv="refresh" content="0; url={{ $target }}">

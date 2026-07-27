@@ -1,0 +1,15 @@
+{{ define "main" }}
+{{/* Branded 404 (GH Pages serves /404.html for unknown paths). Goes through baseof.html, so it
+     carries the light-canvas declarations — GitHub's default 404 was the last dark-flash hole. */}}
+<div class="container py-5 text-center">
+  <h1 class="page-title mb-3">Page not found</h1>
+  <p class="text-muted mb-4">
+    That page doesn't exist (or has moved). Try one of these, or search above.
+  </p>
+  <div class="d-flex flex-wrap gap-2 justify-content-center">
+    <a class="btn btn-primary" href="{{ .Site.BaseURL }}">Home</a>
+    <a class="btn btn-outline-primary" href="{{ .Site.BaseURL }}app/#study">Study &amp; Practice</a>
+    <a class="btn btn-outline-primary" href="{{ .Site.BaseURL }}sitemap/">Site Map</a>
+  </div>
+</div>
+{{ end }}
