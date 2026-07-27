@@ -169,6 +169,45 @@ class StudyRoutesTest {
     }
 
     @Test
+    fun categoryAndFullIndexPdfEndpointsCompile() = testApplication {
+        if (!TypstCompiler.isAvailable) {
+            println("typst not on PATH; skipping PDF compile test")
+            return@testApplication
+        }
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+            )
+        }
+        val api = createClient { }
+
+        // Each is public and Typst-compiled; an empty category still renders a valid (empty) index PDF.
+        listOf("men-index", "women-index", "places-index", "full-index").forEach { name ->
+            val res = api.get("/generate/$name.pdf")
+            assertEquals(HttpStatusCode.OK, res.status, "$name should return 200")
+            val bytes = res.bodyAsBytes()
+            assertTrue(bytes.size > 4 && bytes.decodeToString(0, 4) == "%PDF", "$name should be a PDF")
+            assertTrue(
+                "$name.pdf" in res.headers[HttpHeaders.ContentDisposition].orEmpty(),
+                "$name should attach as $name.pdf",
+            )
+        }
+    }
+
+    @Test
+    fun categoryIndexReturns503WithoutStudyService() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = null,
+            )
+        }
+        val res = createClient { }.get("/generate/men-index.pdf")
+        assertEquals(HttpStatusCode.ServiceUnavailable, res.status)
+    }
+
+    @Test
     fun numbersEndpointServesTheNumbersIndex() = testApplication {
         application {
             module(

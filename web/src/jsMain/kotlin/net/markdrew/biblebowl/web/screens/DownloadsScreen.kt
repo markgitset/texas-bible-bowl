@@ -154,6 +154,26 @@ object DownloadsScreen {
             subtitle = "Every number in ${season.eventScripture} with its verses — alphabetical and by frequency.",
             href = generateUrl("/generate/numbers-index.pdf"),
         )
+        downloadCard(
+            title = "Men index",
+            subtitle = "Every man named in ${season.eventScripture} with the verses he appears in.",
+            href = generateUrl("/generate/men-index.pdf"),
+        )
+        downloadCard(
+            title = "Women index",
+            subtitle = "Every woman named in ${season.eventScripture} with the verses she appears in.",
+            href = generateUrl("/generate/women-index.pdf"),
+        )
+        downloadCard(
+            title = "Places index",
+            subtitle = "Every place named in ${season.eventScripture} with the verses it appears in.",
+            href = generateUrl("/generate/places-index.pdf"),
+        )
+        downloadCard(
+            title = "Full word index",
+            subtitle = "A complete concordance — every significant word in ${season.eventScripture} with its verses.",
+            href = generateUrl("/generate/full-index.pdf"),
+        )
 
         // Separate "commons" for a different audience — builders, not studiers (docs/study-materials-organization.md).
         commonsHeader(
