@@ -1,6 +1,9 @@
 ---
 title: "Scholarships"
 description: "Texas Bible Bowl scholarship programs — opportunities for graduating high school seniors."
+menuActive: "Scholarships"
+cascade:
+  menuActive: "Scholarships"
 ---
 
 **{{< scholarship-blurb >}}**

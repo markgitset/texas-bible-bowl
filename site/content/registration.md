@@ -1,6 +1,7 @@
 ---
 title: "Registration"
 description: "Register your congregation for Texas Bible Bowl."
+menuActive: "Registration"
 ---
 
 **{{< scholarship-blurb >}}**
