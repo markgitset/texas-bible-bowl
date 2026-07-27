@@ -1,6 +1,5 @@
 package net.markdrew.biblebowl.app.screens
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,10 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -41,7 +37,6 @@ import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.isValidBirthdate
-import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.api.schoolYear
@@ -55,8 +50,6 @@ fun AuthScreen(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Brand()
-            Spacer(Modifier.height(20.dp))
-            RoundsStrip()
             Spacer(Modifier.height(24.dp))
             AuthCard(api, onSignedIn)
         }
@@ -77,25 +70,6 @@ private fun Brand() {
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.secondary,
     )
-}
-
-@Composable
-private fun RoundsStrip() {
-    Row(
-        Modifier.horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        Round.entries.forEach { round ->
-            AssistChip(
-                onClick = {},
-                label = { Text(round.displayName) },
-                colors = AssistChipDefaults.assistChipColors(
-                    labelColor = if (round.openBible) MaterialTheme.colorScheme.primary
-                    else MaterialTheme.colorScheme.secondary,
-                ),
-            )
-        }
-    }
 }
 
 @Composable

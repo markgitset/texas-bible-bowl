@@ -7,7 +7,6 @@ import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.api.schoolYear
-import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.web.Routes
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
@@ -35,15 +34,6 @@ object AuthScreen {
         box.child("div", "text-center mb-3") {
             child("h1", "fw-bold", "Texas Bible Bowl") { setAttribute("style", "color:var(--tbb-navy);") }
             child("p", "tbb-gold fw-semibold", "Study ${season.eventScripture} · ${season.schoolYear} Season")
-            child("div", "d-flex flex-wrap justify-content-center gap-1") {
-                Round.entries.forEach { round ->
-                    child(
-                        "span",
-                        "badge rounded-pill text-bg-light border " + if (round.openBible) "" else "tbb-gold",
-                        round.displayName,
-                    )
-                }
-            }
         }
 
         val card = box.child("div", "card section-card")
