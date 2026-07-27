@@ -1,11 +1,30 @@
 package net.markdrew.biblebowl.analysis
 
+import net.markdrew.biblebowl.model.IndexEntry
 import net.markdrew.biblebowl.model.StudyData
+import net.markdrew.biblebowl.model.VerseRef
 import net.markdrew.chupacabra.core.DisjointRangeMap
 
 /** Returns every character range whose word appears exactly once in [studyData] (a "hapax"). */
 fun oneTimeWords(studyData: StudyData): List<IntRange> = studyData.wordIndex
     .filterValues { it.size == 1 }.values.flatten()
+
+/** One-time words keyed by word → the single verse each occurs in (source for the alphabetical section). */
+fun oneTimeWordsIndexByWord(
+    studyData: StudyData,
+    ranges: List<IntRange> = oneTimeWords(studyData),
+): List<IndexEntry<String, VerseRef>> = ranges.map { range ->
+    val ref = studyData.verseEnclosing(range) ?: error("No verse for range $range")
+    IndexEntry(studyData.excerpt(range).excerptText, listOf(ref))
+}
+
+/** One-time words grouped by verse → the words that occur once in that verse (source for appearance order). */
+fun oneTimeWordsIndexByVerse(
+    studyData: StudyData,
+    ranges: List<IntRange> = oneTimeWords(studyData),
+): List<IndexEntry<VerseRef, String>> = ranges
+    .groupBy { studyData.verseEnclosing(it) ?: error("No verse for range $it") }
+    .map { (ref, wordRanges) -> IndexEntry(ref, wordRanges.map { studyData.excerpt(it).excerptText }) }
 
 /**
  * A word that appears multiple times but only within one section (e.g. one chapter or one heading)

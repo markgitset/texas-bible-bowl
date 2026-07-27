@@ -48,6 +48,12 @@ object PdfFileNames {
     /** The complete word concordance. */
     fun fullIndex(): String = "full-index.pdf"
 
+    /** The one-time-words (hapax) index — alphabetical + in order of appearance. */
+    fun uniqueWordsIndex(): String = "unique-words-index.pdf"
+
+    /** The one-time-words flashcard deck (word on the front, its verse on the back). */
+    fun uniqueWordFlashcards(): String = "unique-word-flashcards.pdf"
+
     /** The Round 5 headings deck, cumulatively scoped, e.g. `heading-flashcards-through-ch5.pdf`. */
     fun headingFlashcards(throughChapter: Int? = null): String =
         "heading-flashcards${throughChapter?.let { "-through-ch$it" } ?: ""}.pdf"

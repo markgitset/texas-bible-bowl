@@ -55,6 +55,21 @@ class WordListAndFullIndexTest {
     }
 
     @Test
+    fun oneTimeWordsIndexByWordAndByVerse() {
+        val studyData = fixture()
+        // "Abraham" occurs twice, so it is NOT a one-time word; Isaac/Egypt/Rachel each occur once.
+        val byWord = oneTimeWordsIndexByWord(studyData).associateBy { it.key.lowercase() }
+        assertTrue("isaac" in byWord && "egypt" in byWord && "rachel" in byWord, "hapaxes: ${byWord.keys}")
+        assertFalse("abraham" in byWord, "Abraham occurs twice, so it is not a one-time word")
+        assertEquals(1, byWord.getValue("isaac").values.single().verse, "Isaac is in verse 1")
+        assertEquals(2, byWord.getValue("rachel").values.single().verse, "Rachel is in verse 2")
+
+        val byVerse = oneTimeWordsIndexByVerse(studyData)
+        val verse2Words = byVerse.single { it.key.verse == 2 }.values.map { it.lowercase() }
+        assertTrue("rachel" in verse2Words && "saw" in verse2Words, "verse 2 hapaxes: $verse2Words")
+    }
+
+    @Test
     fun fullIndexCoversContentWordsAndCountsButDropsStopWords() {
         val studyData = fixture()
         val index = fullIndex(studyData).associateBy { it.key.lowercase() }

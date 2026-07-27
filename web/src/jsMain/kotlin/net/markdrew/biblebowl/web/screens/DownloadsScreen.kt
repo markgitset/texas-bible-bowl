@@ -45,8 +45,8 @@ private data class StudyTextChoices(
 
 /**
  * Download center (docs/gui-redesign.md §5B): one scrolling page of preset cards, grouped by study
- * focus (The Text, General Knowledge, Chapter Headings, Practice Tests, Reference Documents) with a
- * separate creators' commons (Data & Source Files) below. Each card is one click to a sensible
+ * focus (The Text, General Knowledge, Chapter Headings, Unique Words, Practice Tests, Reference
+ * Documents) with a separate creators' commons (Data & Source Files) below. Each card is one click to a sensible
  * default, with options behind a "Customize" panel. Public.
  *
  * Every download is a plain link to the backend (the generate endpoints are public and send
@@ -129,6 +129,14 @@ object DownloadsScreen {
             customize = Customize.HeadingFlashcards,
         )
 
+        groupHeader("Unique Words")
+        downloadCard(
+            title = "Unique-word flashcards",
+            subtitle = "One card per word that appears only once in ${season.eventScripture} — the word up " +
+                "front, its verse on the back. A powerful memory hook for pinpointing chapters.",
+            href = generateUrl("/generate/unique-word-flashcards.pdf"),
+        )
+
         groupHeader("Practice Tests")
         // R1–R5 only: the Power Round has no generator or question bank behind it.
         Round.entries.filter { it.number in 1..5 }.forEach { round ->
@@ -173,6 +181,12 @@ object DownloadsScreen {
             title = "Full word index",
             subtitle = "A complete concordance — every significant word in ${season.eventScripture} with its verses.",
             href = generateUrl("/generate/full-index.pdf"),
+        )
+        downloadCard(
+            title = "Unique words index",
+            subtitle = "Every word that appears only once in ${season.eventScripture} — alphabetical and " +
+                "in order of appearance.",
+            href = generateUrl("/generate/unique-words-index.pdf"),
         )
 
         // Separate "commons" for a different audience — builders, not studiers (docs/study-materials-organization.md).

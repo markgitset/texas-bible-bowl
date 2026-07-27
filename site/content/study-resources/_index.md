@@ -13,10 +13,12 @@ free — no sign-in needed.
   [community questions](/app/#questions), and study games.
 - **Chapter Headings** — the Round 5 material: heading [flashcards](/app/#downloads), the
   [headings browser](/app/#study/headings), quizzes, and Kahoots.
+- **Unique Words** — master the words that appear only once:
+  [unique-word flashcards](/app/#downloads) for pinpointing chapters.
 - **Practice Tests** — customizable single-round tests and full-length examples, in the
   [download center](/app/#downloads).
-- **Reference Documents** — look anything up: the names and numbers
-  [indices](/app/#study/indices), with more to come.
+- **Reference Documents** — look anything up: names, numbers, men, women, places, a full
+  concordance, and unique words — the [indices](/app/#downloads).
 
 Building your own material? The **Data & Source Files** (Kahoot and Quizlet/Anki exports)
 are gathered for coaches and question writers in the [download center](/app/#downloads).
