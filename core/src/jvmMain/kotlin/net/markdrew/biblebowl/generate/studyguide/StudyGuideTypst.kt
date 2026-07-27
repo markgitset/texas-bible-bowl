@@ -31,7 +31,10 @@ private fun choiceLabel(index: Int): Char = 'A' + index
  */
 private val PREAMBLE = """
     #let accent = rgb("#1f3864")
-    #let sans = "Liberation Sans"
+    // Headings/labels use a bold, accent-coloured face. Keep it to a font the typst binary embeds
+    // (Libertinus Serif / New Computer Modern) — the prod image ships no system fonts, and a missing
+    // family would fall back and emit a warning per run (thousands over a full guide).
+    #let head = "New Computer Modern"
     #set text(size: 11pt, font: "Libertinus Serif")
     #set par(justify: false, leading: 0.62em)
     #set heading(numbering: none)
@@ -39,13 +42,13 @@ private val PREAMBLE = """
     #show heading.where(level: 1): it => {
       pagebreak(weak: true)
       set align(center)
-      set text(font: sans, size: 24pt, weight: "bold", fill: accent)
+      set text(font: head, size: 24pt, weight: "bold", fill: accent)
       block(above: 0.2in, below: 0.05in, upper(it.body))
       line(length: 2.2in, stroke: 0.8pt + accent)
       v(0.18in)
     }
     #show heading.where(level: 2): it => {
-      set text(font: sans, size: 13pt, weight: "bold", fill: accent)
+      set text(font: head, size: 13pt, weight: "bold", fill: accent)
       block(above: 1.1em, below: 0.5em, {
         it.body
         v(2pt)
@@ -66,7 +69,7 @@ private val PREAMBLE = """
           pg >= book.location().page() and pg <= curPg
         })
         let chapLbl = if chaps.len() > 0 { chaps.last().body } else { [] }
-        set text(font: sans, size: 8.5pt, fill: luma(90))
+        set text(font: head, size: 8.5pt, fill: luma(90))
         grid(columns: (1fr, 1fr),
           align(left, upper(book.body)),
           align(right, chapLbl),
@@ -75,7 +78,7 @@ private val PREAMBLE = """
         line(length: 100%, stroke: 0.4pt + luma(200))
       },
       footer: context {
-        set text(font: sans, size: 9pt, fill: luma(110))
+        set text(font: head, size: 9pt, fill: luma(110))
         align(center)[#counter(page).display()]
       },
     )
@@ -120,16 +123,16 @@ private fun StringBuilder.appendCover(studySet: StudySet, coverYear: Int, logoFi
         #page(header: none, footer: none, margin: (x: 1in, y: 1in))[
           #set align(center)
           $masthead
-          #text(font: sans, size: 13pt, tracking: 3pt, fill: luma(90))[STUDY GUIDE]
+          #text(font: head, size: 13pt, tracking: 3pt, fill: luma(90))[STUDY GUIDE]
           #v(0.15in)
           #line(length: 40%, stroke: 0.8pt + accent)
           #v(0.3in)
-          #text(font: sans, size: 30pt, weight: "bold", fill: accent)[$title]
+          #text(font: head, size: 30pt, weight: "bold", fill: accent)[$title]
           #v(0.2in)
           #text(size: 13pt, style: "italic")[Chapter Questions to Review]
           #v(0.15in)
-          #text(font: sans, size: 12pt)[for Texas Bible Bowl $coverYear]
-          ${if (markAnswers) "#v(0.25in)\n          #text(font: sans, size: 12pt, weight: \"bold\", fill: accent, tracking: 2pt)[ANSWER COPY]" else ""}
+          #text(font: head, size: 12pt)[for Texas Bible Bowl $coverYear]
+          ${if (markAnswers) "#v(0.25in)\n          #text(font: head, size: 12pt, weight: \"bold\", fill: accent, tracking: 2pt)[ANSWER COPY]" else ""}
           #v(1fr)
           #line(length: 30%, stroke: 0.5pt + luma(160))
           #v(0.15in)
@@ -166,7 +169,7 @@ private fun StringBuilder.appendQuestion(q: StudyGuideQuestion, markAnswers: Boo
     val ref = escapeTypst(q.verseRefString)
     appendLine("#block(breakable: false, spacing: 1.2em)[")
     appendLine("  #grid(columns: (1.7em, 1fr), gutter: 0pt,")
-    appendLine("    text(font: sans, weight: \"bold\", fill: accent)[${q.questionNum}.],")
+    appendLine("    text(font: head, weight: \"bold\", fill: accent)[${q.questionNum}.],")
     appendLine("    [")
     appendLine("      #set block(spacing: 0.8em)")
     appendLine("      ${escapeTypst(q.question)} #text(size: 9pt, fill: luma(110))[($verseLabel~$ref)]")
@@ -178,7 +181,7 @@ private fun StringBuilder.appendQuestion(q: StudyGuideQuestion, markAnswers: Boo
         } else {
             "[${escapeTypst(choice)}]"
         }
-        appendLine("        text(font: sans, size: 9.5pt, weight: \"bold\", fill: accent)[${choiceLabel(i)}.], $cell,")
+        appendLine("        text(font: head, size: 9.5pt, weight: \"bold\", fill: accent)[${choiceLabel(i)}.], $cell,")
     }
     appendLine("      )")
     appendLine("    ],")
@@ -196,7 +199,7 @@ private fun StringBuilder.appendAnswerKey(byBook: Map<String, List<StudyGuideQue
     appendLine("#set text(size: 9.5pt)")
     appendLine("#columns($ANSWER_KEY_PAGE_COLUMNS, gutter: 0.7em)[")
     for ((bookName, bookQuestions) in byBook) {
-        appendLine("  #text(font: sans, size: 12pt, weight: \"bold\", fill: accent)[${escapeTypst(bookName)}]")
+        appendLine("  #text(font: head, size: 12pt, weight: \"bold\", fill: accent)[${escapeTypst(bookName)}]")
         appendLine("  #v(3pt)")
         for ((chapter, chapterQuestions) in bookQuestions.groupBy { it.chapterRef.chapter }) {
             appendAnswerKeyChapter(chapter, chapterQuestions)
@@ -225,7 +228,7 @@ private fun StringBuilder.appendAnswerKeyChapter(chapter: Int, questions: List<S
         }
     }
     appendLine("  #block(breakable: false, spacing: 0.7em)[")
-    appendLine("    #text(font: sans, size: 9.5pt, weight: \"bold\")[Chapter $chapter]")
+    appendLine("    #text(font: head, size: 9.5pt, weight: \"bold\")[Chapter $chapter]")
     appendLine("    #v(2pt)")
     appendLine("    #grid(columns: $ANSWER_KEY_SUBCOLUMNS, column-gutter: 0.7em, align: top, ${subColumns.joinToString(", ")})")
     appendLine("  ]")
