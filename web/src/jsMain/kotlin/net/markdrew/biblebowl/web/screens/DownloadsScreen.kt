@@ -41,8 +41,10 @@ private data class StudyTextChoices(
 )
 
 /**
- * Download center (docs/gui-redesign.md §5B): one scrolling page of preset cards in five groups —
- * each card is one click to a sensible default, with options behind a "Customize" panel. Public.
+ * Download center (docs/gui-redesign.md §5B): one scrolling page of preset cards, grouped by study
+ * focus (The Text, General Knowledge, Chapter Headings, Practice Tests, Reference Documents) with a
+ * separate creators' commons (Data & Source Files) below. Each card is one click to a sensible
+ * default, with options behind a "Customize" panel. Public.
  *
  * Every download is a plain link to the backend (the generate endpoints are public and send
  * Content-Disposition: attachment), opened in a new tab so a generation error shows its message
@@ -77,7 +79,9 @@ object DownloadsScreen {
 
         root.child("h1", "page-title", "Downloads")
 
-        groupHeader("Study text")
+        // Studier resources are grouped by STUDY FOCUS (the subject you're drilling), not by format.
+        // Cross-cutting tools (quiz, games, community questions) live on the study hub, not here.
+        groupHeader("The Text")
         downloadCard(
             title = "Highlighted study text",
             subtitle = "The full text of ${season.eventScripture} with names, numbers, and more " +
@@ -87,7 +91,7 @@ object DownloadsScreen {
             customize = Customize.StudyText,
         )
 
-        groupHeader("Flashcards")
+        groupHeader("General Knowledge")
         downloadCard(
             title = "Question flashcards",
             subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardChapter) +
@@ -99,6 +103,8 @@ object DownloadsScreen {
             ),
             customize = Customize.QuestionFlashcards,
         )
+
+        groupHeader("Chapter Headings")
         downloadCard(
             title = "Chapter-heading flashcards",
             subtitle = "One card per ESV section heading (Round 5 material)." +
@@ -107,19 +113,7 @@ object DownloadsScreen {
             customize = Customize.HeadingFlashcards,
         )
 
-        groupHeader("Indices")
-        downloadCard(
-            title = "Names index",
-            subtitle = "Every proper name in ${season.eventScripture} with its verses — alphabetical and by frequency.",
-            href = generateUrl("/generate/names-index.pdf"),
-        )
-        downloadCard(
-            title = "Numbers index",
-            subtitle = "Every number in ${season.eventScripture} with its verses — alphabetical and by frequency.",
-            href = generateUrl("/generate/numbers-index.pdf"),
-        )
-
-        groupHeader("Practice tests")
+        groupHeader("Practice Tests")
         // R1–R5 only: the Power Round has no generator or question bank behind it.
         Round.entries.filter { it.number in 1..5 }.forEach { round ->
             val roundCustomized =
@@ -133,7 +127,23 @@ object DownloadsScreen {
             )
         }
 
-        groupHeader("Exports")
+        groupHeader("Reference Documents")
+        downloadCard(
+            title = "Names index",
+            subtitle = "Every proper name in ${season.eventScripture} with its verses — alphabetical and by frequency.",
+            href = generateUrl("/generate/names-index.pdf"),
+        )
+        downloadCard(
+            title = "Numbers index",
+            subtitle = "Every number in ${season.eventScripture} with its verses — alphabetical and by frequency.",
+            href = generateUrl("/generate/numbers-index.pdf"),
+        )
+
+        // Separate "commons" for a different audience — builders, not studiers (docs/study-materials-organization.md).
+        commonsHeader(
+            "Data & Source Files",
+            "For coaches and question writers — reusable source files for building your own study material.",
+        )
         val exportCustomized = exportHeadings || exportRound != null
         downloadCard(
             title = "Kahoot spreadsheet",
@@ -195,6 +205,13 @@ object DownloadsScreen {
 
     private fun groupHeader(title: String) {
         root.child("h2", "h5 fw-bold mt-4", title)
+    }
+
+    /** A study-focus group's twin for the creators' commons: a rule + intro sets it apart from the studier groups above. */
+    private fun commonsHeader(title: String, intro: String) {
+        root.child("hr", "mt-5")
+        root.child("h2", "h5 fw-bold", title)
+        root.child("p", "text-muted small", intro)
     }
 
     private fun downloadCard(

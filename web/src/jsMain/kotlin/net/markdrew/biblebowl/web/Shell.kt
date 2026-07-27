@@ -126,7 +126,7 @@ object Shell {
                 val top = topDestinationOf(route)
                 if (top != null || route.startsWith("study/")) {
                     child("li", "breadcrumb-item") {
-                        child("a", text = "Study Resources") { setAttribute("href", STUDY_OVERVIEW_HREF) }
+                        child("a", text = "Study & Practice") { setAttribute("href", STUDY_OVERVIEW_HREF) }
                     }
                 }
                 if (top != null && top.route != route) {
