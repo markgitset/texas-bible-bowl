@@ -15,6 +15,7 @@ kotlin {
         commonMain.dependencies {
             api(project(":core"))
             api(project(":shared-api"))
+            implementation(libs.jetbrains.markdown)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

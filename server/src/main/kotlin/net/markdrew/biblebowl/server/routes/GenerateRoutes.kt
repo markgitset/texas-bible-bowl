@@ -40,8 +40,10 @@ import net.markdrew.biblebowl.model.StudyGuideParser
 import net.markdrew.biblebowl.generate.text.TextOptions
 import net.markdrew.biblebowl.generate.text.highlightedBibleTextTypst
 import net.markdrew.biblebowl.generate.text.typst.bibleTextTypst
+import net.markdrew.biblebowl.generation.typst.CardText
 import net.markdrew.biblebowl.generation.typst.Flashcard
 import net.markdrew.biblebowl.generation.typst.flashcardsTypst
+import net.markdrew.biblebowl.generation.typst.markdownEscape
 import net.markdrew.biblebowl.generation.typst.practiceTestTypst
 import net.markdrew.biblebowl.generation.typst.toFlashcards
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
@@ -278,20 +280,33 @@ fun Route.generateRoutes(
         }
 
         // GET /generate/unique-word-flashcards.pdf — one card per one-time word: the word up front, its
-        // verse (with the verse text as context) on the back. Cards run in the word's order of appearance.
+        // verse (with the verse text as context, the word underlined) on the back. Cards run in the
+        // word's order of appearance. stampSalt is a format revision: bump it whenever the deck's
+        // rendering changes, else the content-stamped cache keeps serving the old layout.
         get("/generate/unique-word-flashcards.pdf") {
-            respondIndexPdf(study, pdfCache, PdfFileNames.uniqueWordFlashcards()) { s ->
+            respondIndexPdf(study, pdfCache, PdfFileNames.uniqueWordFlashcards(), stampSalt = 1) { s ->
                 val sd = s.studyData()
                 val ranges = oneTimeWords(sd).sortedBy { it.first }
+                val whitespace = Regex("\\s+")
                 val cards = ranges.mapIndexedNotNull { i, range ->
                     val verse = sd.verseEnclosing(range) ?: return@mapIndexedNotNull null
-                    val verseText = sd.verseIndex[verse]
-                        ?.let { sd.excerpt(it).excerptText.replace(Regex("\\s+"), " ").trim() }
-                        .orEmpty()
+                    // Locate the word in its verse by raw char offsets (not text search, which could
+                    // hit a substring of another word), then emphasize it in a markdown note.
+                    val note = sd.verseIndex[verse]?.let { verseRange ->
+                        val raw = sd.excerpt(verseRange).excerptText
+                        val start = range.first - verseRange.first
+                        val end = start + (range.last - range.first + 1)
+                        val pre = raw.substring(0, start).replace(whitespace, " ").trimStart()
+                        val word = raw.substring(start, end)
+                        val post = raw.substring(end).replace(whitespace, " ").trimEnd()
+                        CardText.Markdown(
+                            markdownEscape(pre) + "**<u>" + markdownEscape(word) + "</u>**" + markdownEscape(post)
+                        )
+                    } ?: CardText.Plain("")
                     Flashcard(
-                        front = sd.excerpt(range).excerptText,
-                        back = sd.verseRefFormat(verse),
-                        note = verseText,
+                        front = CardText.Plain(sd.excerpt(range).excerptText),
+                        back = CardText.Plain(sd.verseRefFormat(verse)),
+                        note = note,
                         footer = "${i + 1} of ${ranges.size}",
                     )
                 }
@@ -561,6 +576,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondIndexPdf(
     study: StudyDataService?,
     pdfCache: PdfCache?,
     fileName: String,
+    stampSalt: Int = 0,
     typstSource: suspend (StudyDataService) -> String,
 ) {
     if (study == null || !study.isConfigured) {
@@ -570,7 +586,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondIndexPdf(
         )
     }
     try {
-        respondCachedPdf(study, pdfCache, fileName) { typstSource(study) }
+        respondCachedPdf(study, pdfCache, fileName, stampSalt) { typstSource(study) }
     } catch (e: EsvUpstreamException) {
         call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
     }
