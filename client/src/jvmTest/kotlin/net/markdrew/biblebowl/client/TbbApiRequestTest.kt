@@ -142,6 +142,26 @@ class TbbApiRequestTest {
     }
 
     @Test
+    fun studyMaterialDownloadsHitTheirGenerateEndpoints() = runBlocking {
+        // The parameterless study-material fetches map 1:1 onto their /generate paths.
+        val expected = listOf(
+            suspend { api.menIndexPdf() } to "/generate/men-index.pdf",
+            suspend { api.womenIndexPdf() } to "/generate/women-index.pdf",
+            suspend { api.placesIndexPdf() } to "/generate/places-index.pdf",
+            suspend { api.fullIndexPdf() } to "/generate/full-index.pdf",
+            suspend { api.uniqueWordsIndexPdf() } to "/generate/unique-words-index.pdf",
+            suspend { api.uniqueWordFlashcardsPdf() } to "/generate/unique-word-flashcards.pdf",
+            suspend { api.studyGuidePdf() } to "/generate/study-guide.pdf",
+            suspend { api.studyGuideAnswersPdf() } to "/generate/study-guide-answers.pdf",
+            suspend { api.studyGuideTsv() } to "/generate/study-guide.tsv",
+        )
+        expected.forEach { (call, path) ->
+            call()
+            assertEquals(path, requests.last())
+        }
+    }
+
+    @Test
     fun registrationEndpointsSendAuthorizedTypedRequests() = runBlocking {
         api.login(LoginRequest("coach@tbb.org", "password123"))
 

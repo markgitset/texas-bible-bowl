@@ -289,6 +289,42 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun namesIndexPdf(): ByteArray =
         client.get("$baseUrl/generate/names-index.pdf") { authorize() }.bodyOrThrow()
 
+    /** Fetches the men-index PDF (every man named in the season, alphabetical + by frequency). */
+    suspend fun menIndexPdf(): ByteArray =
+        client.get("$baseUrl/generate/men-index.pdf") { authorize() }.bodyOrThrow()
+
+    /** Fetches the women-index PDF (every woman named in the season, alphabetical + by frequency). */
+    suspend fun womenIndexPdf(): ByteArray =
+        client.get("$baseUrl/generate/women-index.pdf") { authorize() }.bodyOrThrow()
+
+    /** Fetches the places-index PDF (every place named in the season, alphabetical + by frequency). */
+    suspend fun placesIndexPdf(): ByteArray =
+        client.get("$baseUrl/generate/places-index.pdf") { authorize() }.bodyOrThrow()
+
+    /** Fetches the full word index (concordance) PDF — every significant word with its verses. */
+    suspend fun fullIndexPdf(): ByteArray =
+        client.get("$baseUrl/generate/full-index.pdf") { authorize() }.bodyOrThrow()
+
+    /** Fetches the one-time-words index PDF (alphabetical + in order of appearance). */
+    suspend fun uniqueWordsIndexPdf(): ByteArray =
+        client.get("$baseUrl/generate/unique-words-index.pdf") { authorize() }.bodyOrThrow()
+
+    /** Fetches the unique-word flashcard deck PDF (word on the front, its verse on the back). */
+    suspend fun uniqueWordFlashcardsPdf(): ByteArray =
+        client.get("$baseUrl/generate/unique-word-flashcards.pdf") { authorize() }.bodyOrThrow()
+
+    /** Fetches the multiple-choice study guide PDF (questions by chapter + answer key). */
+    suspend fun studyGuidePdf(): ByteArray =
+        client.get("$baseUrl/generate/study-guide.pdf") { authorize() }.bodyOrThrow()
+
+    /** Fetches the study-guide answer copy PDF (correct choices starred inline, no key). */
+    suspend fun studyGuideAnswersPdf(): ByteArray =
+        client.get("$baseUrl/generate/study-guide-answers.pdf") { authorize() }.bodyOrThrow()
+
+    /** Fetches the raw curated study-guide TSV (for coaches and question writers). */
+    suspend fun studyGuideTsv(): ByteArray =
+        client.get("$baseUrl/generate/study-guide.tsv") { authorize() }.bodyOrThrow()
+
     /**
      * Fetches a Quizlet/Space-importable TSV: the approved question bank (prompt -> answer) or,
      * with [headingsSource], the R5 headings (title -> chapter; [chapter] scopes cumulatively).

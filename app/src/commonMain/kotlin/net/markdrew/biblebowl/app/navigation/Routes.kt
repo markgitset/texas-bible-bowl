@@ -2,7 +2,6 @@ package net.markdrew.biblebowl.app.navigation
 
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
-import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Quiz
@@ -40,14 +39,16 @@ object Routes {
 }
 
 /**
- * The five top-level destinations (§2.2). Identical for everyone — role-gated features live
+ * The four top-level destinations (§2.2). Identical for everyone — role-gated features live
  * *inside* destinations, never as extra tabs. Sized to fit an Android bottom bar exactly.
+ * Study is the Study & Practice hub (downloads + interactive tools per study-focus group, matching
+ * the web app's `#study`); the old Downloads tab merged into it, and `Routes.DOWNLOADS` survives
+ * only as a deep-link alias for the hub.
  */
 enum class TopDestination(val route: String, val label: String, val icon: ImageVector) {
     STUDY(Routes.STUDY, "Study", Icons.AutoMirrored.Filled.MenuBook),
     QUIZ(Routes.QUIZ, "Quiz", Icons.Filled.Quiz),
     QUESTIONS(Routes.QUESTIONS, "Questions", Icons.Filled.Forum),
-    DOWNLOADS(Routes.DOWNLOADS, "Downloads", Icons.Filled.Download),
     EVENT(Routes.EVENT, "Event", Icons.Filled.EmojiEvents),
 }
 

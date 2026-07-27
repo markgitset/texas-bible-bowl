@@ -69,7 +69,6 @@ import net.markdrew.biblebowl.app.screens.RegisterScreen
 import net.markdrew.biblebowl.app.screens.StandingsScreen
 import net.markdrew.biblebowl.app.screens.QuestionsScreen
 import net.markdrew.biblebowl.app.screens.QuizScreen
-import net.markdrew.biblebowl.app.screens.StudyHubScreen
 import net.markdrew.biblebowl.app.screens.AdminSeasonScreen
 import net.markdrew.biblebowl.api.FALLBACK_SEASON
 import net.markdrew.biblebowl.app.ui.LocalSeason
@@ -243,18 +242,20 @@ private fun AppNavHost(
     // the user was (return-to via the back stack).
     val requireSignIn = { navController.navigate(Routes.SIGN_IN) { launchSingleTop = true } }
 
+    // The Study & Practice hub (the Study tab). Indices/headings are study sub-screens (plain
+    // pushes); quiz and questions are top-level destinations, so those hub shortcuts switch tabs
+    // like the nav bar does — pushing them inside the Study stack corrupts tab state save/restore.
+    val studyHub: @Composable () -> Unit = {
+        DownloadsScreen(
+            api,
+            onOpenIndices = { navController.navigate(Routes.STUDY_INDICES) },
+            onOpenHeadings = { navController.navigate(Routes.STUDY_HEADINGS) },
+            onOpenQuiz = { navController.navigateTopLevel(Routes.QUIZ) },
+            onOpenQuestions = { navController.navigateTopLevel(Routes.QUESTIONS) },
+        )
+    }
     NavHost(navController, startDestination = Routes.STUDY) {
-        composable(Routes.STUDY) {
-            StudyHubScreen(
-                // Indices/headings are study sub-screens (plain pushes); quiz and downloads are
-                // top-level destinations, so the hub shortcuts switch tabs like the nav bar does —
-                // pushing them inside the Study stack corrupts tab state save/restore.
-                onOpenIndices = { navController.navigate(Routes.STUDY_INDICES) },
-                onOpenHeadings = { navController.navigate(Routes.STUDY_HEADINGS) },
-                onOpenQuiz = { navController.navigateTopLevel(Routes.QUIZ) },
-                onOpenDownloads = { navController.navigateTopLevel(Routes.DOWNLOADS) },
-            )
-        }
+        composable(Routes.STUDY) { studyHub() }
         composable(Routes.STUDY_INDICES) { IndexScreen(api) }
         composable(Routes.STUDY_HEADINGS) { HeadingsScreen(api) }
         composable(Routes.QUIZ) { QuizScreen(api) }
@@ -275,7 +276,8 @@ private fun AppNavHost(
             if (user != null && Permission.QUESTION_MODERATE in user.permissions) ModerateScreen(api)
             else AuthScreen(api, onSignedIn = onUserChange)
         }
-        composable(Routes.DOWNLOADS) { DownloadsScreen(api) }
+        // Legacy deep-link alias: the download center grew into the Study hub.
+        composable(Routes.DOWNLOADS) { studyHub() }
         composable(Routes.EVENT) {
             EventScreen(
                 user = user,
