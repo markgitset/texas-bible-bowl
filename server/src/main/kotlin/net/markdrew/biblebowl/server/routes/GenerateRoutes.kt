@@ -33,7 +33,9 @@ import net.markdrew.biblebowl.analysis.wordListIndex
 import net.markdrew.biblebowl.generate.indices.indexTypst
 import net.markdrew.biblebowl.generate.indices.numbersIndexTypst
 import net.markdrew.biblebowl.generate.indices.oneTimeWordsIndexTypst
+import net.markdrew.biblebowl.generate.studyguide.STUDY_GUIDE_LOGO_FILE
 import net.markdrew.biblebowl.generate.studyguide.studyGuideTypst
+import net.markdrew.biblebowl.generate.studyguide.tbbLogoBytes
 import net.markdrew.biblebowl.model.StudyGuideParser
 import net.markdrew.biblebowl.generate.text.TextOptions
 import net.markdrew.biblebowl.generate.text.highlightedBibleTextTypst
@@ -354,12 +356,16 @@ fun Route.generateRoutes(
                 ApiError("no_study_guide", "This season has no study guide"),
             )
             val year = seasons.current().eventYear
+            val logo = tbbLogoBytes()
             val fileName = PdfFileNames.studyGuide()
-            val stamp = 31 * guide.hashCode() + year
+            // Fold the logo into the stamp so adding/replacing it invalidates any pre-logo cached PDF.
+            val stamp = 31 * guide.hashCode() + year + (logo?.contentHashCode() ?: 0)
             val cached = pdfCache?.let { c -> withContext(Dispatchers.IO) { c.get(svc.studySet.simpleName, fileName, stamp) } }
             if (cached != null) return@get respondAttachment(cached, fileName, ContentType.Application.Pdf)
             try {
-                val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(studyGuideTypst(guide, svc.studySet, year)) }
+                val source = studyGuideTypst(guide, svc.studySet, year, logoFile = logo?.let { STUDY_GUIDE_LOGO_FILE })
+                val assets = logo?.let { mapOf(STUDY_GUIDE_LOGO_FILE to it) } ?: emptyMap()
+                val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(source, assets = assets) }
                 pdfCache?.let { c -> withContext(Dispatchers.IO) { c.put(svc.studySet.simpleName, fileName, stamp, pdf) } }
                 respondAttachment(pdf, fileName, ContentType.Application.Pdf)
             } catch (e: TypstException) {
