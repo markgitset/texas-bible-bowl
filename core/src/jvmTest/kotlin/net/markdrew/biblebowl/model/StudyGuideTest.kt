@@ -50,4 +50,18 @@ class StudyGuideTest {
         assertTrue("== Chapter 1" in typst && "== Chapter 2" in typst, "chapter headings")
         assertTrue("Theophilus" in typst && "Answer Key" in typst, "questions + key")
     }
+
+    @Test
+    fun answerCopyMarksCorrectChoiceInlineAndDropsTheKey() {
+        val questions = listOf(
+            StudyGuideParser.parseTsvLine(listOf("Act", "1", "1", "Who?", "1", "A", "Theophilus", "Timothy", "Titus")),
+        )
+        val student = studyGuideTypst(questions, actsSet, 2027, markAnswers = false)
+        val answers = studyGuideTypst(questions, actsSet, 2027, markAnswers = true)
+
+        // The student copy ends with a separate answer key and no inline star; the answer copy is the inverse.
+        assertTrue("Answer Key" in student && "★" !in student, "student copy: key, no stars")
+        assertTrue("★" in answers && "Answer Key" !in answers, "answer copy: inline stars, no key")
+        assertTrue("ANSWER COPY" in answers, "answer copy is labelled on the cover")
+    }
 }

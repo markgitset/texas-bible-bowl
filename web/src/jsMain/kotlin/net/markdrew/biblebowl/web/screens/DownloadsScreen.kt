@@ -115,6 +115,12 @@ object DownloadsScreen {
             href = generateUrl("/generate/study-guide.pdf"),
         )
         downloadCard(
+            title = "Study guide — answer copy",
+            subtitle = "The same guide with each correct answer marked (★) and no separate key — handy for " +
+                "coaches, parents, and self-checking.",
+            href = generateUrl("/generate/study-guide-answers.pdf"),
+        )
+        downloadCard(
             title = "Question flashcards",
             subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardChapter) +
                 customizedNote(flashcardRound != null),

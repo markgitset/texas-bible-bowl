@@ -57,6 +57,9 @@ object PdfFileNames {
     /** The multiple-choice study guide (cover, questions by chapter, answer key). */
     fun studyGuide(): String = "study-guide.pdf"
 
+    /** The study-guide answer copy: each correct choice starred inline, with no answer key. */
+    fun studyGuideAnswers(): String = "study-guide-answers.pdf"
+
     /** The Round 5 headings deck, cumulatively scoped, e.g. `heading-flashcards-through-ch5.pdf`. */
     fun headingFlashcards(throughChapter: Int? = null): String =
         "heading-flashcards${throughChapter?.let { "-through-ch$it" } ?: ""}.pdf"
