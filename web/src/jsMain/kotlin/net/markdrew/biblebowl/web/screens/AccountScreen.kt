@@ -35,7 +35,7 @@ object AccountScreen {
         val user = Session.user
         if (user == null) {
             // Not signed in: the account route is just the sign-in form.
-            AuthScreen.render(container)
+            AuthScreen.render(container, gate = true)
             return
         }
 

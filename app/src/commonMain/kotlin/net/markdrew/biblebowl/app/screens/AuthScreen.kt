@@ -29,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
@@ -40,16 +41,27 @@ import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.api.schoolYear
+import net.markdrew.biblebowl.client.ApiException
 import net.markdrew.biblebowl.client.TbbApi
 
+/** [gateNotice] is set when this screen renders in place of a permission-guarded route. */
 @Composable
-fun AuthScreen(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
+fun AuthScreen(api: TbbApi, gateNotice: String? = null, onSignedIn: (UserDto) -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(
             Modifier.widthIn(max = 460.dp).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Brand()
+            gateNotice?.let {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    it,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
             Spacer(Modifier.height(24.dp))
             AuthCard(api, onSignedIn)
         }
@@ -74,7 +86,7 @@ private fun Brand() {
 
 @Composable
 private fun AuthCard(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
-    var registering by remember { mutableStateOf(true) }
+    var registering by remember { mutableStateOf(false) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
@@ -101,6 +113,9 @@ private fun AuthCard(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
                 label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 visualTransformation = PasswordVisualTransformation(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                supportingText = if (registering) {
+                    { Text("At least 8 characters.") }
+                } else null,
             )
             if (registering) {
                 OutlinedTextField(
@@ -145,14 +160,19 @@ private fun AuthCard(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
                                 api.login(LoginRequest(email.trim(), password))
                             onSignedIn(resp.user)
                         } catch (e: Throwable) {
-                            error = "Error: ${e.message}"
+                            // ApiException carries the server's human-readable reason; anything else
+                            // means the request never got an answer (offline, cold start, DNS).
+                            error = (e as? ApiException)?.message
+                                ?: "Couldn't reach the server — check your connection and try again."
                         } finally {
                             busy = false
                         }
                     }
                 },
-                enabled = !busy && email.isNotBlank() && password.length >= 8 &&
-                    (!registering || (name.isNotBlank() && (adult || isValidBirthdate(birthdate)))),
+                // The 8-char minimum is a registration rule; on sign-in the server is the judge.
+                enabled = !busy && email.isNotBlank() && password.isNotEmpty() &&
+                    (!registering ||
+                        (password.length >= 8 && name.isNotBlank() && (adult || isValidBirthdate(birthdate)))),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (busy) CircularProgressIndicator(Modifier.height(18.dp))

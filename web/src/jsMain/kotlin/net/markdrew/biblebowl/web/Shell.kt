@@ -275,12 +275,12 @@ object Shell {
     private fun gated(container: HTMLElement, permission: Permission, render: () -> Unit) {
         val user = Session.user
         if (user != null && permission in user.permissions) render()
-        else AuthScreen.render(container)
+        else AuthScreen.render(container, gate = true)
     }
 
     /** Like [gated] but requires only a signed-in user, any permissions. */
     private fun signedIn(container: HTMLElement, render: () -> Unit) {
-        if (Session.user != null) render() else AuthScreen.render(container)
+        if (Session.user != null) render() else AuthScreen.render(container, gate = true)
     }
 
     /**
@@ -308,14 +308,14 @@ object Shell {
     private fun gatedEventWide(container: HTMLElement, permission: Permission, render: () -> Unit) {
         val user = Session.user
         if (user != null && hasEventWidePermission(user.roles, permission)) render()
-        else AuthScreen.render(container)
+        else AuthScreen.render(container, gate = true)
     }
 
     /** Like [gatedEventWide], but any one of [permissions] suffices. */
     private fun gatedEventWideAny(container: HTMLElement, vararg permissions: Permission, render: () -> Unit) {
         val user = Session.user
         if (user != null && permissions.any { hasEventWidePermission(user.roles, it) }) render()
-        else AuthScreen.render(container)
+        else AuthScreen.render(container, gate = true)
     }
 
 }
