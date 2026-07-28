@@ -59,9 +59,9 @@ private sealed interface Customize {
 
 /** How chapter titles render: inline with the first verse, or as standalone headings (± divider lines). */
 private enum class ChapterStyle(val label: String, val headings: Boolean, val lines: Boolean) {
-    INLINE("Inline", headings = false, lines = false),
-    HEADING("Heading", headings = true, lines = false),
-    HEADING_LINES("Heading with lines", headings = true, lines = true),
+    HEADING_LINES("Heading with divider line", headings = true, lines = true),
+    HEADING("Heading without divider line", headings = true, lines = false),
+    INLINE("Same line as first verse", headings = false, lines = false),
 }
 
 /** Study-text options, hoisted so choices stick for the whole visit (§7.6 "remember everything cheap"). */
@@ -70,10 +70,10 @@ private data class StudyTextChoices(
     val twoColumns: Boolean = false,
     val justified: Boolean = false,
     val chapterBreaksPage: Boolean = false,
-    val chapterStyle: ChapterStyle = ChapterStyle.INLINE,
+    val chapterStyle: ChapterStyle = ChapterStyle.HEADING_LINES,
     val verseOnNewLine: Boolean = false,
     val highlight: Boolean = true,
-    val underlineUniqueWords: Boolean = false,
+    val underlineUniqueWords: Boolean = true,
 )
 
 /** The group titles in page order — drives both the section headers and the scroll chips. */
@@ -153,7 +153,7 @@ fun DownloadsScreen(
             underlineUniqueWords = c.underlineUniqueWords,
             fontSize = c.fontSize,
         )
-        download("Highlighted study text", name) {
+        download("Printable study text", name) {
             api.bibleTextPdf(
                 fontSize = c.fontSize.takeIf { it != 11 },
                 twoColumns = c.twoColumns,
@@ -255,9 +255,8 @@ fun DownloadsScreen(
         // Each group carries its downloads AND its interactive tools, so a subject has one home.
         GroupHeader("The Text", groupOffsets)
         DownloadCard(
-            title = "Highlighted study text",
-            subtitle = "The full text of ${season.eventScripture} with names, numbers, and more " +
-                "highlighted by category — the flagship study document." + customizedNote(textChoices != StudyTextChoices()),
+            title = "Printable study text",
+            subtitle = "Fully customizable text of ${season.eventScripture} with support for highlighting by category, underlining one-time words, and more! " + customizedNote(textChoices != StudyTextChoices()),
             busyCard = busyCard,
             onClick = ::downloadStudyText,
             onCustomize = { customize = Customize.StudyText },
@@ -489,7 +488,7 @@ private fun StudyTextOptions(
     SheetTitle("Customize study text")
     Text("Font size", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        listOf(9, 10, 11, 12, 14).forEach { size ->
+        listOf(9, 10, 11, 12, 13, 14, 15).forEach { size ->
             FilterChip(
                 selected = choices.fontSize == size,
                 onClick = { onChange(choices.copy(fontSize = size)) },
@@ -497,13 +496,11 @@ private fun StudyTextOptions(
             )
         }
     }
-    OptionSwitch("Two columns", choices.twoColumns) { onChange(choices.copy(twoColumns = it)) }
-    OptionSwitch("Justified text", choices.justified) { onChange(choices.copy(justified = it)) }
-    OptionSwitch("Each chapter starts a new page", choices.chapterBreaksPage) {
-        onChange(choices.copy(chapterBreaksPage = it))
+    OptionSwitch("Underline words that appear only once", choices.underlineUniqueWords) {
+        onChange(choices.copy(underlineUniqueWords = it))
     }
-    OptionSwitch("Each verse starts a new line", choices.verseOnNewLine) {
-        onChange(choices.copy(verseOnNewLine = it))
+    OptionSwitch("Highlight names & numbers by category", choices.highlight) {
+        onChange(choices.copy(highlight = it))
     }
     Text("Chapter titles", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -515,12 +512,15 @@ private fun StudyTextOptions(
             )
         }
     }
-    OptionSwitch("Highlight names & numbers by category", choices.highlight) {
-        onChange(choices.copy(highlight = it))
+    OptionSwitch("Two columns", choices.twoColumns) { onChange(choices.copy(twoColumns = it)) }
+    OptionSwitch("Justified text", choices.justified) { onChange(choices.copy(justified = it)) }
+    OptionSwitch("Each verse starts on a new line", choices.verseOnNewLine) {
+        onChange(choices.copy(verseOnNewLine = it))
     }
-    OptionSwitch("Underline words that appear only once", choices.underlineUniqueWords) {
-        onChange(choices.copy(underlineUniqueWords = it))
-    }
+    /* This is not a legal option, so don't encourage it
+    OptionSwitch("Each chapter starts a new page", choices.chapterBreaksPage) {
+        onChange(choices.copy(chapterBreaksPage = it))
+    }*/
 }
 
 @Composable
@@ -680,10 +680,6 @@ private fun LinkCard(title: String, subtitle: String, actionLabel: String, onCli
     }
 }
 
-/** The first book of the season's display scripture ("Joshua, Judges & Ruth" → "Joshua"), for reader links. */
-private fun primaryBook(eventScripture: String): String =
-    eventScripture.split(',', '&').first().replace(" and ", " ").trim()
-
 /**
  * Read/listen links for the season text — the text is the hub, not just a download. The ESV text
  * and audio belong to their publishers (license is server-side only), so these link out.
@@ -692,19 +688,18 @@ private fun primaryBook(eventScripture: String): String =
 private fun ReadListenCard() {
     val uriHandler = LocalUriHandler.current
     val season = LocalSeason.current
-    val book = primaryBook(season.eventScripture).replace(" ", "%20")
     val links = listOf(
-        "Read on ESV.org" to "https://www.esv.org/$book/",
-        "YouVersion" to "https://www.bible.com/bible/59/${season.bookCode}.1.ESV",
-        "Listen (audio)" to "https://www.biblegateway.com/audio/mclean/esv/$book.1",
+        "esv.org" to "https://www.esv.org/${season.bookCode}/",
+        "blueletterbible.org" to "https://www.blueletterbible.org/esv/${season.bookCode}",
+        "biblegateway.com" to "https://www.biblegateway.com/passage/?version=ESV&search=${season.bookCode}",
     )
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text("Read or listen online", style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold)
             Text(
-                "Read ${LocalSeason.current.eventScripture} or play the audio narration — opens the " +
-                    "publisher's site.",
+                "Read ${season.eventScripture} in your browser or play the audio narration — opens the " +
+                    "publisher's site in a new tab.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

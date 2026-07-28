@@ -174,7 +174,6 @@ object DownloadsScreen {
         // The text is the hub, not just a download: read/listen sit inline on it. The ESV text and
         // audio belong to their publishers (license is server-side only), so these link out to
         // Crossway's ESV.org reader and BibleGateway's licensed ESV audio rather than serving either.
-        val book = primaryBook(season.eventScripture)
         linkCard(
             title = "Read or listen online",
             subtitle = "Read ${season.eventScripture} in your browser or play the audio narration — " +
