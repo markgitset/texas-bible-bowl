@@ -54,9 +54,6 @@ hikari = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
 flyway-core = { module = "org.flywaydb:flyway-core", version.ref = "flyway" }
 flyway-postgresql = { module = "org.flywaydb:flyway-database-postgresql", version.ref = "flyway" }
 
-# Outbound email (password reset codes) — jakarta.mail implementation
-angus-mail = { module = "org.eclipse.angus:angus-mail", version = "2.0.3" }
-
 # Android
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 

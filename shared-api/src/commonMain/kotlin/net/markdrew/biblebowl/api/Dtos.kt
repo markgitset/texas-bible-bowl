@@ -65,14 +65,6 @@ data class LoginRequest(val email: String, val password: String)
 @Serializable
 data class AuthResponse(val token: String, val user: UserDto)
 
-/** Asks the server to email a password-reset code. Always answers OK (no account enumeration). */
-@Serializable
-data class ForgotPasswordRequest(val email: String)
-
-/** Redeems an emailed reset [code] for a new password; a success signs the user in. */
-@Serializable
-data class ResetPasswordRequest(val email: String, val code: String, val newPassword: String)
-
 /**
  * [birthdate] and [adult] drive division eligibility (see [division]); accounts created before
  * birthdates were collected may have neither — an incomplete profile with no division.

@@ -37,7 +37,6 @@ import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.GradingSheetResponse
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
-import net.markdrew.biblebowl.api.ForgotPasswordRequest
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.MyRegistrationResponse
@@ -45,7 +44,6 @@ import net.markdrew.biblebowl.api.MyScoresResponse
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.RegisterRequest
-import net.markdrew.biblebowl.api.ResetPasswordRequest
 import net.markdrew.biblebowl.api.RegistrationDeskResponse
 import net.markdrew.biblebowl.api.RegistrationDto
 import net.markdrew.biblebowl.api.RegistrationUpdateResponse
@@ -146,21 +144,6 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun login(req: LoginRequest): AuthResponse =
         remember(
             client.post("$baseUrl/auth/login") {
-                contentType(ContentType.Application.Json); setBody(req)
-            }.bodyOrThrow()
-        )
-
-    /** Asks the server to email a reset code; always succeeds for well-formed requests. */
-    suspend fun forgotPassword(req: ForgotPasswordRequest) {
-        client.post("$baseUrl/auth/forgot-password") {
-            contentType(ContentType.Application.Json); setBody(req)
-        }.bodyOrThrow<Unit>()
-    }
-
-    /** Redeems an emailed reset code for a new password; a success signs the user in. */
-    suspend fun resetPassword(req: ResetPasswordRequest): AuthResponse =
-        remember(
-            client.post("$baseUrl/auth/reset-password") {
                 contentType(ContentType.Application.Json); setBody(req)
             }.bodyOrThrow()
         )

@@ -165,13 +165,6 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
             usersWithPerson().selectAll().where { UsersTable.id eq userId }.singleOrNull()?.toUserRecord()
         }?.let(::cached)
 
-    override fun updatePassword(userId: String, passwordHash: String) {
-        transaction(db) {
-            UsersTable.update({ UsersTable.id eq userId }) { it[UsersTable.passwordHash] = passwordHash }
-        }
-        cache.remove(userId)
-    }
-
     override fun linkPerson(userId: String, personId: String) {
         transaction(db) {
             UsersTable.update({ UsersTable.id eq userId }) { it[UsersTable.personId] = personId }

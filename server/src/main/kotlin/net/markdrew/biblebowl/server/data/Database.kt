@@ -320,18 +320,6 @@ object GeneratedPdfsTable : Table("generated_pdfs") {
     override val primaryKey = PrimaryKey(studySet, fileName)
 }
 
-/**
- * Active password-reset codes (one per user; see AuthRoutes). Stores only the PBKDF2 hash of the
- * emailed 6-digit code, an epoch-ms expiry, and the wrong-guess counter that caps brute-forcing.
- */
-object PasswordResetCodesTable : Table("password_reset_codes") {
-    val userId = varchar("user_id", 36)
-    val codeHash = varchar("code_hash", 512)
-    val expiresAtEpochMs = long("expires_at_epoch_ms")
-    val attempts = integer("attempts")
-    override val primaryKey = PrimaryKey(userId)
-}
-
 /** JDBC url + credentials, however they were supplied (a single PG URL or separate env vars). */
 data class DbSettings(val jdbcUrl: String, val user: String?, val password: String?) {
     companion object {

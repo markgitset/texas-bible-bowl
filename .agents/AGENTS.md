@@ -158,11 +158,6 @@ This renders the real pipeline without hitting Crossway.
   secrets; Mark wants that behavior kept).
 - ESV license is a non-profit license: the ESV token, text cache, and all analysis
   caching stay **server-side only**.
-- **Password-reset email** (`POST /auth/forgot-password` → 6-digit code): outbound SMTP is
-  configured entirely by env vars (`SMTP_HOST`/`SMTP_USERNAME`/`SMTP_PASSWORD`, optional
-  `SMTP_PORT`=587 and `SMTP_FROM`=username — fly secrets in prod). Unset → `LogOnlyEmailService`
-  logs the code instead of sending, so the flow deploys dark and local dev reads codes from the
-  server log.
 
 ## Text-PDF render pipeline (where the covered-text feature lives)
 `core/jvmMain/.../generate/text/`: `AnnotatedDoc` (DisjointRangeMap annotation layers) →
