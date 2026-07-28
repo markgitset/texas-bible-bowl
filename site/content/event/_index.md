@@ -1,6 +1,6 @@
 ---
 aliases: ["/details/"]
-title: "Details"
+title: "Event"
 description: "Everything you need to know about competing in Texas Bible Bowl — rules, rounds, sample questions, and curriculum."
 startHere: "how-it-works"
 menuActive: "Event"

@@ -131,14 +131,57 @@ canonifyURLs = true
   parent = "Event"
   weight = 6
 
-# The single study entry: the app's #study hub — every study resource, grouped by study
-# focus, downloads and interactive tools together. No dropdown children (nav.html styles
-# this entry as the primary yellow CTA button); in-page chips handle group wayfinding.
-# /study-resources/* pages are redirects into the hub so old links keep working.
+# Study & Practice is a dropdown like Event/Scholarships/About, but its pages live in the
+# app (hash routes into /app/), not in Hugo. The children mirror the app's StudySection enum
+# (web/.../Routes.kt) and the Site Map's hand-written study list (layouts/_default/sitemap.html)
+# — keep all three in sync. /study-resources/* pages are redirects into the app so old links
+# keep working.
 [[menus.main]]
   name   = "Study & Practice"
   url    = "/app/#study"
   weight = 30
+
+[[menus.main]]
+  name   = "The Text"
+  url    = "/app/#study/the-text"
+  parent = "Study & Practice"
+  weight = 1
+
+[[menus.main]]
+  name   = "General Knowledge"
+  url    = "/app/#study/general-knowledge"
+  parent = "Study & Practice"
+  weight = 2
+
+[[menus.main]]
+  name   = "Chapter Headings"
+  url    = "/app/#study/chapter-headings"
+  parent = "Study & Practice"
+  weight = 3
+
+[[menus.main]]
+  name   = "Unique Words"
+  url    = "/app/#study/unique-words"
+  parent = "Study & Practice"
+  weight = 4
+
+[[menus.main]]
+  name   = "Practice Tests"
+  url    = "/app/#study/practice-tests"
+  parent = "Study & Practice"
+  weight = 5
+
+[[menus.main]]
+  name   = "Reference Documents"
+  url    = "/app/#study/reference-documents"
+  parent = "Study & Practice"
+  weight = 6
+
+[[menus.main]]
+  name   = "Data & Source Files"
+  url    = "/app/#study/data-source-files"
+  parent = "Study & Practice"
+  weight = 7
 
 [[menus.main]]
   name   = "Scholarships"

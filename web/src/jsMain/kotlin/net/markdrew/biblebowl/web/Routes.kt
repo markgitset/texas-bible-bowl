@@ -30,6 +30,28 @@ object Routes {
 }
 
 /**
+ * The Study & Practice sections — one page per study focus under `#study/<slug>`, mirrored as the
+ * children of the navbar's Study & Practice dropdown (hugo.toml) and listed on the Site Map
+ * (sitemap.html). `#study` itself is the overview page whose cards link to these. Keep all three
+ * in sync when adding or renaming a section.
+ */
+enum class StudySection(val slug: String, val title: String) {
+    TEXT("the-text", "The Text"),
+    GENERAL("general-knowledge", "General Knowledge"),
+    HEADINGS("chapter-headings", "Chapter Headings"),
+    UNIQUE_WORDS("unique-words", "Unique Words"),
+    PRACTICE_TESTS("practice-tests", "Practice Tests"),
+    REFERENCE("reference-documents", "Reference Documents"),
+    DATA("data-source-files", "Data & Source Files");
+
+    val route: String get() = "${Routes.STUDY}/$slug"
+
+    companion object {
+        fun fromRoute(route: String): StudySection? = entries.firstOrNull { it.route == route }
+    }
+}
+
+/**
  * Study-family destinations reached from the hub (`#study`, the app's Study & Practice page);
  * they anchor breadcrumb grouping (Home › Study & Practice › X). The navbar has a single
  * Study & Practice entry — these are not nav items.
@@ -44,10 +66,10 @@ fun topDestinationOf(route: String): TopDestination? =
     TopDestination.entries.firstOrNull { route == it.route || route.startsWith("${it.route}/") }
 
 /** Human label for [route], used for breadcrumbs and the document title. */
-fun routeLabel(route: String): String = when (route) {
-    Routes.STUDY -> "Study & Practice" // the hub: every study resource, grouped by study focus
+fun routeLabel(route: String): String = StudySection.fromRoute(route)?.title ?: when (route) {
+    Routes.STUDY -> "Study & Practice" // the overview: one card per study-focus section
     Routes.STUDY_INDICES -> "Names & Numbers"
-    Routes.STUDY_HEADINGS -> "Chapter Headings"
+    Routes.STUDY_HEADINGS -> "Headings Browser" // distinct from the Chapter Headings section page
     Routes.QUIZ -> "Quiz Me"
     Routes.QUESTIONS -> "Community Questions"
     Routes.QUESTIONS_NEW -> "Submit a Question"

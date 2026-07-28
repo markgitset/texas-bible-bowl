@@ -135,14 +135,22 @@ object Shell {
     }
 
     private fun updateNav(route: String) {
-        // The merged navbar's app links (the Study & Practice button) carry data-route. The study
-        // entry lights for the whole study family — the hub, its sub-screens, and the hub-reached
-        // tools (quiz, questions) — since it is the one nav path to all of them.
+        // The merged navbar's app links carry data-route: the Study & Practice dropdown toggle
+        // (data-route "study") lights for the whole study family — the overview, the section pages,
+        // and the hub-reached tools (quiz, questions) — since it is the one nav path to all of them.
+        // Dropdown ITEMS (the overview + one item per section) match their route exactly, so only
+        // the current page's menu entry is marked.
         document.querySelectorAll("[data-route]").asList().forEach { node ->
             val el = node as? HTMLElement ?: return@forEach
             val dest = el.getAttribute("data-route") ?: return@forEach
-            val studyFamily = dest == Routes.STUDY && (topDestinationOf(route) != null || route == Routes.DOWNLOADS)
-            el.classList.toggle("active", route == dest || route.startsWith("$dest/") || studyFamily)
+            val active = if (el.classList.contains("dropdown-item")) {
+                route == dest
+            } else {
+                val studyFamily =
+                    dest == Routes.STUDY && (topDestinationOf(route) != null || route == Routes.DOWNLOADS)
+                route == dest || route.startsWith("$dest/") || studyFamily
+            }
+            el.classList.toggle("active", active)
         }
         // Collapse the mobile menu after navigating — a hash change doesn't reload the page,
         // so Bootstrap would otherwise leave it open over the new screen.
@@ -195,7 +203,7 @@ object Shell {
 
     private fun renderScreen(route: String, container: HTMLElement) {
         when (route) {
-            Routes.STUDY -> DownloadsScreen.render(container) // the Study & Practice hub
+            Routes.STUDY -> DownloadsScreen.render(container) // the Study & Practice overview
             Routes.STUDY_INDICES -> IndexScreen.render(container)
             Routes.STUDY_HEADINGS -> HeadingsScreen.render(container)
             Routes.QUIZ -> QuizScreen.render(container)
@@ -263,7 +271,11 @@ object Shell {
                     AdminMergePeopleScreen.render(container)
                 }
             }
-            else -> window.location.replace("#${Routes.STUDY}") // unknown deep link → the hub
+            else -> {
+                val section = StudySection.fromRoute(route)
+                if (section != null) DownloadsScreen.render(container, section) // a study section's page
+                else window.location.replace("#${Routes.STUDY}") // unknown deep link → the overview
+            }
         }
     }
 
