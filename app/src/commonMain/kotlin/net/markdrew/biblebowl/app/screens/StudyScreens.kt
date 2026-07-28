@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
@@ -19,21 +20,19 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -43,6 +42,7 @@ import net.markdrew.biblebowl.api.PdfFileNames
 import net.markdrew.biblebowl.api.schoolYear
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
+import net.markdrew.biblebowl.app.navigation.StudySection
 import net.markdrew.biblebowl.app.platform.Mime
 import net.markdrew.biblebowl.app.platform.saveFile
 import net.markdrew.biblebowl.app.ui.ChapterChips
@@ -76,24 +76,112 @@ private data class StudyTextChoices(
     val underlineUniqueWords: Boolean = true,
 )
 
-/** The group titles in page order — drives both the section headers and the scroll chips. */
-private val GROUPS = listOf(
-    "The Text", "General Knowledge", "Chapter Headings", "Unique Words",
-    "Practice Tests", "Reference Documents", "Data & Source Files",
-)
+/**
+ * Sticky per-visit choices (§7.6 "remember everything cheap") — object-level snapshot state so
+ * the selections survive moving between the section screens, like the web app's screen object.
+ * Chapter scope is per card group: each sheet's chips affect only the cards of its own group.
+ */
+private object StudyChoices {
+    var textChoices by mutableStateOf(StudyTextChoices())
+    var flashcardChapter by mutableStateOf<Int?>(null)
+    var flashcardRound by mutableStateOf<Round?>(null)
+    var headingChapter by mutableStateOf<Int?>(null)
+    var practiceChapter by mutableStateOf<Int?>(null)
+    var practiceLimit by mutableStateOf<Int?>(null)
+    var practiceSeed by mutableStateOf("")
+    var exportChapter by mutableStateOf<Int?>(null)
+    var exportHeadings by mutableStateOf(false)
+    var exportRound by mutableStateOf<Round?>(null)
+}
+
+/** One-sentence description of [section] — its overview card and the intro line atop its screen. */
+private fun blurb(section: StudySection, scripture: String): String = when (section) {
+    StudySection.TEXT ->
+        "The complete text of $scripture — the highlighted study PDF, plus places to read or listen online."
+    StudySection.GENERAL ->
+        "The official study guide and question flashcards, plus the interactive quiz and the " +
+            "community question bank."
+    StudySection.HEADINGS ->
+        "Every ESV section heading (Round 5 material) — flashcards, a browser, and self-check mode."
+    StudySection.UNIQUE_WORDS ->
+        "Words that appear only once in $scripture — flashcards and a printable index."
+    StudySection.PRACTICE_TESTS ->
+        "Printable practice tests for Rounds 1–5, built like the real thing."
+    StudySection.REFERENCE ->
+        "Printable indices — names, numbers, men, women, places, and a full concordance."
+    StudySection.DATA ->
+        "For coaches and question writers — reusable source files for building your own study material."
+}
 
 /**
- * The Study & Practice hub — the Study tab's screen and the app's default landing, mirroring the
- * web app's `#study`: one scrolling page grouped by study focus, each group holding its download
- * cards (one click to a sensible default, options behind a "Customize" sheet) AND its interactive
- * tools (quiz, browsers, community questions). A chip row up top scrolls to each group. Public.
- * Chapter scope lives in each chapter-aware card's sheet and covers only that card's group;
- * each card's subtitle names its current scope.
+ * The Study & Practice overview — the Study tab's screen and the app's default landing, mirroring
+ * the web app's `#study`: one card per study-focus section ("Start here" on The Text), each
+ * opening that section's own screen. Public.
+ */
+@Composable
+fun StudyOverviewScreen(onOpenSection: (StudySection) -> Unit) {
+    val season = LocalSeason.current
+    Column(
+        Modifier.verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text(
+            "This season: ${season.eventScripture}",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            "${season.schoolYear} · all ${season.chapterCount} chapters (ESV) — everything you need, " +
+                "organized by what you're studying. Free, no sign-in needed.",
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.secondary,
+        )
+        StudySection.entries.forEach { section ->
+            SectionCard(section, onClick = { onOpenSection(section) })
+        }
+    }
+}
+
+/** An overview card for [section]: title + blurb, the whole card tappable, gold badge on The Text. */
+@Composable
+private fun SectionCard(section: StudySection, onClick: () -> Unit) {
+    ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (section == StudySection.TEXT) {
+                Surface(
+                    color = MaterialTheme.colorScheme.secondary,
+                    shape = RoundedCornerShape(50),
+                ) {
+                    Text(
+                        "START HERE",
+                        Modifier.padding(horizontal = 10.dp, vertical = 2.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSecondary,
+                    )
+                }
+            }
+            Text(section.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(
+                blurb(section, LocalSeason.current.eventScripture),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+/**
+ * A study-focus section's screen: that subject's download cards (one click to a sensible default,
+ * options behind a "Customize" sheet) AND its interactive tools (quiz, browsers, community
+ * questions), so nothing about a subject lives anywhere else. Public.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DownloadsScreen(
+fun StudySectionScreen(
     api: TbbApi,
+    section: StudySection,
     onOpenIndices: () -> Unit,
     onOpenHeadings: () -> Unit,
     onOpenQuiz: () -> Unit,
@@ -103,18 +191,17 @@ fun DownloadsScreen(
     var message by remember { mutableStateOf<String?>(null) }
     var isError by remember { mutableStateOf(false) }
     var customize by remember { mutableStateOf<Customize?>(null) }
-    // Sheet choices live at screen level so closing/reopening a sheet keeps the last selections.
-    // Chapter scope is per card group: each sheet's chips affect only the cards it belongs to.
-    var textChoices by remember { mutableStateOf(StudyTextChoices()) }
-    var flashcardChapter by remember { mutableStateOf<Int?>(null) }
-    var flashcardRound by remember { mutableStateOf<Round?>(null) }
-    var headingChapter by remember { mutableStateOf<Int?>(null) }
-    var practiceChapter by remember { mutableStateOf<Int?>(null) }
-    var practiceLimit by remember { mutableStateOf<Int?>(null) }
-    var practiceSeed by remember { mutableStateOf("") }
-    var exportChapter by remember { mutableStateOf<Int?>(null) }
-    var exportHeadings by remember { mutableStateOf(false) }
-    var exportRound by remember { mutableStateOf<Round?>(null) }
+    // Sheet choices delegate to [StudyChoices] so they stick across section/route changes.
+    var textChoices by StudyChoices::textChoices
+    var flashcardChapter by StudyChoices::flashcardChapter
+    var flashcardRound by StudyChoices::flashcardRound
+    var headingChapter by StudyChoices::headingChapter
+    var practiceChapter by StudyChoices::practiceChapter
+    var practiceLimit by StudyChoices::practiceLimit
+    var practiceSeed by StudyChoices::practiceSeed
+    var exportChapter by StudyChoices::exportChapter
+    var exportHeadings by StudyChoices::exportHeadings
+    var exportRound by StudyChoices::exportRound
     val scope = rememberCoroutineScope()
 
     fun download(cardTitle: String, fileName: String, mime: String = Mime.PDF, fetch: suspend () -> ByteArray) {
@@ -210,38 +297,22 @@ fun DownloadsScreen(
     }
 
     val season = LocalSeason.current
-    val scrollState = rememberScrollState()
-    // Group-header Y offsets in the scrolled column's content coordinates, for the scroll chips.
-    val groupOffsets = remember { mutableStateMapOf<String, Int>() }
 
     Column(
-        Modifier.verticalScroll(scrollState),
+        Modifier.verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            "This season: ${season.eventScripture}",
+            section.title,
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.primary,
         )
         Text(
-            "${season.schoolYear} · all ${season.chapterCount} chapters (ESV) — everything you need, " +
-                "organized by what you're studying. Free, no sign-in needed.",
+            blurb(section, season.eventScripture),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.secondary,
         )
-        // In-page wayfinding: one chip per group scrolls to it.
-        Row(
-            Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            GROUPS.forEach { title ->
-                AssistChip(
-                    onClick = { groupOffsets[title]?.let { y -> scope.launch { scrollState.animateScrollTo(y) } } },
-                    label = { Text(title) },
-                )
-            }
-        }
 
         message?.let {
             Text(
@@ -251,178 +322,182 @@ fun DownloadsScreen(
             )
         }
 
-        // Studier resources are grouped by STUDY FOCUS (the subject you're drilling), not by format.
-        // Each group carries its downloads AND its interactive tools, so a subject has one home.
-        GroupHeader("The Text", groupOffsets)
-        DownloadCard(
-            title = "Printable study text",
-            subtitle = "Fully customizable text of ${season.eventScripture} with support for highlighting by category, underlining one-time words, and more! " + customizedNote(textChoices != StudyTextChoices()),
-            busyCard = busyCard,
-            onClick = ::downloadStudyText,
-            onCustomize = { customize = Customize.StudyText },
-        )
-        ReadListenCard()
+        // Each section carries its downloads AND its interactive tools, so a subject has one home.
+        when (section) {
+            StudySection.TEXT -> {
+                DownloadCard(
+                    title = "Printable study text",
+                    subtitle = "Fully customizable text of ${season.eventScripture} with support for " +
+                        "highlighting by category, underlining one-time words, and more! " +
+                        customizedNote(textChoices != StudyTextChoices()),
+                    busyCard = busyCard,
+                    onClick = ::downloadStudyText,
+                    onCustomize = { customize = Customize.StudyText },
+                )
+                ReadListenCard()
+            }
 
-        GroupHeader("General Knowledge", groupOffsets)
-        DownloadCard(
-            title = "Study guide",
-            subtitle = "The official multiple-choice study guide for ${season.eventScripture} — every chapter's " +
-                "review questions with an answer key. The single best place to start.",
-            busyCard = busyCard,
-            onClick = { download("Study guide", PdfFileNames.studyGuide()) { api.studyGuidePdf() } },
-        )
-        DownloadCard(
-            title = "Study guide — answer copy",
-            subtitle = "The same guide with each correct answer marked (★) and no separate key — handy for " +
-                "coaches, parents, and self-checking.",
-            busyCard = busyCard,
-            onClick = { download("Study guide — answer copy", PdfFileNames.studyGuideAnswers()) { api.studyGuideAnswersPdf() } },
-        )
-        DownloadCard(
-            title = "Question flashcards",
-            subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardChapter) +
-                customizedNote(flashcardRound != null),
-            busyCard = busyCard,
-            onClick = ::downloadQuestionFlashcards,
-            onCustomize = { customize = Customize.QuestionFlashcards },
-        )
-        LinkCard(
-            title = "Quiz me",
-            subtitle = "Drill the community question bank with instant feedback — the interactive twin " +
-                "of the flashcards and practice tests.",
-            actionLabel = "Open Quiz",
-            onClick = onOpenQuiz,
-        )
-        LinkCard(
-            title = "Community questions",
-            subtitle = "Browse the community question bank, vote for the best questions, and submit your own.",
-            actionLabel = "Browse questions",
-            onClick = onOpenQuestions,
-        )
+            StudySection.GENERAL -> {
+                DownloadCard(
+                    title = "Study guide",
+                    subtitle = "The official multiple-choice study guide for ${season.eventScripture} — every " +
+                        "chapter's review questions with an answer key. The single best place to start.",
+                    busyCard = busyCard,
+                    onClick = { download("Study guide", PdfFileNames.studyGuide()) { api.studyGuidePdf() } },
+                )
+                DownloadCard(
+                    title = "Study guide — answer copy",
+                    subtitle = "The same guide with each correct answer marked (★) and no separate key — handy for " +
+                        "coaches, parents, and self-checking.",
+                    busyCard = busyCard,
+                    onClick = { download("Study guide — answer copy", PdfFileNames.studyGuideAnswers()) { api.studyGuideAnswersPdf() } },
+                )
+                DownloadCard(
+                    title = "Question flashcards",
+                    subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardChapter) +
+                        customizedNote(flashcardRound != null),
+                    busyCard = busyCard,
+                    onClick = ::downloadQuestionFlashcards,
+                    onCustomize = { customize = Customize.QuestionFlashcards },
+                )
+                LinkCard(
+                    title = "Quiz me",
+                    subtitle = "Drill the community question bank with instant feedback — the interactive twin " +
+                        "of the flashcards and practice tests.",
+                    actionLabel = "Open Quiz",
+                    onClick = onOpenQuiz,
+                )
+                LinkCard(
+                    title = "Community questions",
+                    subtitle = "Browse the community question bank, vote for the best questions, and submit your own.",
+                    actionLabel = "Browse questions",
+                    onClick = onOpenQuestions,
+                )
+            }
 
-        GroupHeader("Chapter Headings", groupOffsets)
-        DownloadCard(
-            title = "Chapter-heading flashcards",
-            subtitle = "One card per ESV section heading (Round 5 material)." +
-                (headingChapter?.let { " Through chapter $it." } ?: ""),
-            busyCard = busyCard,
-            onClick = ::downloadHeadingFlashcards,
-            onCustomize = { customize = Customize.HeadingFlashcards },
-        )
-        LinkCard(
-            title = "Headings browser & self-check",
-            subtitle = "Browse every ESV section heading, or flip to self-check mode — the interactive " +
-                "twin of the flashcards. Quiz can also drill headings.",
-            actionLabel = "Open browser",
-            onClick = onOpenHeadings,
-        )
+            StudySection.HEADINGS -> {
+                DownloadCard(
+                    title = "Chapter-heading flashcards",
+                    subtitle = "One card per ESV section heading (Round 5 material)." +
+                        (headingChapter?.let { " Through chapter $it." } ?: ""),
+                    busyCard = busyCard,
+                    onClick = ::downloadHeadingFlashcards,
+                    onCustomize = { customize = Customize.HeadingFlashcards },
+                )
+                LinkCard(
+                    title = "Headings browser & self-check",
+                    subtitle = "Browse every ESV section heading, or flip to self-check mode — the interactive " +
+                        "twin of the flashcards. Quiz can also drill headings.",
+                    actionLabel = "Open browser",
+                    onClick = onOpenHeadings,
+                )
+            }
 
-        GroupHeader("Unique Words", groupOffsets)
-        DownloadCard(
-            title = "Unique-word flashcards",
-            subtitle = "One card per word that appears only once in ${season.eventScripture} — the word up " +
-                "front, its verse on the back. A powerful memory hook for pinpointing chapters.",
-            busyCard = busyCard,
-            onClick = { download("Unique-word flashcards", PdfFileNames.uniqueWordFlashcards()) { api.uniqueWordFlashcardsPdf() } },
-        )
-        DownloadCard(
-            title = "Unique words index",
-            subtitle = "Every word that appears only once in ${season.eventScripture} — alphabetical and " +
-                "in order of appearance.",
-            busyCard = busyCard,
-            onClick = { download("Unique words index", PdfFileNames.uniqueWordsIndex()) { api.uniqueWordsIndexPdf() } },
-        )
+            StudySection.UNIQUE_WORDS -> {
+                DownloadCard(
+                    title = "Unique-word flashcards",
+                    subtitle = "One card per word that appears only once in ${season.eventScripture} — the word up " +
+                        "front, its verse on the back. A powerful memory hook for pinpointing chapters.",
+                    busyCard = busyCard,
+                    onClick = { download("Unique-word flashcards", PdfFileNames.uniqueWordFlashcards()) { api.uniqueWordFlashcardsPdf() } },
+                )
+                DownloadCard(
+                    title = "Unique words index",
+                    subtitle = "Every word that appears only once in ${season.eventScripture} — alphabetical and " +
+                        "in order of appearance.",
+                    busyCard = busyCard,
+                    onClick = { download("Unique words index", PdfFileNames.uniqueWordsIndex()) { api.uniqueWordsIndexPdf() } },
+                )
+            }
 
-        GroupHeader("Practice Tests", groupOffsets)
-        // R1–R5 only: the Power Round has no generator or question bank behind it.
-        Round.entries.filter { it.number in 1..5 }.forEach { round ->
-            val roundCustomized =
-                if (round.crowdSourced) practiceLimit != null else practiceSeed.toIntOrNull() != null
-            DownloadCard(
-                title = "Round ${round.number}: ${round.displayName}",
-                subtitle = (if (round.crowdSourced) "Built from the approved community questions."
-                else "Generated from the ESV text.") + scopeNote(practiceChapter) + customizedNote(roundCustomized),
-                busyCard = busyCard,
-                onClick = { downloadPracticeTest(round) },
-                onCustomize = { customize = Customize.PracticeTest(round) },
-            )
+            StudySection.PRACTICE_TESTS -> {
+                // R1–R5 only: the Power Round has no generator or question bank behind it.
+                Round.entries.filter { it.number in 1..5 }.forEach { round ->
+                    val roundCustomized =
+                        if (round.crowdSourced) practiceLimit != null else practiceSeed.toIntOrNull() != null
+                    DownloadCard(
+                        title = "Round ${round.number}: ${round.displayName}",
+                        subtitle = (if (round.crowdSourced) "Built from the approved community questions."
+                        else "Generated from the ESV text.") + scopeNote(practiceChapter) + customizedNote(roundCustomized),
+                        busyCard = busyCard,
+                        onClick = { downloadPracticeTest(round) },
+                        onCustomize = { customize = Customize.PracticeTest(round) },
+                    )
+                }
+            }
+
+            StudySection.REFERENCE -> {
+                DownloadCard(
+                    title = "Names index",
+                    subtitle = "Every proper name in ${season.eventScripture} with its verses — alphabetical and by frequency.",
+                    busyCard = busyCard,
+                    onClick = { download("Names index", PdfFileNames.namesIndex()) { api.namesIndexPdf() } },
+                )
+                DownloadCard(
+                    title = "Numbers index",
+                    subtitle = "Every number in ${season.eventScripture} with its verses — alphabetical and by frequency.",
+                    busyCard = busyCard,
+                    onClick = { download("Numbers index", PdfFileNames.numbersIndex()) { api.numbersIndexPdf() } },
+                )
+                DownloadCard(
+                    title = "Men index",
+                    subtitle = "Every man named in ${season.eventScripture} with the verses he appears in.",
+                    busyCard = busyCard,
+                    onClick = { download("Men index", PdfFileNames.menIndex()) { api.menIndexPdf() } },
+                )
+                DownloadCard(
+                    title = "Women index",
+                    subtitle = "Every woman named in ${season.eventScripture} with the verses she appears in.",
+                    busyCard = busyCard,
+                    onClick = { download("Women index", PdfFileNames.womenIndex()) { api.womenIndexPdf() } },
+                )
+                DownloadCard(
+                    title = "Places index",
+                    subtitle = "Every place named in ${season.eventScripture} with the verses it appears in.",
+                    busyCard = busyCard,
+                    onClick = { download("Places index", PdfFileNames.placesIndex()) { api.placesIndexPdf() } },
+                )
+                DownloadCard(
+                    title = "Full word index",
+                    subtitle = "A complete concordance — every significant word in ${season.eventScripture} with its verses.",
+                    busyCard = busyCard,
+                    onClick = { download("Full word index", PdfFileNames.fullIndex()) { api.fullIndexPdf() } },
+                )
+                LinkCard(
+                    title = "Names & numbers browser",
+                    subtitle = "Search and filter the names and numbers indices — the interactive twin of the PDFs.",
+                    actionLabel = "Open browser",
+                    onClick = onOpenIndices,
+                )
+            }
+
+            StudySection.DATA -> {
+                val exportCustomized = exportHeadings || exportRound != null
+                DownloadCard(
+                    title = "Kahoot spreadsheet",
+                    subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout)." +
+                        scopeNote(exportChapter) + customizedNote(exportCustomized),
+                    busyCard = busyCard,
+                    onClick = { downloadExport(kahoot = true) },
+                    onCustomize = { customize = Customize.Export(kahoot = true) },
+                )
+                DownloadCard(
+                    title = "Quizlet / Space TSV",
+                    subtitle = "Question-and-answer pairs as tab-separated text, import-ready for " +
+                        "Quizlet, Space, or Anki." + scopeNote(exportChapter) + customizedNote(exportCustomized),
+                    busyCard = busyCard,
+                    onClick = { downloadExport(kahoot = false) },
+                    onCustomize = { customize = Customize.Export(kahoot = false) },
+                )
+                DownloadCard(
+                    title = "Study guide (TSV)",
+                    subtitle = "The full study-guide question bank as tab-separated text — every question, its " +
+                        "choices, answer, and reference — for building your own materials.",
+                    busyCard = busyCard,
+                    onClick = { download("Study guide (TSV)", "study-guide.tsv", Mime.TSV) { api.studyGuideTsv() } },
+                )
+            }
         }
-
-        GroupHeader("Reference Documents", groupOffsets)
-        DownloadCard(
-            title = "Names index",
-            subtitle = "Every proper name in ${season.eventScripture} with its verses — alphabetical and by frequency.",
-            busyCard = busyCard,
-            onClick = { download("Names index", PdfFileNames.namesIndex()) { api.namesIndexPdf() } },
-        )
-        DownloadCard(
-            title = "Numbers index",
-            subtitle = "Every number in ${season.eventScripture} with its verses — alphabetical and by frequency.",
-            busyCard = busyCard,
-            onClick = { download("Numbers index", PdfFileNames.numbersIndex()) { api.numbersIndexPdf() } },
-        )
-        DownloadCard(
-            title = "Men index",
-            subtitle = "Every man named in ${season.eventScripture} with the verses he appears in.",
-            busyCard = busyCard,
-            onClick = { download("Men index", PdfFileNames.menIndex()) { api.menIndexPdf() } },
-        )
-        DownloadCard(
-            title = "Women index",
-            subtitle = "Every woman named in ${season.eventScripture} with the verses she appears in.",
-            busyCard = busyCard,
-            onClick = { download("Women index", PdfFileNames.womenIndex()) { api.womenIndexPdf() } },
-        )
-        DownloadCard(
-            title = "Places index",
-            subtitle = "Every place named in ${season.eventScripture} with the verses it appears in.",
-            busyCard = busyCard,
-            onClick = { download("Places index", PdfFileNames.placesIndex()) { api.placesIndexPdf() } },
-        )
-        DownloadCard(
-            title = "Full word index",
-            subtitle = "A complete concordance — every significant word in ${season.eventScripture} with its verses.",
-            busyCard = busyCard,
-            onClick = { download("Full word index", PdfFileNames.fullIndex()) { api.fullIndexPdf() } },
-        )
-        LinkCard(
-            title = "Names & numbers browser",
-            subtitle = "Search and filter the names and numbers indices — the interactive twin of the PDFs.",
-            actionLabel = "Open browser",
-            onClick = onOpenIndices,
-        )
-
-        // Separate "commons" for a different audience — builders, not studiers.
-        GroupHeader("Data & Source Files", groupOffsets)
-        Text(
-            "For coaches and question writers — reusable source files for building your own study material.",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        val exportCustomized = exportHeadings || exportRound != null
-        DownloadCard(
-            title = "Kahoot spreadsheet",
-            subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout)." +
-                scopeNote(exportChapter) + customizedNote(exportCustomized),
-            busyCard = busyCard,
-            onClick = { downloadExport(kahoot = true) },
-            onCustomize = { customize = Customize.Export(kahoot = true) },
-        )
-        DownloadCard(
-            title = "Quizlet / Space TSV",
-            subtitle = "Question-and-answer pairs as tab-separated text, import-ready for " +
-                "Quizlet, Space, or Anki." + scopeNote(exportChapter) + customizedNote(exportCustomized),
-            busyCard = busyCard,
-            onClick = { downloadExport(kahoot = false) },
-            onCustomize = { customize = Customize.Export(kahoot = false) },
-        )
-        DownloadCard(
-            title = "Study guide (TSV)",
-            subtitle = "The full study-guide question bank as tab-separated text — every question, its " +
-                "choices, answer, and reference — for building your own materials.",
-            busyCard = busyCard,
-            onClick = { download("Study guide (TSV)", "study-guide.tsv", Mime.TSV) { api.studyGuideTsv() } },
-        )
     }
 
     when (val target = customize) {
@@ -650,19 +725,6 @@ private fun scopeNote(chapter: Int?): String = chapter?.let { " Scoped to chapte
 
 private fun customizedNote(customized: Boolean): String =
     if (customized) " Using your customized settings." else ""
-
-@Composable
-private fun GroupHeader(title: String, offsets: MutableMap<String, Int>) {
-    Text(
-        title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(top = 8.dp)
-            // Content-coordinate Y within the scrolled column, so a chip can scroll here.
-            .onGloballyPositioned { offsets[title] = it.positionInParent().y.toInt() },
-    )
-}
 
 /** A card whose action opens an in-app tool rather than downloading — the interactive twin of a download. */
 @Composable

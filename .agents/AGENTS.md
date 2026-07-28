@@ -74,16 +74,18 @@ build with "Lock file was changed" — run `./gradlew kotlinUpgradeYarnLock` and
 
 ## App navigation (Compose apps + web app)
 Top-level destinations (`Routes.kt` per app): the Compose app has four — study, quiz,
-questions, event — where the Study tab IS the Study & Practice hub (DownloadsScreen took over
-from the deleted StudyHubScreen; `downloads` survives as a deep-link alias route rendering the
-same hub); the web app's study area (2026-07) is `#study`, the Study & Practice overview
-(a card grid like the site's Event overview, "Start here" on The Text) plus one page per
-study-focus section at `#study/<slug>` (DownloadsScreen renders both; StudySection in
-Routes.kt lists the sections). The navbar's "Study & Practice" entry is a dropdown like
-Event/Scholarships/About whose children are the section pages — keep hugo.toml's menu
-children, StudySection, and sitemap.html's hand-written study list in sync. Quiz,
-questions, and the browsers are reached from the section pages and carry Home › Study &
-Practice breadcrumbs. `#downloads` and unknown hashes redirect to `#study`; the
+questions, event — where the Study tab is the Study & Practice OVERVIEW: one card per
+study-focus section ("Start here" on The Text; `StudyOverviewScreen`), each opening that
+section's own screen at `study/<slug>` (`StudySectionScreen`, both in `StudyScreens.kt`);
+`downloads` survives as a deep-link alias rendering the overview. This matches the web app's
+study area (2026-07): `#study`, the same overview card grid, plus one page per study-focus
+section at `#study/<slug>` (web's DownloadsScreen renders both). BOTH apps have a
+`StudySection` enum in their `Routes.kt` with identical slugs/route strings — keep the two
+enums, hugo.toml's menu children, and sitemap.html's hand-written study list in sync. The web
+navbar's "Study & Practice" entry is a dropdown like Event/Scholarships/About whose children
+are the section pages; the Compose app reaches sections via the overview cards (plain pushes on
+the Study stack, so Back returns to the overview). Quiz, questions, and the browsers are
+reached from the section screens/pages and carry Home › Study & Practice breadcrumbs (web). `#downloads` and unknown hashes redirect to `#study`; the
 `/study-resources/*` Hugo pages are redirects into the app. The event tab was removed from
 `:web` 2026-07 because the Hugo site already shows season info (the Android app has no site
 around it, so its Event tab stays). Both also have signin, account, gated admin routes, and the full
