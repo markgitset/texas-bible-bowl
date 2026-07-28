@@ -49,6 +49,8 @@ interface UserRepository {
         adult: Boolean,
         contact: ContactInfoDto?,
     ): UserRecord?
+    /** Replaces the stored password hash (forgot-password reset). A no-op if the user doesn't exist. */
+    fun updatePassword(userId: String, passwordHash: String)
     /**
      * Links this account to the person it IS ([UserRecord.personId] / people.id) — the self side of
      * the claim model (a self-claim or a signup email match). Idempotent; a no-op if the account
@@ -121,6 +123,10 @@ class InMemoryUserRepository : UserRepository {
         byId.computeIfPresent(userId) { _, record ->
             record.copy(displayName = displayName, birthdate = birthdate, adult = adult, contact = contact)
         }
+
+    override fun updatePassword(userId: String, passwordHash: String) {
+        byId.computeIfPresent(userId) { _, record -> record.copy(passwordHash = passwordHash) }
+    }
 
     override fun linkPerson(userId: String, personId: String) {
         byId.computeIfPresent(userId) { _, record -> record.copy(personId = personId) }
