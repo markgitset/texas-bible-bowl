@@ -41,6 +41,9 @@ dependencies {
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.content.negotiation)
 
+    // Outbound email (password reset codes)
+    implementation(libs.angus.mail)
+
     // Persistence (Postgres via Exposed)
     implementation(libs.exposed.core)
     implementation(libs.exposed.jdbc)
