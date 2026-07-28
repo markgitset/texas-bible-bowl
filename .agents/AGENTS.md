@@ -76,13 +76,15 @@ build with "Lock file was changed" — run `./gradlew kotlinUpgradeYarnLock` and
 Top-level destinations (`Routes.kt` per app): the Compose app has four — study, quiz,
 questions, event — where the Study tab IS the Study & Practice hub (DownloadsScreen took over
 from the deleted StudyHubScreen; `downloads` survives as a deep-link alias route rendering the
-same hub); the web app consolidated 2026-07 onto ONE study destination —
-`#study`, the Study & Practice hub (DownloadsScreen: per-subject groups holding downloads AND
-links to the interactive tools; scroll chips for wayfinding). The navbar's single yellow
-"Study & Practice" button is the only study entry (no dropdown/CTA duplicates); quiz,
-questions, and the browsers are reached from the hub's groups and carry Home › Study &
+same hub); the web app's study area (2026-07) is `#study`, the Study & Practice overview
+(a card grid like the site's Event overview, "Start here" on The Text) plus one page per
+study-focus section at `#study/<slug>` (DownloadsScreen renders both; StudySection in
+Routes.kt lists the sections). The navbar's "Study & Practice" entry is a dropdown like
+Event/Scholarships/About whose children are the section pages — keep hugo.toml's menu
+children, StudySection, and sitemap.html's hand-written study list in sync. Quiz,
+questions, and the browsers are reached from the section pages and carry Home › Study &
 Practice breadcrumbs. `#downloads` and unknown hashes redirect to `#study`; the
-`/study-resources/*` Hugo pages are redirects into the hub. The event tab was removed from
+`/study-resources/*` Hugo pages are redirects into the app. The event tab was removed from
 `:web` 2026-07 because the Hugo site already shows season info (the Android app has no site
 around it, so its Event tab stays). Both also have signin, account, gated admin routes, and the full
 registration/event-ops route set (`event/register`, `event/grading`, `event/standings`,

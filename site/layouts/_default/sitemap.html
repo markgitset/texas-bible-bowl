@@ -17,8 +17,9 @@
       <h2 class="h5 sitemap-section"><a href="{{ $.Site.BaseURL }}">Main Pages</a></h2>
       <ul class="list-unstyled small">
         {{ range .ByTitle }}
-        {{/* Redirect stubs (moved pages) would list several links that bounce to one place. */}}
-        {{ if and (ne .RelPermalink $.RelPermalink) (ne .RelPermalink "/search/") (ne .Layout "redirect") }}
+        {{/* Redirect stubs (moved pages) would list several links that bounce to one place, and
+             the /app/ shell already heads the hand-written Study & Practice column below. */}}
+        {{ if and (ne .RelPermalink $.RelPermalink) (ne .RelPermalink "/search/") (ne .Layout "redirect") (ne .Layout "app-shell") }}
         <li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>
         {{ end }}
         {{ end }}
@@ -29,6 +30,24 @@
     {{- /* Each content section and its pages */ -}}
     {{ range .Site.Sections.ByWeight }}
     <div class="col-md-6 col-lg-4">
+      {{ if eq .Section "study-resources" }}
+      {{- /* The Study & Practice pages live in the app (hash routes), not in Hugo, so this
+             section (whose Hugo pages are just redirects into the app) is listed by hand.
+             Keep in sync with the nav menu children (hugo.toml) and the app's StudySection
+             enum (web/.../Routes.kt). */ -}}
+      <h2 class="h5 sitemap-section"><a href="{{ $.Site.BaseURL }}app/#study">Study &amp; Practice</a></h2>
+      <ul class="list-unstyled small">
+        <li><a href="{{ $.Site.BaseURL }}app/#study/the-text">The Text</a></li>
+        <li><a href="{{ $.Site.BaseURL }}app/#study/general-knowledge">General Knowledge</a></li>
+        <li><a href="{{ $.Site.BaseURL }}app/#study/chapter-headings">Chapter Headings</a></li>
+        <li><a href="{{ $.Site.BaseURL }}app/#study/unique-words">Unique Words</a></li>
+        <li><a href="{{ $.Site.BaseURL }}app/#study/practice-tests">Practice Tests</a></li>
+        <li><a href="{{ $.Site.BaseURL }}app/#study/reference-documents">Reference Documents</a></li>
+        <li><a href="{{ $.Site.BaseURL }}app/#study/data-source-files">Data &amp; Source Files</a></li>
+        <li><a href="{{ $.Site.BaseURL }}app/#quiz">Quiz Me</a></li>
+        <li><a href="{{ $.Site.BaseURL }}app/#questions">Community Questions</a></li>
+      </ul>
+      {{ else }}
       <h2 class="h5 sitemap-section"><a href="{{ .RelPermalink }}">{{ .Title }}</a></h2>
       {{ with where .RegularPages "Layout" "ne" "redirect" }}
       <ul class="list-unstyled small">
@@ -36,6 +55,7 @@
         <li><a href="{{ .RelPermalink }}">{{ .Title }}</a></li>
         {{ end }}
       </ul>
+      {{ end }}
       {{ end }}
     </div>
     {{ end }}

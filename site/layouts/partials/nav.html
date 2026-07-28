@@ -18,29 +18,27 @@
                (the /app/ shell); the app's Shell also re-toggles these classes per hash route. */}}
           {{ $active := or ($.IsMenuCurrent "main" .) ($.HasMenuCurrent "main" .) (eq ($.Param "menuActive") .Name) }}
           {{ if .HasChildren }}
+            {{/* data-route lets the app re-toggle active per hash route: a hash-URL parent (the
+                 Study & Practice dropdown into /app/) lights for its whole route family; on
+                 dropdown items the app matches the hash exactly (see Shell.updateNav). */}}
+            {{ $parentParts := split .URL "#" }}
+            {{ $parentHash := cond (gt (len $parentParts) 1) (index $parentParts 1) "" }}
             <li class="nav-item dropdown">
               <a class="nav-link dropdown-toggle{{ if $active }} active{{ end }}" href="{{ .URL }}"
                  role="button" data-bs-toggle="dropdown" aria-expanded="false"
+                 {{ with $parentHash }}data-route="{{ . }}"{{ end }}
                  {{ if $active }}aria-current="page"{{ end }}>
                 {{ .Name }}
               </a>
               <ul class="dropdown-menu dropdown-menu-end">
-                <li><a class="dropdown-item" href="{{ .URL }}">{{ .Name }} overview</a></li>
+                <li><a class="dropdown-item" {{ with $parentHash }}data-route="{{ . }}"{{ end }} href="{{ .URL }}">{{ .Name }} overview</a></li>
                 <li><hr class="dropdown-divider"></li>
                 {{ range .Children }}
-                  {{/* data-route lets the app highlight the item matching the current hash. */}}
                   {{ $parts := split .URL "#" }}
                   {{ $hash := cond (gt (len $parts) 1) (index $parts 1) "" }}
                   <li><a class="dropdown-item" {{ with $hash }}data-route="{{ . }}"{{ end }} href="{{ .URL }}">{{ .Name }}</a></li>
                 {{ end }}
               </ul>
-            </li>
-          {{ else if eq .Name "Study & Practice" }}
-            {{/* An ordinary nav link like the others; data-route lets the app mark it active on
-                 study-family hashes (it points into the /app/ shell, not a static page). */}}
-            <li class="nav-item">
-              <a class="nav-link{{ if $active }} active{{ end }}" data-route="study" href="{{ .URL }}"
-                 {{ if $active }}aria-current="page"{{ end }}>{{ .Name }}</a>
             </li>
           {{ else if eq .Name "Donate" }}
             <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">

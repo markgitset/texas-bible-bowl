@@ -1,8 +1,8 @@
 package net.markdrew.biblebowl.web.screens
 
-import kotlinx.browser.document
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.web.Session
+import net.markdrew.biblebowl.web.StudySection
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.clear
 import net.markdrew.biblebowl.web.onClick
@@ -45,24 +45,18 @@ private data class StudyTextChoices(
 )
 
 /**
- * The Study & Practice hub (`#study`) — the single destination for every study resource, grouped by
- * study focus (The Text, General Knowledge, Chapter Headings, Unique Words, Practice Tests, Reference
- * Documents) with a separate creators' commons (Data & Source Files) below. Each group holds its
- * download cards (one click to a sensible default, options behind "Customize") AND links to its
- * interactive tools (quiz, browsers, community questions), so nothing about a subject lives anywhere
- * else. A chip row up top scrolls to each group. Public.
+ * The Study & Practice pages: the overview (`#study`) is a card grid — one card per study-focus
+ * section, "Start here" on The Text — matching the site's section overview pages (Event etc.);
+ * each section (`#study/<slug>`, also a navbar dropdown item) is its own page holding that
+ * subject's download cards (one click to a sensible default, options behind "Customize") AND
+ * links to its interactive tools (quiz, browsers, community questions), so nothing about a
+ * subject lives anywhere else. Public.
  *
  * Every download is a plain link to the backend (the generate endpoints are public and send
  * Content-Disposition: attachment), opened in a new tab so a generation error shows its message
  * there instead of navigating the app away; on success the tab closes into a normal download.
  */
 object DownloadsScreen {
-
-    /** The group titles in page order — drives both the section headers and the scroll chips. */
-    private val GROUPS = listOf(
-        "The Text", "General Knowledge", "Chapter Headings", "Unique Words",
-        "Practice Tests", "Reference Documents", "Data & Source Files",
-    )
 
     // Sticky for the whole page session, deliberately outliving route changes. Chapter scope is
     // per card group: each customize panel's chips affect only the cards that panel belongs to.
@@ -79,35 +73,97 @@ object DownloadsScreen {
     private var exportRound: Round? = null
 
     private lateinit var root: HTMLElement
+    private var section: StudySection? = null // null = the overview card grid
 
-    fun render(container: HTMLElement) {
+    fun render(container: HTMLElement, section: StudySection? = null) {
         root = container
+        this.section = section
         rerender()
     }
 
     private fun rerender() {
         root.clear()
-        val season = Session.season
+        when (val current = section) {
+            null -> renderOverview()
+            else -> renderSection(current)
+        }
+    }
 
+    /**
+     * The `#study` overview — one card per section with "Start here" on The Text, using the same
+     * markup as the site's section overview pages (layouts/_default/list.html) so the two look alike.
+     */
+    private fun renderOverview() {
         root.child("h1", "page-title", "Study & Practice")
         root.child(
-            "p", "text-muted",
-            "Everything you need to prepare for ${season.eventScripture}, organized by what you're " +
-                "studying. Every resource is free — no sign-in needed.",
+            "p", "text-muted mb-4",
+            "Everything you need to prepare for ${Session.season.eventScripture}, organized by what " +
+                "you're studying. Every resource is free — no sign-in needed.",
         )
-        // In-page wayfinding: one chip per group; buttons (not #-links) so the router isn't involved.
-        root.child("div", "d-flex flex-wrap gap-1 mb-4") {
-            GROUPS.forEach { title ->
-                child("button", "btn btn-outline-primary btn-sm rounded-pill", title) {
-                    setAttribute("type", "button")
-                    onClick { document.getElementById(groupId(title))?.scrollIntoView() }
+        root.child("div", "row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4") {
+            StudySection.entries.forEach { sec ->
+                val start = sec == StudySection.TEXT
+                child("div", "col") {
+                    child("div", "card h-100 border-0 shadow-sm section-card${if (start) " start-here-card" else ""}") {
+                        child("div", "card-body") {
+                            if (start) {
+                                child("span", "start-here-badge") {
+                                    child("i", "bi bi-arrow-right-circle-fill")
+                                    append(" Start here")
+                                }
+                            }
+                            child("h5", "card-title") {
+                                child("a", "text-decoration-none stretched-link text-dark", sec.title) {
+                                    setAttribute("href", "#${sec.route}")
+                                }
+                            }
+                            child("p", "card-text text-muted small", blurb(sec))
+                        }
+                    }
                 }
             }
         }
+    }
 
-        // Studier resources are grouped by STUDY FOCUS (the subject you're drilling), not by format.
-        // Each group carries its downloads AND its interactive tools, so a subject has one home.
-        groupHeader("The Text")
+    /** One-sentence description of [section] — its overview card and the intro line atop its page. */
+    private fun blurb(section: StudySection): String {
+        val scripture = Session.season.eventScripture
+        return when (section) {
+            StudySection.TEXT ->
+                "The complete text of $scripture — the highlighted study PDF, plus places to read or listen online."
+            StudySection.GENERAL ->
+                "The official study guide and question flashcards, plus the interactive quiz and the " +
+                    "community question bank."
+            StudySection.HEADINGS ->
+                "Every ESV section heading (Round 5 material) — flashcards, a browser, and self-check mode."
+            StudySection.UNIQUE_WORDS ->
+                "Words that appear only once in $scripture — flashcards and a printable index."
+            StudySection.PRACTICE_TESTS ->
+                "Printable practice tests for Rounds 1–5, built like the real thing."
+            StudySection.REFERENCE ->
+                "Printable indices — names, numbers, men, women, places, and a full concordance."
+            StudySection.DATA ->
+                "For coaches and question writers — reusable source files for building your own study material."
+        }
+    }
+
+    /** A section's own page: title, intro, then that subject's download cards and interactive tools. */
+    private fun renderSection(section: StudySection) {
+        root.child("h1", "page-title", section.title)
+        root.child("p", "text-muted", blurb(section))
+        when (section) {
+            StudySection.TEXT -> textCards()
+            StudySection.GENERAL -> generalKnowledgeCards()
+            StudySection.HEADINGS -> headingsCards()
+            StudySection.UNIQUE_WORDS -> uniqueWordsCards()
+            StudySection.PRACTICE_TESTS -> practiceTestCards()
+            StudySection.REFERENCE -> referenceCards()
+            StudySection.DATA -> dataCards()
+        }
+    }
+
+    private fun textCards() {
+        val season = Session.season
         downloadCard(
             title = "Highlighted study text",
             subtitle = "The full text of ${season.eventScripture} with names, numbers, and more " +
@@ -131,8 +187,10 @@ object DownloadsScreen {
             ),
             newTab = true,
         )
+    }
 
-        groupHeader("General Knowledge")
+    private fun generalKnowledgeCards() {
+        val season = Session.season
         downloadCard(
             title = "Study guide",
             subtitle = "The official multiple-choice study guide for ${season.eventScripture} — every chapter's " +
@@ -167,8 +225,9 @@ object DownloadsScreen {
             subtitle = "Browse the community question bank, vote for the best questions, and submit your own.",
             links = listOf("Browse questions" to "#questions"),
         )
+    }
 
-        groupHeader("Chapter Headings")
+    private fun headingsCards() {
         downloadCard(
             title = "Chapter-heading flashcards",
             subtitle = "One card per ESV section heading (Round 5 material)." +
@@ -182,8 +241,10 @@ object DownloadsScreen {
                 "interactive twin of the flashcards. Quiz Me can also drill headings.",
             links = listOf("Open browser" to "#study/headings", "Quiz headings" to "#quiz"),
         )
+    }
 
-        groupHeader("Unique Words")
+    private fun uniqueWordsCards() {
+        val season = Session.season
         downloadCard(
             title = "Unique-word flashcards",
             subtitle = "One card per word that appears only once in ${season.eventScripture} — the word up " +
@@ -196,8 +257,9 @@ object DownloadsScreen {
                 "in order of appearance.",
             href = generateUrl("/generate/unique-words-index.pdf"),
         )
+    }
 
-        groupHeader("Practice Tests")
+    private fun practiceTestCards() {
         // R1–R5 only: the Power Round has no generator or question bank behind it.
         Round.entries.filter { it.number in 1..5 }.forEach { round ->
             val roundCustomized =
@@ -210,8 +272,10 @@ object DownloadsScreen {
                 customize = Customize.PracticeTest(round),
             )
         }
+    }
 
-        groupHeader("Reference Documents")
+    private fun referenceCards() {
+        val season = Session.season
         downloadCard(
             title = "Names index",
             subtitle = "Every proper name in ${season.eventScripture} with its verses — alphabetical and by frequency.",
@@ -247,12 +311,10 @@ object DownloadsScreen {
             subtitle = "Search and filter the names and numbers indices online — the interactive twin of the PDFs.",
             links = listOf("Open browser" to "#study/indices"),
         )
+    }
 
-        // Separate "commons" for a different audience — builders, not studiers (docs/study-materials-organization.md).
-        commonsHeader(
-            "Data & Source Files",
-            "For coaches and question writers — reusable source files for building your own study material.",
-        )
+    // The creators' commons — a different audience: builders, not studiers (docs/study-materials-organization.md).
+    private fun dataCards() {
         val exportCustomized = exportHeadings || exportRound != null
         downloadCard(
             title = "Kahoot spreadsheet",
@@ -318,20 +380,6 @@ object DownloadsScreen {
     )
 
     // --- rendering ---
-
-    /** Stable element id for a group title, targeted by the scroll chips (e.g. "Unique Words" → "unique-words"). */
-    private fun groupId(title: String): String = title.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-
-    private fun groupHeader(title: String) {
-        root.child("h2", "h5 fw-bold mt-4", title) { setAttribute("id", groupId(title)) }
-    }
-
-    /** A study-focus group's twin for the creators' commons: a rule + intro sets it apart from the studier groups above. */
-    private fun commonsHeader(title: String, intro: String) {
-        root.child("hr", "mt-5")
-        root.child("h2", "h5 fw-bold", title) { setAttribute("id", groupId(title)) }
-        root.child("p", "text-muted small", intro)
-    }
 
     /**
      * A card whose actions are links rather than downloads: in-app tools (hash routes) or, with
