@@ -29,13 +29,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.Division
+import net.markdrew.biblebowl.api.ForgotPasswordRequest
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
+import net.markdrew.biblebowl.api.ResetPasswordRequest
 import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.api.UserDto
@@ -43,6 +45,8 @@ import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.api.schoolYear
 import net.markdrew.biblebowl.client.ApiException
 import net.markdrew.biblebowl.client.TbbApi
+
+private enum class AuthMode { SIGN_IN, REGISTER, FORGOT, RESET }
 
 /** [gateNotice] is set when this screen renders in place of a permission-guarded route. */
 @Composable
@@ -84,39 +88,83 @@ private fun Brand() {
     )
 }
 
+/**
+ * ApiException carries the server's human-readable reason; anything else means the request never
+ * got an answer (offline, cold start, DNS).
+ */
+private fun errorMessage(e: Throwable): String =
+    (e as? ApiException)?.message ?: "Couldn't reach the server — check your connection and try again."
+
 @Composable
 private fun AuthCard(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
-    var registering by remember { mutableStateOf(false) }
+    var mode by remember { mutableStateOf(AuthMode.SIGN_IN) }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
     var adult by remember { mutableStateOf(false) }
     var birthdate by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val season = LocalSeason.current
+    val registering = mode == AuthMode.REGISTER
+
+    fun switchMode(target: AuthMode) {
+        mode = target
+        error = null
+        code = ""
+        password = ""
+    }
 
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(
-                if (registering) "Create your account" else "Welcome back",
+                when (mode) {
+                    AuthMode.SIGN_IN -> "Welcome back"
+                    AuthMode.REGISTER -> "Create your account"
+                    AuthMode.FORGOT -> "Reset your password"
+                    AuthMode.RESET -> "Enter your reset code"
+                },
                 style = MaterialTheme.typography.titleLarge,
             )
+            when (mode) {
+                AuthMode.FORGOT -> Text(
+                    "Enter your account email and we'll send you a 6-digit reset code.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                AuthMode.RESET -> Text(
+                    "If $email has an account, we emailed it a 6-digit code. Enter the code within 15 minutes.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                else -> {}
+            }
             OutlinedTextField(
                 value = email, onValueChange = { email = it },
                 label = { Text("Email") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
             )
-            OutlinedTextField(
-                value = password, onValueChange = { password = it },
-                label = { Text("Password") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                supportingText = if (registering) {
-                    { Text("At least 8 characters.") }
-                } else null,
-            )
+            if (mode == AuthMode.RESET) {
+                OutlinedTextField(
+                    value = code, onValueChange = { code = it.trim() },
+                    label = { Text("Reset code") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                )
+            }
+            if (mode != AuthMode.FORGOT) {
+                OutlinedTextField(
+                    value = password, onValueChange = { password = it },
+                    label = { Text(if (mode == AuthMode.RESET) "New password" else "Password") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    supportingText = if (registering || mode == AuthMode.RESET) {
+                        { Text("At least 8 characters.") }
+                    } else null,
+                )
+            }
             if (registering) {
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
@@ -143,44 +191,91 @@ private fun AuthCard(api: TbbApi, onSignedIn: (UserDto) -> Unit) {
                 }
             }
 
+            val ready = when (mode) {
+                // The 8-char minimum is a registration rule; on sign-in the server is the judge.
+                AuthMode.SIGN_IN -> email.isNotBlank() && password.isNotEmpty()
+                AuthMode.REGISTER -> email.isNotBlank() && password.length >= 8 && name.isNotBlank() &&
+                    (adult || isValidBirthdate(birthdate))
+                AuthMode.FORGOT -> email.isNotBlank()
+                AuthMode.RESET -> email.isNotBlank() && code.length == 6 && password.length >= 8
+            }
             Button(
                 onClick = {
                     busy = true; error = null
                     scope.launch {
                         try {
-                            val resp = if (registering)
-                                api.register(
-                                    RegisterRequest(
-                                        email.trim(), password, name.trim(),
-                                        birthdate = birthdate.takeIf { it.isNotBlank() }?.takeUnless { adult },
-                                        adult = adult,
+                            when (mode) {
+                                AuthMode.SIGN_IN ->
+                                    onSignedIn(api.login(LoginRequest(email.trim(), password)).user)
+                                AuthMode.REGISTER -> {
+                                    val resp = api.register(
+                                        RegisterRequest(
+                                            email.trim(), password, name.trim(),
+                                            birthdate = birthdate.takeIf { it.isNotBlank() }?.takeUnless { adult },
+                                            adult = adult,
+                                        )
                                     )
-                                )
-                            else
-                                api.login(LoginRequest(email.trim(), password))
-                            onSignedIn(resp.user)
+                                    onSignedIn(resp.user)
+                                }
+                                AuthMode.FORGOT -> {
+                                    api.forgotPassword(ForgotPasswordRequest(email.trim()))
+                                    switchMode(AuthMode.RESET)
+                                }
+                                AuthMode.RESET -> {
+                                    val resp = api.resetPassword(
+                                        ResetPasswordRequest(email.trim(), code, password)
+                                    )
+                                    onSignedIn(resp.user)
+                                }
+                            }
                         } catch (e: Throwable) {
-                            // ApiException carries the server's human-readable reason; anything else
-                            // means the request never got an answer (offline, cold start, DNS).
-                            error = (e as? ApiException)?.message
-                                ?: "Couldn't reach the server — check your connection and try again."
+                            error = errorMessage(e)
                         } finally {
                             busy = false
                         }
                     }
                 },
-                // The 8-char minimum is a registration rule; on sign-in the server is the judge.
-                enabled = !busy && email.isNotBlank() && password.isNotEmpty() &&
-                    (!registering ||
-                        (password.length >= 8 && name.isNotBlank() && (adult || isValidBirthdate(birthdate)))),
+                enabled = !busy && ready,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 if (busy) CircularProgressIndicator(Modifier.height(18.dp))
-                else Text(if (registering) "Sign up" else "Sign in")
+                else Text(
+                    when (mode) {
+                        AuthMode.SIGN_IN -> "Sign in"
+                        AuthMode.REGISTER -> "Sign up"
+                        AuthMode.FORGOT -> "Email me a code"
+                        AuthMode.RESET -> "Reset password"
+                    }
+                )
             }
 
-            TextButton(onClick = { registering = !registering }, modifier = Modifier.fillMaxWidth()) {
-                Text(if (registering) "Have an account? Sign in" else "New here? Create an account")
+            when (mode) {
+                AuthMode.SIGN_IN -> {
+                    TextButton(onClick = { switchMode(AuthMode.FORGOT) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Forgot your password?")
+                    }
+                    TextButton(onClick = { switchMode(AuthMode.REGISTER) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("New here? Create an account")
+                    }
+                }
+                AuthMode.REGISTER -> TextButton(
+                    onClick = { switchMode(AuthMode.SIGN_IN) }, modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Have an account? Sign in")
+                }
+                AuthMode.FORGOT -> TextButton(
+                    onClick = { switchMode(AuthMode.SIGN_IN) }, modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Back to sign in")
+                }
+                AuthMode.RESET -> {
+                    TextButton(onClick = { switchMode(AuthMode.FORGOT) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Didn't get a code? Send a new one")
+                    }
+                    TextButton(onClick = { switchMode(AuthMode.SIGN_IN) }, modifier = Modifier.fillMaxWidth()) {
+                        Text("Back to sign in")
+                    }
+                }
             }
 
             error?.let {

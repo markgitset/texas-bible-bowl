@@ -24,6 +24,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.launch
 import java.nio.file.Path
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
@@ -40,6 +41,7 @@ import net.markdrew.biblebowl.server.data.InMemoryHousingRepository
 import net.markdrew.biblebowl.server.data.InMemoryTribeRepository
 import net.markdrew.biblebowl.server.data.InMemoryScoreRepository
 import net.markdrew.biblebowl.server.data.InMemorySeasonRepository
+import net.markdrew.biblebowl.server.data.InMemoryPasswordResetRepository
 import net.markdrew.biblebowl.server.data.InMemoryTesterIdRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.data.PostgresCongregationRepository
@@ -49,6 +51,8 @@ import net.markdrew.biblebowl.server.data.PostgresQuestionRepository
 import net.markdrew.biblebowl.server.data.PostgresRegistrationRepository
 import net.markdrew.biblebowl.server.data.PostgresScoreRepository
 import net.markdrew.biblebowl.server.data.PostgresSeasonRepository
+import net.markdrew.biblebowl.server.data.PasswordResetRepository
+import net.markdrew.biblebowl.server.data.PostgresPasswordResetRepository
 import net.markdrew.biblebowl.server.data.PostgresTesterIdRepository
 import net.markdrew.biblebowl.server.data.PostgresUserRepository
 import net.markdrew.biblebowl.server.data.QuestionRepository
@@ -60,6 +64,10 @@ import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.esv.EsvPassageService
 import net.markdrew.biblebowl.server.esv.FileEsvCache
 import net.markdrew.biblebowl.server.esv.PostgresEsvCache
+import net.markdrew.biblebowl.server.email.EmailService
+import net.markdrew.biblebowl.server.email.LogOnlyEmailService
+import net.markdrew.biblebowl.server.email.emailServiceFromEnv
+import net.markdrew.biblebowl.server.routes.AUTH_RATE_LIMIT
 import net.markdrew.biblebowl.server.routes.GENERATE_RATE_LIMIT
 import net.markdrew.biblebowl.server.routes.adminRegistrationRoutes
 import net.markdrew.biblebowl.server.routes.authRoutes
@@ -98,6 +106,7 @@ fun main() {
     val housing = db?.let(::PostgresHousingRepository) ?: InMemoryHousingRepository()
     val tribes = db?.let(::PostgresTribeRepository) ?: InMemoryTribeRepository()
     val testerIds = db?.let(::PostgresTesterIdRepository) ?: InMemoryTesterIdRepository()
+    val resets = db?.let(::PostgresPasswordResetRepository) ?: InMemoryPasswordResetRepository()
     // Prod uses the Postgres cache; local dev (no DATABASE_URL) uses a persisted on-disk cache so repeated
     // runs never re-hit the ESV API — only a first run (cache miss) or ESV_CACHE_REFRESH re-fetches. It
     // lives under the user's home (~/.cache/texas-bible-bowl/esv) so it survives git cleans and fresh clones.
@@ -121,6 +130,8 @@ fun main() {
             housing = housing,
             tribes = tribes,
             testerIds = testerIds,
+            resets = resets,
+            email = emailServiceFromEnv(),
         )
     }.start(wait = true)
 }
@@ -143,6 +154,8 @@ fun Application.module(
     housing: HousingRepository = InMemoryHousingRepository(),
     tribes: TribeRepository = InMemoryTribeRepository(),
     testerIds: TesterIdRepository = InMemoryTesterIdRepository(),
+    resets: PasswordResetRepository = InMemoryPasswordResetRepository(),
+    email: EmailService = LogOnlyEmailService(),
 ) {
     seedAdminFromEnv(users)
 
@@ -183,16 +196,23 @@ fun Application.module(
         }
     }
     install(RateLimit) {
-        // Mild per-client limit on the public /generate/* endpoints (each request runs Typst, which is
-        // CPU-bound). Keyed on the original client IP: Fly's proxy terminates the connection, so the
+        // Both limits key on the original client IP: Fly's proxy terminates the connection, so the
         // socket address alone would lump all users into one bucket.
+        val clientIp = { call: io.ktor.server.application.ApplicationCall ->
+            call.request.headers["Fly-Client-IP"]
+                ?: call.request.headers[HttpHeaders.XForwardedFor]?.substringBefore(',')?.trim()
+                ?: call.request.origin.remoteHost
+        }
+        // Mild per-client limit on the public /generate/* endpoints (each request runs Typst, which is
+        // CPU-bound).
         register(GENERATE_RATE_LIMIT) {
             rateLimiter(limit = 10, refillPeriod = 60.seconds)
-            requestKey { call ->
-                call.request.headers["Fly-Client-IP"]
-                    ?: call.request.headers[HttpHeaders.XForwardedFor]?.substringBefore(',')?.trim()
-                    ?: call.request.origin.remoteHost
-            }
+            requestKey { call -> clientIp(call) }
+        }
+        // /auth/forgot-password sends an outbound email per request.
+        register(AUTH_RATE_LIMIT) {
+            rateLimiter(limit = 5, refillPeriod = 15.minutes)
+            requestKey { call -> clientIp(call) }
         }
     }
 
@@ -202,7 +222,7 @@ fun Application.module(
                 mapOf("status" to "ok", "service" to "texas-bible-bowl", "season" to seasons.current().eventScripture),
             )
         }
-        authRoutes(users, jwt)
+        authRoutes(users, jwt, resets, email)
         questionRoutes(users, questions)
         bibleRoutes(esv)
         studyRoutes(study)
