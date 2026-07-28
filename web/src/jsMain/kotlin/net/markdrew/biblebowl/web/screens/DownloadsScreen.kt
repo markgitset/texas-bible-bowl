@@ -27,9 +27,9 @@ private sealed interface Customize {
 
 /** How chapter titles render: inline with the first verse, or as standalone headings (± divider lines). */
 private enum class ChapterStyle(val label: String, val headings: Boolean, val lines: Boolean) {
-    INLINE("Inline", headings = false, lines = false),
-    HEADING("Heading", headings = true, lines = false),
-    HEADING_LINES("Heading with lines", headings = true, lines = true),
+    HEADING_LINES("Heading with divider line", headings = true, lines = true),
+    HEADING("Heading without divider line", headings = true, lines = false),
+    INLINE("Same line as first verse", headings = false, lines = false),
 }
 
 /** Study-text options, hoisted so choices stick for the whole visit (§7.6 "remember everything cheap"). */
@@ -38,10 +38,10 @@ private data class StudyTextChoices(
     val twoColumns: Boolean = false,
     val justified: Boolean = false,
     val chapterBreaksPage: Boolean = false,
-    val chapterStyle: ChapterStyle = ChapterStyle.INLINE,
+    val chapterStyle: ChapterStyle = ChapterStyle.HEADING_LINES,
     val verseOnNewLine: Boolean = false,
     val highlight: Boolean = true,
-    val underlineUniqueWords: Boolean = false,
+    val underlineUniqueWords: Boolean = true,
 )
 
 /**
@@ -165,9 +165,8 @@ object DownloadsScreen {
     private fun textCards() {
         val season = Session.season
         downloadCard(
-            title = "Highlighted study text",
-            subtitle = "The full text of ${season.eventScripture} with names, numbers, and more " +
-                "highlighted by category — the flagship study document." +
+            title = "Printable study text",
+            subtitle = "Fully customizable text of ${season.eventScripture} with support for highlighting by category, underlining one-time words, and more! " +
                 customizedNote(textChoices != StudyTextChoices()),
             href = studyTextUrl(),
             customize = Customize.StudyText,
@@ -181,9 +180,9 @@ object DownloadsScreen {
             subtitle = "Read ${season.eventScripture} in your browser or play the audio narration — " +
                 "opens the publisher's site in a new tab.",
             links = listOf(
-                "Read on ESV.org" to "https://www.esv.org/${encodeURIComponent(book)}/",
-                "YouVersion" to "https://www.bible.com/bible/59/${season.bookCode}.1.ESV",
-                "Listen (audio)" to "https://www.biblegateway.com/audio/mclean/esv/${encodeURIComponent(book)}.1",
+                "esv.org" to "https://www.esv.org/${encodeURIComponent(season.bookCode)}/",
+                "blueletterbible.org" to "https://www.blueletterbible.org/esv/${encodeURIComponent(season.bookCode)}",
+                "biblegateway.com" to "https://www.biblegateway.com/passage/?version=ESV&search=${encodeURIComponent(season.bookCode)}",
             ),
             newTab = true,
         )
@@ -452,8 +451,18 @@ object DownloadsScreen {
         when (target) {
             Customize.StudyText -> {
                 child("p", "fw-semibold mb-1", "Font size")
-                chipRow(listOf(9, 10, 11, 12, 14).map { "$it pt" to it }, textChoices.fontSize) {
+                chipRow(listOf(9, 10, 11, 12, 13, 14, 15).map { "$it pt" to it }, textChoices.fontSize) {
                     textChoices = textChoices.copy(fontSize = it); rerender()
+                }
+                optionSwitch("Underline words that appear only once", textChoices.underlineUniqueWords) {
+                    textChoices = textChoices.copy(underlineUniqueWords = it); rerender()
+                }
+                optionSwitch("Highlight names & numbers by category", textChoices.highlight) {
+                    textChoices = textChoices.copy(highlight = it); rerender()
+                }
+                child("p", "fw-semibold mb-1", "Chapter titles")
+                chipRow(ChapterStyle.entries.map { it.label to it }, textChoices.chapterStyle) {
+                    textChoices = textChoices.copy(chapterStyle = it); rerender()
                 }
                 optionSwitch("Two columns", textChoices.twoColumns) {
                     textChoices = textChoices.copy(twoColumns = it); rerender()
@@ -461,22 +470,13 @@ object DownloadsScreen {
                 optionSwitch("Justified text", textChoices.justified) {
                     textChoices = textChoices.copy(justified = it); rerender()
                 }
-                optionSwitch("Each chapter starts a new page", textChoices.chapterBreaksPage) {
-                    textChoices = textChoices.copy(chapterBreaksPage = it); rerender()
-                }
-                optionSwitch("Each verse starts a new line", textChoices.verseOnNewLine) {
+                optionSwitch("Each verse starts on a new line", textChoices.verseOnNewLine) {
                     textChoices = textChoices.copy(verseOnNewLine = it); rerender()
                 }
-                child("p", "fw-semibold mb-1", "Chapter titles")
-                chipRow(ChapterStyle.entries.map { it.label to it }, textChoices.chapterStyle) {
-                    textChoices = textChoices.copy(chapterStyle = it); rerender()
-                }
-                optionSwitch("Highlight names & numbers by category", textChoices.highlight) {
-                    textChoices = textChoices.copy(highlight = it); rerender()
-                }
-                optionSwitch("Underline words that appear only once", textChoices.underlineUniqueWords) {
-                    textChoices = textChoices.copy(underlineUniqueWords = it); rerender()
-                }
+                /* This is not a legal option, so don't encourage it
+                optionSwitch("Each chapter starts a new page", textChoices.chapterBreaksPage) {
+                    textChoices = textChoices.copy(chapterBreaksPage = it); rerender()
+                }*/
             }
             Customize.QuestionFlashcards -> {
                 chapterScope(flashcardChapter) { flashcardChapter = it }
