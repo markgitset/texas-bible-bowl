@@ -270,11 +270,11 @@ private fun AppNavHost(
         }
         composable(Routes.QUESTIONS_NEW) {
             if (user != null && Permission.QUESTION_SUBMIT in user.permissions) ContributeScreen(api)
-            else AuthScreen(api, onSignedIn = onUserChange)
+            else AuthGate(api, user, onUserChange)
         }
         composable(Routes.QUESTIONS_MODERATE) {
             if (user != null && Permission.QUESTION_MODERATE in user.permissions) ModerateScreen(api)
-            else AuthScreen(api, onSignedIn = onUserChange)
+            else AuthGate(api, user, onUserChange)
         }
         // Legacy deep-link alias: the download center grew into the Study hub.
         composable(Routes.DOWNLOADS) { studyHub() }
@@ -296,28 +296,28 @@ private fun AppNavHost(
             // The server scope-checks every mutation regardless.
             FeatureGate(LocalSeason.current.registrationEnabled, user) {
                 if (user != null) RegisterScreen(api, user)
-                else AuthScreen(api, onSignedIn = onUserChange)
+                else AuthGate(api, user, onUserChange)
             }
         }
         composable(Routes.MY_SCORES) {
             FeatureGate(LocalSeason.current.gradingEnabled, user) {
                 // Sign-in only: the server scopes the response (owned entries + coached rosters).
                 if (user != null) MyScoresScreen(api)
-                else AuthScreen(api, onSignedIn = onUserChange)
+                else AuthGate(api, user, onUserChange)
             }
         }
         composable(Routes.GRADING) {
             FeatureGate(LocalSeason.current.gradingEnabled, user) {
                 if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_ENTER)) {
                     GradingScreen(api, user, onOpenStandings = { navController.navigate(Routes.STANDINGS) })
-                } else AuthScreen(api, onSignedIn = onUserChange)
+                } else AuthGate(api, user, onUserChange)
             }
         }
         composable(Routes.STANDINGS) {
             FeatureGate(LocalSeason.current.gradingEnabled, user) {
                 if (user != null && hasEventWidePermission(user.roles, Permission.SCORE_VIEW_ALL)) {
                     StandingsScreen(api, onOpenGrading = { navController.navigate(Routes.GRADING) })
-                } else AuthScreen(api, onSignedIn = onUserChange)
+                } else AuthGate(api, user, onUserChange)
             }
         }
         composable(Routes.SIGN_IN) {
@@ -343,7 +343,7 @@ private fun AppNavHost(
         composable(Routes.ADMIN_SEASON) {
             if (user != null && Permission.SEASON_MANAGE in user.permissions) {
                 AdminSeasonScreen(api, onSaved = onSeasonChange)
-            } else AuthScreen(api, onSignedIn = onUserChange)
+            } else AuthGate(api, user, onUserChange)
         }
         // Event-ops screens, gated exactly like the web shell: registration launch toggle
         // (admin preview included) + an event-wide grant; the server enforces both regardless.
@@ -355,28 +355,28 @@ private fun AppNavHost(
                         onOpenCounts = { navController.navigate(Routes.ADMIN_COUNTS) },
                         onOpenHousing = { navController.navigate(Routes.ADMIN_HOUSING) },
                     )
-                } else AuthScreen(api, onSignedIn = onUserChange)
+                } else AuthGate(api, user, onUserChange)
             }
         }
         composable(Routes.ADMIN_COUNTS) {
             FeatureGate(LocalSeason.current.registrationEnabled, user) {
                 if (user != null && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
                     AdminCountsScreen(api, onOpenDesk = { navController.navigate(Routes.ADMIN_REGISTRATIONS) })
-                } else AuthScreen(api, onSignedIn = onUserChange)
+                } else AuthGate(api, user, onUserChange)
             }
         }
         composable(Routes.ADMIN_HOUSING) {
             FeatureGate(LocalSeason.current.registrationEnabled, user) {
                 if (user != null && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
                     AdminHousingScreen(api, onOpenDesk = { navController.navigate(Routes.ADMIN_REGISTRATIONS) })
-                } else AuthScreen(api, onSignedIn = onUserChange)
+                } else AuthGate(api, user, onUserChange)
             }
         }
         composable(Routes.ADMIN_TRIBES) {
             FeatureGate(LocalSeason.current.registrationEnabled, user) {
                 if (user != null && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
                     AdminTribesScreen(api, onOpenDesk = { navController.navigate(Routes.ADMIN_REGISTRATIONS) })
-                } else AuthScreen(api, onSignedIn = onUserChange)
+                } else AuthGate(api, user, onUserChange)
             }
         }
         // Registrars prep tester IDs/nametags; graders need the ZipGrade export — either works.
@@ -386,25 +386,39 @@ private fun AppNavHost(
                     (hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE) ||
                         hasEventWidePermission(user.roles, Permission.SCORE_ENTER))
                 if (allowed) AdminTestersScreen(api)
-                else AuthScreen(api, onSignedIn = onUserChange)
+                else AuthGate(api, user, onUserChange)
             }
         }
         composable(Routes.ADMIN_USERS) {
             if (user != null && Permission.USER_MANAGE in user.permissions) {
                 AdminUsersScreen(api, currentUser = user, onUserChange = onUserChange)
-            } else AuthScreen(api, onSignedIn = onUserChange)
+            } else AuthGate(api, user, onUserChange)
         }
         composable(Routes.ADMIN_MERGE_PEOPLE) {
             FeatureGate(LocalSeason.current.registrationEnabled, user) {
                 if (user != null && hasEventWidePermission(user.roles, Permission.REGISTRATION_MANAGE)) {
                     AdminMergePeopleScreen(api)
-                } else AuthScreen(api, onSignedIn = onUserChange)
+                } else AuthGate(api, user, onUserChange)
             }
         }
     }
 
     // Runs after NavHost has set its graph (same subcomposition, effects in composition order).
     LaunchedEffect(navController) { onNavHostReady(navController) }
+}
+
+/**
+ * [AuthScreen] rendered in place of a permission-guarded route, with a notice saying why the
+ * destination didn't render — mirrors the web shell's gated() screens.
+ */
+@Composable
+private fun AuthGate(api: TbbApi, user: UserDto?, onUserChange: (UserDto?) -> Unit) {
+    AuthScreen(
+        api,
+        gateNotice = if (user == null) "Sign in to continue."
+            else "Your account doesn't have access to this page — sign in with an account that does.",
+        onSignedIn = onUserChange,
+    )
 }
 
 /**

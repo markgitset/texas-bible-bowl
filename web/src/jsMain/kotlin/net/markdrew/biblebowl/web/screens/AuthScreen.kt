@@ -7,6 +7,7 @@ import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.api.schoolYear
+import net.markdrew.biblebowl.client.ApiException
 import net.markdrew.biblebowl.web.Routes
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
@@ -19,21 +20,29 @@ import org.w3c.dom.HTMLInputElement
 
 /**
  * Sign up / sign in. Renders in two situations: at #signin (e.g. an anonymous vote redirect) and
- * inline as the gate for permission-guarded routes. On success the session updates; if we're at
- * #signin we go back to where the user came from, while a gated route simply re-renders into the
- * destination (the hash never changed).
+ * inline as the gate for permission-guarded routes ([gate] = true). On success the session updates;
+ * if we're at #signin we go back to where the user came from, while a gated route simply re-renders
+ * into the destination (the hash never changed).
  */
 object AuthScreen {
 
-    private var registering = true
+    private var registering = false
 
-    fun render(container: HTMLElement) {
+    fun render(container: HTMLElement, gate: Boolean = false) {
+        registering = false // each visit starts on sign-in; the toggle only lasts within the visit
         val season = Session.season
-        val box = container.child("div", "mx-auto", ) { setAttribute("style", "max-width: 460px;") }
+        val box = container.child("div", "mx-auto") { setAttribute("style", "max-width: 460px;") }
 
         box.child("div", "text-center mb-3") {
             child("h1", "fw-bold", "Texas Bible Bowl") { setAttribute("style", "color:var(--tbb-navy);") }
             child("p", "tbb-gold fw-semibold", "Study ${season.eventScripture} · ${season.schoolYear} Season")
+        }
+        if (gate) {
+            val notice =
+                if (Session.user != null) {
+                    "Your account doesn't have access to this page — sign in with an account that does."
+                } else "Sign in to continue."
+            box.child("p", "text-center text-muted mb-3", notice)
         }
 
         val card = box.child("div", "card section-card")
@@ -46,19 +55,24 @@ object AuthScreen {
         body.child("h5", "card-title mb-3", if (registering) "Create your account" else "Welcome back")
 
         val form = body.child("form")
-        fun field(label: String, type: String, autocomplete: String? = null): HTMLInputElement {
+        fun field(label: String, type: String, autocomplete: String? = null, help: String? = null): HTMLInputElement {
             lateinit var input: HTMLInputElement
             form.child("div", "mb-3") {
-                child("label", "form-label", label)
+                val id = "auth-" + label.lowercase().replace(' ', '-')
+                child("label", "form-label", label) { setAttribute("for", id) }
                 input = child("input", "form-control") as HTMLInputElement
                 input.type = type
+                input.id = id
                 autocomplete?.let { input.setAttribute("autocomplete", it) }
+                help?.let { child("div", "form-text", it) }
             }
             return input
         }
 
         val email = field("Email", "email", "email")
-        val password = field("Password", "password", if (registering) "new-password" else "current-password")
+        val password =
+            if (registering) field("Password", "password", "new-password", help = "At least 8 characters.")
+            else field("Password", "password", "current-password")
         var name: HTMLInputElement? = null
         var adult: HTMLInputElement? = null
         var birthdate: HTMLInputElement? = null
@@ -76,9 +90,10 @@ object AuthScreen {
                 }
             }
             birthdateRow = form.child("div", "mb-3") {
-                child("label", "form-label", "Birthdate")
+                child("label", "form-label", "Birthdate") { setAttribute("for", "auth-birthdate") }
                 birthdate = (child("input", "form-control") as HTMLInputElement).apply {
                     type = "date"
+                    id = "auth-birthdate"
                     setAttribute("autocomplete", "bday")
                 }
                 child("div", "form-text", "Used to place contestants in the right division each season.")
@@ -102,8 +117,9 @@ object AuthScreen {
                     ?: ""
             }
             val birthdateOk = isAdult || birthdate?.value?.let { isValidBirthdate(it) } == true
-            submit.disabled = email.value.isBlank() || password.value.length < 8 ||
-                (registering && (name?.value.isNullOrBlank() || !birthdateOk))
+            // The 8-char minimum is a registration rule; on sign-in the server is the judge.
+            submit.disabled = email.value.isBlank() || password.value.isEmpty() ||
+                (registering && (password.value.length < 8 || name?.value.isNullOrBlank() || !birthdateOk))
         }
         refresh()
         listOfNotNull(email, password, name, adult, birthdate).forEach { it.addEventListener("input", { refresh() }) }
@@ -111,6 +127,8 @@ object AuthScreen {
         form.addEventListener("submit", { event ->
             event.preventDefault()
             submit.disabled = true
+            val idleLabel = submit.textContent
+            submit.textContent = if (registering) "Signing up…" else "Signing in…"
             errorSlot.clear()
             Shell.scope.launch {
                 try {
@@ -132,7 +150,12 @@ object AuthScreen {
                     }
                     Session.signedIn(resp)
                 } catch (e: Throwable) {
-                    errorSlot.child("p", "text-danger mt-3 mb-0", "Error: ${e.message}")
+                    // ApiException carries the server's human-readable reason; anything else means
+                    // the request never got an answer (offline, cold start, DNS).
+                    val message = (e as? ApiException)?.message
+                        ?: "Couldn't reach the server — check your connection and try again."
+                    errorSlot.child("p", "text-danger mt-3 mb-0", message)
+                    submit.textContent = idleLabel
                     refresh()
                 }
             }
