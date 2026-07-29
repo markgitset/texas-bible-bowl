@@ -14,8 +14,7 @@ weight: 1
 
 ## Essay Requirements
 
-**Prompt:** Based on Joshua 21:45, describe ways you have personally experienced
-God's faithful promises, provision, or guidance.
+**Prompt:** {{< param tbbScholarshipEssayPrompt >}}
 
 | Requirement | Detail |
 |---|---|
