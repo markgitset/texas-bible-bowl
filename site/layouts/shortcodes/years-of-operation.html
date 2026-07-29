@@ -1,0 +1,8 @@
+{{- /*
+  Ordinal word for the current year of operation, counted from the 2010 founding
+  (2026 → "sixteenth"). Rendered at build time as the fallback; params.js recomputes it
+  from the browser's clock via the data-tbb-years-since span, so it also ticks over on
+  New Year's without waiting for a redeploy.
+  Usage: Now in its {{< years-of-operation >}} year of operation, ...
+*/ -}}
+<span data-tbb-years-since="2010">{{ partial "ordinal.html" (sub now.Year 2010) }}</span>

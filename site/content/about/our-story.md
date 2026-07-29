@@ -4,6 +4,9 @@ description: "The history and mission of Texas Bible Bowl, founded in 2010."
 weight: 1
 ---
 
+Now in its {{< years-of-operation >}} year of operation, Texas Bible Bowl continues to
+welcome new congregations and families while honoring the tradition that inspired it.
+
 ## Who We Are
 
 Texas Bible Bowl is a Bible knowledge competition program established in **2010** to keep
@@ -21,10 +24,3 @@ the country each year.
 1. **Instill a love for Scripture** among youth
 2. **Strengthen fellowship** within congregations
 3. **Inspire lifelong biblical study**
-
-## 2025 Milestone
-
-> **{{< scholarship-blurb >}}**
-
-Now in its sixteenth year of operation, Texas Bible Bowl continues to welcome new
-congregations and families while honoring the tradition that inspired it.

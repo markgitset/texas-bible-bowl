@@ -1,0 +1,22 @@
+{{- /*
+  Returns the English ordinal *word* for an integer (1 → "first", 16 → "sixteenth",
+  21 → "twenty-first"). Covers 1–99, which is all this site needs.
+  Usage: {{ partial "ordinal.html" 16 }}
+*/ -}}
+{{- $n := int . -}}
+{{- $under20 := slice "zeroth" "first" "second" "third" "fourth" "fifth" "sixth" "seventh" "eighth" "ninth" "tenth" "eleventh" "twelfth" "thirteenth" "fourteenth" "fifteenth" "sixteenth" "seventeenth" "eighteenth" "nineteenth" "twentieth" -}}
+{{- $tensCard := slice "" "" "twenty" "thirty" "forty" "fifty" "sixty" "seventy" "eighty" "ninety" -}}
+{{- $tensOrd := slice "" "" "twentieth" "thirtieth" "fortieth" "fiftieth" "sixtieth" "seventieth" "eightieth" "ninetieth" -}}
+{{- $word := "" -}}
+{{- if and (ge $n 0) (le $n 20) -}}
+  {{- $word = index $under20 $n -}}
+{{- else if lt $n 100 -}}
+  {{- $t := div $n 10 -}}
+  {{- $o := mod $n 10 -}}
+  {{- if eq $o 0 -}}
+    {{- $word = index $tensOrd $t -}}
+  {{- else -}}
+    {{- $word = printf "%s-%s" (index $tensCard $t) (index $under20 $o) -}}
+  {{- end -}}
+{{- end -}}
+{{- return $word -}}
