@@ -232,6 +232,26 @@ h1, .display-5 { font-weight: 700; }
   vertical-align: top;
 }
 .content-body table tr:nth-child(even) td { background-color: #f8f9fa; }
+/* Current season's row in the auto-rotating curriculum schedule (curriculum-schedule shortcode). */
+.content-body table.curriculum-table tr.curriculum-current td {
+  background-color: #fbf3dc;               /* soft gold wash, overrides the zebra stripe */
+  border-top: 2px solid var(--tbb-gold);
+  border-bottom: 2px solid var(--tbb-gold);
+  font-weight: 600;
+}
+.curriculum-tag {
+  display: inline-block;
+  margin-left: .4rem;
+  background-color: var(--tbb-gold);
+  color: #fff;
+  font-size: .68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  padding: 1px 8px;
+  border-radius: 20px;
+  vertical-align: middle;
+}
 .content-body blockquote {
   border-left: 4px solid var(--tbb-gold);
   padding-left: 1rem;
