@@ -45,6 +45,7 @@ import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.isGlobalAdmin
 import net.markdrew.biblebowl.app.navigation.Routes
+import net.markdrew.biblebowl.app.navigation.StudySection
 import net.markdrew.biblebowl.app.navigation.TopDestination
 import net.markdrew.biblebowl.app.navigation.topDestinationOf
 import net.markdrew.biblebowl.client.TbbApi
@@ -58,7 +59,8 @@ import net.markdrew.biblebowl.app.screens.AdminTribesScreen
 import net.markdrew.biblebowl.app.screens.AdminUsersScreen
 import net.markdrew.biblebowl.app.screens.AuthScreen
 import net.markdrew.biblebowl.app.screens.ContributeScreen
-import net.markdrew.biblebowl.app.screens.DownloadsScreen
+import net.markdrew.biblebowl.app.screens.StudyOverviewScreen
+import net.markdrew.biblebowl.app.screens.StudySectionScreen
 import net.markdrew.biblebowl.app.screens.EventScreen
 import net.markdrew.biblebowl.app.screens.GradingScreen
 import net.markdrew.biblebowl.app.screens.HeadingsScreen
@@ -242,12 +244,15 @@ private fun AppNavHost(
     // the user was (return-to via the back stack).
     val requireSignIn = { navController.navigate(Routes.SIGN_IN) { launchSingleTop = true } }
 
-    // The Study & Practice hub (the Study tab). Indices/headings are study sub-screens (plain
-    // pushes); quiz and questions are top-level destinations, so those hub shortcuts switch tabs
-    // like the nav bar does — pushing them inside the Study stack corrupts tab state save/restore.
-    val studyHub: @Composable () -> Unit = {
-        DownloadsScreen(
+    // The Study & Practice overview (the Study tab): a card per section, each opening its own
+    // screen (a plain push, so Back returns to the overview). A section screen's own shortcuts —
+    // indices/headings browsers are study sub-screens (plain pushes); quiz and questions are
+    // top-level destinations, so those shortcuts switch tabs like the nav bar does (pushing them
+    // inside the Study stack corrupts tab state save/restore).
+    val studySection: @Composable (StudySection) -> Unit = { section ->
+        StudySectionScreen(
             api,
+            section = section,
             onOpenIndices = { navController.navigate(Routes.STUDY_INDICES) },
             onOpenHeadings = { navController.navigate(Routes.STUDY_HEADINGS) },
             onOpenQuiz = { navController.navigateTopLevel(Routes.QUIZ) },
@@ -255,7 +260,12 @@ private fun AppNavHost(
         )
     }
     NavHost(navController, startDestination = Routes.STUDY) {
-        composable(Routes.STUDY) { studyHub() }
+        composable(Routes.STUDY) {
+            StudyOverviewScreen(onOpenSection = { navController.navigate(it.route) })
+        }
+        StudySection.entries.forEach { section ->
+            composable(section.route) { studySection(section) }
+        }
         composable(Routes.STUDY_INDICES) { IndexScreen(api) }
         composable(Routes.STUDY_HEADINGS) { HeadingsScreen(api) }
         composable(Routes.QUIZ) { QuizScreen(api) }
@@ -276,8 +286,10 @@ private fun AppNavHost(
             if (user != null && Permission.QUESTION_MODERATE in user.permissions) ModerateScreen(api)
             else AuthGate(api, user, onUserChange)
         }
-        // Legacy deep-link alias: the download center grew into the Study hub.
-        composable(Routes.DOWNLOADS) { studyHub() }
+        // Legacy deep-link alias: the download center grew into the Study overview.
+        composable(Routes.DOWNLOADS) {
+            StudyOverviewScreen(onOpenSection = { navController.navigate(it.route) })
+        }
         composable(Routes.EVENT) {
             EventScreen(
                 user = user,

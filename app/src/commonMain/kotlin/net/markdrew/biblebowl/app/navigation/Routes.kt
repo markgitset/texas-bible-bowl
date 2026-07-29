@@ -39,11 +39,29 @@ object Routes {
 }
 
 /**
+ * The Study & Practice sections — one screen per study focus at `study/<slug>`, reached from the
+ * Study tab's overview cards. Slugs (and thus route strings) are identical to the web app's
+ * StudySection (web/.../Routes.kt) so deep links mean the same thing on both platforms — keep
+ * the two enums in sync.
+ */
+enum class StudySection(val slug: String, val title: String) {
+    TEXT("the-text", "The Text"),
+    GENERAL("general-knowledge", "General Knowledge"),
+    HEADINGS("chapter-headings", "Chapter Headings"),
+    UNIQUE_WORDS("unique-words", "Unique Words"),
+    PRACTICE_TESTS("practice-tests", "Practice Tests"),
+    REFERENCE("reference-documents", "Reference Documents"),
+    DATA("data-source-files", "Data & Source Files");
+
+    val route: String get() = "${Routes.STUDY}/$slug"
+}
+
+/**
  * The four top-level destinations (§2.2). Identical for everyone — role-gated features live
  * *inside* destinations, never as extra tabs. Sized to fit an Android bottom bar exactly.
- * Study is the Study & Practice hub (downloads + interactive tools per study-focus group, matching
- * the web app's `#study`); the old Downloads tab merged into it, and `Routes.DOWNLOADS` survives
- * only as a deep-link alias for the hub.
+ * Study is the Study & Practice overview (one card per [StudySection], matching the web app's
+ * `#study`); each section is its own screen pushed on the Study stack. The old Downloads tab
+ * merged into Study, and `Routes.DOWNLOADS` survives only as a deep-link alias for the overview.
  */
 enum class TopDestination(val route: String, val label: String, val icon: ImageVector) {
     STUDY(Routes.STUDY, "Study", Icons.AutoMirrored.Filled.MenuBook),
