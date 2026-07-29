@@ -51,6 +51,73 @@
       var v = d[el.getAttribute("data-tbb-param")];
       if (v != null && el.textContent !== v) el.textContent = v;
     });
+    renderCurriculum(s);
+  }
+
+  // Re-render the Event > Curriculum schedule from the live eventYear, so an admin's season
+  // change rotates it with no rebuild and no stale flash. Mirrors the build-time
+  // `curriculum-schedule` shortcode (same rotation math + markup) — keep the two in sync. The
+  // shortcode leaves a #curriculum-schedule container and a #curriculum-data JSON config; on
+  // pages without them this is a no-op. When eventYear is unchanged the output matches the
+  // baked HTML, so there's nothing to flash.
+  function esc(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function schoolYearLabel(y) {
+    return y + "–" + String((y + 1) % 100).padStart(2, "0");
+  }
+  function renderCurriculum(s) {
+    var host = document.getElementById("curriculum-schedule");
+    var cfgEl = document.getElementById("curriculum-data");
+    if (!host || !cfgEl) return;
+    var eventYear = parseInt(s.eventYear, 10);
+    if (!eventYear) return;
+    var cfg;
+    try {
+      cfg = JSON.parse(cfgEl.textContent);
+    } catch (e) {
+      return;
+    }
+    var cycle = cfg.cycle || [];
+    var n = cycle.length;
+    if (!n) return;
+    var anchor = parseInt(cfg.anchorYear, 10);
+    var win = cfg.windowYears || 10;
+    var start = eventYear - 1; // school-year start
+    var mod = function (a) {
+      return (((a % n) + n) % n);
+    };
+    var rows = "";
+    for (var i = 0; i < win; i++) {
+      var yr = start + i;
+      var material = cycle[mod(yr - anchor)];
+      var cur = i === 0;
+      rows +=
+        "<tr" + (cur ? ' class="curriculum-current"' : "") + "><td>" +
+        schoolYearLabel(yr) +
+        (cur ? ' <span class="curriculum-tag">this year</span>' : "") +
+        "</td><td>" + esc(material) +
+        (material === cfg.restartsAt ? " <em>(cycle restarts)</em>" : "") +
+        "</td></tr>";
+    }
+    var html =
+      '<table class="curriculum-table"><thead><tr><th>Year</th><th>Study Material</th>' +
+      "</tr></thead><tbody>" + rows + "</tbody></table>";
+    var plans = cfg.studyPlans || {};
+    Object.keys(plans).sort().forEach(function (material) {
+      var plan = plans[material];
+      var idx = cycle.indexOf(material);
+      if (idx < 0) return;
+      var yr = start + mod(anchor + idx - start);
+      html += "<h2>" + esc(material) + " Study Plan (" + schoolYearLabel(yr) + ")</h2>";
+      if (plan.note) html += "<p><em>(" + esc(plan.note) + ")</em></p>";
+      html += "<ul>";
+      (plan.passages || []).forEach(function (p) {
+        html += "<li>" + esc(p) + "</li>";
+      });
+      html += "</ul>";
+    });
+    host.innerHTML = html;
   }
 
   try {
