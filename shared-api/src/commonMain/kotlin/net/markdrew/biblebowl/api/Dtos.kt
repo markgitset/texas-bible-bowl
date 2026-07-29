@@ -291,6 +291,8 @@ data class SeasonDto(
     val tbbScholarshipAmount: String,
     val maryOrbisonAmount: String,
     val paulHendricksonAmount: String,
+    /** Essay prompt for the TBB Scholarship, set per season; "TBD" until an admin writes it. */
+    val tbbScholarshipEssayPrompt: String = "TBD",
 )
 
 /** The 2026 event's volunteer-position list — the default until a season customizes its own. */

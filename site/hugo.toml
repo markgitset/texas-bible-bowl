@@ -34,6 +34,7 @@ canonifyURLs = true
   tbbScholarshipAmount = "$1,000"
   maryOrbisonAmount = "$1,500"
   paulHendricksonAmount = "TBD"
+  tbbScholarshipEssayPrompt = "TBD"
   facebook      = "https://www.facebook.com/TexasBibleBowl"
   youtube       = "https://www.youtube.com/channel/UCdlu_qTP5cmoQrNGJSDRbcg"
   mailingAddress = "10431 Remuda View Drive, San Antonio, TX 78254"

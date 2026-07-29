@@ -17,5 +17,6 @@
   "feesTentative": true,
   "tbbScholarshipAmount": "$1,000",
   "maryOrbisonAmount": "$1,500",
-  "paulHendricksonAmount": "TBD"
+  "paulHendricksonAmount": "TBD",
+  "tbbScholarshipEssayPrompt": "TBD"
 }

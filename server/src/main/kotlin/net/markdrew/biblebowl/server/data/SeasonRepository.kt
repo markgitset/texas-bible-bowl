@@ -38,6 +38,7 @@ val DEFAULT_SEASON = SeasonDto(
     tbbScholarshipAmount = "$1,000",
     maryOrbisonAmount = "$1,500",
     paulHendricksonAmount = "TBD",
+    tbbScholarshipEssayPrompt = "TBD",
 )
 
 interface SeasonRepository {

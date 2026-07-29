@@ -145,6 +145,9 @@ fun AdminSeasonScreen(api: TbbApi, onSaved: (SeasonDto) -> Unit) {
             Field("Paul Hendrickson scholarship", draft.paulHendricksonAmount) {
                 draft = draft.copy(paulHendricksonAmount = it)
             }
+            Field("TBB scholarship essay prompt", draft.tbbScholarshipEssayPrompt, singleLine = false) {
+                draft = draft.copy(tbbScholarshipEssayPrompt = it)
+            }
         }
 
         if (draft != current) {
@@ -282,12 +285,12 @@ private fun StudySetDropdown(slug: String, onPick: (net.markdrew.biblebowl.model
 }
 
 @Composable
-private fun Field(label: String, value: String, onChange: (String) -> Unit) {
+private fun Field(label: String, value: String, singleLine: Boolean = true, onChange: (String) -> Unit) {
     OutlinedTextField(
         value = value,
         onValueChange = onChange,
         label = { Text(label) },
-        singleLine = true,
+        singleLine = singleLine,
         modifier = Modifier.fillMaxWidth(),
     )
 }

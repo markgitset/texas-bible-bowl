@@ -24,6 +24,7 @@ val FALLBACK_SEASON = SeasonDto(
     tbbScholarshipAmount = "$1,000",
     maryOrbisonAmount = "$1,500",
     paulHendricksonAmount = "TBD",
+    tbbScholarshipEssayPrompt = "TBD",
 )
 
 /** The season label spanning two school years, e.g. "2026–27". */

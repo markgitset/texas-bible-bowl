@@ -16,6 +16,7 @@ import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
 import org.w3c.dom.HTMLOptionElement
 import org.w3c.dom.HTMLSelectElement
+import org.w3c.dom.HTMLTextAreaElement
 
 /**
  * Season parameters editor (docs/gui-redesign.md §5G) for SEASON_MANAGE holders. Saves are live
@@ -110,6 +111,9 @@ object AdminSeasonScreen {
         form.field("Paul Hendrickson scholarship", draft.paulHendricksonAmount) {
             draft = draft.copy(paulHendricksonAmount = it)
         }
+        form.textAreaField("TBB scholarship essay prompt", draft.tbbScholarshipEssayPrompt) {
+            draft = draft.copy(tbbScholarshipEssayPrompt = it)
+        }
 
         val dirtyHint = form.child(
             "div", "alert alert-warning py-1 px-2 small mb-2 d-none",
@@ -197,6 +201,17 @@ object AdminSeasonScreen {
         child("div", "mb-3") {
             child("label", "form-label", label)
             val input = child("input", "form-control") as HTMLInputElement
+            input.value = value
+            input.addEventListener("input", { onChange(input.value) })
+        }
+    }
+
+    /** Multi-line text field, for longer prose like the scholarship essay prompt. */
+    private fun Element.textAreaField(label: String, value: String, onChange: (String) -> Unit) {
+        child("div", "mb-3") {
+            child("label", "form-label", label)
+            val input = child("textarea", "form-control") as HTMLTextAreaElement
+            input.rows = 3
             input.value = value
             input.addEventListener("input", { onChange(input.value) })
         }
