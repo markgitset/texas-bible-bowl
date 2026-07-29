@@ -1,0 +1,37 @@
+# The fixed 10-year rotating study cycle, rendered by the `curriculum-schedule` shortcode on
+# the Event > Curriculum page. The schedule is calendar-locked and repeats every 10 years, so
+# it need never be hand-edited: `anchorYear` is the school-year START (fall) that maps to
+# `cycle` index 0, and the page derives each year's material from that. It renders a rolling
+# window beginning at the CURRENT event's school year (eventYear − 1), so the list auto-rotates
+# as the season advances — eventYear comes from the season (hugo.toml fallback, CI-baked from
+# GET /seasons/current before each Pages build).
+#
+# To adjust the schedule: reorder/rename `cycle` (10 entries), or shift `anchorYear`. Keep
+# `restartsAt` pointing at the book that opens the canonical cycle (gets a "cycle restarts"
+# note wherever it lands). Verify: anchorYear 2025 → index 0 = "Joshua, Judges & Ruth", so
+# 2026–27 = Acts, 2027–28 = I Samuel, … matching the historical schedule.
+anchorYear: 2025
+windowYears: 10
+restartsAt: Genesis
+cycle:
+  - "Joshua, Judges & Ruth"
+  - "Acts"
+  - "I Samuel"
+  - "John"
+  - "II Samuel"
+  - "Revelation"
+  - "Genesis"
+  - "Matthew"
+  - "Life of Moses"
+  - "Luke"
+
+# Optional per-material study-plan detail, rendered below the table for any plan whose material
+# falls in the shown window (it always does — one occurrence per 10-year cycle). Keyed by the
+# exact `cycle` name. The heading year is computed from the rotation, so it stays correct.
+studyPlans:
+  "Life of Moses":
+    note: "Subject to revision"
+    passages:
+      - "Exodus 1–20, 32–34"
+      - "Numbers 1–3, 10–14, 16–17, 20–27, 31–36"
+      - "Deuteronomy 31–34"

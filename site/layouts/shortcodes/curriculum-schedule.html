@@ -1,0 +1,48 @@
+{{- /*
+  Renders the 10-year rotating study schedule (data/curriculum.yaml) as a table plus any
+  per-material study-plan detail, anchored to the current event year so it auto-rotates. The
+  window starts at the current school year (eventYear − 1) and runs `windowYears` years, with
+  "this year" marked. eventYear is read via the season partial (hugo.toml fallback + CI-baked
+  data/params.json), same source the rest of the site uses.
+
+  The material for a given school-year start is the calendar-locked rotation
+  cycle[(year − anchorYear) mod len(cycle)] — a pure function of the year, so nothing here
+  needs hand-editing as seasons advance.
+*/ -}}
+{{- $s := partialCached "season.html" . "season" -}}
+{{- $data := site.Data.curriculum -}}
+{{- $anchor := int $data.anchorYear -}}
+{{- $n := len $data.cycle -}}
+{{- $window := int (default 10 $data.windowYears) -}}
+{{- $start := sub (int $s.eventYear) 1 -}}{{/* school-year start = eventYear − 1 */}}
+
+<table class="curriculum-table">
+  <thead><tr><th>Year</th><th>Study Material</th></tr></thead>
+  <tbody>
+  {{- range $i := seq 0 (sub $window 1) -}}
+    {{- $yr := add $start $i -}}
+    {{- $off := int (math.Mod (sub $yr $anchor) $n) -}}
+    {{- if lt $off 0 }}{{ $off = add $off $n }}{{ end -}}
+    {{- $material := index $data.cycle $off -}}
+    {{- $label := printf "%d–%02d" $yr (int (math.Mod (add $yr 1) 100)) -}}
+    <tr{{ if eq $i 0 }} class="curriculum-current"{{ end }}>
+      <td>{{ $label }}{{ if eq $i 0 }} <span class="curriculum-tag">this year</span>{{ end }}</td>
+      <td>{{ $material }}{{ if eq $material $data.restartsAt }} <em>(cycle restarts)</em>{{ end }}</td>
+    </tr>
+  {{- end -}}
+  </tbody>
+</table>
+
+{{- /* Study-plan detail blocks, each headed with its computed next-occurrence school year. */ -}}
+{{- range $material, $plan := $data.studyPlans -}}
+  {{- $idx := 0 -}}
+  {{- range $j, $m := $data.cycle }}{{ if eq $m $material }}{{ $idx = $j }}{{ end }}{{ end -}}
+  {{- $delta := int (math.Mod (sub (add $anchor $idx) $start) $n) -}}
+  {{- if lt $delta 0 }}{{ $delta = add $delta $n }}{{ end -}}
+  {{- $yr := add $start $delta -}}
+  <h2>{{ $material }} Study Plan ({{ printf "%d–%02d" $yr (int (math.Mod (add $yr 1) 100)) }})</h2>
+  {{- with $plan.note }}<p><em>({{ . }})</em></p>{{ end }}
+  <ul>
+  {{- range $plan.passages }}<li>{{ . }}</li>{{ end }}
+  </ul>
+{{- end -}}
