@@ -124,6 +124,32 @@
     patch(JSON.parse(localStorage.getItem(CACHE_KEY)));
   } catch (e) {}
 
+  // Year-of-operation spans (<span data-tbb-years-since="2010">, see the years-of-operation
+  // shortcode). Independent of season data — recompute the ordinal from the browser's clock so
+  // it ticks over on New Year's without waiting for a redeploy. Keep ordinalWord in sync with
+  // layouts/partials/ordinal.html.
+  function ordinalWord(n) {
+    var under20 = ["zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
+      "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth",
+      "sixteenth", "seventeenth", "eighteenth", "nineteenth", "twentieth"];
+    var tensCard = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+    var tensOrd = ["", "", "twentieth", "thirtieth", "fortieth", "fiftieth", "sixtieth", "seventieth", "eightieth", "ninetieth"];
+    if (n >= 0 && n <= 20) return under20[n];
+    if (n < 100) {
+      var t = Math.floor(n / 10), o = n % 10;
+      return o === 0 ? tensOrd[t] : tensCard[t] + "-" + under20[o];
+    }
+    return "";
+  }
+  try {
+    var thisYear = new Date().getFullYear();
+    document.querySelectorAll("[data-tbb-years-since]").forEach(function (el) {
+      var since = parseInt(el.getAttribute("data-tbb-years-since"), 10);
+      var w = ordinalWord(thisYear - since);
+      if (w && el.textContent !== w) el.textContent = w;
+    });
+  } catch (e) {}
+
   // Account slot: the app caches the signed-in user menu (web/.../Session.kt writes "tbb.nav",
   // JSON of the NavMenu model in web/.../NavMenu.kt). On static pages, swap the "Sign in"
   // button for the same grouped dropdown the app's Shell renders, so the shared navbar reads
