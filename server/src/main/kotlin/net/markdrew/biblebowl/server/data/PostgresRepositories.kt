@@ -21,6 +21,7 @@ import org.jetbrains.exposed.v1.core.and
 import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Database
+import org.jetbrains.exposed.v1.jdbc.batchInsert
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
@@ -422,6 +423,27 @@ class PostgresQuestionRepository(private val db: Database) : QuestionRepository 
         }
         QuestionsTable.selectAll().where { QuestionsTable.id eq id }.single().toDto()
     }
+
+    override fun countByAuthor(authorId: String): Long = transaction(db) {
+        QuestionsTable.selectAll().where { QuestionsTable.authorId eq authorId }.count()
+    }
+
+    // Single transaction so a crash mid-seed rolls back rather than leaving a partial bank that the
+    // countByAuthor idempotency guard would then skip. authorName lives on the users row, not here.
+    override fun seedApproved(authorId: String, authorName: String?, requests: List<SubmitQuestionRequest>): Int =
+        transaction(db) {
+            QuestionsTable.batchInsert(requests) { req ->
+                this[QuestionsTable.id] = UUID.randomUUID().toString()
+                this[QuestionsTable.roundType] = req.roundType.name
+                this[QuestionsTable.prompt] = req.prompt
+                this[QuestionsTable.answer] = req.answer
+                this[QuestionsTable.references] = req.references.joinToString(",")
+                this[QuestionsTable.choices] = json.encodeToString(stringListSerializer, req.choices)
+                this[QuestionsTable.chapter] = req.chapter
+                this[QuestionsTable.status] = QuestionStatus.APPROVED.name
+                this[QuestionsTable.authorId] = authorId
+            }.size
+        }
 
     private fun ResultRow.toDto(): QuestionDto {
         val qId = this[QuestionsTable.id]
