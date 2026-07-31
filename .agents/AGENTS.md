@@ -154,11 +154,12 @@ This renders the real pipeline without hitting Crossway.
   visible. Live: https://texas-bible-bowl.fly.dev — only claim "live" after hitting the endpoint.
 
 ## Conventions
-- **Before starting any task, sync with `main` first** (Mark, 2026-07-31): `git fetch origin
-  main` and start from (or rebase onto) `origin/main` before writing code. Also check whether
-  main already has the thing you're about to build — this repo moves fast, and a stale
-  checkout means conflicted rebases and duplicated work (e.g. re-porting a parser main
-  already had).
+- **Sync with `main` before planning, not just before coding** (Mark, 2026-07-31): the very
+  first step of any task — including exploration and plan-writing — is `git fetch origin
+  main` and working from (or rebasing onto) `origin/main`. A plan drawn from a stale
+  checkout is wrong before it starts: this repo moves fast, and planning against old code
+  means designing things main already has and conflicted rebases later (e.g. re-porting a
+  parser main already had).
 - **No `Co-Authored-By: Claude` trailer** in commit messages (Mark's standing preference).
 - Commit at each significant step (standing instruction), but **never push directly to
   `main`** (Mark, 2026-07-13): main is branch-protected (PRs + green `build-and-test`
