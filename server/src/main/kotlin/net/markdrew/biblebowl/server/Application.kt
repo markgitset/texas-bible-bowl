@@ -123,6 +123,11 @@ fun main() {
     val study = StudyDataService(esv, annotationCache = db?.let(::PostgresAnnotationCache))
     // Compiled-PDF cache: Postgres in prod (survives scale-to-zero), bounded in-memory in local dev.
     val pdfCache = db?.let(::PostgresPdfCache) ?: InMemoryPdfCache()
+    // Best-effort: an empty question bank is a degraded state, not a reason to block boot/health checks.
+    runCatching { seedStudyGuideQuestions(users, questions, seasons) }.onFailure {
+        org.slf4j.LoggerFactory.getLogger("net.markdrew.biblebowl.server.Application")
+            .warn("Study-guide seeding failed", it)
+    }
     embeddedServer(Netty, port = port, host = "0.0.0.0") {
         module(
             users, questions, esv = esv, study = study, seasons = seasons, pdfCache = pdfCache,

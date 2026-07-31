@@ -89,6 +89,14 @@ interface QuestionRepository {
     fun get(id: String): QuestionDto?
     fun setStatus(id: String, status: QuestionStatus): QuestionDto?
     fun vote(id: String, userId: String): QuestionDto?
+    /** Number of questions authored by [authorId], in any status. Cheap idempotency guard for seeding. */
+    fun countByAuthor(authorId: String): Long
+    /**
+     * Bulk-inserts [requests] as already-APPROVED questions authored by [authorId], atomically where the
+     * backing store allows (a crash must not leave a partial seed that [countByAuthor] then treats as
+     * complete). Returns the number inserted.
+     */
+    fun seedApproved(authorId: String, authorName: String?, requests: List<SubmitQuestionRequest>): Int
 }
 
 // ---------------------------------------------------------------------------
@@ -219,5 +227,29 @@ class InMemoryQuestionRepository : QuestionRepository {
         val updated = if (set.add(userId)) current.copy(votes = current.votes + 1) else current
         byId[id] = updated
         return updated
+    }
+
+    override fun countByAuthor(authorId: String): Long =
+        byId.values.count { it.authorId == authorId }.toLong()
+
+    override fun seedApproved(authorId: String, authorName: String?, requests: List<SubmitQuestionRequest>): Int {
+        requests.forEach { req ->
+            val id = UUID.randomUUID().toString()
+            byId[id] = QuestionDto(
+                id = id,
+                roundType = req.roundType,
+                prompt = req.prompt,
+                answer = req.answer,
+                references = req.references,
+                choices = req.choices,
+                chapter = req.chapter,
+                status = QuestionStatus.APPROVED,
+                authorId = authorId,
+                authorName = authorName,
+                votes = 0,
+            )
+            voters[id] = ConcurrentHashMap.newKeySet()
+        }
+        return requests.size
     }
 }

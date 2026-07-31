@@ -184,6 +184,38 @@ class PostgresRepositoryTest {
     }
 
     @Test
+    fun seedApprovedBulkInsertsAndCountByAuthorGuardsIdempotency() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val questions = PostgresQuestionRepository(db)
+
+        val seeder = users.create("seeder@tbb.org", "Seeder", null, adult = true,
+            passwordHash = "!", roles = emptyList())
+        assertEquals(0, questions.countByAuthor(seeder.id))
+
+        val requests = (1..3).map { n ->
+            SubmitQuestionRequest(
+                roundType = Round.FACT_FINDER,
+                prompt = "Seeded question $n?",
+                answer = "Choice A",
+                references = listOf("Acts 2:$n"),
+                choices = listOf("Choice A", "Choice B", "Choice C", "Choice D"),
+                chapter = 2,
+            )
+        }
+        assertEquals(3, questions.seedApproved(seeder.id, seeder.displayName, requests))
+        assertEquals(3, questions.countByAuthor(seeder.id))
+
+        val listed = questions.list(QuestionStatus.APPROVED, chapter = 2)
+            .filter { it.authorId == seeder.id }
+        assertEquals(3, listed.size)
+        assertTrue(listed.all { it.roundType == Round.FACT_FINDER && it.status == QuestionStatus.APPROVED })
+        assertTrue(listed.all { it.answer in it.choices && it.votes == 0 })
+        assertTrue(listed.all { it.references.single().startsWith("Acts 2:") })
+        assertEquals("Seeder", listed.first().authorName)
+    }
+
+    @Test
     fun testerIdsAssignOnceAndReadBack() {
         if (!available) { println("Postgres not reachable — skipping"); return }
         val users = PostgresUserRepository(db)
