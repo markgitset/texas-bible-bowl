@@ -35,6 +35,7 @@ import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
 import net.markdrew.biblebowl.server.study.InMemoryPdfCache
 import net.markdrew.biblebowl.server.study.PdfCache
+import net.markdrew.biblebowl.server.study.StudyDataRegistry
 import net.markdrew.biblebowl.server.study.StudyDataService
 import net.markdrew.biblebowl.server.typst.TypstCompiler
 import kotlin.test.Test
@@ -112,11 +113,13 @@ class PdfCacheTest {
         val service = studyService()
         val cache = InMemoryPdfCache()
         val seeded = "%PDF-cached-fake".toByteArray()
-        cache.put("acts-test", "heading-flashcards.pdf", service.contentStamp(), seeded)
+        // File names are set-prefixed with the REQUESTED set's slug (the season's; the fixture service
+        // still caches under its own studySet key).
+        cache.put("acts-test", "acts-heading-flashcards.pdf", service.contentStamp(), seeded)
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
-                JwtService(secret = "test-secret"), esv = null, study = service, pdfCache = cache,
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(service), pdfCache = cache,
             )
         }
         val api = createClient { }
@@ -137,7 +140,7 @@ class PdfCacheTest {
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
-                JwtService(secret = "test-secret"), esv = null, study = studyService(), pdfCache = cache,
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()), pdfCache = cache,
             )
         }
         val api = createClient { }

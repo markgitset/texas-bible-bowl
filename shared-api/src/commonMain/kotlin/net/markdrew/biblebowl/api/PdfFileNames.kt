@@ -10,6 +10,12 @@ object PdfFileNames {
     /** The server's default bible-text font size; only non-default sizes appear in the name. */
     const val DEFAULT_FONT_SIZE: Int = 11
 
+    /**
+     * Prefixes [fileName] with the study-set slug, e.g. `acts-bible-text.pdf` — so files from
+     * different seasons never collide in a Downloads folder, and the name matches the `set=` URLs.
+     */
+    fun withSet(setSlug: String, fileName: String): String = "$setSlug-$fileName"
+
     /** The covered-text PDF, e.g. `bible-text-highlighted-2col-14pt.pdf`. */
     fun bibleText(
         highlight: Boolean = true,

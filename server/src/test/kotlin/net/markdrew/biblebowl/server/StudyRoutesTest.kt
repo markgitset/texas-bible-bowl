@@ -28,6 +28,7 @@ import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.esv.EsvPassageService
 import net.markdrew.biblebowl.server.esv.InMemoryEsvCache
 import net.markdrew.biblebowl.server.security.JwtService
+import net.markdrew.biblebowl.server.study.StudyDataRegistry
 import net.markdrew.biblebowl.server.study.StudyDataService
 import net.markdrew.biblebowl.server.typst.TypstCompiler
 import kotlin.test.Test
@@ -121,7 +122,7 @@ class StudyRoutesTest {
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
-                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
             )
         }
         val json = Json { ignoreUnknownKeys = true }
@@ -147,6 +148,29 @@ class StudyRoutesTest {
     }
 
     @Test
+    fun headingFlashcardsAcceptAnAllowlistedSetParamAndNameTheFileByIt() = testApplication {
+        if (!TypstCompiler.isAvailable) {
+            println("typst not on PATH; skipping PDF compile test")
+            return@testApplication
+        }
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
+            )
+        }
+        val api = createClient { }
+
+        // A non-current standard set is served (durable off-year links) and set-prefixes the filename.
+        val res = api.get("/generate/heading-flashcards.pdf?set=john")
+        assertEquals(HttpStatusCode.OK, res.status)
+        assertTrue("john-heading-flashcards.pdf" in res.headers[io.ktor.http.HttpHeaders.ContentDisposition].orEmpty())
+
+        // Unknown or non-standard sets are rejected before any ESV/Typst work.
+        assertEquals(HttpStatusCode.BadRequest, api.get("/generate/heading-flashcards.pdf?set=zzz").status)
+    }
+
+    @Test
     fun headingFlashcardsPdfEndpointCompiles() = testApplication {
         if (!TypstCompiler.isAvailable) {
             println("typst not on PATH; skipping PDF compile test")
@@ -155,7 +179,7 @@ class StudyRoutesTest {
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
-                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
             )
         }
         val json = Json { ignoreUnknownKeys = true }
@@ -177,7 +201,7 @@ class StudyRoutesTest {
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
-                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
             )
         }
         val api = createClient { }
@@ -204,7 +228,7 @@ class StudyRoutesTest {
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
-                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
             )
         }
         val api = createClient { }
@@ -245,7 +269,7 @@ class StudyRoutesTest {
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
-                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
             )
         }
         val json = Json { ignoreUnknownKeys = true }
@@ -266,7 +290,7 @@ class StudyRoutesTest {
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
-                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
             )
         }
         val api = createClient { }
@@ -304,7 +328,7 @@ class StudyRoutesTest {
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
-                JwtService(secret = "test-secret"), esv = null, study = studyService(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
             )
         }
         val api = createClient { }
@@ -342,7 +366,7 @@ class StudyRoutesTest {
                 application {
                     module(
                         InMemoryUserRepository(), InMemoryQuestionRepository(),
-                        JwtService(secret = "test-secret"), esv = null, study = studyService(),
+                        JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
                         seasons = InMemorySeasonRepository(DEFAULT_SEASON.copy(eventDateRange = dateRange)),
                     )
                 }

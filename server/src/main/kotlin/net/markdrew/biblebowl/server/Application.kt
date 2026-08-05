@@ -91,7 +91,8 @@ import net.markdrew.biblebowl.server.study.InMemoryPdfCache
 import net.markdrew.biblebowl.server.study.PdfCache
 import net.markdrew.biblebowl.server.study.PostgresAnnotationCache
 import net.markdrew.biblebowl.server.study.PostgresPdfCache
-import net.markdrew.biblebowl.server.study.StudyDataService
+import net.markdrew.biblebowl.server.routes.currentStudySet
+import net.markdrew.biblebowl.server.study.StudyDataRegistry
 
 fun main() {
     val port = System.getenv("PORT")?.toIntOrNull() ?: 8080
@@ -120,7 +121,7 @@ fun main() {
     val esv = EsvPassageService(client = HttpClient(CIO), cache = esvCache)
     // Persist the text-analysis (highlight category) resolution in Postgres when available, so it survives
     // scale-to-zero restarts instead of being recomputed on each cold start.
-    val study = StudyDataService(esv, annotationCache = db?.let(::PostgresAnnotationCache))
+    val study = StudyDataRegistry(esv, annotationCache = db?.let(::PostgresAnnotationCache))
     // Compiled-PDF cache: Postgres in prod (survives scale-to-zero), bounded in-memory in local dev.
     val pdfCache = db?.let(::PostgresPdfCache) ?: InMemoryPdfCache()
     // Best-effort: an empty question bank is a degraded state, not a reason to block boot/health checks.
@@ -150,7 +151,7 @@ fun Application.module(
     questions: QuestionRepository = InMemoryQuestionRepository(),
     jwt: JwtService = JwtService(),
     esv: EsvPassageService? = null,
-    study: StudyDataService? = esv?.let(::StudyDataService),
+    study: StudyDataRegistry? = esv?.let { StudyDataRegistry(it) },
     seasons: SeasonRepository = InMemorySeasonRepository(),
     pdfCache: PdfCache? = null,
     congregations: CongregationRepository = InMemoryCongregationRepository(),
@@ -230,7 +231,7 @@ fun Application.module(
         authRoutes(users, jwt, resets, email)
         questionRoutes(users, questions, seasons)
         bibleRoutes(esv)
-        studyRoutes(study)
+        studyRoutes(study, seasons)
         generateRoutes(users, questions, seasons, study, pdfCache)
         seasonRoutes(users, seasons)
         registrationRoutes(users, seasons, congregations, registrations)
@@ -244,7 +245,7 @@ fun Application.module(
         userRoutes(users, congregations)
     }
 
-    warmStudyCache(study)
+    warmStudyCache(study, seasons)
 }
 
 /**
@@ -255,14 +256,16 @@ fun Application.module(
  *
  * Gated by an env flag (not on by default) so tests never trigger live ESV fetches.
  */
-private fun Application.warmStudyCache(study: StudyDataService?) {
+private fun Application.warmStudyCache(study: StudyDataRegistry?, seasons: SeasonRepository) {
     if (study == null || !study.isConfigured) return
     if (System.getenv("PRIME_CACHE_ON_START")?.toBooleanStrictOrNull() != true) return
+    // Warm the current season's set — the one every first request will ask for.
+    val service = study.forSet(seasons.currentStudySet()) ?: return
     launch {
-        runCatching { study.studyData() }
+        runCatching { service.studyData() }
             .onSuccess {
                 environment.log.info(
-                    "ESV cache primed: ${it.headings.size} headings indexed (${study.esvCallCount} live ESV calls this process)"
+                    "ESV cache primed: ${it.headings.size} headings indexed (${service.esvCallCount} live ESV calls this process)"
                 )
             }
             .onFailure { environment.log.warn("ESV cache priming failed (falling back to lazy load): ${it.message}") }
