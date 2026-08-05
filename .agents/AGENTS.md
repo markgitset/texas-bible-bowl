@@ -152,6 +152,12 @@ This renders the real pipeline without hitting Crossway.
   only after `:server:test` (and any other affected suites) are green, and never concurrently
   with one of Mark's deploys. Prod secrets (ESV token etc.) live in `fly secrets` and are never
   visible. Live: https://texas-bible-bowl.fly.dev — only claim "live" after hitting the endpoint.
+- **Staging (Fly.io):** a full separate stack, never auto-deployed — backend
+  `texas-bible-bowl-staging` (its own secrets; `DATABASE_URL` is a **Neon branch of prod**)
+  plus static frontend `texas-bible-bowl-staging-web` (nginx serving the Hugo site + web app
+  at the staging baseURL, `X-Robots-Tag: noindex`). Deploy with
+  `tools/deploy-staging.sh [backend|web|all]` from the branch under test. Runbook (branch
+  create/reset, migration rehearsal, secrets): `docs/staging.md`.
 
 ## Conventions
 - **Sync with `main` before planning, not just before coding** (Mark, 2026-07-31): the very

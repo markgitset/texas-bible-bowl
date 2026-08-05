@@ -1,0 +1,29 @@
+# Fly.io deployment for the STAGING frontend: the Hugo site + Kotlin/JS app served
+# statically by nginx, mirroring what pages.yml publishes to GitHub Pages for prod.
+# The build context is this directory only — ./tools/deploy-staging.sh web assembles
+# the static output into staging-web/public/ (gitignored) before deploying.
+#
+# Deploy: ./tools/deploy-staging.sh web
+app = "texas-bible-bowl-staging-web"
+primary_region = "dfw"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 80
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb" # static nginx needs almost nothing

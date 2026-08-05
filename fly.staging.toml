@@ -1,0 +1,37 @@
+# Fly.io deployment for the STAGING backend — same image/build as prod (fly.toml) but a
+# separate app with its own secrets. DATABASE_URL points at a Neon BRANCH of the prod
+# database (branch-only staging strategy — see docs/staging.md for the runbook, including
+# how to create/reset the branch and what each secret should hold).
+#
+# Deploy: ./tools/deploy-staging.sh backend   (or: fly deploy -c fly.staging.toml)
+app = "texas-bible-bowl-staging"
+primary_region = "dfw" # Dallas — matches prod
+
+[build]
+  dockerfile = "server/Dockerfile"
+
+[env]
+  # Same as prod: warm the ESV chapter cache on startup. On a fresh-from-prod branch the
+  # cache is already populated, so this is a no-op read; it only does live ESV fetches if
+  # the branch predates the cache.
+  PRIME_CACHE_ON_START = "true"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Scale to zero when idle; Fly cold-starts the machine on the next request.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    # Generous so a cold JVM boot + Postgres connect finishes before the first check.
+    grace_period = "40s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb" # room for the JVM heap plus the Typst subprocess during PDF generation
