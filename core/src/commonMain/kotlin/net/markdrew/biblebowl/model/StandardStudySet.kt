@@ -67,11 +67,26 @@ enum class StandardStudySet(val set: StudySet) {
             if (queryName == null) default else parseOrNull(queryName) ?: default
 
         /**
+         * Strict slug lookup for URLs and stored data: an exact, case-insensitive match on the enum name or
+         * on [StudySet.simpleName] — nothing else.
+         *
+         * Unlike [parseOrNull], this does no prefix matching and no [Book] fallback: "jos" is null here,
+         * where [parseOrNull] silently resolves the Joshua/Judges/Ruth *set*. Use this everywhere a slug
+         * arrives from a URL, a database row, or a SeasonDto; keep [parseOrNull] for lenient human input.
+         */
+        fun bySlug(slug: String): StudySet? = entries.firstOrNull {
+            it.name.equals(slug, ignoreCase = true) || it.set.simpleName.equals(slug, ignoreCase = true)
+        }?.set
+
+        /**
          * Resolves a non-null [queryName] to a [StudySet], or returns null when nothing matches.
          *
          * Match order: exact enum name (case-insensitive), then a prefix match against the enum name, the
          * [StudySet.simpleName], or the [StudySet.name]. If none match, the input is parsed as a single [Book]
          * via [Book.parse].
+         *
+         * Not for URLs or stored slugs — the prefix matching is ambiguous ("jos" resolves to the
+         * Joshua/Judges/Ruth set, not the book Joshua); use the strict [bySlug] for those.
          */
         fun parseOrNull(queryName: String): StudySet? {
             val studySet: StudySet? = try {

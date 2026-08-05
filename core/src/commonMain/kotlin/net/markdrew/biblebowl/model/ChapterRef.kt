@@ -22,6 +22,20 @@ fun ChapterRange.format(bookFormat: BookFormat = FULL_BOOK_FORMAT, separator: St
 /** Converts this chapter range to a range over packed [AbsoluteChapterNum]s. */
 fun ChapterRange.toAbsoluteRange(): IntRange = start.absoluteChapter..endInclusive.absoluteChapter
 
+/**
+ * The chapters this range covers, in order. [ChapterRange] is a [ClosedRange], not an [Iterable] —
+ * [ChapterRef]s aren't integral — so enumeration lives here. The upper bound is defensively clamped to
+ * the book's real chapter count, so a range built from [Book.allChapters] never enumerates chapters
+ * that don't exist.
+ *
+ * @throws IllegalArgumentException if the range spans books ([StudySet] ranges never do)
+ */
+fun ChapterRange.chapterRefs(): List<ChapterRef> {
+    require(start.book == endInclusive.book) { "Chapter ranges spanning books are not supported: $this" }
+    val lastChapter = minOf(endInclusive.chapter, start.book.chapterCount)
+    return (start.chapter..lastChapter).map { start.book.chapterRef(it) }
+}
+
 /** Returns the absolute-chapter range spanning the first and last [ChapterRef] in this collection. */
 fun Collection<ChapterRef>.toAbsoluteRange(): IntRange = first().absoluteChapter..last().absoluteChapter
 
