@@ -33,6 +33,28 @@ class StandardStudySetTest {
     }
 
     @Test
+    fun bySlugMatchesASimpleNameOrEnumNameExactly() {
+        assertEquals(StandardStudySet.ACTS.set, StandardStudySet.bySlug("acts"))
+        assertEquals(StandardStudySet.JOSHUA_JUDGES_RUTH.set, StandardStudySet.bySlug("josh-judg-ruth"))
+        assertEquals(StandardStudySet.JOSHUA_JUDGES_RUTH.set, StandardStudySet.bySlug("joshua_judges_ruth"))
+        assertEquals(StandardStudySet.I_SAMUEL.set, StandardStudySet.bySlug("1sam"))
+    }
+
+    @Test
+    fun bySlugRejectsPrefixesUnlikeParseOrNull() {
+        // parseOrNull silently resolves "jos" to the Joshua/Judges/Ruth SET — exactly why URLs must not use it
+        assertEquals(StandardStudySet.JOSHUA_JUDGES_RUTH.set, StandardStudySet.parseOrNull("jos"))
+        assertNull(StandardStudySet.bySlug("jos"))
+        assertNull(StandardStudySet.bySlug("joshua"))
+    }
+
+    @Test
+    fun bySlugDoesNotFallBackToSingleBookSets() {
+        assertEquals("mark", StandardStudySet.parseOrNull("Mark")?.simpleName)
+        assertNull(StandardStudySet.bySlug("Mark"))
+    }
+
+    @Test
     fun parseReturnsTheDefaultForANullName() {
         assertEquals(StandardStudySet.DEFAULT, StandardStudySet.parse(null))
     }

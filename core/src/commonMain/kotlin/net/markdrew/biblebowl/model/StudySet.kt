@@ -40,24 +40,28 @@ data class StudySet(
     /** Returns true if [chapterRef] falls within any of this set's [chapterRanges]. */
     operator fun contains(chapterRef: ChapterRef): Boolean = chapterRanges.any { chapterRef in it }
 
-    /**
-     * Total number of chapters this set covers across all its ranges. Open-ended ranges ("to end
-     * of book" sentinels, as built by [Book.allChapters]) clamp to the book's real chapter count.
-     */
-    val chapterCount: Int
-        get() = chapterRanges.sumOf { range ->
-            minOf(range.endInclusive.chapter, range.start.book.chapterCount) - range.start.chapter + 1
-        }
+    /** Every chapter this set covers, in Biblical order (with the gaps of partial sets skipped). */
+    val chapterRefs: List<ChapterRef> by lazy { chapterRanges.flatMap { it.chapterRefs() } }
+
+    /** The distinct books this set covers, in Biblical order. */
+    val books: List<Book> by lazy { chapterRanges.map { it.start.book }.distinct() }
+
+    /** True when this set covers exactly one book — the case where a bare chapter number is unambiguous. */
+    val isSingleBook: Boolean get() = books.size == 1
+
+    /** This set's ranges restricted to [book] (empty when the set doesn't cover the book). */
+    fun rangesIn(book: Book): List<ChapterRange> = chapterRanges.filter { it.start.book == book }
+
+    /** Total number of chapters this set covers across all its ranges. */
+    val chapterCount: Int get() = chapterRefs.size
 
     /**
      * Renders the distinct books in this set as "Full Name (TL), …, and Full Name (TL)" using each book's
      * two-letter code.
      */
     fun chapterNamesWith2LetterCodes(): String {
-        val books: List<String> = chapterRanges
-            .map { it.start.book }.distinct()
-            .map { "${it.fullName} (${it.twoLetter})" }
-        return books.dropLast(1).joinToString(", ") + ", and " + books.last()
+        val names: List<String> = books.map { "${it.fullName} (${it.twoLetter})" }
+        return names.dropLast(1).joinToString(", ") + ", and " + names.last()
     }
 
     /**

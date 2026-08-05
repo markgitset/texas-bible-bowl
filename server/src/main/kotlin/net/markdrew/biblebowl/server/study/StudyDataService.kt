@@ -11,7 +11,6 @@ import net.markdrew.chupacabra.core.DisjointRangeMap
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.IndexRefDto
-import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.Heading
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.model.StandardStudySet
@@ -83,17 +82,9 @@ class StudyDataService(
     }
 
     private suspend fun build(): StudyData {
-        val chapterRefs: List<ChapterRef> = studySet.chapterRanges.flatMap { range ->
-            require(range.start.book == range.endInclusive.book) {
-                "Chapter ranges spanning books are not supported: $range"
-            }
-            // StudySet ranges can use an open-ended sentinel upper bound (Book.lastChapterRef ≈ chapter 999)
-            // to mean "to end of book". Clamp to the book's real chapter count so we never fire ESV calls
-            // for chapters that don't exist — every live ESV call costs against the licence budget.
-            val lastChapter = minOf(range.endInclusive.chapter, range.start.book.chapterCount)
-            (range.start.chapter..lastChapter).map { range.start.book.chapterRef(it) }
-        }
-        val passages: List<Passage> = chapterRefs.map { ref ->
+        // chapterRefs clamps to each book's real chapter count, so we never fire ESV calls for chapters
+        // that don't exist — every live ESV call costs against the licence budget.
+        val passages: List<Passage> = studySet.chapterRefs.map { ref ->
             val chapter = esv.chapterText(ref)
             val verseRange = ref.verseRange()
             val absRange = verseRange.start.absoluteVerse..verseRange.endInclusive.absoluteVerse
