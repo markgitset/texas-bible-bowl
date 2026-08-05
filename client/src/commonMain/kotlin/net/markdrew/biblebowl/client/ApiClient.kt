@@ -37,6 +37,7 @@ import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.GradingSheetResponse
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
+import net.markdrew.biblebowl.api.ChangePasswordRequest
 import net.markdrew.biblebowl.api.ForgotPasswordRequest
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
@@ -164,6 +165,13 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
                 contentType(ContentType.Application.Json); setBody(req)
             }.bodyOrThrow()
         )
+
+    /** Changes the signed-in user's password (requires the current password; token stays valid). */
+    suspend fun changePassword(req: ChangePasswordRequest) {
+        client.post("$baseUrl/auth/change-password") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow<Unit>()
+    }
 
     /** Fetches the signed-in user's profile (requires a token). */
     suspend fun me(): UserDto = client.get("$baseUrl/auth/me") { authorize() }.bodyOrThrow()

@@ -73,6 +73,10 @@ data class ForgotPasswordRequest(val email: String)
 @Serializable
 data class ResetPasswordRequest(val email: String, val code: String, val newPassword: String)
 
+/** Changes the signed-in user's password after proving they know [currentPassword]. */
+@Serializable
+data class ChangePasswordRequest(val currentPassword: String, val newPassword: String)
+
 /**
  * [birthdate] and [adult] drive division eligibility (see [division]); accounts created before
  * birthdates were collected may have neither — an incomplete profile with no division.

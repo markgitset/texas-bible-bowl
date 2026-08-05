@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.client
 
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
+import net.markdrew.biblebowl.api.ChangePasswordRequest
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.Role
@@ -237,6 +238,9 @@ class TbbApiRequestTest {
         api.updateProfile(UpdateProfileRequest("Coach Carol", adult = true))
         assertEquals("PUT" to "/auth/me", methods.last() to requests.last())
         assertEquals("Coach Carol", api.user?.displayName, "updateProfile refreshes the cached user")
+
+        api.changePassword(ChangePasswordRequest("old-password", "new-password-1"))
+        assertEquals("POST" to "/auth/change-password", methods.last() to requests.last())
 
         // Every registration call must carry the signed-in token.
         assertTrue(authHeaders.drop(1).all { it == "Bearer tok123" }, "missing Bearer on some call: $authHeaders")

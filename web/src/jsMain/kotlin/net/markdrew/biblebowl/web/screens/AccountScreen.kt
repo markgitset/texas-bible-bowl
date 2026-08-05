@@ -1,6 +1,7 @@
 package net.markdrew.biblebowl.web.screens
 
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.ChangePasswordRequest
 import net.markdrew.biblebowl.api.ContactInfoDto
 import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.ParticipationDto
@@ -51,6 +52,7 @@ object AccountScreen {
         }
 
         profileCard(container, user)
+        passwordCard(container)
         if (Session.registrationVisible) {
             val reloadPeople = peopleCard(container)
             claimCard(container, onClaimed = reloadPeople)
@@ -212,6 +214,62 @@ object AccountScreen {
                             Session.profileSaved() // re-renders the screen with the fresh user
                         } catch (e: Throwable) {
                             messageSlot.child("p", "text-danger mt-3 mb-0", "Save failed: ${e.message}")
+                            refresh()
+                        }
+                    }
+                })
+            }
+        }
+    }
+
+    /** Change password: proves the current password, then swaps in the new one (`POST /auth/change-password`). */
+    private fun passwordCard(container: Element) {
+        container.child("div", "card section-card mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title", "Change password")
+                val form = child("form")
+
+                fun passwordField(label: String, autocomplete: String, help: String? = null): HTMLInputElement {
+                    lateinit var input: HTMLInputElement
+                    form.child("div", "mb-3") {
+                        child("label", "form-label", label)
+                        input = (child("input", "form-control") as HTMLInputElement).apply {
+                            type = "password"
+                            setAttribute("autocomplete", autocomplete)
+                        }
+                        help?.let { child("div", "form-text", it) }
+                    }
+                    return input
+                }
+                val current = passwordField("Current password", "current-password")
+                val newPassword = passwordField("New password", "new-password", help = "At least 8 characters.")
+
+                val submit = form.child("button", "btn btn-primary", "Change password") {
+                    setAttribute("type", "submit")
+                } as HTMLButtonElement
+                val messageSlot = form.child("div")
+
+                fun refresh() {
+                    submit.disabled = current.value.isEmpty() || newPassword.value.length < 8
+                }
+                refresh()
+                listOf(current, newPassword).forEach { it.addEventListener("input", { refresh() }) }
+
+                form.addEventListener("submit", { event ->
+                    event.preventDefault()
+                    submit.disabled = true
+                    messageSlot.clear()
+                    Shell.scope.launch {
+                        try {
+                            Session.api.changePassword(
+                                ChangePasswordRequest(current.value, newPassword.value)
+                            )
+                            current.value = ""
+                            newPassword.value = ""
+                            messageSlot.child("p", "tbb-gold fw-semibold mt-3 mb-0", "Password changed.")
+                        } catch (e: Throwable) {
+                            messageSlot.child("p", "text-danger mt-3 mb-0", "Change failed: ${e.message}")
+                        } finally {
                             refresh()
                         }
                     }
