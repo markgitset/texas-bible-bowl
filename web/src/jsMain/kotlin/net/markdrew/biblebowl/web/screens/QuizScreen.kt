@@ -4,8 +4,13 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
+import net.markdrew.biblebowl.api.ScopeSelection
+import net.markdrew.biblebowl.api.StudyScopeParams
+import net.markdrew.biblebowl.api.scopeQueryParams
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
+import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.model.bookByCode
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
@@ -26,18 +31,26 @@ private enum class QuizSource(val displayName: String) {
 /**
  * Turns the season's headings into multiple-choice "which chapter?" items. Distractors are other
  * chapters in scope, so cumulative practice (through chapter N) never leaks future chapters.
+ * Chapter labels stay "Chapter N" for single-book sets and gain the book ("Num 14") for multi-book
+ * sets, where a bare number would be ambiguous.
  */
 private fun headingQuestions(headings: List<HeadingDto>): List<QuestionDto> {
-    val chaptersInScope = headings.map { it.chapter }.distinct()
+    val multiBook = !Session.studySet.isSingleBook
+    fun label(h: HeadingDto): String {
+        val book = h.bookCode?.takeIf { multiBook }?.let { code -> Book.entries.firstOrNull { it.name == code } }
+        return book?.let { "${it.briefName} ${h.chapter}" } ?: "Chapter ${h.chapter}"
+    }
+    val chaptersInScope = headings.map(::label).distinct()
     return headings.map { h ->
-        val distractors = (chaptersInScope - h.chapter).shuffled().take(4)
+        val distractors = (chaptersInScope - label(h)).shuffled().take(4)
         QuestionDto(
             id = "heading-${h.index}",
             roundType = Round.EVENTS,
             prompt = "Which chapter has the heading “${h.title}”?",
-            answer = "Chapter ${h.chapter}",
+            answer = label(h),
             references = listOf(h.reference),
-            choices = (distractors + h.chapter).map { "Chapter $it" },
+            choices = distractors + label(h),
+            bookCode = h.bookCode,
             chapter = h.chapter,
             status = QuestionStatus.APPROVED,
             authorId = "esv-headings",
@@ -51,13 +64,20 @@ object QuizScreen {
     // Setup filters and any in-flight quiz are sticky for the session.
     private var source = QuizSource.QUESTIONS
     private var round: Round? = null
-    private var chapter: Int? = null
+    private var selection = ScopeSelection()
     private var engine: QuizEngine? = null
     private var error: String? = null
 
     private lateinit var root: HTMLElement
 
-    fun render(container: HTMLElement) {
+    fun render(container: HTMLElement, params: Map<String, String> = emptyMap()) {
+        // A scoped deep link (#quiz?book=ACT&chapter=22) seeds the setup filters.
+        if (params.isNotEmpty()) {
+            selection = ScopeSelection(
+                book = params[StudyScopeParams.BOOK]?.let { bookByCode(it) },
+                chapter = params[StudyScopeParams.CHAPTER]?.toIntOrNull(),
+            )
+        }
         root = container
         rerender()
     }
@@ -91,7 +111,11 @@ object QuizScreen {
         }
 
         root.child("p", "fw-semibold mb-1", if (source == QuizSource.HEADINGS) "Through chapter" else "Chapter")
-        root.chapterChips(chapter) { chapter = it; rerender() }
+        root.chapterChips(selection) {
+            selection = it
+            Shell.replaceParams(scopeQueryParams(Session.studySet, it))
+            rerender()
+        }
 
         root.child("button", "btn btn-primary w-100 mt-2", "Start quiz") {
             setAttribute("type", "button")
@@ -107,10 +131,13 @@ object QuizScreen {
         Shell.scope.launch {
             try {
                 val pool = when (source) {
-                    QuizSource.QUESTIONS -> Session.api.questions(chapter = chapter)
-                        .filter { round == null || it.roundType == round }
+                    QuizSource.QUESTIONS ->
+                        Session.api.questions(chapter = selection.chapter, book = selection.book?.name)
+                            .filter { round == null || it.roundType == round }
                     // Chapter chip means "through chapter N" here so drills stay cumulative.
-                    QuizSource.HEADINGS -> headingQuestions(Session.api.headings(throughChapter = chapter))
+                    QuizSource.HEADINGS -> headingQuestions(
+                        Session.api.headings(throughChapter = selection.chapter, book = selection.book?.name),
+                    )
                 }
                 val e = QuizEngine(pool)
                 if (e.isEmpty) {

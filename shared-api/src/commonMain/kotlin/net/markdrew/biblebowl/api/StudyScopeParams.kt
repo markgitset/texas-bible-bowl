@@ -1,5 +1,8 @@
 package net.markdrew.biblebowl.api
 
+import net.markdrew.biblebowl.model.Book
+import net.markdrew.biblebowl.model.ChapterRef
+import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.model.StudyScope
 import net.markdrew.biblebowl.model.StudySet
 
@@ -46,5 +49,51 @@ object StudyScopeParams {
         if (!bookOnly) add(SET to scope.set.simpleName)
         if (book != null && (bookOnly || !scope.set.isSingleBook)) add(BOOK to book.name)
         scope.chapter?.let { add(chapterKey to it.toString()) }
+    }
+}
+
+/**
+ * The season's study set, resolved strictly from its slug (falling back to the default). Drives
+ * chapter pickers: multi-book or partial sets have gaps and span books, so pickers must iterate
+ * [StudySet.chapterRefs]/[StudySet.books] — never `1..`[SeasonDto.chapterCount].
+ */
+val SeasonDto.resolvedStudySet: StudySet
+    get() = StandardStudySet.bySlug(studySet) ?: StandardStudySet.DEFAULT
+
+/**
+ * A partial canonical scope selection for study filters: null book = the whole study set; a book
+ * alone = that whole book's slice of the set; book + chapter = one chapter. Chapter numbers are
+ * always book-relative (never a season-relative index), which is what keeps stored questions and
+ * emitted URLs valid across the 10-year study rotation. Shared by the web and Compose pickers.
+ */
+data class ScopeSelection(val book: Book? = null, val chapter: Int? = null) {
+    val chapterRef: ChapterRef? get() = if (book != null && chapter != null) book.chapterRef(chapter) else null
+
+    /** Human label: "Acts 2" (brief book name), just the book for a whole-book slice, null for all. */
+    fun label(): String? = book?.let { b -> chapter?.let { "${b.briefName} $it" } ?: b.briefName }
+}
+
+/**
+ * The canonical scope of [selection] within [set] as query parameters (see [StudyScopeParams.write]):
+ * durable — never season-relative — so emitted links keep meaning the same material in any season.
+ */
+fun scopeQueryParams(
+    set: StudySet,
+    selection: ScopeSelection,
+    chapterKey: String = StudyScopeParams.CHAPTER,
+): List<Pair<String, String>> =
+    StudyScopeParams.write(StudyScope(set, selection.book ?: set.books.singleOrNull(), selection.chapter), chapterKey)
+
+/**
+ * A question's scripture badge: "Acts 2" (brief book name + book-relative chapter), just the book
+ * for book-wide questions, or [seasonLabel] + chapter when an old server omitted the bookCode.
+ */
+fun QuestionDto.scopeLabel(seasonLabel: String): String? {
+    val book = bookCode?.let { code -> Book.entries.firstOrNull { it.name == code } }
+    return when {
+        book != null && chapter != null -> "${book.briefName} $chapter"
+        book != null -> book.briefName
+        chapter != null -> "$seasonLabel $chapter"
+        else -> null
     }
 }

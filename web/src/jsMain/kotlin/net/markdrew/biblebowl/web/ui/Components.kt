@@ -1,5 +1,8 @@
 package net.markdrew.biblebowl.web.ui
 
+import net.markdrew.biblebowl.api.QuestionDto
+import net.markdrew.biblebowl.api.ScopeSelection
+import net.markdrew.biblebowl.api.scopeLabel
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.onClick
@@ -30,17 +33,47 @@ fun <T> Element.chipRow(options: List<Pair<String, T>>, selected: T, onSelect: (
 }
 
 /**
- * The chapter filter: an "All" chip plus one per chapter of the season book (wraps instead of
- * scrolling, same rationale as the Compose ChapterChips). Clicking the selected chip clears it.
+ * The chapter filter, driven by the season's study set (wraps instead of scrolling, same rationale
+ * as the Compose ChapterChips). Single-book sets render the familiar single row of chapter chips;
+ * multi-book sets add a book row above it, with the chapter row showing only that book's in-set
+ * chapters (partial sets have gaps — e.g. Life of Moses covers Exo 1-20 then 32-34). Clicking the
+ * selected chip clears it.
  */
-fun Element.chapterChips(selected: Int?, onSelect: (Int?) -> Unit) {
+fun Element.chapterChips(selected: ScopeSelection, onSelect: (ScopeSelection) -> Unit) {
+    val set = Session.studySet
+    if (set.isSingleBook) {
+        val book = set.books.single()
+        child("div", "d-flex flex-wrap gap-1 mb-3") {
+            chip("All", selected.chapter == null) { onSelect(ScopeSelection()) }
+            set.chapterRefs.forEach { ref ->
+                val on = selected.chapter == ref.chapter
+                chip("${ref.chapter}", on) {
+                    onSelect(if (on) ScopeSelection() else ScopeSelection(book, ref.chapter))
+                }
+            }
+        }
+        return
+    }
+    child("div", "d-flex flex-wrap gap-1 mb-2") {
+        chip("All", selected.book == null) { onSelect(ScopeSelection()) }
+        set.books.forEach { book ->
+            chip(book.briefName, selected.book == book) {
+                onSelect(if (selected.book == book) ScopeSelection() else ScopeSelection(book))
+            }
+        }
+    }
+    val book = selected.book ?: return
     child("div", "d-flex flex-wrap gap-1 mb-3") {
-        chip("All", selected == null) { onSelect(null) }
-        (1..Session.season.chapterCount).forEach { ch ->
-            chip("$ch", selected == ch) { onSelect(if (selected == ch) null else ch) }
+        chip("All of ${book.briefName}", selected.chapter == null) { onSelect(ScopeSelection(book)) }
+        set.chapterRefs.filter { it.book == book }.forEach { ref ->
+            val on = selected.chapter == ref.chapter
+            chip("${ref.chapter}", on) { onSelect(ScopeSelection(book, if (on) null else ref.chapter)) }
         }
     }
 }
+
+/** A question's scripture badge (see [scopeLabel]); the season label covers legacy rows. */
+fun questionScopeLabel(q: QuestionDto): String? = q.scopeLabel(Session.season.eventScripture)
 
 /** A Bootstrap switch row, label on the left. */
 fun Element.optionSwitch(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {

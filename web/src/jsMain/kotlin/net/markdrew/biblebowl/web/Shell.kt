@@ -29,9 +29,16 @@ import net.markdrew.biblebowl.web.screens.StandingsScreen
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.asList
 
+private external fun encodeURIComponent(value: String): String
+private external fun decodeURIComponent(value: String): String
+
 /**
  * Owns the render loop: listens for hash changes and session changes, keeps the static navbar's
  * active state in sync, and renders the current route's screen into `#app`.
+ *
+ * Hashes may carry a query suffix (`#questions?book=ACT&chapter=22`) so scoped study views are
+ * shareable/bookmarkable; the route (path before `?`) alone drives screen selection, nav state,
+ * and the unsaved-changes guard, so filter changes never count as navigation.
  */
 object Shell {
     val scope = MainScope()
@@ -63,15 +70,34 @@ object Shell {
         render()
     }
 
+    private fun currentHash(): String = window.location.hash.substringAfter('#', "")
+
     /**
-     * The route encoded in the URL hash; a blank hash falls back to [Routes.STUDY] — the hub —
-     * where unknown routes also land.
+     * The route encoded in the URL hash (its path part, before any `?` query); a blank hash falls
+     * back to [Routes.STUDY] — the hub — where unknown routes also land.
      */
     private fun currentRoute(): String =
-        window.location.hash.substringAfter('#', "").ifBlank { Routes.STUDY }
+        currentHash().substringBefore('?').ifBlank { Routes.STUDY }
+
+    /** The current hash's query parameters (`#questions?book=ACT&chapter=22` → {book=ACT, chapter=22}). */
+    fun currentParams(): Map<String, String> =
+        currentHash().substringAfter('?', "")
+            .split('&')
+            .filter { it.isNotBlank() }
+            .associate { it.substringBefore('=') to decodeURIComponent(it.substringAfter('=', "")) }
 
     fun navigate(route: String) {
         window.location.hash = route // triggers hashchange → render
+    }
+
+    /**
+     * Rewrites the current hash's query in place — no navigation, no render, no history entry — so
+     * a screen's filter chips keep the address bar shareable without spamming Back.
+     */
+    fun replaceParams(params: List<Pair<String, String>>) {
+        val query = params.joinToString("&") { (k, v) -> "$k=${encodeURIComponent(v)}" }
+        val hash = "#" + currentRoute() + (if (query.isEmpty()) "" else "?$query")
+        window.history.replaceState(null, "", hash)
     }
 
     private fun render() {
@@ -206,8 +232,8 @@ object Shell {
             Routes.STUDY -> DownloadsScreen.render(container) // the Study & Practice overview
             Routes.STUDY_INDICES -> IndexScreen.render(container)
             Routes.STUDY_HEADINGS -> HeadingsScreen.render(container)
-            Routes.QUIZ -> QuizScreen.render(container)
-            Routes.QUESTIONS -> QuestionsScreen.render(container)
+            Routes.QUIZ -> QuizScreen.render(container, currentParams())
+            Routes.QUESTIONS -> QuestionsScreen.render(container, currentParams())
             // Legacy alias: the download center grew into the hub. replace() keeps Back working.
             Routes.DOWNLOADS -> window.location.replace("#${Routes.STUDY}")
             Routes.SIGN_IN -> AuthScreen.render(container)

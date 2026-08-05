@@ -11,7 +11,12 @@ import net.markdrew.biblebowl.web.clear
 import net.markdrew.biblebowl.web.errorLine
 import net.markdrew.biblebowl.web.onClick
 import net.markdrew.biblebowl.web.spinner
+import net.markdrew.biblebowl.api.ScopeSelection
+import net.markdrew.biblebowl.api.StudyScopeParams
+import net.markdrew.biblebowl.api.scopeQueryParams
+import net.markdrew.biblebowl.model.bookByCode
 import net.markdrew.biblebowl.web.ui.chapterChips
+import net.markdrew.biblebowl.web.ui.questionScopeLabel
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 
@@ -22,12 +27,20 @@ import org.w3c.dom.HTMLElement
  */
 object QuestionsScreen {
 
-    private var chapter: Int? = null // sticky across visits
+    private var selection = ScopeSelection() // sticky across visits
 
     private lateinit var root: HTMLElement
     private lateinit var list: HTMLElement
 
-    fun render(container: HTMLElement) {
+    fun render(container: HTMLElement, params: Map<String, String> = emptyMap()) {
+        // A scoped deep link (#questions?book=ACT&chapter=22) seeds the filter; chip changes write
+        // the canonical form back to the hash, so the view stays shareable across seasons.
+        if (params.isNotEmpty()) {
+            selection = ScopeSelection(
+                book = params[StudyScopeParams.BOOK]?.let { bookByCode(it) },
+                chapter = params[StudyScopeParams.CHAPTER]?.toIntOrNull(),
+            )
+        }
         root = container
         root.child("h1", "page-title", "Questions")
 
@@ -49,10 +62,19 @@ object QuestionsScreen {
             }
         }
 
-        root.chapterChips(chapter) { chapter = it; root.clear(); render(root) }
+        root.chapterChips(selection) {
+            selection = it
+            Shell.replaceParams(scopeQueryParams(Session.studySet, it))
+            root.clear()
+            render(root)
+        }
 
         list = root.child("div")
         reload()
+    }
+
+    private fun scopeLabel(): String? = selection.book?.let { book ->
+        selection.chapter?.let { "${book.briefName} $it" } ?: book.briefName
     }
 
     private fun reload() {
@@ -60,10 +82,13 @@ object QuestionsScreen {
         list.spinner()
         Shell.scope.launch {
             try {
-                val questions = Session.api.questions(chapter = chapter)
+                val questions = Session.api.questions(
+                    chapter = selection.chapter,
+                    book = selection.book?.name,
+                )
                 list.clear()
                 if (questions.isEmpty()) {
-                    val scope = chapter?.let { " for ${Session.season.eventScripture} $it" } ?: ""
+                    val scope = scopeLabel()?.let { " for $it" } ?: ""
                     list.child("p", "fs-5", "No approved questions yet$scope.")
                 } else {
                     questions.forEach { q -> list.questionCard(q) }
@@ -81,7 +106,7 @@ object QuestionsScreen {
             val body = child("div", "card-body")
             body.child("div", "d-flex justify-content-between align-items-center mb-2") {
                 child("span", "badge rounded-pill text-bg-light border", q.roundType.displayName)
-                q.chapter?.let { child("span", "tbb-gold fw-semibold small", "${Session.season.eventScripture} $it") }
+                questionScopeLabel(q)?.let { child("span", "tbb-gold fw-semibold small", it) }
             }
             body.child("p", "fs-5 mb-2", q.prompt)
             if (q.choices.isNotEmpty()) {

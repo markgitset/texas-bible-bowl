@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.web.screens
 
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
+import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
@@ -22,6 +23,8 @@ object ContributeScreen {
     private var prompt = ""
     private var answer = ""
     private var choicesText = ""
+    /** The question's book — hidden (implied) for single-book seasons, a chip row for multi-book. */
+    private var book: Book? = null
     private var chapterText = ""
     private var referencesText = ""
     private var message: String? = null
@@ -67,6 +70,20 @@ object ContributeScreen {
                 ta.addEventListener("input", { choicesText = ta.value })
             }
         }
+        // Multi-book seasons need an explicit book: a bare chapter number would be ambiguous (and the
+        // question's stored scope — book + chapter — is what makes it reusable across rotations).
+        val studySet = Session.studySet
+        if (!studySet.isSingleBook) {
+            form.child("div", "mb-3") {
+                child("label", "form-label", "Book")
+                chipRow(studySet.books.map { it.briefName to it }, book ?: studySet.books.first()) {
+                    book = it
+                    root.clear()
+                    render(root)
+                }
+            }
+        }
+
         form.child("div", "row g-2 mb-3") {
             child("div", "col-4") {
                 child("label", "form-label", "Chapter")
@@ -125,6 +142,9 @@ object ContributeScreen {
                         answer = answer.trim(),
                         references = referencesText.split(";", ",").map { it.trim() }.filter { it.isNotEmpty() },
                         choices = choicesText.lines().map { it.trim() }.filter { it.isNotEmpty() },
+                        // Single-book seasons omit the book (the server infers it); multi-book
+                        // seasons send the picked (or first) book explicitly.
+                        bookCode = (book ?: Session.studySet.books.singleOrNull())?.name,
                         chapter = chapterText.toIntOrNull(),
                     )
                 )

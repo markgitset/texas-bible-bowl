@@ -76,6 +76,7 @@ import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.api.StudyScopeParams
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.api.UserDto
 
@@ -119,6 +120,22 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
 
     private fun HttpRequestBuilder.authorize() {
         token?.let { header(HttpHeaders.Authorization, "Bearer $it") }
+    }
+
+    /**
+     * Appends the canonical study-scope query parameters ([StudyScopeParams]): the study-set slug,
+     * the Book enum code, and a book-relative chapter (under [chapterKey] — THROUGH_CHAPTER on
+     * cumulative endpoints). All-null = the server's current-season default.
+     */
+    private fun HttpRequestBuilder.scopeParams(
+        set: String?,
+        book: String?,
+        chapter: Int?,
+        chapterKey: String = StudyScopeParams.CHAPTER,
+    ) {
+        if (set != null) parameter(StudyScopeParams.SET, set)
+        if (book != null) parameter(StudyScopeParams.BOOK, book)
+        if (chapter != null) parameter(chapterKey, chapter)
     }
 
     private fun remember(auth: AuthResponse): AuthResponse = auth.also {
@@ -209,12 +226,21 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         }
     }
 
-    /** Lists questions; the server defaults to APPROVED when [status] is null. */
-    suspend fun questions(status: QuestionStatus? = null, chapter: Int? = null): List<QuestionDto> =
+    /**
+     * Lists questions; the server defaults to APPROVED when [status] is null. Scope is canonical
+     * ([set] slug / [book] code / book-relative [chapter], see StudyScopeParams): no scope = the
+     * current season's set; [set] = "all" is the whole archive; a bare [book] works in any season.
+     */
+    suspend fun questions(
+        status: QuestionStatus? = null,
+        chapter: Int? = null,
+        set: String? = null,
+        book: String? = null,
+    ): List<QuestionDto> =
         client.get("$baseUrl/questions") {
             authorize()
             if (status != null) parameter("status", status.name)
-            if (chapter != null) parameter("chapter", chapter)
+            scopeParams(set, book, chapter)
         }.bodyOrThrow()
 
     suspend fun submitQuestion(req: SubmitQuestionRequest): QuestionDto =
@@ -234,35 +260,51 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
      * Fetches a generated practice-test PDF for [round] (optionally chapter-filtered) as raw bytes.
      * [limit] caps bank-round (R2/R3) tests; [seed] reproduces the same text-round (R1/R4/R5) test.
      */
-    suspend fun practiceTestPdf(round: Round, chapter: Int? = null, limit: Int? = null, seed: Int? = null): ByteArray =
+    suspend fun practiceTestPdf(
+        round: Round,
+        chapter: Int? = null,
+        limit: Int? = null,
+        seed: Int? = null,
+        set: String? = null,
+        book: String? = null,
+    ): ByteArray =
         client.get("$baseUrl/generate/practice-test.pdf") {
             authorize()
             parameter("round", round.name)
-            if (chapter != null) parameter("chapter", chapter)
+            scopeParams(set, book, chapter)
             if (limit != null) parameter("limit", limit)
             if (seed != null) parameter("seed", seed)
         }.bodyOrThrow()
 
     /** Fetches a duplex flashcard deck PDF built from approved questions (filters optional). */
-    suspend fun flashcardsPdf(chapter: Int? = null, round: Round? = null): ByteArray =
+    suspend fun flashcardsPdf(
+        chapter: Int? = null,
+        round: Round? = null,
+        set: String? = null,
+        book: String? = null,
+    ): ByteArray =
         client.get("$baseUrl/generate/flashcards.pdf") {
             authorize()
-            if (chapter != null) parameter("chapter", chapter)
+            scopeParams(set, book, chapter)
             if (round != null) parameter("round", round.name)
         }.bodyOrThrow()
 
     /** Lists the season book's ESV section headings (Round 5 material), optionally through a chapter. */
-    suspend fun headings(throughChapter: Int? = null): List<HeadingDto> =
+    suspend fun headings(throughChapter: Int? = null, set: String? = null, book: String? = null): List<HeadingDto> =
         client.get("$baseUrl/study/headings") {
             authorize()
-            if (throughChapter != null) parameter("throughChapter", throughChapter)
+            scopeParams(set, book, throughChapter, chapterKey = StudyScopeParams.THROUGH_CHAPTER)
         }.bodyOrThrow()
 
     /** Fetches a chapter-headings flashcard deck PDF, optionally limited through a chapter. */
-    suspend fun headingFlashcardsPdf(throughChapter: Int? = null): ByteArray =
+    suspend fun headingFlashcardsPdf(
+        throughChapter: Int? = null,
+        set: String? = null,
+        book: String? = null,
+    ): ByteArray =
         client.get("$baseUrl/generate/heading-flashcards.pdf") {
             authorize()
-            if (throughChapter != null) parameter("throughChapter", throughChapter)
+            scopeParams(set, book, throughChapter, chapterKey = StudyScopeParams.THROUGH_CHAPTER)
         }.bodyOrThrow()
 
     /**
@@ -284,9 +326,11 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         verseOnNewLine: Boolean = false,
         highlight: Boolean = true,
         underlineUniqueWords: Boolean = false,
+        set: String? = null,
     ): ByteArray =
         client.get("$baseUrl/generate/bible-text.pdf") {
             authorize()
+            scopeParams(set, book = null, chapter = null)
             if (fontSize != null) parameter("fontSize", fontSize)
             if (twoColumns) parameter("twoColumns", true)
             if (justified) parameter("justified", true)
@@ -299,76 +343,88 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         }.bodyOrThrow()
 
     /** Lists the season's numbers index (every numeral/cardinal/ordinal/fraction and the verses it occurs in). */
-    suspend fun numbersIndex(): List<IndexEntryDto> =
-        client.get("$baseUrl/study/numbers") { authorize() }.bodyOrThrow()
+    suspend fun numbersIndex(set: String? = null): List<IndexEntryDto> =
+        client.get("$baseUrl/study/numbers") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Fetches the numbers-index PDF (alphabetical + by-frequency sections). */
-    suspend fun numbersIndexPdf(): ByteArray =
-        client.get("$baseUrl/generate/numbers-index.pdf") { authorize() }.bodyOrThrow()
+    suspend fun numbersIndexPdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/numbers-index.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Lists the season's names index (every proper name and the verses it occurs in). */
-    suspend fun namesIndex(): List<IndexEntryDto> =
-        client.get("$baseUrl/study/names") { authorize() }.bodyOrThrow()
+    suspend fun namesIndex(set: String? = null): List<IndexEntryDto> =
+        client.get("$baseUrl/study/names") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Fetches the names-index PDF (alphabetical + by-frequency sections). */
-    suspend fun namesIndexPdf(): ByteArray =
-        client.get("$baseUrl/generate/names-index.pdf") { authorize() }.bodyOrThrow()
+    suspend fun namesIndexPdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/names-index.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Fetches the men-index PDF (every man named in the season, alphabetical + by frequency). */
-    suspend fun menIndexPdf(): ByteArray =
-        client.get("$baseUrl/generate/men-index.pdf") { authorize() }.bodyOrThrow()
+    suspend fun menIndexPdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/men-index.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Fetches the women-index PDF (every woman named in the season, alphabetical + by frequency). */
-    suspend fun womenIndexPdf(): ByteArray =
-        client.get("$baseUrl/generate/women-index.pdf") { authorize() }.bodyOrThrow()
+    suspend fun womenIndexPdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/women-index.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Fetches the places-index PDF (every place named in the season, alphabetical + by frequency). */
-    suspend fun placesIndexPdf(): ByteArray =
-        client.get("$baseUrl/generate/places-index.pdf") { authorize() }.bodyOrThrow()
+    suspend fun placesIndexPdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/places-index.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Fetches the full word index (concordance) PDF — every significant word with its verses. */
-    suspend fun fullIndexPdf(): ByteArray =
-        client.get("$baseUrl/generate/full-index.pdf") { authorize() }.bodyOrThrow()
+    suspend fun fullIndexPdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/full-index.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Fetches the one-time-words index PDF (alphabetical + in order of appearance). */
-    suspend fun uniqueWordsIndexPdf(): ByteArray =
-        client.get("$baseUrl/generate/unique-words-index.pdf") { authorize() }.bodyOrThrow()
+    suspend fun uniqueWordsIndexPdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/unique-words-index.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Fetches the unique-word flashcard deck PDF (word on the front, its verse on the back). */
-    suspend fun uniqueWordFlashcardsPdf(): ByteArray =
-        client.get("$baseUrl/generate/unique-word-flashcards.pdf") { authorize() }.bodyOrThrow()
+    suspend fun uniqueWordFlashcardsPdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/unique-word-flashcards.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Fetches the multiple-choice study guide PDF (questions by chapter + answer key). */
-    suspend fun studyGuidePdf(): ByteArray =
-        client.get("$baseUrl/generate/study-guide.pdf") { authorize() }.bodyOrThrow()
+    suspend fun studyGuidePdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/study-guide.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Fetches the study-guide answer copy PDF (correct choices starred inline, no key). */
-    suspend fun studyGuideAnswersPdf(): ByteArray =
-        client.get("$baseUrl/generate/study-guide-answers.pdf") { authorize() }.bodyOrThrow()
+    suspend fun studyGuideAnswersPdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/study-guide-answers.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /** Fetches the raw curated study-guide TSV (for coaches and question writers). */
-    suspend fun studyGuideTsv(): ByteArray =
-        client.get("$baseUrl/generate/study-guide.tsv") { authorize() }.bodyOrThrow()
+    suspend fun studyGuideTsv(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/study-guide.tsv") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /**
      * Fetches a Quizlet/Space-importable TSV: the approved question bank (prompt -> answer) or,
      * with [headingsSource], the R5 headings (title -> chapter; [chapter] scopes cumulatively).
      */
-    suspend fun questionsTsv(headingsSource: Boolean = false, round: Round? = null, chapter: Int? = null): ByteArray =
+    suspend fun questionsTsv(
+        headingsSource: Boolean = false,
+        round: Round? = null,
+        chapter: Int? = null,
+        set: String? = null,
+        book: String? = null,
+    ): ByteArray =
         client.get("$baseUrl/generate/questions.tsv") {
             authorize()
             if (headingsSource) parameter("source", "headings")
             if (round != null) parameter("round", round.name)
-            if (chapter != null) parameter("chapter", chapter)
+            scopeParams(set, book, chapter)
         }.bodyOrThrow()
 
     /** Fetches a Kahoot-importable .xlsx (multiple-choice material only; params as [questionsTsv]). */
-    suspend fun questionsXlsx(headingsSource: Boolean = false, round: Round? = null, chapter: Int? = null): ByteArray =
+    suspend fun questionsXlsx(
+        headingsSource: Boolean = false,
+        round: Round? = null,
+        chapter: Int? = null,
+        set: String? = null,
+        book: String? = null,
+    ): ByteArray =
         client.get("$baseUrl/generate/questions.xlsx") {
             authorize()
             if (headingsSource) parameter("source", "headings")
             if (round != null) parameter("round", round.name)
-            if (chapter != null) parameter("chapter", chapter)
+            scopeParams(set, book, chapter)
         }.bodyOrThrow()
 
     // --- Registration (coach flow; docs/gui-redesign.md §5E) ---

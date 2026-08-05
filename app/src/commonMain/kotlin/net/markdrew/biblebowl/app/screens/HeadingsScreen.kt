@@ -28,6 +28,8 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import net.markdrew.biblebowl.api.HeadingDto
+import net.markdrew.biblebowl.api.resolvedStudySet
+import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.client.TbbApi
 
@@ -92,7 +94,7 @@ private fun HeadingCard(heading: HeadingDto, selfCheck: Boolean) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (!selfCheck || revealed) {
                     Text(
-                        "Chapter ${heading.chapter} · ${heading.reference}",
+                        "${headingChapterLabel(heading)} · ${heading.reference}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.primary,
                         fontWeight = if (selfCheck) FontWeight.SemiBold else FontWeight.Normal,
@@ -114,4 +116,13 @@ private fun HeadingCard(heading: HeadingDto, selfCheck: Boolean) {
             }
         }
     }
+}
+
+/** "Chapter 14" for single-book seasons; book-qualified ("Num 14") for multi-book sets. */
+@Composable
+private fun headingChapterLabel(heading: HeadingDto): String {
+    val book = heading.bookCode
+        ?.takeIf { !LocalSeason.current.resolvedStudySet.isSingleBook }
+        ?.let { code -> Book.entries.firstOrNull { it.name == code } }
+    return book?.let { "${it.briefName} ${heading.chapter}" } ?: "Chapter ${heading.chapter}"
 }
