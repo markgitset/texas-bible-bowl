@@ -16,6 +16,7 @@ import kotlinx.coroutines.withContext
 import java.security.SecureRandom
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
+import net.markdrew.biblebowl.api.ChangePasswordRequest
 import net.markdrew.biblebowl.api.ForgotPasswordRequest
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
@@ -156,6 +157,22 @@ fun Route.authRoutes(
         }
 
         authenticate {
+            /** Self-service password change: proves the current password, then swaps in the new one. */
+            post("/change-password") {
+                val user = currentUser(users) ?: return@post
+                val req = call.receive<ChangePasswordRequest>()
+                if (req.newPassword.length < 8) {
+                    call.respond(HttpStatusCode.BadRequest, ApiError("invalid", "Password must be at least 8 characters"))
+                    return@post
+                }
+                if (!Passwords.verify(req.currentPassword, user.passwordHash)) {
+                    call.respond(HttpStatusCode.BadRequest, ApiError("bad_current_password", "Current password is incorrect"))
+                    return@post
+                }
+                users.updatePassword(user.id, Passwords.hash(req.newPassword))
+                call.respond(mapOf("status" to "changed"))
+            }
+
             get("/me") {
                 val user = currentUser(users) ?: return@get
                 call.respond(user.toDto())
