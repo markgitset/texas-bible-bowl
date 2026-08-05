@@ -10,6 +10,8 @@ import net.markdrew.biblebowl.api.SeasonDto
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.isGlobalAdmin
 import net.markdrew.biblebowl.client.TbbApi
+import net.markdrew.biblebowl.api.resolvedStudySet
+import net.markdrew.biblebowl.model.StudySet
 
 /** App-wide client state: the shared [TbbApi], the current season, and the signed-in user. */
 object Session {
@@ -30,6 +32,13 @@ object Session {
 
     var season: SeasonDto = FALLBACK_SEASON
         private set
+
+    /**
+     * The season's study set, resolved strictly from its slug (falling back to the default). Drives
+     * chapter pickers: multi-book or partial sets have gaps and span books, so pickers must iterate
+     * [StudySet.chapterRefs]/[StudySet.books] — never `1..season.chapterCount`.
+     */
+    val studySet: StudySet get() = season.resolvedStudySet
 
     val user: UserDto? get() = api.user
 

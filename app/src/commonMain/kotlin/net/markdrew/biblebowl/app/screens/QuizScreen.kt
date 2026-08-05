@@ -37,7 +37,11 @@ import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.ui.ChapterChips
+import net.markdrew.biblebowl.app.ui.LocalSeason
+import net.markdrew.biblebowl.api.ScopeSelection
+import net.markdrew.biblebowl.api.resolvedStudySet
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
+import net.markdrew.biblebowl.model.Book
 
 /** What a quiz draws from: the community question bank, or ESV chapter headings (Round 5). */
 private enum class QuizSource(val displayName: String) {
@@ -48,18 +52,28 @@ private enum class QuizSource(val displayName: String) {
 /**
  * Turns the season's headings into multiple-choice "which chapter?" items. Distractors are other
  * chapters in scope, so cumulative practice (through chapter N) never leaks future chapters.
+ * Chapter labels stay "Chapter N" for single-book sets and gain the book ("Num 14") for multi-book
+ * sets, where a bare number would be ambiguous.
  */
-private fun headingQuestions(headings: List<net.markdrew.biblebowl.api.HeadingDto>): List<QuestionDto> {
-    val chaptersInScope = headings.map { it.chapter }.distinct()
+private fun headingQuestions(
+    headings: List<net.markdrew.biblebowl.api.HeadingDto>,
+    multiBook: Boolean,
+): List<QuestionDto> {
+    fun label(h: net.markdrew.biblebowl.api.HeadingDto): String {
+        val book = h.bookCode?.takeIf { multiBook }?.let { code -> Book.entries.firstOrNull { it.name == code } }
+        return book?.let { "${it.briefName} ${h.chapter}" } ?: "Chapter ${h.chapter}"
+    }
+    val chaptersInScope = headings.map(::label).distinct()
     return headings.map { h ->
-        val distractors = (chaptersInScope - h.chapter).shuffled().take(4)
+        val distractors = (chaptersInScope - label(h)).shuffled().take(4)
         QuestionDto(
             id = "heading-${h.index}",
             roundType = Round.EVENTS,
             prompt = "Which chapter has the heading “${h.title}”?",
-            answer = "Chapter ${h.chapter}",
+            answer = label(h),
             references = listOf(h.reference),
-            choices = (distractors + h.chapter).map { "Chapter $it" },
+            choices = distractors + label(h),
+            bookCode = h.bookCode,
             chapter = h.chapter,
             status = QuestionStatus.APPROVED,
             authorId = "esv-headings",
@@ -75,10 +89,11 @@ fun QuizScreen(api: TbbApi) {
     var error by remember { mutableStateOf<String?>(null) }
     var source by remember { mutableStateOf(QuizSource.QUESTIONS) }
     var round by remember { mutableStateOf<Round?>(null) }
-    var chapter by remember { mutableStateOf<Int?>(null) }
+    var selection by remember { mutableStateOf(ScopeSelection()) }
     // Bumped on every answer/advance so Compose re-reads the engine's state.
     var tick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
+    val season = LocalSeason.current
 
     val quiz = engine
     when {
@@ -87,17 +102,21 @@ fun QuizScreen(api: TbbApi) {
         quiz == null -> QuizSetup(
             source = source, onSource = { source = it },
             round = round, onRound = { round = it },
-            chapter = chapter, onChapter = { chapter = it },
+            selection = selection, onSelection = { selection = it },
             error = error,
             onStart = {
                 loading = true; error = null
                 scope.launch {
                     try {
                         val pool = when (source) {
-                            QuizSource.QUESTIONS -> api.questions(chapter = chapter)
-                                .filter { round == null || it.roundType == round }
+                            QuizSource.QUESTIONS ->
+                                api.questions(chapter = selection.chapter, book = selection.book?.name)
+                                    .filter { round == null || it.roundType == round }
                             // Chapter chip means "through chapter N" here so drills stay cumulative.
-                            QuizSource.HEADINGS -> headingQuestions(api.headings(throughChapter = chapter))
+                            QuizSource.HEADINGS -> headingQuestions(
+                                api.headings(throughChapter = selection.chapter, book = selection.book?.name),
+                                multiBook = !season.resolvedStudySet.isSingleBook,
+                            )
                         }
                         val e = QuizEngine(pool)
                         if (e.isEmpty) error = when (source) {
@@ -125,7 +144,7 @@ fun QuizScreen(api: TbbApi) {
 private fun QuizSetup(
     source: QuizSource, onSource: (QuizSource) -> Unit,
     round: Round?, onRound: (Round?) -> Unit,
-    chapter: Int?, onChapter: (Int?) -> Unit,
+    selection: ScopeSelection, onSelection: (ScopeSelection) -> Unit,
     error: String?,
     onStart: () -> Unit,
 ) {
@@ -161,7 +180,7 @@ private fun QuizSetup(
             if (source == QuizSource.HEADINGS) "Through chapter" else "Chapter",
             style = MaterialTheme.typography.labelLarge,
         )
-        ChapterChips(selected = chapter, onSelect = onChapter)
+        ChapterChips(selected = selection, onSelect = onSelection)
         Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("Start quiz") }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }

@@ -1,5 +1,8 @@
 package net.markdrew.biblebowl.web.screens
 
+import net.markdrew.biblebowl.api.ScopeSelection
+import net.markdrew.biblebowl.api.StudyScopeParams
+import net.markdrew.biblebowl.api.scopeQueryParams
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.StudySection
@@ -60,10 +63,12 @@ object DownloadsScreen {
 
     // Sticky for the whole page session, deliberately outliving route changes. Chapter scope is
     // per card group: each customize panel's chips affect only the cards that panel belongs to.
-    private var flashcardChapter: Int? = null
-    private var headingChapter: Int? = null
-    private var practiceChapter: Int? = null
-    private var exportChapter: Int? = null
+    // Selections are canonical (book + book-relative chapter), so the emitted download URLs stay
+    // valid across the 10-year study rotation.
+    private var flashcardScope = ScopeSelection()
+    private var headingScope = ScopeSelection()
+    private var practiceScope = ScopeSelection()
+    private var exportScope = ScopeSelection()
     private var customize: Customize? = null
     private var textChoices = StudyTextChoices()
     private var flashcardRound: Round? = null
@@ -203,11 +208,11 @@ object DownloadsScreen {
         )
         downloadCard(
             title = "Question flashcards",
-            subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardChapter) +
+            subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardScope) +
                 customizedNote(flashcardRound != null),
             href = generateUrl(
                 "/generate/flashcards.pdf",
-                "chapter" to flashcardChapter,
+                *scopedParams(flashcardScope),
                 "round" to flashcardRound?.name,
             ),
             customize = Customize.QuestionFlashcards,
@@ -229,8 +234,11 @@ object DownloadsScreen {
         downloadCard(
             title = "Chapter-heading flashcards",
             subtitle = "One card per ESV section heading (Round 5 material)." +
-                (headingChapter?.let { " Through chapter $it." } ?: ""),
-            href = generateUrl("/generate/heading-flashcards.pdf", "throughChapter" to headingChapter),
+                (headingScope.chapter?.let { " Through ${scopeLabel(headingScope)}." } ?: ""),
+            href = generateUrl(
+                "/generate/heading-flashcards.pdf",
+                *scopedParams(headingScope, chapterKey = StudyScopeParams.THROUGH_CHAPTER),
+            ),
             customize = Customize.HeadingFlashcards,
         )
         linkCard(
@@ -265,7 +273,7 @@ object DownloadsScreen {
             downloadCard(
                 title = "Round ${round.number}: ${round.displayName}",
                 subtitle = (if (round.crowdSourced) "Built from the approved community questions."
-                else "Generated from the ESV text.") + scopeNote(practiceChapter) + customizedNote(roundCustomized),
+                else "Generated from the ESV text.") + scopeNote(practiceScope) + customizedNote(roundCustomized),
                 href = practiceTestUrl(round),
                 customize = Customize.PracticeTest(round),
             )
@@ -317,7 +325,7 @@ object DownloadsScreen {
         downloadCard(
             title = "Kahoot spreadsheet",
             subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout)." +
-                scopeNote(exportChapter) + customizedNote(exportCustomized),
+                scopeNote(exportScope) + customizedNote(exportCustomized),
             href = exportUrl(kahoot = true),
             customize = Customize.Export(kahoot = true),
             buttonLabel = "Download",
@@ -325,7 +333,7 @@ object DownloadsScreen {
         downloadCard(
             title = "Quizlet / Space TSV",
             subtitle = "Question-and-answer pairs as tab-separated text, import-ready for " +
-                "Quizlet, Space, or Anki." + scopeNote(exportChapter) + customizedNote(exportCustomized),
+                "Quizlet, Space, or Anki." + scopeNote(exportScope) + customizedNote(exportCustomized),
             href = exportUrl(kahoot = false),
             customize = Customize.Export(kahoot = false),
             buttonLabel = "Download",
@@ -346,6 +354,13 @@ object DownloadsScreen {
         return Session.api.baseUrl + path + (if (query.isEmpty()) "" else "?$query")
     }
 
+    /** [selection]'s canonical scope params (durable across seasons; see scopeQueryParams). */
+    private fun scopedParams(
+        selection: ScopeSelection,
+        chapterKey: String = StudyScopeParams.CHAPTER,
+    ): Array<Pair<String, Any?>> =
+        scopeQueryParams(Session.studySet, selection, chapterKey).map { (k, v) -> k to (v as Any?) }.toTypedArray()
+
     private fun studyTextUrl(): String {
         val c = textChoices
         return generateUrl(
@@ -365,7 +380,7 @@ object DownloadsScreen {
     private fun practiceTestUrl(round: Round): String = generateUrl(
         "/generate/practice-test.pdf",
         "round" to round.name,
-        "chapter" to practiceChapter,
+        *scopedParams(practiceScope),
         "limit" to practiceLimit.takeIf { round.crowdSourced },
         "seed" to practiceSeed.toIntOrNull().takeIf { !round.crowdSourced },
     )
@@ -374,7 +389,7 @@ object DownloadsScreen {
         if (kahoot) "/generate/questions.xlsx" else "/generate/questions.tsv",
         "source" to "headings".takeIf { exportHeadings },
         "round" to exportRound?.name.takeIf { !exportHeadings },
-        "chapter" to exportChapter,
+        *scopedParams(exportScope),
     )
 
     // --- rendering ---
@@ -478,14 +493,14 @@ object DownloadsScreen {
                 }*/
             }
             Customize.QuestionFlashcards -> {
-                chapterScope(flashcardChapter) { flashcardChapter = it }
+                chapterScope(flashcardScope) { flashcardScope = it }
                 child("p", "fw-semibold mb-1", "Round")
                 chipRow(roundOptions(), flashcardRound) { flashcardRound = it; rerender() }
             }
             Customize.HeadingFlashcards ->
-                chapterScope(headingChapter, "Through chapter") { headingChapter = it }
+                chapterScope(headingScope, "Through chapter") { headingScope = it }
             is Customize.PracticeTest -> {
-                chapterScope(practiceChapter) { practiceChapter = it }
+                chapterScope(practiceScope) { practiceScope = it }
                 if (target.round.crowdSourced) {
                     child("p", "fw-semibold mb-1", "Number of questions")
                     chipRow(
@@ -512,7 +527,7 @@ object DownloadsScreen {
                 }
             }
             is Customize.Export -> {
-                chapterScope(exportChapter) { exportChapter = it }
+                chapterScope(exportScope) { exportScope = it }
                 child("p", "fw-semibold mb-1", "Source")
                 chipRow(
                     listOf("Question bank" to false, "Chapter headings" to true),
@@ -530,15 +545,25 @@ object DownloadsScreen {
     }
 
     /** Chapter chips for one card group's downloads; the cards' subtitles echo the choice. */
-    private fun Element.chapterScope(selected: Int?, label: String = "Chapter scope", onSelect: (Int?) -> Unit) {
+    private fun Element.chapterScope(
+        selected: ScopeSelection,
+        label: String = "Chapter scope",
+        onSelect: (ScopeSelection) -> Unit,
+    ) {
         child("p", "fw-semibold mb-1", label)
         chapterChips(selected) { onSelect(it); rerender() }
+    }
+
+    /** Human label for a selection: "Acts 2", or just the book for a whole-book slice. */
+    private fun scopeLabel(selection: ScopeSelection): String? = selection.book?.let { book ->
+        selection.chapter?.let { "${book.briefName} $it" } ?: book.briefName
     }
 
     private fun roundOptions(): List<Pair<String, Round?>> =
         listOf<Pair<String, Round?>>("All" to null) + Round.crowdSourcedRounds.map { it.displayName to it }
 
-    private fun scopeNote(chapter: Int?): String = chapter?.let { " Scoped to chapter $it." } ?: ""
+    private fun scopeNote(selection: ScopeSelection): String =
+        scopeLabel(selection)?.let { " Scoped to $it." } ?: ""
 
     private fun customizedNote(customized: Boolean): String =
         if (customized) " Using your customized settings." else ""

@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionDto
+import net.markdrew.biblebowl.api.ScopeSelection
+import net.markdrew.biblebowl.api.scopeLabel
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.client.TbbApi
@@ -56,20 +58,20 @@ fun QuestionsScreen(
     onModerate: () -> Unit,
 ) {
     var questions by remember { mutableStateOf<List<QuestionDto>?>(null) }
-    var chapter by remember { mutableStateOf<Int?>(null) }
+    var selection by remember { mutableStateOf(ScopeSelection()) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     suspend fun reload() {
         error = null
         try {
-            questions = api.questions(chapter = chapter)
+            questions = api.questions(chapter = selection.chapter, book = selection.book?.name)
         } catch (e: Throwable) {
             error = e.message
         }
     }
 
-    LaunchedEffect(chapter) { reload() }
+    LaunchedEffect(selection) { reload() }
 
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val canSubmit = user != null && Permission.QUESTION_SUBMIT in user.permissions
@@ -85,8 +87,8 @@ fun QuestionsScreen(
             }
         }
 
-        // One-tap chapter filter; "All" plus 1..28.
-        ChapterChips(selected = chapter, onSelect = { chapter = it })
+        // One-tap scope filter: "All" plus the study set's chapters (book-aware for multi-book sets).
+        ChapterChips(selected = selection, onSelect = { selection = it })
 
         error?.let { Text("Error: $it", color = MaterialTheme.colorScheme.error) }
 
@@ -96,7 +98,7 @@ fun QuestionsScreen(
             }
             else -> if (list.isEmpty()) {
                 Text(
-                    "No approved questions yet" + (chapter?.let { " for ${LocalSeason.current.eventScripture} $it" } ?: "") + ".",
+                    "No approved questions yet" + (selection.label()?.let { " for $it" } ?: "") + ".",
                     style = MaterialTheme.typography.bodyLarge,
                 )
             } else {
@@ -132,9 +134,9 @@ private fun QuestionCard(q: QuestionDto, onVote: () -> Unit) {
                     onClick = {},
                     label = { Text(q.roundType.displayName, style = MaterialTheme.typography.labelSmall) },
                 )
-                q.chapter?.let {
+                q.scopeLabel(LocalSeason.current.eventScripture)?.let {
                     Spacer(Modifier.weight(1f))
-                    Text("${LocalSeason.current.eventScripture} $it", style = MaterialTheme.typography.labelMedium,
+                    Text(it, style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.secondary)
                 }
             }

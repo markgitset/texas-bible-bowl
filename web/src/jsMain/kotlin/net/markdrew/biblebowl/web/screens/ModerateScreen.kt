@@ -4,6 +4,7 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.web.Session
+import net.markdrew.biblebowl.web.ui.questionScopeLabel
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.clear
@@ -49,9 +50,7 @@ object ModerateScreen {
             child("div", "card-body") {
                 child("div", "d-flex justify-content-between align-items-center mb-2") {
                     child("span", "badge rounded-pill text-bg-light border", q.roundType.displayName)
-                    q.chapter?.let {
-                        child("span", "tbb-gold fw-semibold small", "${Session.season.eventScripture} $it")
-                    }
+                    questionScopeLabel(q)?.let { child("span", "tbb-gold fw-semibold small", it) }
                 }
                 child("p", "fs-5 mb-2", q.prompt)
                 if (q.choices.isNotEmpty()) {

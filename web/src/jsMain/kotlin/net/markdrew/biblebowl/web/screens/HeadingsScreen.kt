@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.web.screens
 
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.HeadingDto
+import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
@@ -80,7 +81,7 @@ object HeadingsScreen {
                     line.child(
                         "span",
                         if (selfCheck) "tbb-gold fw-semibold small" else "tbb-gold small",
-                        "Chapter ${heading.chapter} · ${heading.reference}",
+                        "${headingChapterLabel(heading)} · ${heading.reference}",
                     )
                 } else {
                     line.child("span", "text-muted fst-italic small", "Tap to reveal chapter")
@@ -90,5 +91,13 @@ object HeadingsScreen {
             renderLine()
             if (selfCheck) onClick { revealed = !revealed; renderLine() }
         }
+    }
+
+    /** "Chapter 14" for single-book seasons; book-qualified ("Num 14") for multi-book sets. */
+    private fun headingChapterLabel(heading: HeadingDto): String {
+        val book = heading.bookCode
+            ?.takeIf { !Session.studySet.isSingleBook }
+            ?.let { code -> Book.entries.firstOrNull { it.name == code } }
+        return book?.let { "${it.briefName} ${heading.chapter}" } ?: "Chapter ${heading.chapter}"
     }
 }

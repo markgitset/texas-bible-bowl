@@ -87,6 +87,7 @@ class TbbApiRequestTest {
                     """{"seasonYear":"2027","divisions":[]}""" to "application/json"
                 "/scores/mine" ->
                     """{"seasonYear":"2027","released":false,"rows":[]}""" to "application/json"
+                "/questions", "/study/headings" -> "[]" to "application/json"
                 else ->
                     if (exchange.requestURI.path.startsWith("/registration/")) {
                         // Mutation endpoints respond with the registration + candidates wrapper.
@@ -139,6 +140,48 @@ class TbbApiRequestTest {
         val uri = requests.single()
         listOf("round=FIND_THE_VERSE", "chapter=7", "limit=20", "seed=1234").forEach { param ->
             assertTrue(param in uri, "expected $param in $uri")
+        }
+    }
+
+    @Test
+    fun studyEndpointsSendTheCanonicalScopeParams() = runBlocking {
+        // The set/book/chapter scope (see StudyScopeParams) is what makes study URLs durable across
+        // the 10-year rotation. All-null = no scope params = the server's current-season default.
+        api.questions(chapter = 22, book = "ACT")
+        requests.last().let { uri ->
+            assertTrue("book=ACT" in uri && "chapter=22" in uri, uri)
+        }
+
+        api.questions(set = "all")
+        assertTrue("set=all" in requests.last(), requests.last())
+
+        api.questions()
+        assertEquals("/questions", requests.last(), "no scope params when unscoped")
+
+        api.flashcardsPdf(chapter = 14, set = "moses", book = "NUM")
+        requests.last().let { uri ->
+            assertTrue("set=moses" in uri && "book=NUM" in uri && "chapter=14" in uri, uri)
+        }
+
+        // Cumulative endpoints carry the chapter as throughChapter.
+        api.headings(throughChapter = 5, set = "john")
+        requests.last().let { uri ->
+            assertTrue("set=john" in uri && "throughChapter=5" in uri && "chapter=5" !in uri.substringBefore("throughChapter"), uri)
+        }
+        api.headingFlashcardsPdf(throughChapter = 5, book = "JOH")
+        requests.last().let { uri ->
+            assertTrue("book=JOH" in uri && "throughChapter=5" in uri, uri)
+        }
+
+        api.bibleTextPdf(set = "rev")
+        assertEquals("/generate/bible-text.pdf?set=rev", requests.last())
+
+        api.namesIndexPdf(set = "1sam")
+        assertEquals("/generate/names-index.pdf?set=1sam", requests.last())
+
+        api.questionsTsv(round = Round.FACT_FINDER, chapter = 3, book = "JOH")
+        requests.last().let { uri ->
+            assertTrue("round=FACT_FINDER" in uri && "book=JOH" in uri && "chapter=3" in uri, uri)
         }
     }
 

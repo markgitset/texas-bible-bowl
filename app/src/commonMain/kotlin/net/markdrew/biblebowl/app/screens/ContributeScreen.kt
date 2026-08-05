@@ -26,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.resolvedStudySet
+import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.client.TbbApi
@@ -37,6 +39,7 @@ fun ContributeScreen(api: TbbApi) {
     var prompt by remember { mutableStateOf("") }
     var answer by remember { mutableStateOf("") }
     var referencesText by remember { mutableStateOf("") }
+    var book by remember { mutableStateOf<Book?>(null) }
     var chapterText by remember { mutableStateOf("") }
     var choicesText by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -87,6 +90,21 @@ fun ContributeScreen(api: TbbApi) {
                 modifier = Modifier.fillMaxWidth(), minLines = 3,
             )
         }
+        // Multi-book seasons need an explicit book: a bare chapter number would be ambiguous (and the
+        // question's stored scope — book + chapter — is what makes it reusable across rotations).
+        val studySet = LocalSeason.current.resolvedStudySet
+        if (!studySet.isSingleBook) {
+            Text("Book", style = MaterialTheme.typography.labelLarge)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                studySet.books.forEach { b ->
+                    FilterChip(
+                        selected = (book ?: studySet.books.first()) == b,
+                        onClick = { book = b },
+                        label = { Text(b.briefName) },
+                    )
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             OutlinedTextField(
                 value = chapterText, onValueChange = { chapterText = it.filter(Char::isDigit) },
@@ -113,6 +131,9 @@ fun ContributeScreen(api: TbbApi) {
                                 answer = answer.trim(),
                                 references = referencesText.split(";", ",").map { it.trim() }.filter { it.isNotEmpty() },
                                 choices = choicesText.lines().map { it.trim() }.filter { it.isNotEmpty() },
+                                // Single-book seasons omit the book (the server infers it);
+                                // multi-book seasons send the picked (or first) book explicitly.
+                                bookCode = (book ?: studySet.books.singleOrNull())?.name,
                                 chapter = chapterText.toIntOrNull(),
                             )
                         )
