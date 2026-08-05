@@ -22,10 +22,12 @@ deploy_web() {
   ./gradlew :web:jsBrowserDistribution
 
   # Bake current season params from the staging backend (mirrors pages.yml), restoring the
-  # committed fallback afterward so the working tree stays clean.
+  # committed fallback afterward so the working tree stays clean. The backup must live
+  # OUTSIDE site/data/ — Hugo loads every file in that directory as site data.
   params=site/data/params.json
-  cp "$params" "$params.orig"
-  trap 'mv "$params.orig" "$params"' EXIT
+  params_bak=$(mktemp)
+  cp "$params" "$params_bak"
+  trap 'cp "$params_bak" "$params"; rm -f "$params_bak"' EXIT
   if curl -fsS --max-time 30 "$BACKEND_URL/seasons/current" -o /tmp/tbb-staging-params.json \
       && [ -s /tmp/tbb-staging-params.json ]; then
     cp /tmp/tbb-staging-params.json "$params"
@@ -39,7 +41,7 @@ deploy_web() {
   out="$PWD/staging-web/public"
   rm -rf "$out"
   HUGO_PARAMS_BACKENDURL="$BACKEND_URL" "$HUGO" -s site --gc --minify -b "$WEB_URL" -d "$out"
-  mv "$params.orig" "$params" && trap - EXIT
+  cp "$params_bak" "$params" && rm -f "$params_bak" && trap - EXIT
 
   dist=web/build/dist/js/productionExecutable
   test -s "$out/app/index.html" || { echo "ERROR: Hugo did not render the app shell (app/index.html)"; exit 1; }
