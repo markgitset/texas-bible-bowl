@@ -78,10 +78,18 @@ object QuestionsTable : Table("questions") {
     val references = text("refs").default("")
     /** JSON-encoded list of multiple-choice options (empty for non-MC rounds). */
     val choices = text("choices").default("[]")
+    /** Book enum name (e.g. "ACT"); with [chapter] this is the question's permanent scripture scope. */
+    val bookCode = varchar("book_code", 3)
+    /** 1-based chapter within [bookCode]; null = the question is about the book as a whole. */
     val chapter = integer("chapter").nullable()
     val status = varchar("status", 16)
     val authorId = varchar("author_id", 36).references(UsersTable.id)
     override val primaryKey = PrimaryKey(id)
+
+    init {
+        // Serves the derived study-set query: an OR of per-book (book_code, chapter BETWEEN) predicates.
+        index(isUnique = false, bookCode, chapter)
+    }
 }
 
 object QuestionVotesTable : Table("question_votes") {

@@ -228,7 +228,7 @@ fun Application.module(
             )
         }
         authRoutes(users, jwt, resets, email)
-        questionRoutes(users, questions)
+        questionRoutes(users, questions, seasons)
         bibleRoutes(esv)
         studyRoutes(study)
         generateRoutes(users, questions, seasons, study, pdfCache)

@@ -12,8 +12,11 @@ import net.markdrew.biblebowl.api.UpdateCongregationRequest
 import net.markdrew.biblebowl.api.UpsertGuestRequest
 import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
+import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
+import net.markdrew.biblebowl.server.data.QuestionScope
 import net.markdrew.biblebowl.api.AddCabinAssignmentRequest
 import net.markdrew.biblebowl.api.SeedMemberDto
 import net.markdrew.biblebowl.api.UpsertCabinRequest
@@ -166,21 +169,31 @@ class PostgresRepositoryTest {
             answer = "Acts 2:38",
             references = listOf("ACT2:38"),
             chapter = 2,
-        ))
+        ), book = Book.ACT)
         assertEquals(QuestionStatus.PENDING, q.status)
+        assertEquals("ACT", q.bookCode)
 
         // Voting is idempotent per user.
         questions.vote(q.id, voter.id)
         val voted = questions.vote(q.id, voter.id)
         assertEquals(1, voted?.votes)
 
-        // Moderation flips status; approved question appears in filtered list.
+        // Moderation flips status; approved question appears in the chapter-scoped list.
         val approved = questions.setStatus(q.id, QuestionStatus.APPROVED)
         assertEquals(QuestionStatus.APPROVED, approved?.status)
-        val listed = questions.list(QuestionStatus.APPROVED, chapter = 2)
+        val listed = questions.list(QuestionStatus.APPROVED, QuestionScope.Chapter(Book.ACT.chapterRef(2)))
         assertTrue(listed.any { it.id == q.id })
         assertEquals("Timothy", listed.first { it.id == q.id }.authorName)
-        assertTrue(questions.list(QuestionStatus.APPROVED, chapter = 3).none { it.id == q.id })
+        assertEquals("ACT", listed.first { it.id == q.id }.bookCode)
+        assertTrue(
+            questions.list(QuestionStatus.APPROVED, QuestionScope.Chapter(Book.ACT.chapterRef(3)))
+                .none { it.id == q.id },
+        )
+        // The same chapter of a DIFFERENT book must not match — chapter numbers are book-relative.
+        assertTrue(
+            questions.list(QuestionStatus.APPROVED, QuestionScope.Chapter(Book.JOH.chapterRef(2)))
+                .none { it.id == q.id },
+        )
     }
 
     @Test
@@ -206,13 +219,100 @@ class PostgresRepositoryTest {
         assertEquals(3, questions.seedApproved(seeder.id, seeder.displayName, requests))
         assertEquals(3, questions.countByAuthor(seeder.id))
 
-        val listed = questions.list(QuestionStatus.APPROVED, chapter = 2)
+        val listed = questions.list(QuestionStatus.APPROVED, QuestionScope.Chapter(Book.ACT.chapterRef(2)))
             .filter { it.authorId == seeder.id }
         assertEquals(3, listed.size)
         assertTrue(listed.all { it.roundType == Round.FACT_FINDER && it.status == QuestionStatus.APPROVED })
         assertTrue(listed.all { it.answer in it.choices && it.votes == 0 })
         assertTrue(listed.all { it.references.single().startsWith("Acts 2:") })
+        // seedApproved infers the book from the references when the request doesn't carry a bookCode.
+        assertTrue(listed.all { it.bookCode == "ACT" })
         assertEquals("Seeder", listed.first().authorName)
+    }
+
+    @Test
+    fun questionListScopesByStudySetRangesInConstantStatements() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val questions = PostgresQuestionRepository(db)
+        val author = users.create("scoped@tbb.org", "Scoped", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
+
+        fun submit(book: Book, chapter: Int?): String = questions.submit(
+            author.id, author.displayName,
+            SubmitQuestionRequest(
+                roundType = Round.FACT_FINDER,
+                prompt = "About ${book.name} ${chapter ?: "as a whole"}?",
+                answer = "Yes",
+                chapter = chapter,
+            ),
+            book = book,
+        ).id.also { questions.setStatus(it, QuestionStatus.APPROVED) }
+
+        val exo5 = submit(Book.EXO, 5)        // in Life of Moses (Exo 1-20)
+        val exo25 = submit(Book.EXO, 25)      // in a gap (Exo 21-31 not in the set)
+        val num14 = submit(Book.NUM, 14)      // in (Num 10-14)
+        val deu32 = submit(Book.DEU, 32)      // in (Deut 31-34)
+        val joh3 = submit(Book.JOH, 3)        // different book entirely
+        val exoWide = submit(Book.EXO, null)  // book-wide: about Exodus as a whole
+
+        // A multi-book study set is one derived query over its chapter ranges — including, by default,
+        // the scoped books' book-wide (chapter IS NULL) questions.
+        val moses = QuestionScope.Ranges(StandardStudySet.LIFE_OF_MOSES.set.chapterRanges)
+        val statements = QueryCountInterceptor.measure {
+            val ids = questions.list(QuestionStatus.APPROVED, moses).map { it.id }.toSet()
+            assertEquals(setOf(exo5, num14, deu32, exoWide), ids)
+        }
+        // The read is exactly 3 statements (ids+votes, rows, author names) regardless of row count.
+        assertEquals(3, statements)
+
+        // Without book-wide rows, only chapter-scoped matches remain.
+        val exact = QuestionScope.Ranges(StandardStudySet.LIFE_OF_MOSES.set.chapterRanges, includeBookWide = false)
+        assertEquals(
+            setOf(exo5, num14, deu32),
+            questions.list(QuestionStatus.APPROVED, exact).map { it.id }.toSet(),
+        )
+
+        // An unscoped list still sees everything, including the gap and off-set books.
+        assertEquals(
+            setOf(exo5, exo25, num14, deu32, joh3, exoWide),
+            questions.list(QuestionStatus.APPROVED).map { it.id }.toSet(),
+        )
+    }
+
+    @Test
+    fun questionListOrdersByVotesAndAppliesLimitInSql() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val questions = PostgresQuestionRepository(db)
+        val author = users.create("ranked@tbb.org", "Ranked", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
+        val voters = (1..2).map { n ->
+            users.create("voter$n@tbb.org", "Voter $n", null, adult = true,
+                passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
+        }
+
+        fun submit(prompt: String): String = questions.submit(
+            author.id, author.displayName,
+            SubmitQuestionRequest(roundType = Round.FACT_FINDER, prompt = prompt, answer = "A", chapter = 1),
+            book = Book.ACT,
+        ).id.also { questions.setStatus(it, QuestionStatus.APPROVED) }
+
+        val zero = submit("Zero votes?")
+        val two = submit("Two votes?")
+        val one = submit("One vote?")
+        voters.forEach { questions.vote(two, it.id) }
+        questions.vote(one, voters.first().id)
+
+        // The limit must apply AFTER vote ordering (i.e. in SQL), or a capped practice test would
+        // draw the wrong pool.
+        val top2 = questions.list(QuestionStatus.APPROVED, limit = 2)
+        assertEquals(listOf(two, one), top2.map { it.id })
+        assertEquals(listOf(2, 1), top2.map { it.votes })
+        assertEquals(
+            listOf(two, one, zero),
+            questions.list(QuestionStatus.APPROVED).map { it.id },
+        )
     }
 
     @Test

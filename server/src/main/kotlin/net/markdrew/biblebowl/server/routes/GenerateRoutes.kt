@@ -96,9 +96,8 @@ fun Route.generateRoutes(
             }
 
             val limit = (call.request.queryParameters["limit"]?.toIntOrNull() ?: 40).coerceIn(1, 100)
-            val pool = questions.list(QuestionStatus.APPROVED, chapter)
-                .filter { it.roundType == round }
-                .take(limit)
+            val scope = call.legacyQuestionScope(chapter, seasons.currentStudySet()) ?: return@get
+            val pool = questions.list(QuestionStatus.APPROVED, scope, roundType = round, limit = limit)
             if (pool.isEmpty()) {
                 return@get call.respond(
                     HttpStatusCode.NotFound,
@@ -130,9 +129,8 @@ fun Route.generateRoutes(
                 )
             }
 
-            val pool = questions.list(QuestionStatus.APPROVED, chapter)
-                .filter { round == null || it.roundType == round }
-                .take(200)
+            val scope = call.legacyQuestionScope(chapter, seasons.currentStudySet()) ?: return@get
+            val pool = questions.list(QuestionStatus.APPROVED, scope, roundType = round, limit = 200)
             if (pool.isEmpty()) {
                 return@get call.respond(
                     HttpStatusCode.NotFound,
@@ -319,7 +317,7 @@ fun Route.generateRoutes(
         // (default) exports the approved bank (prompt -> answer); `source=headings` exports the R5
         // headings (title -> chapter), with `chapter` meaning "through chapter" as usual for headings.
         get("/generate/questions.tsv") {
-            respondExport(questions, study, format = ExportFormat.TSV)
+            respondExport(questions, seasons, study, format = ExportFormat.TSV)
         }
 
         // GET /generate/questions.xlsx?source=questions|headings&round=FACT_FINDER&chapter=2
@@ -327,7 +325,7 @@ fun Route.generateRoutes(
         // to Kahoot, so `source=questions` keeps just questions whose choices contain the answer;
         // `source=headings` builds which-chapter questions with in-scope distractor chapters.
         get("/generate/questions.xlsx") {
-            respondExport(questions, study, format = ExportFormat.KAHOOT_XLSX)
+            respondExport(questions, seasons, study, format = ExportFormat.KAHOOT_XLSX)
         }
 
         // GET /generate/heading-flashcards.pdf?throughChapter=5 — Round 5 (chapter headings) deck
@@ -449,6 +447,7 @@ private enum class ExportFormat { TSV, KAHOOT_XLSX }
  */
 private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
     questions: QuestionRepository,
+    seasons: SeasonRepository,
     study: StudyDataService?,
     format: ExportFormat,
 ) {
@@ -462,9 +461,8 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
     val chSuffix = chapter?.let { "-ch$it" } ?: ""
 
     if (source == "questions") {
-        val pool = questions.list(QuestionStatus.APPROVED, chapter)
-            .filter { round == null || it.roundType == round }
-            .take(500)
+        val scope = call.legacyQuestionScope(chapter, seasons.currentStudySet()) ?: return
+        val pool = questions.list(QuestionStatus.APPROVED, scope, roundType = round, limit = 500)
         val baseName = "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}$chSuffix"
         when (format) {
             ExportFormat.TSV -> {

@@ -13,11 +13,19 @@ import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
+import net.markdrew.biblebowl.model.Book
 import org.jetbrains.exposed.v1.core.JoinType
+import org.jetbrains.exposed.v1.core.Op
 import org.jetbrains.exposed.v1.core.ResultRow
+import org.jetbrains.exposed.v1.core.SortOrder
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.greaterEq
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.inList
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.isNull
+import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.lessEq
 import org.jetbrains.exposed.v1.core.and
+import org.jetbrains.exposed.v1.core.compoundOr
+import org.jetbrains.exposed.v1.core.count
 import org.jetbrains.exposed.v1.core.lowerCase
 import org.jetbrains.exposed.v1.core.or
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -25,6 +33,7 @@ import org.jetbrains.exposed.v1.jdbc.batchInsert
 import org.jetbrains.exposed.v1.jdbc.deleteWhere
 import org.jetbrains.exposed.v1.jdbc.insert
 import org.jetbrains.exposed.v1.jdbc.insertIgnore
+import org.jetbrains.exposed.v1.jdbc.select
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.transactions.transaction
 import org.jetbrains.exposed.v1.jdbc.update
@@ -358,7 +367,7 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
 
 class PostgresQuestionRepository(private val db: Database) : QuestionRepository {
 
-    override fun submit(authorId: String, authorName: String?, req: SubmitQuestionRequest): QuestionDto =
+    override fun submit(authorId: String, authorName: String?, req: SubmitQuestionRequest, book: Book): QuestionDto =
         transaction(db) {
             val questionId = UUID.randomUUID().toString()
             QuestionsTable.insert {
@@ -368,6 +377,7 @@ class PostgresQuestionRepository(private val db: Database) : QuestionRepository 
                 it[answer] = req.answer
                 it[references] = req.references.joinToString(",")
                 it[choices] = json.encodeToString(stringListSerializer, req.choices)
+                it[bookCode] = book.name
                 it[chapter] = req.chapter
                 it[status] = QuestionStatus.PENDING.name
                 it[QuestionsTable.authorId] = authorId
@@ -379,6 +389,7 @@ class PostgresQuestionRepository(private val db: Database) : QuestionRepository 
                 answer = req.answer,
                 references = req.references,
                 choices = req.choices,
+                bookCode = book.name,
                 chapter = req.chapter,
                 status = QuestionStatus.PENDING,
                 authorId = authorId,
@@ -387,30 +398,78 @@ class PostgresQuestionRepository(private val db: Database) : QuestionRepository 
             )
         }
 
-    override fun list(status: QuestionStatus?, chapter: Int?): List<QuestionDto> = transaction(db) {
-        QuestionsTable.selectAll()
-            .apply {
-                if (status != null && chapter != null) {
-                    where { (QuestionsTable.status eq status.name) and (QuestionsTable.chapter eq chapter) }
-                } else if (status != null) {
-                    where { QuestionsTable.status eq status.name }
-                } else if (chapter != null) {
-                    where { QuestionsTable.chapter eq chapter }
-                }
+    /** SQL predicate for [scope]; null = no restriction. Must mirror [QuestionScope.matches]. */
+    private fun QuestionScope.toOp(): Op<Boolean>? = when (this) {
+        QuestionScope.All -> null
+        is QuestionScope.Chapter -> asRanges.toOp()
+        is QuestionScope.Ranges -> {
+            val perRange: List<Op<Boolean>> = ranges.map { r ->
+                (QuestionsTable.bookCode eq r.start.book.name) and
+                    (QuestionsTable.chapter greaterEq r.start.chapter) and
+                    (QuestionsTable.chapter lessEq minOf(r.endInclusive.chapter, r.start.book.chapterCount))
             }
-            .map { it.toDto() }
-            .sortedByDescending { it.votes }
+            val bookWide: Op<Boolean>? = if (!includeBookWide) null else {
+                (QuestionsTable.bookCode inList ranges.map { it.start.book.name }.distinct()) and
+                    QuestionsTable.chapter.isNull()
+            }
+            (perRange + listOfNotNull(bookWide)).compoundOr()
+        }
     }
 
-    override fun get(id: String): QuestionDto? = transaction(db) {
-        QuestionsTable.selectAll().where { QuestionsTable.id eq id }.singleOrNull()?.toDto()
+    // Exactly three statements regardless of row count (the old per-row vote-count + author lookup made
+    // GET /questions ~2N+1 statements against a ~45ms-away database): ids in final order, then the
+    // rows, then the author names.
+    override fun list(
+        status: QuestionStatus?,
+        scope: QuestionScope,
+        roundType: Round?,
+        limit: Int?,
+    ): List<QuestionDto> = transaction(db) {
+        val predicate: Op<Boolean>? = listOfNotNull(
+            status?.let { QuestionsTable.status eq it.name },
+            scope.toOp(),
+            roundType?.let { QuestionsTable.roundType eq it.name },
+        ).reduceOrNull { a, b -> a and b }
+
+        // Statement 1: ids + vote counts, ordered and limited in SQL so the cap is correct.
+        val votes = QuestionVotesTable.questionId.count()
+        val votesById: Map<String, Long> = QuestionsTable
+            .join(
+                QuestionVotesTable, JoinType.LEFT,
+                onColumn = QuestionsTable.id, otherColumn = QuestionVotesTable.questionId,
+            )
+            .select(QuestionsTable.id, votes)
+            .apply { predicate?.let { where { it } } }
+            .groupBy(QuestionsTable.id)
+            .orderBy(votes to SortOrder.DESC, QuestionsTable.id to SortOrder.ASC)
+            .apply { limit?.let { limit(it) } }
+            .associate { it[QuestionsTable.id] to it[votes] }
+        if (votesById.isEmpty()) return@transaction emptyList()
+
+        // Statement 2: the question rows themselves.
+        val rowsById: Map<String, ResultRow> = QuestionsTable.selectAll()
+            .where { QuestionsTable.id inList votesById.keys }
+            .associateBy { it[QuestionsTable.id] }
+
+        // Statement 3: author display names.
+        val authorIds = rowsById.values.map { it[QuestionsTable.authorId] }.distinct()
+        val namesByAuthor: Map<String, String> = UsersTable
+            .select(UsersTable.id, UsersTable.displayName)
+            .where { UsersTable.id inList authorIds }
+            .associate { it[UsersTable.id] to it[UsersTable.displayName] }
+
+        votesById.entries.mapNotNull { (id, voteCount) ->
+            rowsById[id]?.let { row -> row.toDto(voteCount, namesByAuthor[row[QuestionsTable.authorId]]) }
+        }
     }
+
+    override fun get(id: String): QuestionDto? = transaction(db) { fetchDto(id) }
 
     override fun setStatus(id: String, status: QuestionStatus): QuestionDto? = transaction(db) {
         val updated = QuestionsTable.update({ QuestionsTable.id eq id }) {
             it[QuestionsTable.status] = status.name
         }
-        if (updated == 0) null else QuestionsTable.selectAll().where { QuestionsTable.id eq id }.single().toDto()
+        if (updated == 0) null else fetchDto(id)
     }
 
     override fun vote(id: String, userId: String): QuestionDto? = transaction(db) {
@@ -421,7 +480,7 @@ class PostgresQuestionRepository(private val db: Database) : QuestionRepository 
             it[questionId] = id
             it[QuestionVotesTable.userId] = userId
         }
-        QuestionsTable.selectAll().where { QuestionsTable.id eq id }.single().toDto()
+        fetchDto(id)
     }
 
     override fun countByAuthor(authorId: String): Long = transaction(db) {
@@ -439,30 +498,35 @@ class PostgresQuestionRepository(private val db: Database) : QuestionRepository 
                 this[QuestionsTable.answer] = req.answer
                 this[QuestionsTable.references] = req.references.joinToString(",")
                 this[QuestionsTable.choices] = json.encodeToString(stringListSerializer, req.choices)
+                this[QuestionsTable.bookCode] = req.resolvedBook().name
                 this[QuestionsTable.chapter] = req.chapter
                 this[QuestionsTable.status] = QuestionStatus.APPROVED.name
                 this[QuestionsTable.authorId] = authorId
             }.size
         }
 
-    private fun ResultRow.toDto(): QuestionDto {
-        val qId = this[QuestionsTable.id]
-        val voteCount = QuestionVotesTable.selectAll().where { QuestionVotesTable.questionId eq qId }.count()
-        val authorId = this[QuestionsTable.authorId]
-        val authorName = UsersTable.selectAll().where { UsersTable.id eq authorId }
+    /** One question as a DTO in a fixed three statements (row, vote count, author name); null if absent. */
+    private fun fetchDto(id: String): QuestionDto? {
+        val row = QuestionsTable.selectAll().where { QuestionsTable.id eq id }.singleOrNull() ?: return null
+        val voteCount = QuestionVotesTable.selectAll().where { QuestionVotesTable.questionId eq id }.count()
+        val authorName = UsersTable.select(UsersTable.id, UsersTable.displayName)
+            .where { UsersTable.id eq row[QuestionsTable.authorId] }
             .singleOrNull()?.get(UsersTable.displayName)
-        return QuestionDto(
-            id = qId,
-            roundType = Round.valueOf(this[QuestionsTable.roundType]),
-            prompt = this[QuestionsTable.prompt],
-            answer = this[QuestionsTable.answer],
-            references = this[QuestionsTable.references].split(",").filter { it.isNotBlank() },
-            choices = json.decodeFromString(stringListSerializer, this[QuestionsTable.choices]),
-            chapter = this[QuestionsTable.chapter],
-            status = QuestionStatus.valueOf(this[QuestionsTable.status]),
-            authorId = authorId,
-            authorName = authorName,
-            votes = voteCount.toInt(),
-        )
+        return row.toDto(voteCount, authorName)
     }
+
+    private fun ResultRow.toDto(votes: Long, authorName: String?): QuestionDto = QuestionDto(
+        id = this[QuestionsTable.id],
+        roundType = Round.valueOf(this[QuestionsTable.roundType]),
+        prompt = this[QuestionsTable.prompt],
+        answer = this[QuestionsTable.answer],
+        references = this[QuestionsTable.references].split(",").filter { it.isNotBlank() },
+        choices = json.decodeFromString(stringListSerializer, this[QuestionsTable.choices]),
+        bookCode = this[QuestionsTable.bookCode],
+        chapter = this[QuestionsTable.chapter],
+        status = QuestionStatus.valueOf(this[QuestionsTable.status]),
+        authorId = this[QuestionsTable.authorId],
+        authorName = authorName,
+        votes = votes.toInt(),
+    )
 }

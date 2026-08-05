@@ -117,6 +117,13 @@ data class QuestionDto(
     val references: List<String> = emptyList(),
     /** Optional multiple-choice options for [Round.multipleChoice] rounds; the correct one equals [answer]. */
     val choices: List<String> = emptyList(),
+    /**
+     * Book enum name (e.g. "ACT") — with [chapter] this is the question's permanent scripture
+     * coordinate, stable across study-rotation cycles (never season-relative). Nullable only for wire
+     * compatibility with pre-scoping servers; the current server always populates it.
+     */
+    val bookCode: String? = null,
+    /** 1-based chapter within [bookCode]; null = the question is about the book as a whole. */
     val chapter: Int? = null,
     val status: QuestionStatus = QuestionStatus.PENDING,
     val authorId: String,
@@ -132,6 +139,9 @@ data class SubmitQuestionRequest(
     val answer: String,
     val references: List<String> = emptyList(),
     val choices: List<String> = emptyList(),
+    /** Book enum name; null lets the server infer it from [references], then from the season's book. */
+    val bookCode: String? = null,
+    /** 1-based chapter within [bookCode]; null = the question is about the book as a whole. */
     val chapter: Int? = null,
 )
 
@@ -164,7 +174,12 @@ data class HeadingDto(
     val title: String,
     /** Human-readable verse reference the heading spans, e.g. "2:1-13". */
     val reference: String,
-    /** Chapter the heading starts in (1-based, within the season book). */
+    /**
+     * Book enum name (e.g. "ACT") the heading starts in. Null only when served by a pre-scoping
+     * server; needed to label chapters unambiguously in multi-book study sets.
+     */
+    val bookCode: String? = null,
+    /** Chapter the heading starts in (1-based, within [bookCode]). */
     val chapter: Int,
     /** 1-based position of this heading within the study set. */
     val index: Int,
@@ -240,7 +255,11 @@ data class SeasonDto(
     val studySet: String = "acts",
     /** First (often only) book's 3-letter code, e.g. "ACT" — a convenience for single-book uses. */
     val bookCode: String,
-    /** Total chapters covered by the study set — derived from [studySet], drives chapter filters. */
+    /**
+     * Total chapters covered by the study set — derived from [studySet]. Display-only: for multi-book
+     * or partial sets this is NOT a valid chapter range (the chapters have gaps and span books), so
+     * chapter pickers must use the study set's chapterRefs (core StudySet), never `1..chapterCount`.
+     */
     val chapterCount: Int,
     /** Total scholarships awarded in the prior year, e.g. "$25,000". */
     val scholarshipAmount: String,
