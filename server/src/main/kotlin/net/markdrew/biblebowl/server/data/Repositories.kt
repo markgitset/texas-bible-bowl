@@ -7,6 +7,11 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
+import net.markdrew.biblebowl.model.Book
+import net.markdrew.biblebowl.model.ChapterRange
+import net.markdrew.biblebowl.model.ChapterRef
+import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.model.bookFromRefs
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -83,9 +88,56 @@ interface UserRepository {
     fun pendingCoachGrants(): Map<String, List<String>>
 }
 
+/**
+ * Which questions a query covers, expressed in canonical scripture coordinates (book + chapter), never
+ * season-relative ones — a study set is queried as the OR of its chapter ranges. [matches] is the single
+ * predicate both repository implementations share, so the Postgres SQL and the in-memory filter can't
+ * drift apart.
+ *
+ * [includeBookWide] (default true) also admits a scoped book's `chapter IS NULL` rows — a whole-book
+ * Acts question IS study material for anyone studying Acts 2.
+ */
+sealed interface QuestionScope {
+
+    /** True when a question stored with ([bookCode], [chapter]) falls inside this scope. */
+    fun matches(bookCode: String?, chapter: Int?): Boolean
+
+    data object All : QuestionScope {
+        override fun matches(bookCode: String?, chapter: Int?): Boolean = true
+    }
+
+    /** The OR of per-range (book, chapter BETWEEN) predicates — a study set, or a cumulative prefix. */
+    data class Ranges(val ranges: List<ChapterRange>, val includeBookWide: Boolean = true) : QuestionScope {
+        override fun matches(bookCode: String?, chapter: Int?): Boolean {
+            val book = bookCode?.let { code -> Book.entries.firstOrNull { it.name == code } } ?: return false
+            if (chapter == null) return includeBookWide && ranges.any { it.start.book == book }
+            if (chapter < 1) return false
+            return ranges.any { book.chapterRef(chapter) in it }
+        }
+    }
+
+    /** One exact chapter (plus that book's book-wide questions when [includeBookWide]). */
+    data class Chapter(val ref: ChapterRef, val includeBookWide: Boolean = true) : QuestionScope {
+        /** This scope as a one-range [Ranges], so both implementations share one code path. */
+        val asRanges: Ranges get() = Ranges(listOf(ref..ref), includeBookWide)
+        override fun matches(bookCode: String?, chapter: Int?): Boolean = asRanges.matches(bookCode, chapter)
+    }
+}
+
 interface QuestionRepository {
-    fun submit(authorId: String, authorName: String?, req: SubmitQuestionRequest): QuestionDto
-    fun list(status: QuestionStatus?, chapter: Int?): List<QuestionDto>
+    /** Inserts a PENDING question scoped to [book] (the caller resolves it; see core bookFromRefs). */
+    fun submit(authorId: String, authorName: String?, req: SubmitQuestionRequest, book: Book): QuestionDto
+    /**
+     * Questions in [scope], optionally filtered to [status]/[roundType] and capped at [limit], ordered
+     * by votes descending. Round and limit are pushed down (not filtered by the caller) so a
+     * 40-question practice test never materializes the whole bank.
+     */
+    fun list(
+        status: QuestionStatus?,
+        scope: QuestionScope = QuestionScope.All,
+        roundType: Round? = null,
+        limit: Int? = null,
+    ): List<QuestionDto>
     fun get(id: String): QuestionDto?
     fun setStatus(id: String, status: QuestionStatus): QuestionDto?
     fun vote(id: String, userId: String): QuestionDto?
@@ -94,10 +146,16 @@ interface QuestionRepository {
     /**
      * Bulk-inserts [requests] as already-APPROVED questions authored by [authorId], atomically where the
      * backing store allows (a crash must not leave a partial seed that [countByAuthor] then treats as
-     * complete). Returns the number inserted.
+     * complete). Each request must carry a [SubmitQuestionRequest.bookCode] or references it can be
+     * inferred from. Returns the number inserted.
      */
     fun seedApproved(authorId: String, authorName: String?, requests: List<SubmitQuestionRequest>): Int
 }
+
+/** The book a seed/submit request is scoped to: explicit [SubmitQuestionRequest.bookCode] first, then refs. */
+internal fun SubmitQuestionRequest.resolvedBook(): Book = requireNotNull(
+    bookCode?.let { code -> Book.entries.firstOrNull { it.name == code } } ?: bookFromRefs(references)
+) { "Question has no resolvable book (bookCode='$bookCode', references=$references): $prompt" }
 
 // ---------------------------------------------------------------------------
 // In-memory implementations for Phase 0 / local dev & tests.
@@ -187,7 +245,7 @@ class InMemoryQuestionRepository : QuestionRepository {
     private val byId = ConcurrentHashMap<String, QuestionDto>()
     private val voters = ConcurrentHashMap<String, MutableSet<String>>()
 
-    override fun submit(authorId: String, authorName: String?, req: SubmitQuestionRequest): QuestionDto {
+    override fun submit(authorId: String, authorName: String?, req: SubmitQuestionRequest, book: Book): QuestionDto {
         val id = UUID.randomUUID().toString()
         val dto = QuestionDto(
             id = id,
@@ -196,6 +254,7 @@ class InMemoryQuestionRepository : QuestionRepository {
             answer = req.answer,
             references = req.references,
             choices = req.choices,
+            bookCode = book.name,
             chapter = req.chapter,
             status = QuestionStatus.PENDING,
             authorId = authorId,
@@ -207,11 +266,18 @@ class InMemoryQuestionRepository : QuestionRepository {
         return dto
     }
 
-    override fun list(status: QuestionStatus?, chapter: Int?): List<QuestionDto> =
+    override fun list(
+        status: QuestionStatus?,
+        scope: QuestionScope,
+        roundType: Round?,
+        limit: Int?,
+    ): List<QuestionDto> =
         byId.values
             .filter { status == null || it.status == status }
-            .filter { chapter == null || it.chapter == chapter }
+            .filter { scope.matches(it.bookCode, it.chapter) }
+            .filter { roundType == null || it.roundType == roundType }
             .sortedByDescending { it.votes }
+            .let { if (limit != null) it.take(limit) else it }
 
     override fun get(id: String): QuestionDto? = byId[id]
 
@@ -242,6 +308,7 @@ class InMemoryQuestionRepository : QuestionRepository {
                 answer = req.answer,
                 references = req.references,
                 choices = req.choices,
+                bookCode = req.resolvedBook().name,
                 chapter = req.chapter,
                 status = QuestionStatus.APPROVED,
                 authorId = authorId,

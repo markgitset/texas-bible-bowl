@@ -16,12 +16,15 @@ import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
+import net.markdrew.biblebowl.model.bookByCode
+import net.markdrew.biblebowl.model.bookFromRefs
 import net.markdrew.biblebowl.server.data.QuestionRepository
+import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.currentUser
 import net.markdrew.biblebowl.server.security.requirePermission
 
-fun Route.questionRoutes(users: UserRepository, questions: QuestionRepository) {
+fun Route.questionRoutes(users: UserRepository, questions: QuestionRepository, seasons: SeasonRepository) {
     route("/questions") {
         // Browse — public. Anonymous visitors always see the approved list (the community bank is
         // study material); signed-in users may also request other statuses (the moderation queue).
@@ -32,7 +35,8 @@ fun Route.questionRoutes(users: UserRepository, questions: QuestionRepository) {
                 val signedIn = call.principal<JWTPrincipal>() != null
                 val status = if (signedIn) requested ?: QuestionStatus.APPROVED else QuestionStatus.APPROVED
                 val chapter = call.request.queryParameters["chapter"]?.toIntOrNull()
-                call.respond(questions.list(status, chapter))
+                val scope = call.legacyQuestionScope(chapter, seasons.currentStudySet()) ?: return@get
+                call.respond(questions.list(status, scope))
             }
         }
 
@@ -59,7 +63,31 @@ fun Route.questionRoutes(users: UserRepository, questions: QuestionRepository) {
                     )
                     return@post
                 }
-                call.respond(HttpStatusCode.Created, questions.submit(user.id, user.displayName, req))
+                // The question's permanent scope is a canonical book (+ chapter) — resolved from the
+                // explicit bookCode, else inferred from the references, else the season's single book.
+                val book = req.bookCode?.let {
+                    bookByCode(it) ?: return@post call.respond(
+                        HttpStatusCode.BadRequest,
+                        ApiError("unknown_book", "Unknown book '${it}'"),
+                    )
+                }
+                    ?: bookFromRefs(req.references)
+                    ?: seasons.currentStudySet().books.singleOrNull()
+                    ?: return@post call.respond(
+                        HttpStatusCode.BadRequest,
+                        ApiError(
+                            "book_required",
+                            "The current study set spans multiple books — supply bookCode or a book-qualified reference",
+                        ),
+                    )
+                val chapter = req.chapter
+                if (chapter != null && chapter !in 1..book.chapterCount) {
+                    return@post call.respond(
+                        HttpStatusCode.BadRequest,
+                        ApiError("chapter_not_in_set", "${book.fullName} has no chapter $chapter"),
+                    )
+                }
+                call.respond(HttpStatusCode.Created, questions.submit(user.id, user.displayName, req, book))
             }
 
             // Upvote a question.

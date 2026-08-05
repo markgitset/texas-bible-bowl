@@ -22,7 +22,7 @@ class SeedStudyGuideTest {
         val inserted = seedStudyGuideQuestions(users, questions, InMemorySeasonRepository())
         assertEquals(1646, inserted)
 
-        val approved = questions.list(QuestionStatus.APPROVED, chapter = null)
+        val approved = questions.list(QuestionStatus.APPROVED)
         assertEquals(1646, approved.size)
         assertTrue(approved.all { it.roundType == Round.FACT_FINDER })
         assertTrue(approved.all { it.votes == 0 })
@@ -39,11 +39,13 @@ class SeedStudyGuideTest {
         val users = InMemoryUserRepository()
         val questions = InMemoryQuestionRepository()
         seedStudyGuideQuestions(users, questions, InMemorySeasonRepository())
-        val approved = questions.list(QuestionStatus.APPROVED, chapter = null)
+        val approved = questions.list(QuestionStatus.APPROVED)
 
         // The answer is always one of the choices, verbatim (QuizEngine/Kahoot match on equality).
         assertTrue(approved.all { it.choices.isNotEmpty() && it.answer in it.choices })
 
+        // Every seeded question carries its permanent scripture scope: the canonical book + chapter.
+        assertTrue(approved.all { it.bookCode == "ACT" })
         // Chapter is always within Acts, and every reference is a comma-free "Acts <ch>:<verse(s)>" string
         // (comma-safe for the Postgres comma-joined references column).
         assertTrue(approved.all { it.chapter in 1..28 })
@@ -72,7 +74,7 @@ class SeedStudyGuideTest {
 
         assertEquals(1646, seedStudyGuideQuestions(users, questions, seasons))
         assertEquals(0, seedStudyGuideQuestions(users, questions, seasons))
-        assertEquals(1646, questions.list(null, null).size)
+        assertEquals(1646, questions.list(null).size)
     }
 
     @Test
@@ -82,12 +84,12 @@ class SeedStudyGuideTest {
         val seasons = InMemorySeasonRepository()
         seedStudyGuideQuestions(users, questions, seasons)
 
-        val victim = questions.list(QuestionStatus.APPROVED, chapter = null).first()
+        val victim = questions.list(QuestionStatus.APPROVED).first()
         questions.setStatus(victim.id, QuestionStatus.REJECTED)
 
         assertEquals(0, seedStudyGuideQuestions(users, questions, seasons))
         assertEquals(QuestionStatus.REJECTED, questions.get(victim.id)?.status)
-        assertEquals(1646, questions.list(null, null).size)
+        assertEquals(1646, questions.list(null).size)
     }
 
     @Test
@@ -98,7 +100,7 @@ class SeedStudyGuideTest {
         seasons.update(seasons.current().copy(studySet = "luke"))
 
         assertEquals(0, seedStudyGuideQuestions(users, questions, seasons))
-        assertEquals(0, questions.list(null, null).size)
+        assertEquals(0, questions.list(null).size)
     }
 
     @Test

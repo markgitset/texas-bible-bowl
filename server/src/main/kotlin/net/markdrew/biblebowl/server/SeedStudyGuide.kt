@@ -30,9 +30,6 @@ private val log: Logger = LoggerFactory.getLogger("net.markdrew.biblebowl.server
  * Also skipped, with a log line, when the season's study set can't be resolved or has no bundled
  * `study-guide.tsv` resource.
  *
- * Note: [SubmitQuestionRequest.chapter] is set to the chapter within the book — unambiguous for
- * single-book study sets like Acts; multi-book sets would need a chapter-numbering convention first.
- *
  * @return the number of questions inserted (0 when skipped)
  */
 fun seedStudyGuideQuestions(
@@ -41,7 +38,8 @@ fun seedStudyGuideQuestions(
     seasons: SeasonRepository,
 ): Int {
     val studySetName = seasons.current().studySet
-    val studySet = StandardStudySet.parseOrNull(studySetName)
+    // bySlug, not parseOrNull: a stored slug must resolve exactly or not at all (no prefix guessing).
+    val studySet = StandardStudySet.bySlug(studySetName)
     if (studySet == null) {
         log.warn("Unknown study set '{}' — skipping study-guide seeding", studySetName)
         return 0
@@ -73,6 +71,8 @@ fun seedStudyGuideQuestions(
                 "${q.chapterRef.book.fullName} ${q.chapterRef.chapter}:${it.trim()}"
             },
             choices = q.choices,
+            // The guide rows carry a full ChapterRef, so seeding is book-correct even for multi-book sets.
+            bookCode = q.chapterRef.book.name,
             chapter = q.chapterRef.chapter,
         )
     }
