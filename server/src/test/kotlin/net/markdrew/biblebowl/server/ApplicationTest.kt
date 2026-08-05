@@ -174,7 +174,8 @@ class ApplicationTest {
         val tsv = api.get("/generate/questions.tsv?chapter=2")
         assertEquals(HttpStatusCode.OK, tsv.status)
         assertEquals("Who preached at Pentecost?\tPeter", tsv.bodyAsText().trim())
-        assertTrue(tsv.headers[HttpHeaders.ContentDisposition]!!.contains("quizlet-questions-ch2.tsv"))
+        // Set-prefixed so exports from different seasons never collide in a Downloads folder.
+        assertTrue(tsv.headers[HttpHeaders.ContentDisposition]!!.contains("quizlet-acts-questions-ch2.tsv"))
 
         // Kahoot xlsx: a zip (PK magic) whose sheet holds the question with at most 4 answers,
         // the correct one preserved.

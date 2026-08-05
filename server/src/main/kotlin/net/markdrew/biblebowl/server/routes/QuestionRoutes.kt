@@ -15,9 +15,13 @@ import net.markdrew.biblebowl.api.ModerateQuestionRequest
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.api.StudyScopeParams
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
+import net.markdrew.biblebowl.model.ScopeResolution
 import net.markdrew.biblebowl.model.bookByCode
 import net.markdrew.biblebowl.model.bookFromRefs
+import net.markdrew.biblebowl.model.resolveStudyScope
+import net.markdrew.biblebowl.server.data.QuestionScope
 import net.markdrew.biblebowl.server.data.QuestionRepository
 import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.UserRepository
@@ -28,14 +32,38 @@ fun Route.questionRoutes(users: UserRepository, questions: QuestionRepository, s
     route("/questions") {
         // Browse — public. Anonymous visitors always see the approved list (the community bank is
         // study material); signed-in users may also request other statuses (the moderation queue).
+        //
+        // Scope: ?set=<slug>&book=<code>&chapter=<n> in canonical scripture coordinates. No scope
+        // params = the current season's study set (the browser is a study tool, not an archive);
+        // ?set=all is the explicit whole-archive escape hatch. Legacy ?chapter=N still resolves
+        // against the season. The moderation queue (a non-APPROVED status with no explicit scope) is
+        // bank-wide, so an off-season submission can't hide from moderators.
         authenticate(optional = true) {
             get {
                 val requested = call.request.queryParameters["status"]
                     ?.let { runCatching { QuestionStatus.valueOf(it) }.getOrNull() }
                 val signedIn = call.principal<JWTPrincipal>() != null
                 val status = if (signedIn) requested ?: QuestionStatus.APPROVED else QuestionStatus.APPROVED
-                val chapter = call.request.queryParameters["chapter"]?.toIntOrNull()
-                val scope = call.legacyQuestionScope(chapter, seasons.currentStudySet()) ?: return@get
+                val raw = StudyScopeParams.read(get = { call.request.queryParameters[it] })
+                val scope: QuestionScope = when {
+                    raw.set == StudyScopeParams.ALL && raw.book == null && raw.chapter == null ->
+                        QuestionScope.All
+                    raw.isEmpty && status != QuestionStatus.APPROVED -> QuestionScope.All
+                    else -> {
+                        val setParam = raw.set.takeUnless { it == StudyScopeParams.ALL }
+                        val seasonSet = seasons.currentStudySet()
+                        when (val res = resolveStudyScope(setParam, raw.book, raw.chapter, seasonSet)) {
+                            is ScopeResolution.Resolved -> {
+                                if (!raw.isEmpty) call.advertiseCanonicalScope(res.scope)
+                                res.scope.toQuestionScope()
+                            }
+                            is ScopeResolution.Invalid -> return@get call.respond(
+                                HttpStatusCode.BadRequest,
+                                ApiError(res.error.code, res.error.message),
+                            )
+                        }
+                    }
+                }
                 call.respond(questions.list(status, scope))
             }
         }
