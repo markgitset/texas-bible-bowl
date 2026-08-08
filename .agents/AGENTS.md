@@ -136,16 +136,20 @@ This renders the real pipeline without hitting Crossway.
   exact commit, health-checked and tagged `prod-YYYYMMDD-HHMM` — so `git tag -l 'prod-*'` is
   the deploy history and the latest tag is what's live. Promote only commits staging already
   ran. Fly deploy tokens live as environment-scoped GitHub secrets (`FLY_*_DEPLOY_TOKEN`).
-- **Web (GitHub Pages):** deployed ONLY by the production promotion above (pages.yml was
-  absorbed into deploy-production.yml) — ONE artifact: the Hugo site (`/site`) at the root
-  and the Kotlin/JS app (`:web`) under `/app/`. The build bakes
+- **Web (prod frontend):** static Fly app **`texas-bible-bowl-web`** (nginx, one always-warm
+  machine, www→apex 301; same pattern as staging-web so staging rehearses prod), deployed
+  ONLY by the production promotion above via `tools/deploy-web.sh prod` — ONE tree: the
+  Hugo site (`/site`, `baseURL=https://texasbiblebowl.org/`) at the root and the Kotlin/JS
+  app (`:web`) under `/app/`. GitHub Pages is no longer deployed to (domain cutover:
+  `docs/domain-migration.md`). The build bakes
   `GET /seasons/current` into `site/data/params.json` before `hugo build`; `site/assets/js/params.js`
   (inlined minified at the end of `<body>`) live-patches `[data-tbb-param]` spans AND re-renders the
   Event > Curriculum schedule (`renderCurriculum`, mirroring the `curriculum-schedule` shortcode's
   rotation math + markup off `data/curriculum.yaml` + `#curriculum-data`) — it applies a
   localStorage-cached season synchronously before first paint, then refreshes from the backend. Hugo binary: `/home/mark/bin/hugo`
   (v0.164.0 extended); local build: `hugo -s site --gc --minify -d <out>`.
-  Live: https://markgitset.github.io/texas-bible-bowl/ (app at `/app/#study`)
+  Live: https://texasbiblebowl.org (app at `/app/#study`) once the DNS cutover lands; the
+  new host always answers at https://texas-bible-bowl-web.fly.dev for smoke tests.
 - **Season params:** served by `GET /seasons/current` (public; PUT needs SEASON_MANAGE). Clients
   read them at launch (Compose: `LocalSeason`; web: `Session.season`) over the shared
   `FALLBACK_SEASON` baked into `:shared-api` — chapter counts and the season book are no longer
