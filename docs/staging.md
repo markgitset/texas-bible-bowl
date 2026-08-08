@@ -6,7 +6,7 @@ manual, approved promotion** of a commit staging already ran.
 
 | Piece | Prod | Staging |
 |---|---|---|
-| Frontend (Hugo site + web app) | GitHub Pages, via "Deploy to production" promotion (`deploy-production.yml`) | Fly app **`texas-bible-bowl-staging-web`** (nginx static), auto on push to `main` |
+| Frontend (Hugo site + web app) | Fly app `texas-bible-bowl-web` (nginx static), via "Deploy to production" promotion (`deploy-production.yml`) | Fly app **`texas-bible-bowl-staging-web`** (nginx static), auto on push to `main` |
 | Backend (Ktor) | Fly app `texas-bible-bowl`, same promotion workflow | Fly app **`texas-bible-bowl-staging`**, auto on push to `main` |
 | Database | Neon (production branch) | **Neon branch of prod** (branch-only strategy) |
 

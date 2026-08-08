@@ -1,6 +1,8 @@
-# Deployed to GitHub Pages under /texas-bible-bowl/ until the domain migration (Phase 6);
-# canonifyURLs (below) keeps root-relative links working on the subpath.
-baseURL = "https://markgitset.github.io/texas-bible-bowl/"
+# Canonical production URL (nginx on Fly, app texas-bible-bowl-web; see
+# docs/domain-migration.md). Staging builds override this with -b (tools/deploy-web.sh).
+# canonifyURLs (below) rewrites root-relative links with the build's baseURL, which is
+# what lets one source tree serve prod, staging, and any future host cleanly.
+baseURL = "https://texasbiblebowl.org/"
 locale = "en-us"
 title = "Texas Bible Bowl"
 # Rewrite root-relative URLs written in content (e.g. /images/..., /uploads/...) with the
