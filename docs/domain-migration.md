@@ -16,29 +16,32 @@ production" promotion (`tools/deploy-web.sh prod`); GitHub Pages is no longer de
 to. Old `/details/*` and `/study-resources/*` URLs are covered by Hugo aliases.
 Smoke-test host: https://texas-bible-bowl-web.fly.dev.
 
-## Phase 1 — pre-issue TLS certs (no user impact)
+## Phase 1 — pre-issue TLS certs (no user impact) — certs created 2026-08-08
 
-```bash
-fly certs add texasbiblebowl.org -a texas-bible-bowl-web
-fly certs add www.texasbiblebowl.org -a texas-bible-bowl-web
-fly certs add api.texasbiblebowl.org -a texas-bible-bowl
-```
+`fly certs add` has been run for all three hostnames. At Namecheap, add the DNS-01
+validation CNAMEs (Namecheap host field shown) so the certs issue while GitHub still
+serves all traffic:
 
-Each prints DNS validation records. At Namecheap, add the `_acme-challenge.*` CNAMEs so
-the certs issue while GitHub still serves all traffic (`fly certs check <hostname> -a
-<app>` until all three are Ready). Cutover then starts with working TLS.
+| Type | Host | Value |
+|---|---|---|
+| CNAME | `_acme-challenge` | `texasbiblebowl.org.d85lwdr.flydns.net` |
+| CNAME | `_acme-challenge.www` | `www.texasbiblebowl.org.d85lwdr.flydns.net` |
+| CNAME | `_acme-challenge.api` | `api.texasbiblebowl.org.jq3l980.flydns.net` |
+
+Then `fly certs check <hostname> -a <app>` (apps: `texas-bible-bowl-web` for apex/www,
+`texas-bible-bowl` for api) until all three are issued. Cutover then starts with
+working TLS.
 
 ## Phase 2 — DNS cutover (Namecheap)
 
-Get the web app's IPs: `fly ips list -a texas-bible-bowl-web`. Then, leaving MX/TXT
-alone and using TTL ≈ 5 min during the transition:
+Leaving MX/TXT alone and using TTL ≈ 5 min during the transition:
 
 | Record | Host | Old value | New value |
 |---|---|---|---|
-| A | `@` | 185.199.108–111.153 (×4, GitHub) | the app's IPv4 |
-| AAAA | `@` | 2606:50c0:… (×4, GitHub) | the app's IPv6 |
-| CNAME | `www` | `markgitset.github.io` | `texas-bible-bowl-web.fly.dev` |
-| CNAME | `api` | (new) | `texas-bible-bowl.fly.dev` |
+| A | `@` | 185.199.108–111.153 (×4, GitHub) | `66.241.124.167` |
+| AAAA | `@` | 2606:50c0:… (×4, GitHub) | `2a09:8280:1::164:8b64:0` |
+| CNAME | `www` | `markgitset.github.io` | `d85lwdr.texas-bible-bowl-web.fly.dev` |
+| CNAME | `api` | (new) | `jq3l980.texas-bible-bowl.fly.dev` |
 
 No downtime window: old and new hosts both serve the site during propagation.
 **Rollback** = restore the GitHub A/AAAA/CNAME values; the old snapshot stays intact in
