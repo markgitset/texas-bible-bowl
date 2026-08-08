@@ -1,12 +1,13 @@
 # Staging environment
 
-A full, separate staging stack so prod can be treated as precious once the production
-domain points at it. Nothing deploys to staging automatically.
+A full, separate staging stack so prod can be treated as precious now that the production
+domain points at it. Trunk-based flow: **merging to `main` deploys staging; prod is a
+manual, approved promotion** of a commit staging already ran.
 
 | Piece | Prod | Staging |
 |---|---|---|
-| Frontend (Hugo site + web app) | GitHub Pages, auto on push to `main` (`pages.yml`) | Fly app **`texas-bible-bowl-staging-web`** (nginx static), manual deploy |
-| Backend (Ktor) | Fly app `texas-bible-bowl`, manual `fly deploy` | Fly app **`texas-bible-bowl-staging`**, manual deploy |
+| Frontend (Hugo site + web app) | GitHub Pages, via "Deploy to production" promotion (`deploy-production.yml`) | Fly app **`texas-bible-bowl-staging-web`** (nginx static), auto on push to `main` |
+| Backend (Ktor) | Fly app `texas-bible-bowl`, same promotion workflow | Fly app **`texas-bible-bowl-staging`**, auto on push to `main` |
 | Database | Neon (production branch) | **Neon branch of prod** (branch-only strategy) |
 
 URLs: https://texas-bible-bowl-staging-web.fly.dev (frontend, sends
@@ -14,15 +15,23 @@ URLs: https://texas-bible-bowl-staging-web.fly.dev (frontend, sends
 
 ## Deploying
 
+**Staging (automatic):** every merge to `main` runs `deploy-staging.yml` — `:server:test`,
+backend deploy, then the frontend rebuilt at the staging URLs, then a smoke check. The same
+steps still run by hand from any branch when you want to try something pre-merge:
+
 ```bash
 tools/deploy-staging.sh backend   # :server:test, then fly deploy -c fly.staging.toml
 tools/deploy-staging.sh web       # web dist + Hugo (staging baseURL/backend) → deploy staging-web
 tools/deploy-staging.sh all
 ```
 
-Deploy staging **from the feature branch you want to test** — that's the point. Prod
-deploys are unchanged: `fly deploy` (plain, from `main`) for the backend, merge to
-`main` for the frontend.
+**Prod (manual promotion):** Actions → **"Deploy to production"** → Run workflow (optionally
+pinning a SHA; default is `main`'s HEAD) → approve the `production` environment gate. That
+one run re-tests, deploys the Fly backend AND GitHub Pages from the same commit,
+health-checks, and tags the commit `prod-YYYYMMDD-HHMM` — `git tag -l 'prod-*'` is the
+deploy history. Fly deploy tokens are environment-scoped GitHub secrets
+(`FLY_BACKEND_DEPLOY_TOKEN`, `FLY_WEB_DEPLOY_TOKEN`), created with
+`fly tokens create deploy -a <app>`.
 
 ## Database: Neon branch workflow
 
@@ -40,7 +49,10 @@ the other; the branch does NOT stay in sync with prod (it's a snapshot, not a re
   the candidate code to staging — Flyway applies the new migrations to the branch against
   real prod-shaped data (the branch copies `flyway_schema_history`, so only the new
   versions run). If it survives, deploy the same code to prod, which applies the same
-  migrations independently.
+  migrations independently. NOTE: since merging to `main` auto-deploys staging, a merged
+  migration hits the branch immediately — for a meaningful rehearsal, reset the branch
+  from parent BEFORE merging (or rehearse pre-merge via `tools/deploy-staging.sh backend`
+  from the feature branch).
 
 Because the branch is a prod copy it contains real registration PII and prod user
 accounts — treat staging access accordingly.

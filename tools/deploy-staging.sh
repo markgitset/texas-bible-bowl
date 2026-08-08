@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Deploy the staging stack (docs/staging.md). Prod deploys are untouched by this script.
+# Runs locally or in CI (deploy-staging.yml auto-runs `backend` + `web` on push to main).
 #
 #   tools/deploy-staging.sh backend   # :server:test, then fly deploy -c fly.staging.toml
 #   tools/deploy-staging.sh web       # build web dist + Hugo site, then deploy staging-web
@@ -10,7 +11,8 @@ cd "$(dirname "$0")/.."
 BACKEND_URL="https://texas-bible-bowl-staging.fly.dev"
 WEB_URL="https://texas-bible-bowl-staging-web.fly.dev/"
 
-FLY=$(command -v fly || echo /home/linuxbrew/.linuxbrew/bin/fly)
+# CI installs the binary as `flyctl` (superfly/flyctl-actions); Mark's machine has `fly`.
+FLY=$(command -v fly || command -v flyctl || echo /home/linuxbrew/.linuxbrew/bin/fly)
 HUGO=$(command -v hugo || echo "$HOME/bin/hugo")
 
 deploy_backend() {

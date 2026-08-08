@@ -1,0 +1,155 @@
+name: Deploy to production
+
+# Manual promotion: Actions → "Deploy to production" → Run workflow, then approve the
+# `production` environment gate. Deploys BOTH halves from one commit — the backend to the
+# prod Fly app and the Hugo site + web app to GitHub Pages (this workflow replaced
+# pages.yml, so merges to main no longer touch prod; they deploy staging instead).
+# Promote a commit that staging has already run — by default, main's HEAD.
+# Each successful deploy is tagged prod-YYYYMMDD-HHMM, so `git tag -l 'prod-*'` is the
+# deploy history and the latest tag is what's live.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Commit SHA / ref to deploy (default: main's HEAD)"
+        required: false
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    # The approval gate + prod Fly token live on this environment; everything downstream
+    # (Pages build/deploy, tag) waits on this job, so one approval gates the whole deploy.
+    environment: production
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+
+      - id: sha
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Server tests
+        run: ./gradlew :server:test
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy backend to Fly
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_BACKEND_DEPLOY_TOKEN }}
+        run: flyctl deploy --remote-only
+
+      - name: Backend health check
+        run: curl -fsS --retry 3 --retry-delay 10 --max-time 90 https://texas-bible-bowl.fly.dev/health
+
+  # The Pages build/assembly below mirrors what pages.yml did (docs/gui-redesign.md §3):
+  # one artifact with the Hugo site at the root and the Kotlin/JS app under /app/.
+  build-site:
+    needs: backend
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.backend.outputs.sha }}
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Set up Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: "0.164.0"
+          extended: true
+
+      - name: Bake current season params into the static build
+        env:
+          BACKEND_URL: ${{ vars.BACKEND_URL }}
+        run: |
+          url="${BACKEND_URL:-https://texas-bible-bowl.fly.dev}"
+          if curl -fsS --max-time 30 "$url/seasons/current" -o /tmp/params.json && [ -s /tmp/params.json ]; then
+            cp /tmp/params.json site/data/params.json
+            echo "Baked live season params from $url"
+          else
+            echo "::warning::Could not fetch /seasons/current; building with the committed fallback params"
+          fi
+
+      - name: Build static site (Hugo)
+        env:
+          # Baked into the app shell (site/layouts/_default/app-shell.html) as
+          # window.TBB_BACKEND_URL — overrides params.backendURL in hugo.toml.
+          HUGO_PARAMS_BACKENDURL: ${{ vars.BACKEND_URL || 'https://texas-bible-bowl.fly.dev' }}
+        run: hugo -s site --gc --minify -d ../public
+
+      - name: Build web (Kotlin/JS) distribution
+        run: ./gradlew :web:jsBrowserDistribution
+
+      - name: Assemble app under /app/
+        run: |
+          # Hugo already rendered public/app/index.html (the shared-chrome shell from
+          # content/app.md); copy the JS dist around it, excluding the dev-only index.html.
+          dist=web/build/dist/js/productionExecutable
+          test -s public/app/index.html || { echo "::error::Hugo did not render the app shell (public/app/index.html)"; exit 1; }
+          rsync -a --exclude=index.html "$dist"/ public/app/
+          # Hash routing needs no SPA fallback, but keep one so /app/anything still loads the app.
+          cp public/app/index.html public/app/404.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: public
+
+  deploy-pages:
+    needs: build-site
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+
+  tag:
+    needs: [backend, deploy-pages]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.backend.outputs.sha }}
+
+      - name: Tag the deployed commit
+        run: |
+          tag="prod-$(date -u +%Y%m%d-%H%M)"
+          git tag "$tag" "${{ needs.backend.outputs.sha }}"
+          git push origin "$tag"
+          echo "Tagged ${{ needs.backend.outputs.sha }} as $tag" >> "$GITHUB_STEP_SUMMARY"

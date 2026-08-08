@@ -127,9 +127,18 @@ sequenceOf(passage))` in `BibleTextTypstTest`), dump the Typst string to the scr
 `typst compile x.typ x.pdf`, then Read the PDF. Delete the throwaway test afterward.
 This renders the real pipeline without hitting Crossway.
 
-## Deploy — what's automatic vs manual
-- **Web (GitHub Pages):** auto on push to `main` via `.github/workflows/pages.yml` — ONE artifact:
-  the Hugo site (`/site`) at the root and the Kotlin/JS app (`:web`) under `/app/`. CI bakes
+## Deploy — trunk-based: main auto-deploys STAGING; prod is a manual promotion
+- **Big picture (since 2026-08-08):** every merge to `main` auto-deploys the full **staging**
+  stack (`deploy-staging.yml`). **Nothing deploys prod automatically.** Prod (backend + Pages
+  together) ships via Actions → **"Deploy to production"** (`deploy-production.yml`): manual
+  dispatch (optionally of a pinned SHA; default `main` HEAD), gated on Mark approving the
+  `production` environment, `:server:test` re-run, then Fly deploy + Pages deploy from that
+  exact commit, health-checked and tagged `prod-YYYYMMDD-HHMM` — so `git tag -l 'prod-*'` is
+  the deploy history and the latest tag is what's live. Promote only commits staging already
+  ran. Fly deploy tokens live as environment-scoped GitHub secrets (`FLY_*_DEPLOY_TOKEN`).
+- **Web (GitHub Pages):** deployed ONLY by the production promotion above (pages.yml was
+  absorbed into deploy-production.yml) — ONE artifact: the Hugo site (`/site`) at the root
+  and the Kotlin/JS app (`:web`) under `/app/`. The build bakes
   `GET /seasons/current` into `site/data/params.json` before `hugo build`; `site/assets/js/params.js`
   (inlined minified at the end of `<body>`) live-patches `[data-tbb-param]` spans AND re-renders the
   Event > Curriculum schedule (`renderCurriculum`, mirroring the `curriculum-schedule` shortcode's
@@ -145,19 +154,23 @@ This renders the real pipeline without hitting Crossway.
   registration and scoring areas deploy dark — hidden in the web UI and 403 `feature_disabled`
   on every server endpoint — until an admin flips them in Season settings. Global admins bypass
   both gates (links badged "hidden until launch") so dark features can be tested in prod.
-- **CI (`ci.yml`):** runs tests + builds APK/web on push. **Does NOT deploy the backend.**
-- **Backend (Fly.io):** NOT deployed by CI — a pushed backend change is not live until
-  someone runs `fly deploy`. Claude MAY run it (Mark OK'd this 2026-07-13) using
-  `/home/linuxbrew/.linuxbrew/bin/fly` (authenticated; the `~/.fly/bin` copy also works), but
-  only after `:server:test` (and any other affected suites) are green, and never concurrently
-  with one of Mark's deploys. Prod secrets (ESV token etc.) live in `fly secrets` and are never
-  visible. Live: https://texas-bible-bowl.fly.dev — only claim "live" after hitting the endpoint.
-- **Staging (Fly.io):** a full separate stack, never auto-deployed — backend
-  `texas-bible-bowl-staging` (its own secrets; `DATABASE_URL` is a **Neon branch of prod**)
-  plus static frontend `texas-bible-bowl-staging-web` (nginx serving the Hugo site + web app
-  at the staging baseURL, `X-Robots-Tag: noindex`). Deploy with
-  `tools/deploy-staging.sh [backend|web|all]` from the branch under test. Runbook (branch
-  create/reset, migration rehearsal, secrets): `docs/staging.md`.
+- **CI (`ci.yml`):** runs tests + builds APK/web on push. Deploys nothing itself (staging
+  deploys are the separate `deploy-staging.yml` workflow).
+- **Backend, prod (Fly.io):** deployed by the production promotion workflow (above). Claude
+  MAY still deploy directly (Mark OK'd 2026-07-13) using `/home/linuxbrew/.linuxbrew/bin/fly`
+  (authenticated; the `~/.fly/bin` copy also works) — but the promotion workflow is the
+  normal path; direct `fly deploy` is for emergencies, only after `:server:test` (and any
+  other affected suites) are green, and never concurrently with one of Mark's deploys. Prod
+  secrets (ESV token etc.) live in `fly secrets` and are never visible.
+  Live: https://texas-bible-bowl.fly.dev — only claim "live" after hitting the endpoint.
+- **Staging (Fly.io):** a full separate stack — backend `texas-bible-bowl-staging` (its own
+  secrets; `DATABASE_URL` is a **Neon branch of prod**) plus static frontend
+  `texas-bible-bowl-staging-web` (nginx serving the Hugo site + web app at the staging
+  baseURL, `X-Robots-Tag: noindex`). Auto-deployed on every merge to `main`
+  (`deploy-staging.yml`); `tools/deploy-staging.sh [backend|web|all]` still works manually
+  from any branch under test. Merging a Flyway migration migrates the Neon staging branch
+  immediately — reset the branch from parent BEFORE merging when a rehearsal matters.
+  Runbook (branch create/reset, migration rehearsal, secrets): `docs/staging.md`.
 
 ## Conventions
 - **Sync with `main` before planning, not just before coding** (Mark, 2026-07-31): the very
