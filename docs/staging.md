@@ -56,11 +56,12 @@ Set on `texas-bible-bowl-staging`; distinct from prod except where noted:
   endpoints 503.
 - `JWT_SECRET` — fresh random value, deliberately different from prod so tokens are not
   valid across environments.
-- `ADMIN_EMAIL` / `ADMIN_PASSWORD` — `staging-admin@tbb.org`; seeded on boot only if that
-  email doesn't exist yet, so it works both in-memory and on a prod branch (which already
-  has the prod admins — those sign-ins work on staging too). Changing `ADMIN_PASSWORD`
-  later does NOT update the existing user; after a branch reset the seeded staging admin
-  is recreated from the secret on next boot.
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD` — deliberately NOT set. The Neon branch is a prod copy,
+  so the prod admin accounts (same email + password) already sign in on staging; a separate
+  seeded staging admin would just be a second credential guarding the same PII. Only set
+  these (temporarily) if you need an admin while running in-memory (no `DATABASE_URL`) —
+  and remember the seed persists in a real DB once created: it survives unsetting the
+  secrets and only disappears with a user delete or a branch reset from parent.
 - `ALLOWED_ORIGINS` — `https://texas-bible-bowl-staging-web.fly.dev`.
 
 ## Smoke checklist after a deploy
@@ -68,7 +69,7 @@ Set on `texas-bible-bowl-staging`; distinct from prod except where noted:
 1. `curl https://texas-bible-bowl-staging.fly.dev/health`
 2. `curl https://texas-bible-bowl-staging.fly.dev/seasons/current`
 3. Open https://texas-bible-bowl-staging-web.fly.dev, browse to the app (`/app/#study`),
-   sign in as `staging-admin@tbb.org`.
+   sign in with your prod admin account (the branch DB carries the prod users).
 
 Both apps scale to zero when idle; the first request after a while pays a cold start
 (~40 s for the JVM backend, ~1 s for nginx).
