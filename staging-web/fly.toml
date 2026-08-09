@@ -1,5 +1,5 @@
 # Fly.io deployment for the STAGING frontend: the Hugo site + Kotlin/JS app served
-# statically by nginx, mirroring what pages.yml publishes to GitHub Pages for prod.
+# statically by nginx, mirroring the prod frontend (prod-web/) so staging rehearses it.
 # The build context is this directory only — ./tools/deploy-staging.sh web assembles
 # the static output into staging-web/public/ (gitignored) before deploying.
 #

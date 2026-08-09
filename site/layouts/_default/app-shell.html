@@ -1,7 +1,7 @@
 {{/* Shell page for the Kotlin/JS study app (content/app.md → public/app/index.html).
      Hugo owns the app's chrome — same nav/footer partials as every other page — so the site
-     and app are one application with one navbar. CI copies the :web dist into public/app/
-     EXCLUDING its index.html (pages.yml); web/src/jsMain/resources/index.html is dev-only. */}}
+     and app are one application with one navbar. tools/deploy-web.sh copies the :web dist
+     into app/ EXCLUDING its index.html; web/src/jsMain/resources/index.html is dev-only. */}}
 
 {{ define "head-extra" }}
 <link rel="stylesheet" href="{{ .Site.BaseURL }}app/css/app.css">

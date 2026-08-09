@@ -68,13 +68,30 @@ The fly.dev backend URL keeps working indefinitely (Android's baked default; upd
 promotion has run and the site is confirmed healthy, trim `ALLOWED_ORIGINS` to the origins
 still in use (drop the old `markgitset.github.io` entry).
 
-## Phase 4 — redirects + retirement (after a few stable days)
+## Phase 4 — retirement ✅ done 2026-08-08
 
-1. Remove the custom domain from `tbb-website`'s Pages settings; then set
-   `texasbiblebowl.org` as the custom domain on **this** repo's Pages → GitHub 301s all
-   `markgitset.github.io/texas-bible-bowl/*` URLs to the domain. (If that redirect
-   misbehaves with DNS pointing away from GitHub, fallback: deploy a tiny meta-refresh
-   shell as this repo's final Pages artifact.)
-2. Disable `tbb-website`'s Pages / archive the repo (Mark's call).
-3. Docs sweep for `markgitset.github.io` URLs; consider HSTS in `prod-web/nginx.conf`
-   (`max-age` small at first) once everything has been stable.
+The original plan was to keep GitHub Pages alive on this repo with `texasbiblebowl.org` as
+its custom domain, so `markgitset.github.io/texas-bible-bowl/*` would 301 to the domain.
+**That isn't possible once DNS points away from GitHub** — Pages verifies the domain
+resolves to it before accepting the setting. Old github.io links now 404, which Mark
+accepted: that URL was a dev/preview address, never the public one.
+
+What was found and fixed:
+
+1. **This repo's Pages was still live** and serving a frozen Aug 8 build — not just stale
+   marketing copy but a *working app*, pointed at the prod backend, still inside
+   `ALLOWED_ORIGINS`, and indexable (no `noindex`). So an old bookmark could sign in and
+   write to the production database from a build that no longer gets deployed, while also
+   competing with texasbiblebowl.org for the same search terms. Pages disabled
+   (`gh api -X DELETE repos/markgitset/texas-bible-bowl/pages`); both URLs now 404.
+2. **`tbb-website` still claimed `texasbiblebowl.org`** as its Pages CNAME. Pages disabled
+   there too, releasing the claim. Archiving the repo is Mark's call.
+3. **`ALLOWED_ORIGINS` trimmed** to `https://texasbiblebowl.org` — the old
+   `markgitset.github.io` origin now gets a 403. Clients sending no `Origin` header (the
+   Android app) are unaffected.
+4. Docs sweep for `markgitset.github.io`; Android's `tbb.backendUrl` default moved to the
+   api domain; HSTS added to `prod-web/nginx.conf` at `max-age=86400` (ramp to a year after
+   a few stable weeks — see the comment there before adding `includeSubDomains`/`preload`).
+
+**Do not delete the three `_acme-challenge` CNAMEs** at Namecheap. Fly reuses them to renew
+the certs; removing them breaks renewal silently, ~60 days out.

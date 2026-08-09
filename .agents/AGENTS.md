@@ -53,7 +53,8 @@ the daemon runs on 25 even when you launch `./gradlew` from an older JDK. Nothin
 per-module toolchain; compile + test all run on 25. Only Gradle ≥9.1 can run on JDK 25, so
 don't downgrade the wrapper below 9.x. Kotlin 2.4.0's KGP officially supports Gradle up to
 9.5.0 / AGP up to 9.1.0 — stay within that. The prod server image (`server/Dockerfile`) is
-`eclipse-temurin:25-jdk` (build) / `25-jre` (runtime); CI uses JDK 25 (`ci.yml`/`pages.yml`).
+`eclipse-temurin:25-jdk` (build) / `25-jre` (runtime); CI uses JDK 25 (`ci.yml` and the
+deploy workflows).
 
 ## Build & test — task names differ per module
 Gradle task names are **not** uniform across modules. Use these:

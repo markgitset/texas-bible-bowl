@@ -45,7 +45,8 @@ canonifyURLs = true
   # cache previews per URL, so reusing a filename keeps stale images alive for weeks.
   shareImage    = "share-2026.jpg"
   # Backend base URL baked into the app shell (window.TBB_BACKEND_URL). Empty locally so the
-  # app falls back to localhost; CI overrides via HUGO_PARAMS_BACKENDURL (pages.yml).
+  # app falls back to localhost; deploys override via HUGO_PARAMS_BACKENDURL
+  # (tools/deploy-web.sh, from the BACKEND_URL repo variable).
   backendURL    = ""
 
 # Homepage hero slideshow. Image files live in static/images/hero/ (cropped to the
