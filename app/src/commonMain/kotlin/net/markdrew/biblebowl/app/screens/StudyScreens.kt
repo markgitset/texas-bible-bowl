@@ -28,6 +28,7 @@ import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,6 +45,8 @@ import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.PdfFileNames
 import net.markdrew.biblebowl.api.schoolYear
 import net.markdrew.biblebowl.api.ScopeSelection
+import net.markdrew.biblebowl.api.StudyMaterialDto
+import net.markdrew.biblebowl.api.StudyMaterialType
 import net.markdrew.biblebowl.api.resolvedStudySet
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
@@ -545,6 +548,35 @@ fun StudySectionScreen(
                 )
             }
         }
+
+        // Admin-curated extras for this section (uploaded documents + external links), below the
+        // built-in cards like the web app. Best-effort: a fetch failure only costs the extras —
+        // the built-in cards must never break on a public screen.
+        var extraMaterials by remember(section, studySet) { mutableStateOf(emptyList<StudyMaterialDto>()) }
+        LaunchedEffect(section, studySet) {
+            runCatching { api.studyMaterials(set = studySet.simpleName, section = section) }
+                .onSuccess { extraMaterials = it }
+        }
+        val uriHandler = LocalUriHandler.current
+        extraMaterials.forEach { m ->
+            when (m.type) {
+                StudyMaterialType.DOCUMENT -> DownloadCard(
+                    title = m.title,
+                    subtitle = m.description,
+                    busyCard = busyCard,
+                    onClick = {
+                        // saveFile gets the byte-exact original under its original name and type.
+                        download(m.title, m.fileName ?: "download", m.contentType ?: Mime.PDF) {
+                            api.studyMaterialFile(m.id)
+                        }
+                    },
+                    buttonLabel = "Download",
+                )
+                StudyMaterialType.LINK -> LinkCard(m.title, m.description, actionLabel = "Open") {
+                    m.url?.let(uriHandler::openUri)
+                }
+            }
+        }
     }
 
     when (val target = customize) {
@@ -864,6 +896,7 @@ private fun DownloadCard(
     busyCard: String?,
     onClick: () -> Unit,
     onCustomize: (() -> Unit)? = null,
+    buttonLabel: String? = null,
 ) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -876,7 +909,11 @@ private fun DownloadCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalButton(onClick = onClick, enabled = busyCard == null) {
                     if (busyCard == title) CircularProgressIndicator(Modifier.height(16.dp))
-                    else Text(if (title.contains("CSV") || title.contains("spreadsheet")) "Download" else "Download PDF")
+                    else Text(
+                        buttonLabel
+                            ?: if (title.contains("CSV") || title.contains("spreadsheet")) "Download"
+                            else "Download PDF",
+                    )
                 }
                 if (onCustomize != null) {
                     TextButton(onClick = onCustomize, enabled = busyCard == null) { Text("Customize") }
