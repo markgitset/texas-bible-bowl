@@ -92,6 +92,10 @@ val GENERATE_RATE_LIMIT = RateLimitName("generate")
  * that feed it (which cards, which columns, what text). A bump costs one recompile per study set; a
  * missed bump costs a silently stale document, and the symptom — a deploy that appears to do nothing —
  * is a genuinely confusing thing to debug. When in doubt, bump.
+ *
+ * Every entry moved when this object was introduced, deliberately: the stamp had not shifted since
+ * 2026-07-26, so anything rendered differently after that date had been frozen in the cache, and the
+ * cheapest way to know where we stood was to recompile the lot once rather than audit each one.
  */
 internal object LayoutRevisions {
     /** `bibleTextTypst`. 1 = footnotes relative to body text; 2 = headings relative to body text. */
@@ -101,13 +105,17 @@ internal object LayoutRevisions {
     const val CHAPTER_HEADINGS = 1
 
     /** `indexTypst` / `numbersIndexTypst` / `oneTimeWordsIndexTypst` — the printable word indices. */
-    const val INDEX = 0
+    const val INDEX = 1
 
-    /** `flashcardsTypst`, shared by the unique-word and chapter-heading decks. */
-    const val FLASHCARDS = 1
+    /**
+     * `flashcardsTypst`, shared by the unique-word and chapter-heading decks. 1 = Markdown rich text
+     * with the unique word underlined, which only the unique-word deck was salted for at the time —
+     * the heading deck served the pre-Markdown rendering until 2 retired it.
+     */
+    const val FLASHCARDS = 2
 
-    /** `studyGuideTypst`, for both the student and answer copies. */
-    const val STUDY_GUIDE = 0
+    /** `studyGuideTypst`, for both the student and answer copies. 1 = the embedded-font fix. */
+    const val STUDY_GUIDE = 1
 }
 
 fun Route.generateRoutes(

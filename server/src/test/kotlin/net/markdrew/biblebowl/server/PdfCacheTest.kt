@@ -67,11 +67,15 @@ private class RecordingPdfCache(private val delegate: PdfCache = InMemoryPdfCach
     var hits = 0
     var puts = 0
 
+    /** The stamp each file was last stored under, so tests can check what got folded into the key. */
+    val storedStamps = mutableMapOf<String, Int>()
+
     override fun get(studySet: String, fileName: String, contentStamp: Int): ByteArray? =
         delegate.get(studySet, fileName, contentStamp)?.also { hits++ }
 
     override fun put(studySet: String, fileName: String, contentStamp: Int, pdf: ByteArray) {
         puts++
+        storedStamps[fileName] = contentStamp
         delegate.put(studySet, fileName, contentStamp, pdf)
     }
 
@@ -169,6 +173,51 @@ class PdfCacheTest {
             "a sheet cached under the bare content stamp must not survive a layout revision",
         )
         assertTrue(bytes.size > 4 && bytes.decodeToString(0, 4) == "%PDF", "should have recompiled a real PDF")
+    }
+
+    /**
+     * Every cached PDF must fold its generator's [LayoutRevisions] entry into the cache key, or a
+     * change to how it's drawn is invisible to the cache and clients keep an older build's PDF. This
+     * checks the wiring one endpoint per generator, by the constant rather than its value — so bumping
+     * a revision doesn't drag this test along, but dropping the salt from an endpoint fails it.
+     */
+    @Test
+    fun everyGeneratorFoldsItsLayoutRevisionIntoTheCacheKey() = testApplication {
+        if (!TypstCompiler.isAvailable) {
+            println("typst not on PATH; skipping PDF compile test")
+            return@testApplication
+        }
+        val service = studyService()
+        val cache = RecordingPdfCache()
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(service), pdfCache = cache,
+            )
+        }
+        val api = createClient { }
+        val content = service.contentStamp()
+
+        // One representative endpoint per generator. Not covered: the study text, whose salt also folds
+        // in the season's event-date line, and the study guide, which keys off its own curated-TSV stamp
+        // rather than the study text and has no guide for this fixture set to load.
+        val expected = mapOf(
+            "acts-names-index.pdf" to ("/generate/names-index.pdf" to LayoutRevisions.INDEX),
+            "acts-unique-words-index.pdf" to ("/generate/unique-words-index.pdf" to LayoutRevisions.INDEX),
+            "acts-heading-flashcards.pdf" to ("/generate/heading-flashcards.pdf" to LayoutRevisions.FLASHCARDS),
+            "acts-unique-word-flashcards.pdf" to
+                ("/generate/unique-word-flashcards.pdf" to LayoutRevisions.FLASHCARDS),
+            "acts-chapter-headings.pdf" to
+                ("/generate/chapter-headings.pdf" to LayoutRevisions.CHAPTER_HEADINGS),
+        )
+        expected.forEach { (fileName, spec) ->
+            val (path, revision) = spec
+            assertEquals(HttpStatusCode.OK, api.get(path).status, "$path should render")
+            assertEquals(
+                content + revision, cache.storedStamps[fileName],
+                "$fileName must be cached under the content stamp plus its layout revision",
+            )
+        }
     }
 
     @Test
