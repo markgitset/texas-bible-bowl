@@ -26,6 +26,7 @@
       "name": "backend",
       "runtimeExecutable": "bash",
       "runtimeArgs": ["-c", "if [ -z \"$DATABASE_URL\" ]; then export ADMIN_EMAIL=admin@tbb.org ADMIN_PASSWORD=admin-secret-123; fi; ./gradlew :server:run"],
+      "_comment": "No autoPort, unlike the static-file configs: :8080 is baked into the web app's defaultBaseUrl(), the desktop DEFAULT_BASE_URL, and EndToEndFlowTest's probe. Moving it silently breaks them. Only one worktree can run the backend at a time.",
       "port": 8080
     }
   ]

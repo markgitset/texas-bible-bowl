@@ -193,10 +193,23 @@ This renders the real pipeline without hitting Crossway.
   checkout is wrong before it starts: this repo moves fast, and planning against old code
   means designing things main already has and conflicted rebases later (e.g. re-porting a
   parser main already had).
+  Worktrees inherit their base from the primary checkout, so `git -C /home/mark/ws/texas-bible-bowl
+  pull` **before** spawning one — otherwise the branch starts behind and the sync has to happen
+  mid-task (it did on 2026-08-09: main had moved onto five of the files under edit).
 - **No `Co-Authored-By: Claude` trailer** in commit messages (Mark's standing preference).
 - Commit at each significant step (standing instruction), but **never push directly to
   `main`** (Mark, 2026-07-13): main is branch-protected (PRs + green `build-and-test`
   required) — work on a branch and open a PR; do not bypass the protection rules.
+- **After a PR merges, collect the local branch: `tools/prune-merged-branches.sh --apply`,
+  run from the primary worktree.** PRs are squash-merged, which rewrites the SHA, so
+  `gh pr merge --delete-branch` drops only the remote branch and `git branch -d` can't prove
+  the local one is merged. Nothing else collects them — 120 had piled up by 2026-08-09. The
+  merging session can't do it itself (it's standing on the branch), hence "later, from main".
+  Dry run by default; it keeps anything it can't prove landed.
+- **Only one worktree can run the local backend**: `:8080` is baked into the web app's
+  `defaultBaseUrl()`, the desktop `DEFAULT_BASE_URL`, and `EndToEndFlowTest`'s probe, so
+  `.claude/launch.json` deliberately gives the `backend` config no `autoPort` (the static-file
+  configs have it and are safe to run in parallel). Stop one before starting another.
 - The local dev admin (`admin@tbb.org` / `admin-secret-123`) is passed by
   `.claude/launch.json` **only when `DATABASE_URL` is unset** — the server's env-var admin
   seeding itself works in any mode (a fresh prod DB seeds its first admin from fly
