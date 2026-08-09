@@ -56,7 +56,8 @@ private data class StudyTextChoices(
  * each section (`#study/<slug>`, also a navbar dropdown item) is its own page holding that
  * subject's download cards (one click to a sensible default, options behind "Customize") AND
  * links to its interactive tools (quiz, browsers, community questions), so nothing about a
- * subject lives anywhere else. Public.
+ * subject lives anywhere else. The section pages lay their cards out in the same tile grid as
+ * the overview, so a section reads as a continuation of the grid that led to it. Public.
  *
  * Every download is a plain link to the backend (the generate endpoints are public and send
  * Content-Disposition: attachment), opened in a new tab so a generation error shows its message
@@ -81,6 +82,7 @@ object DownloadsScreen {
     private var exportRound: Round? = null
 
     private lateinit var root: HTMLElement
+    private lateinit var grid: HTMLElement // the current section page's tile row; cards append cols to it
     private var section: StudySection? = null // null = the overview card grid
 
     fun render(container: HTMLElement, section: StudySection? = null) {
@@ -159,7 +161,10 @@ object DownloadsScreen {
     /** A section's own page: title, intro, then that subject's download cards and interactive tools. */
     private fun renderSection(section: StudySection) {
         root.child("h1", "page-title", section.title)
-        root.child("p", "text-muted", blurb(section))
+        root.child("p", "text-muted mb-4", blurb(section))
+        // Same breakpoints as the overview's row-cols-1/md-2/lg-3, spelled out per column so an
+        // expanded card can widen itself to the full row (see [tile]).
+        grid = root.child("div", "row g-4")
         when (section) {
             StudySection.TEXT -> textCards()
             StudySection.GENERAL -> generalKnowledgeCards()
@@ -407,22 +412,35 @@ object DownloadsScreen {
     // --- rendering ---
 
     /**
+     * One tile in the section grid, with the overview cards' treatment so the two grids match.
+     * The card body is a column with the actions pushed to the bottom (`mt-auto`), so buttons line
+     * up across a row of `h-100` tiles no matter how long each subtitle runs. A card whose
+     * customize panel is open takes the whole row instead: the option chips (up to 28 chapters)
+     * need the width, and left in a third-width column they'd stretch their neighbours' tiles.
+     */
+    private fun tile(expanded: Boolean = false, body: HTMLElement.() -> Unit) {
+        grid.child("div", if (expanded) "col-12" else "col-12 col-md-6 col-lg-4") {
+            child("div", "card h-100 border-0 shadow-sm section-card") {
+                child("div", "card-body d-flex flex-column", init = body)
+            }
+        }
+    }
+
+    /**
      * A card whose actions are links rather than downloads: in-app tools (hash routes) or, with
      * [newTab], external sites (e.g. read/listen on a publisher's site).
      */
     private fun linkCard(title: String, subtitle: String, links: List<Pair<String, String>>, newTab: Boolean = false) {
-        root.child("div", "card section-card mb-3") {
-            child("div", "card-body") {
-                child("h5", "card-title", title)
-                child("p", "card-text text-muted", subtitle)
-                child("div", "d-flex align-items-center gap-2 flex-wrap") {
-                    links.forEach { (label, url) ->
-                        child("a", "btn btn-outline-primary btn-sm", label) {
-                            setAttribute("href", url)
-                            if (newTab) {
-                                setAttribute("target", "_blank")
-                                setAttribute("rel", "noopener")
-                            }
+        tile {
+            child("h5", "card-title", title)
+            child("p", "card-text text-muted small", subtitle)
+            child("div", "d-flex align-items-center gap-2 flex-wrap mt-auto") {
+                links.forEach { (label, url) ->
+                    child("a", "btn btn-outline-primary btn-sm", label) {
+                        setAttribute("href", url)
+                        if (newTab) {
+                            setAttribute("target", "_blank")
+                            setAttribute("rel", "noopener")
                         }
                     }
                 }
@@ -445,30 +463,28 @@ object DownloadsScreen {
         customize: Customize? = null,
         buttonLabel: String = "Download PDF",
     ) {
-        root.child("div", "card section-card mb-3") {
-            child("div", "card-body") {
-                child("h5", "card-title", title)
-                child("p", "card-text text-muted", subtitle)
-                child("div", "d-flex align-items-center gap-2") {
-                    child("a", "btn btn-primary btn-sm", buttonLabel) {
-                        setAttribute("href", href)
-                        setAttribute("target", "_blank")
-                        setAttribute("rel", "noopener")
-                    }
-                    if (customize != null) {
-                        val open = DownloadsScreen.customize == customize
-                        child("button", "btn btn-link btn-sm", if (open) "Hide options" else "Customize") {
-                            setAttribute("type", "button")
-                            onClick {
-                                DownloadsScreen.customize = if (open) null else customize
-                                rerender()
-                            }
+        val open = customize != null && DownloadsScreen.customize == customize
+        tile(expanded = open) {
+            child("h5", "card-title", title)
+            child("p", "card-text text-muted small", subtitle)
+            child("div", "d-flex align-items-center gap-2 mt-auto") {
+                child("a", "btn btn-primary btn-sm", buttonLabel) {
+                    setAttribute("href", href)
+                    setAttribute("target", "_blank")
+                    setAttribute("rel", "noopener")
+                }
+                if (customize != null) {
+                    child("button", "btn btn-link btn-sm", if (open) "Hide options" else "Customize") {
+                        setAttribute("type", "button")
+                        onClick {
+                            DownloadsScreen.customize = if (open) null else customize
+                            rerender()
                         }
                     }
                 }
-                if (customize != null && DownloadsScreen.customize == customize) {
-                    child("div", "border-top pt-3 mt-3") { renderOptions(customize) }
-                }
+            }
+            if (open) {
+                child("div", "border-top pt-3 mt-3") { renderOptions(customize!!) }
             }
         }
     }
