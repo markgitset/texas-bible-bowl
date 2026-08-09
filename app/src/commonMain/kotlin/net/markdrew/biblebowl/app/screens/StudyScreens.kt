@@ -371,14 +371,18 @@ fun StudySectionScreen(
                     subtitle = "The official multiple-choice study guide for ${season.eventScripture} — every " +
                         "chapter's review questions with an answer key. The single best place to start.",
                     busyCard = busyCard,
-                    onClick = { download("Study guide", PdfFileNames.studyGuide()) { api.studyGuidePdf() } },
+                    onClick = { download("Study guide", withSet(PdfFileNames.studyGuide())) { api.studyGuidePdf() } },
                 )
                 DownloadCard(
                     title = "Study guide — answer copy",
                     subtitle = "The same guide with each correct answer marked (★) and no separate key — handy for " +
                         "coaches, parents, and self-checking.",
                     busyCard = busyCard,
-                    onClick = { download("Study guide — answer copy", PdfFileNames.studyGuideAnswers()) { api.studyGuideAnswersPdf() } },
+                    onClick = {
+                        download("Study guide — answer copy", withSet(PdfFileNames.studyGuideAnswers())) {
+                            api.studyGuideAnswersPdf()
+                        }
+                    },
                 )
                 DownloadCard(
                     title = "Question flashcards",
@@ -438,14 +442,18 @@ fun StudySectionScreen(
                     subtitle = "One card per word that appears only once in ${season.eventScripture} — the word up " +
                         "front, its verse on the back. A powerful memory hook for pinpointing chapters.",
                     busyCard = busyCard,
-                    onClick = { download("Unique-word flashcards", PdfFileNames.uniqueWordFlashcards()) { api.uniqueWordFlashcardsPdf() } },
+                    onClick = {
+                        download("Unique-word flashcards", withSet(PdfFileNames.uniqueWordFlashcards())) {
+                            api.uniqueWordFlashcardsPdf()
+                        }
+                    },
                 )
                 DownloadCard(
                     title = "Unique words index",
                     subtitle = "Every word that appears only once in ${season.eventScripture} — alphabetical and " +
                         "in order of appearance.",
                     busyCard = busyCard,
-                    onClick = { download("Unique words index", PdfFileNames.uniqueWordsIndex()) { api.uniqueWordsIndexPdf() } },
+                    onClick = { download("Unique words index", withSet(PdfFileNames.uniqueWordsIndex())) { api.uniqueWordsIndexPdf() } },
                 )
             }
 
@@ -470,37 +478,37 @@ fun StudySectionScreen(
                     title = "Names index",
                     subtitle = "Every proper name in ${season.eventScripture} with its verses — alphabetical and by frequency.",
                     busyCard = busyCard,
-                    onClick = { download("Names index", PdfFileNames.namesIndex()) { api.namesIndexPdf() } },
+                    onClick = { download("Names index", withSet(PdfFileNames.namesIndex())) { api.namesIndexPdf() } },
                 )
                 DownloadCard(
                     title = "Numbers index",
                     subtitle = "Every number in ${season.eventScripture} with its verses — alphabetical and by frequency.",
                     busyCard = busyCard,
-                    onClick = { download("Numbers index", PdfFileNames.numbersIndex()) { api.numbersIndexPdf() } },
+                    onClick = { download("Numbers index", withSet(PdfFileNames.numbersIndex())) { api.numbersIndexPdf() } },
                 )
                 DownloadCard(
                     title = "Men index",
                     subtitle = "Every man named in ${season.eventScripture} with the verses he appears in.",
                     busyCard = busyCard,
-                    onClick = { download("Men index", PdfFileNames.menIndex()) { api.menIndexPdf() } },
+                    onClick = { download("Men index", withSet(PdfFileNames.menIndex())) { api.menIndexPdf() } },
                 )
                 DownloadCard(
                     title = "Women index",
                     subtitle = "Every woman named in ${season.eventScripture} with the verses she appears in.",
                     busyCard = busyCard,
-                    onClick = { download("Women index", PdfFileNames.womenIndex()) { api.womenIndexPdf() } },
+                    onClick = { download("Women index", withSet(PdfFileNames.womenIndex())) { api.womenIndexPdf() } },
                 )
                 DownloadCard(
                     title = "Places index",
                     subtitle = "Every place named in ${season.eventScripture} with the verses it appears in.",
                     busyCard = busyCard,
-                    onClick = { download("Places index", PdfFileNames.placesIndex()) { api.placesIndexPdf() } },
+                    onClick = { download("Places index", withSet(PdfFileNames.placesIndex())) { api.placesIndexPdf() } },
                 )
                 DownloadCard(
                     title = "Full word index",
                     subtitle = "A complete concordance — every significant word in ${season.eventScripture} with its verses.",
                     busyCard = busyCard,
-                    onClick = { download("Full word index", PdfFileNames.fullIndex()) { api.fullIndexPdf() } },
+                    onClick = { download("Full word index", withSet(PdfFileNames.fullIndex())) { api.fullIndexPdf() } },
                 )
                 LinkCard(
                     title = "Names & numbers browser",
