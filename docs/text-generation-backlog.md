@@ -18,11 +18,26 @@ state + option controls.
 
 ## Wanted options
 
-- [ ] **Footnotes always smaller than the body text.** Footnote text should render at a size
+- [x] **Footnotes always smaller than the body text.** Footnote text should render at a size
   strictly smaller than the current body `fontSize`, at every font size — never equal to or
   larger than the text. Today's footnote sizing should be audited against each selectable body
   size (9–15 pt) so the relationship holds throughout. This is a correctness/typographic
   guarantee, not a user toggle.
+  - **As built:** by **deleting** the `#show footnote.entry: set text(size: …)` rule and
+    `TextOptions.footnoteFontSize` entirely. Typst already renders footnote entries at `0.85em`
+    (measured pixel-exact at 6/9/15/24pt) — body-relative, so always smaller than the text. The
+    fixed `10pt` we inherited from the LaTeX-era engine copy (4a085bf) was *overriding* that good
+    default, which is the whole bug: it was right only at 11pt and rendered footnotes **larger**
+    than the text at 6–9pt. A test asserts we emit no size override across the server's coerced
+    6–24pt range, so nobody re-adds one.
+  - **Three findings worth keeping:** (1) Don't set a footnote size at all — but if you ever must,
+    it can't be a relative `em`: it compounds with Typst's `0.85em` rather than replacing it
+    (`0.87em` renders at ~`0.74em`). (2) Ratio is now Typst's 85%, not a number of ours; prod and
+    local both pin `TYPST_VERSION=v0.14.2` (server/Dockerfile), so it can't drift without a
+    reviewed bump. (3) The PDF cache is keyed on filename + content stamp, and footnote size isn't
+    in the filename, so cached PDFs would have kept the old layout — hence
+    `BIBLE_TEXT_LAYOUT_REVISION` folded into the bible-text stamp salt. **Bump it for any future
+    change here** (the next item qualifies).
 
 - [ ] **User-choosable heading sizes, relative to the body text.** Let the user pick how large
   the **chapter headings** and the **subject (section) headings** render, expressed *relative*

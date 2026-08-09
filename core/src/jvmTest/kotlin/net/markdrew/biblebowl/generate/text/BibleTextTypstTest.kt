@@ -100,6 +100,23 @@ class BibleTextTypstTest {
     }
 
     @Test
+    fun footnoteSizeIsLeftToTypstSoItTracksTheBodyText() {
+        // Typst renders footnote entries at 0.85em — relative to the body, so always smaller than it.
+        // Setting any size here breaks that: an absolute one doesn't track the body (this was a fixed
+        // 10pt, larger than the text below 10pt), and a relative one compounds with the 0.85em instead
+        // of replacing it. The server coerces the requested size to 6..24, so check across that range.
+        for (fontSize in 6..24) {
+            // Skip Typst comments — the preamble explains this rule's absence by naming it.
+            val emitted = bibleTextTypst(genesis1(), TextOptions(fontSize = fontSize))
+                .lineSequence().filterNot { it.trimStart().startsWith("//") }
+            assertTrue(
+                emitted.none { "#show footnote.entry: set text(size:" in it },
+                "must not override Typst's body-relative footnote size (${fontSize}pt body)",
+            )
+        }
+    }
+
+    @Test
     fun verseOnNewLineBreaksBeforeLaterProseVerses() {
         assertTrue(!bibleTextTypst(genesis1()).contains("#linebreak()"), "no forced breaks by default")
         // The fixture's first paragraph holds verses 1–2, so verse 2 gets the forced break.

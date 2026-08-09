@@ -88,7 +88,6 @@ private class TypstHandler(
 
         val chapterFontSize = options.chapterFontSize
         val headingFontSize = options.headingFontSize
-        val footnoteFontSize = options.footnoteFontSize
 
         out.appendLine("""
             #set page(
@@ -139,7 +138,11 @@ private class TypstHandler(
             )
             #set text(font: "$mainFont", size: ${options.fontSize}pt)
             #set par(justify: $justify)
-            #show footnote.entry: set text(size: ${footnoteFontSize}pt)
+            // Deliberately no `#show footnote.entry: set text(size: ...)`. Typst already renders
+            // footnote entries at 0.85em, which tracks the body size and is always smaller than it —
+            // exactly what we want. An absolute size here would break that at some body sizes (this
+            // used to be a fixed 10pt, larger than the text below 10pt), and a relative one would
+            // compound with the 0.85em rather than replace it (`0.87em` renders at ~0.74em).
 
             // Built-in highlight color — the default fill for divine names (matching DOCX)
             #let divineColor = rgb($DIVINE_R, $DIVINE_G, $DIVINE_B)
