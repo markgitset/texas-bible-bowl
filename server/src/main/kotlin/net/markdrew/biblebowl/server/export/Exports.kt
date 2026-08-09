@@ -5,19 +5,32 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Import-ready study exports (docs/gui-redesign.md §5B "Exports"): a Quizlet/Space TSV and a
+ * Import-ready study exports (docs/gui-redesign.md §5B "Exports"): a Quizlet/Space CSV and a
  * Kahoot spreadsheet. Both are tiny formats, so they're hand-rolled here rather than pulling in a
  * spreadsheet library.
  */
 
-/** One term/definition pair for tab-separated flashcard import (Quizlet, Space, Anki…). */
-fun quizletTsv(cards: List<Pair<String, String>>): String =
-    cards.joinToString("\n") { (term, definition) -> "${term.tsvClean()}\t${definition.tsvClean()}" }
+/** One term/definition pair per row for flashcard import (Quizlet, Space, Anki…). */
+fun quizletCsv(cards: List<Pair<String, String>>): String =
+    cards.joinToString("\n") { (term, definition) -> csvRow(listOf(term, definition)) }
 
-/** Tabs/newlines are the TSV structure characters, so they collapse to spaces inside a field. */
-private fun String.tsvClean(): String = replace(TSV_BREAKERS, " ").trim()
+/**
+ * Re-emits a tab-separated file as CSV, dropping the trailing empty column a trailing tab leaves.
+ * The curated study guide is authored as TSV (`StudyGuideParser`); CSV is only its download shape.
+ */
+fun tsvToCsv(tsv: ByteArray): ByteArray =
+    tsv.decodeToString().split('\n').filter { it.isNotBlank() }
+        .joinToString("\n") { line -> csvRow(line.split('\t').dropLastWhile { it.isBlank() }) }
+        .toByteArray()
 
-private val TSV_BREAKERS = Regex("[\\t\\n\\r]+")
+/** An RFC 4180 row: fields joined by commas, each quoted only when it contains a comma or quote. */
+private fun csvRow(fields: List<String>): String = fields.joinToString(",") { field ->
+    val value = field.replace(ROW_BREAKERS, " ").trim()
+    if (',' in value || '"' in value) "\"" + value.replace("\"", "\"\"") + "\"" else value
+}
+
+/** Importers read one card/question per line, so tabs and newlines collapse to spaces in a field. */
+private val ROW_BREAKERS = Regex("[\\t\\n\\r]+")
 
 /**
  * One Kahoot question: 2–4 [answers] with 1-based [correctIndices] into them. Kahoot's template

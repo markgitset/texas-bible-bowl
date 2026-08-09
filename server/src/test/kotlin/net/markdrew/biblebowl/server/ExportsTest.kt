@@ -2,7 +2,8 @@ package net.markdrew.biblebowl.server
 
 import net.markdrew.biblebowl.server.export.KahootQuestion
 import net.markdrew.biblebowl.server.export.kahootXlsx
-import net.markdrew.biblebowl.server.export.quizletTsv
+import net.markdrew.biblebowl.server.export.quizletCsv
+import net.markdrew.biblebowl.server.export.tsvToCsv
 import java.io.ByteArrayInputStream
 import java.util.zip.ZipInputStream
 import javax.xml.parsers.DocumentBuilderFactory
@@ -13,16 +14,27 @@ import kotlin.test.assertTrue
 class ExportsTest {
 
     @Test
-    fun tsvCollapsesStructureCharactersInsideFields() {
-        val tsv = quizletTsv(
+    fun csvQuotesSpecialsAndKeepsOneCardPerLine() {
+        val csv = quizletCsv(
             listOf(
-                "Who\tsaid\n\"Repent\"?" to "Peter",
+                // A field with a comma or quote gets quoted (inner quotes doubled); tabs/newlines
+                // would break the one-card-per-line contract importers rely on, so they collapse.
+                "Who\tsaid\n\"Repent\"?" to "Peter, the apostle",
                 "Plain term" to "Plain definition",
             )
         )
         assertEquals(
-            listOf("Who said \"Repent\"?\tPeter", "Plain term\tPlain definition"),
-            tsv.lines(),
+            listOf("\"Who said \"\"Repent\"\"?\",\"Peter, the apostle\"", "Plain term,Plain definition"),
+            csv.lines(),
+        )
+    }
+
+    @Test
+    fun tsvToCsvRequotesFieldsAndDropsTheTrailingEmptyColumn() {
+        val tsv = "Book\tChapter\tQuestion\tAnswer A\t\nAct\t1\tTo whom, in Acts, does Luke write?\tTheophilus\t\n"
+        assertEquals(
+            listOf("Book,Chapter,Question,Answer A", "Act,1,\"To whom, in Acts, does Luke write?\",Theophilus"),
+            tsvToCsv(tsv.toByteArray()).decodeToString().lines(),
         )
     }
 

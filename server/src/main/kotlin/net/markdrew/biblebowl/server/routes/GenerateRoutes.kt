@@ -62,7 +62,8 @@ import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.esv.EsvUpstreamException
 import net.markdrew.biblebowl.server.export.KahootQuestion
 import net.markdrew.biblebowl.server.export.kahootXlsx
-import net.markdrew.biblebowl.server.export.quizletTsv
+import net.markdrew.biblebowl.server.export.quizletCsv
+import net.markdrew.biblebowl.server.export.tsvToCsv
 import net.markdrew.biblebowl.server.security.currentUser
 import net.markdrew.biblebowl.server.security.requirePermission
 import net.markdrew.biblebowl.server.study.PdfCache
@@ -337,12 +338,12 @@ fun Route.generateRoutes(
             }
         }
 
-        // GET /generate/questions.tsv?source=questions|headings&round=FACT_FINDER&chapter=2
-        // Tab-separated term/definition pairs, import-ready for Quizlet/Space/Anki. `source=questions`
+        // GET /generate/questions.csv?source=questions|headings&round=FACT_FINDER&chapter=2
+        // Comma-separated term/definition pairs, import-ready for Quizlet/Space/Anki. `source=questions`
         // (default) exports the approved bank (prompt -> answer); `source=headings` exports the R5
         // headings (title -> chapter), with `chapter` meaning "through chapter" as usual for headings.
-        get("/generate/questions.tsv") {
-            respondExport(questions, seasons, study, format = ExportFormat.TSV)
+        get("/generate/questions.csv") {
+            respondExport(questions, seasons, study, format = ExportFormat.CSV)
         }
 
         // GET /generate/questions.xlsx?source=questions|headings&round=FACT_FINDER&chapter=2
@@ -421,8 +422,8 @@ fun Route.generateRoutes(
         // GET /generate/study-guide-answers.pdf?set=acts — the answer copy: correct choices starred inline, no key.
         get("/generate/study-guide-answers.pdf") { respondStudyGuidePdf(study, pdfCache, seasons, markAnswers = true) }
 
-        // GET /generate/study-guide.tsv?set=acts — the raw curated source, for other creators (Data & Source Files)
-        get("/generate/study-guide.tsv") {
+        // GET /generate/study-guide.csv?set=acts — the raw curated source, for other creators (Data & Source Files)
+        get("/generate/study-guide.csv") {
             val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return@get
             val svc = study?.forSet(scope.set) ?: return@get call.respond(
                 HttpStatusCode.ServiceUnavailable,
@@ -432,7 +433,9 @@ fun Route.generateRoutes(
                 HttpStatusCode.NotFound,
                 ApiError("no_study_guide", "This study set has no study guide"),
             )
-            respondAttachment(tsv, PdfFileNames.withSet(scope.set.simpleName, "study-guide.tsv"), TSV_CONTENT_TYPE)
+            respondAttachment(
+                tsvToCsv(tsv), PdfFileNames.withSet(scope.set.simpleName, "study-guide.csv"), CSV_CONTENT_TYPE,
+            )
         }
     }
 
@@ -498,7 +501,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
 
 
 
-private enum class ExportFormat { TSV, KAHOOT_XLSX }
+private enum class ExportFormat { CSV, KAHOOT_XLSX }
 
 /**
  * Responds with an import-ready export of the question bank or the R5 headings (see the route
@@ -528,9 +531,9 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
             "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}${scope.chapterSuffix()}",
         )
         when (format) {
-            ExportFormat.TSV -> {
+            ExportFormat.CSV -> {
                 if (pool.isEmpty()) return call.respond(HttpStatusCode.NotFound, ApiError("no_questions", "No approved questions match"))
-                respondAttachment(quizletTsv(pool.map { it.prompt to it.answer }).toByteArray(), "quizlet-$baseName.tsv", TSV_CONTENT_TYPE)
+                respondAttachment(quizletCsv(pool.map { it.prompt to it.answer }).toByteArray(), "quizlet-$baseName.csv", CSV_CONTENT_TYPE)
             }
             ExportFormat.KAHOOT_XLSX -> {
                 // Kahoot is multiple-choice only: the answer must be among 2+ choices.
@@ -574,10 +577,10 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
     call.advertiseCanonicalScope(scope)
     val baseName = PdfFileNames.withSet(scope.set.simpleName, "headings${scope.chapterSuffix(cumulative = true)}")
     when (format) {
-        ExportFormat.TSV -> respondAttachment(
-            quizletTsv(headings.map { it.title to chapterLabel(scope.set, it.chapterRange.start) }).toByteArray(),
-            "quizlet-$baseName.tsv",
-            TSV_CONTENT_TYPE,
+        ExportFormat.CSV -> respondAttachment(
+            quizletCsv(headings.map { it.title to chapterLabel(scope.set, it.chapterRange.start) }).toByteArray(),
+            "quizlet-$baseName.csv",
+            CSV_CONTENT_TYPE,
         )
         ExportFormat.KAHOOT_XLSX -> {
             val chaptersInScope = headings.map { it.chapterRange.start }.distinct()
@@ -599,7 +602,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
     }
 }
 
-private val TSV_CONTENT_TYPE = ContentType("text", "tab-separated-values")
+private val CSV_CONTENT_TYPE = ContentType("text", "csv")
 private val XLSX_CONTENT_TYPE = ContentType("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 /** Responds with [bytes] as a named download attachment. */

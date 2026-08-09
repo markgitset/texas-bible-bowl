@@ -401,29 +401,29 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun studyGuideAnswersPdf(set: String? = null): ByteArray =
         client.get("$baseUrl/generate/study-guide-answers.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
-    /** Fetches the raw curated study-guide TSV (for coaches and question writers). */
-    suspend fun studyGuideTsv(set: String? = null): ByteArray =
-        client.get("$baseUrl/generate/study-guide.tsv") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
+    /** Fetches the raw curated study-guide CSV (for coaches and question writers). */
+    suspend fun studyGuideCsv(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/study-guide.csv") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /**
-     * Fetches a Quizlet/Space-importable TSV: the approved question bank (prompt -> answer) or,
+     * Fetches a Quizlet/Space-importable CSV: the approved question bank (prompt -> answer) or,
      * with [headingsSource], the R5 headings (title -> chapter; [chapter] scopes cumulatively).
      */
-    suspend fun questionsTsv(
+    suspend fun questionsCsv(
         headingsSource: Boolean = false,
         round: Round? = null,
         chapter: Int? = null,
         set: String? = null,
         book: String? = null,
     ): ByteArray =
-        client.get("$baseUrl/generate/questions.tsv") {
+        client.get("$baseUrl/generate/questions.csv") {
             authorize()
             if (headingsSource) parameter("source", "headings")
             if (round != null) parameter("round", round.name)
             scopeParams(set, book, chapter)
         }.bodyOrThrow()
 
-    /** Fetches a Kahoot-importable .xlsx (multiple-choice material only; params as [questionsTsv]). */
+    /** Fetches a Kahoot-importable .xlsx (multiple-choice material only; params as [questionsCsv]). */
     suspend fun questionsXlsx(
         headingsSource: Boolean = false,
         round: Round? = null,

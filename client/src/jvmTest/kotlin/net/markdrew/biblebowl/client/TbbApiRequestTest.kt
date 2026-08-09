@@ -183,7 +183,7 @@ class TbbApiRequestTest {
         api.namesIndexPdf(set = "1sam")
         assertEquals("/generate/names-index.pdf?set=1sam", requests.last())
 
-        api.questionsTsv(round = Round.FACT_FINDER, chapter = 3, book = "JOH")
+        api.questionsCsv(round = Round.FACT_FINDER, chapter = 3, book = "JOH")
         requests.last().let { uri ->
             assertTrue("round=FACT_FINDER" in uri && "book=JOH" in uri && "chapter=3" in uri, uri)
         }
@@ -201,7 +201,7 @@ class TbbApiRequestTest {
             suspend { api.uniqueWordFlashcardsPdf() } to "/generate/unique-word-flashcards.pdf",
             suspend { api.studyGuidePdf() } to "/generate/study-guide.pdf",
             suspend { api.studyGuideAnswersPdf() } to "/generate/study-guide-answers.pdf",
-            suspend { api.studyGuideTsv() } to "/generate/study-guide.tsv",
+            suspend { api.studyGuideCsv() } to "/generate/study-guide.csv",
         )
         expected.forEach { (call, path) ->
             call()

@@ -128,7 +128,7 @@ class ApplicationTest {
     }
 
     @Test
-    fun questionBankExportsAsQuizletTsvAndKahootXlsx() = testApplication {
+    fun questionBankExportsAsQuizletCsvAndKahootXlsx() = testApplication {
         val users = InMemoryUserRepository()
         val questions = InMemoryQuestionRepository()
         val jwt = JwtService(secret = "test-secret")
@@ -170,12 +170,12 @@ class ApplicationTest {
             setBody(ModerateQuestionRequest(QuestionStatus.APPROVED))
         }
 
-        // Quizlet TSV: anonymous, one prompt<TAB>answer line.
-        val tsv = api.get("/generate/questions.tsv?chapter=2")
-        assertEquals(HttpStatusCode.OK, tsv.status)
-        assertEquals("Who preached at Pentecost?\tPeter", tsv.bodyAsText().trim())
+        // Quizlet CSV: anonymous, one prompt,answer line.
+        val csv = api.get("/generate/questions.csv?chapter=2")
+        assertEquals(HttpStatusCode.OK, csv.status)
+        assertEquals("Who preached at Pentecost?,Peter", csv.bodyAsText().trim())
         // Set-prefixed so exports from different seasons never collide in a Downloads folder.
-        assertTrue(tsv.headers[HttpHeaders.ContentDisposition]!!.contains("quizlet-acts-questions-ch2.tsv"))
+        assertTrue(csv.headers[HttpHeaders.ContentDisposition]!!.contains("quizlet-acts-questions-ch2.csv"))
 
         // Kahoot xlsx: a zip (PK magic) whose sheet holds the question with at most 4 answers,
         // the correct one preserved.
@@ -189,9 +189,9 @@ class ApplicationTest {
         assertTrue("Silas" !in sheet, "5th choice is dropped (Kahoot allows 4)")
 
         // No approved matches -> 404.
-        assertEquals(HttpStatusCode.NotFound, api.get("/generate/questions.tsv?chapter=27").status)
+        assertEquals(HttpStatusCode.NotFound, api.get("/generate/questions.csv?chapter=27").status)
         // Unknown source -> 400.
-        assertEquals(HttpStatusCode.BadRequest, api.get("/generate/questions.tsv?source=nope").status)
+        assertEquals(HttpStatusCode.BadRequest, api.get("/generate/questions.csv?source=nope").status)
     }
 
     @Test
