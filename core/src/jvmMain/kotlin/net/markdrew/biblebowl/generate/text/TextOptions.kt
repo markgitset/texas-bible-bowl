@@ -19,7 +19,6 @@ import java.time.format.DateTimeFormatter
  * @param verseNumFont verse numbers font family
  * @param chapterFontSize chapter heading font size in points
  * @param headingFontSize section heading font size in points
- * @param footnoteFontSize footnote font size in points
  * @param justified body text justification
  * @param underlineUniqueWords if true, underline words that occur exactly once in the study set
  * @param customHighlights palette of regex/category-driven highlights, with caller-chosen colors.
@@ -38,7 +37,6 @@ data class TextOptions(
     val headingFont: String = "Quattrocento Sans",
     val chapterFontSize: Int = 14,
     val headingFontSize: Int = 16,
-    val footnoteFontSize: Int = 10,
     val justified: Boolean = false,
     val underlineUniqueWords: Boolean = false,
     val customHighlights: HighlightPalette = HighlightPalette.empty(),

@@ -72,6 +72,13 @@ import kotlin.random.nextInt
 /** Name of the per-client rate limit applied to the generate endpoints (Typst compiles are CPU-bound). */
 val GENERATE_RATE_LIMIT = RateLimitName("generate")
 
+/**
+ * Revision of the study-text layout, folded into that PDF's cache stamp. Bump it whenever
+ * `bibleTextTypst` renders the same options differently, else the content-stamped cache keeps
+ * serving the old layout. 1 = footnotes sized relative to the body text (were a fixed 10pt).
+ */
+private const val BIBLE_TEXT_LAYOUT_REVISION = 1
+
 fun Route.generateRoutes(
     users: UserRepository,
     questions: QuestionRepository,
@@ -203,8 +210,10 @@ fun Route.generateRoutes(
                 ))
                 call.advertiseCanonicalScope(scope)
                 // The footer date comes from the season params, which the content stamp doesn't cover —
-                // salt the stamp with it so editing the event dates refreshes cached study texts.
-                respondCachedPdf(svc, pdfCache, fileName, stampSalt = options.dateLine.hashCode()) {
+                // salt the stamp with it so editing the event dates refreshes cached study texts, and
+                // fold in the layout revision so a rendering change retires PDFs cached before it.
+                val salt = 31 * options.dateLine.hashCode() + BIBLE_TEXT_LAYOUT_REVISION
+                respondCachedPdf(svc, pdfCache, fileName, stampSalt = salt) {
                     if (highlight) {
                         highlightedBibleTextTypst(svc.studyData(), svc.categoryResolution(), options)
                     } else {
