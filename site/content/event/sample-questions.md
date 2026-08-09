@@ -5,6 +5,9 @@ description: "Example questions from each round of Texas Bible Bowl to help you 
 weight: 4
 ---
 
+<!-- Every quotation and section heading on this page must be ESV — the competition text.
+     Verify against esv.org before editing; NIV wording has crept in here before. -->
+
 *Note: Examples below are from a prior year's curriculum (Genesis). Current year material
 covers {{< param eventScripture >}}.*
 
@@ -12,19 +15,21 @@ covers {{< param eventScripture >}}.*
 
 *Open Bible. Find the chapter and verse for the given quotation.*
 
-> "Everything that lives and moves will be food for you."
+> "Every moving thing that lives shall be food for you."
 
-*(Write the book, chapter, and verse reference)*
+*(Write the book, chapter, and verse reference — answer: Genesis 9:3)*
 
 ## Round 2 — Fact Finder
 
 *Open Bible. Multiple-choice questions about biblical details.*
 
-**Example:** How many times did Noah release birds from the ark?
+**Example:** How many times did Noah release the dove from the ark?
 
 - A) Once
 - B) Twice
 - C) Three times
+
+*(Answer: C — Genesis 8:8, 10, 12)*
 
 ## Round 3 — Identification
 
@@ -38,11 +43,13 @@ covers {{< param eventScripture >}}.*
 - D) Noah
 - E) Lot
 
+*(Answer: B — Genesis 4:9)*
+
 ## Round 4 — Know the Chapter: Quotations
 
 *Closed Bible. Identify the chapter number the quotation comes from.*
 
-> "Ah, the smell of my son is like the smell of a field..."
+> "See, the smell of my son is as the smell of a field..."
 
 *(Answer: Genesis 27)*
 
@@ -50,7 +57,7 @@ covers {{< param eventScripture >}}.*
 
 *Closed Bible. Identify the chapter number from the event description.*
 
-**Example:** "Abraham Pleads For Sodom" → *(Answer: Genesis 18)*
+**Example:** "Abraham Intercedes for Sodom" → *(Answer: Genesis 18)*
 
 ---
 

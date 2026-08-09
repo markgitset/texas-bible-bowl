@@ -48,7 +48,7 @@ object HeadingsScreen {
                     renderList()
                 } catch (e: Throwable) {
                     list.clear()
-                    list.errorLine("Couldn't load headings: ${e.message}")
+                    list.errorLine(e)
                 }
             }
         } else {

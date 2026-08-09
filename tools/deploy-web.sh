@@ -5,8 +5,8 @@
 #   tools/deploy-web.sh staging   # → Fly app texas-bible-bowl-staging-web (staging URLs)
 #   tools/deploy-web.sh prod      # → Fly app texas-bible-bowl-web (canonical hugo.toml baseURL)
 #
-# prod reads BACKEND_URL from the environment (CI passes the repo variable); it defaults
-# to the fly.dev backend host until the api.texasbiblebowl.org cutover (docs/domain-migration.md).
+# prod reads BACKEND_URL from the environment (CI passes the repo variable); it defaults to the
+# canonical api.texasbiblebowl.org host (cutover done 2026-08-08 — docs/domain-migration.md).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -20,7 +20,7 @@ case "$env" in
     app_dir=staging-web
     ;;
   prod)
-    backend_url="${BACKEND_URL:-https://texas-bible-bowl.fly.dev}"
+    backend_url="${BACKEND_URL:-https://api.texasbiblebowl.org}"
     app_dir=prod-web
     ;;
   *) echo "usage: $0 staging|prod"; exit 2 ;;

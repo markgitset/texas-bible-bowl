@@ -34,7 +34,8 @@ of five rounds plus a Power Round:
 
 - Elementary division (grades 3–6) is exempt from the Power Round
 - **Individual maximum:** 250 points (200 for Elementary)
-- **Team maximum:** 800 points combined
+- **Team maximum:** 800 points — four members × 200. Power Round scores count toward
+  individual totals only, never team totals.
 
 ## Age Divisions
 

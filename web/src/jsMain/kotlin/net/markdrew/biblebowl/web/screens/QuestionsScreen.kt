@@ -95,7 +95,7 @@ object QuestionsScreen {
                 }
             } catch (e: Throwable) {
                 list.clear()
-                list.errorLine("Error: ${e.message}")
+                list.errorLine(e)
             }
         }
     }
@@ -159,7 +159,7 @@ object QuestionsScreen {
                 reload()
             } catch (e: Throwable) {
                 list.clear()
-                list.errorLine("Error: ${e.message}")
+                list.errorLine(e)
             }
         }
     }

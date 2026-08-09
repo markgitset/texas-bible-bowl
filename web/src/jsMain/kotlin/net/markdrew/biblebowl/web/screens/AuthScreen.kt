@@ -10,12 +10,12 @@ import net.markdrew.biblebowl.api.ResetPasswordRequest
 import net.markdrew.biblebowl.api.divisionForBirthdate
 import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.api.schoolYear
-import net.markdrew.biblebowl.client.ApiException
 import net.markdrew.biblebowl.web.Routes
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.clear
+import net.markdrew.biblebowl.web.friendlyError
 import net.markdrew.biblebowl.web.onClick
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
@@ -93,13 +93,6 @@ object AuthScreen {
         }
     }
 
-    /**
-     * ApiException carries the server's human-readable reason; anything else means the request
-     * never got an answer (offline, cold start, DNS).
-     */
-    private fun errorMessage(e: Throwable): String =
-        (e as? ApiException)?.message ?: "Couldn't reach the server — check your connection and try again."
-
     /** Post-auth: at #signin return to where the user came from; a gated route re-renders in place. */
     private fun finishSignIn(resp: AuthResponse) {
         if (window.location.hash.substringAfter('#') == Routes.SIGN_IN) {
@@ -124,7 +117,7 @@ object AuthScreen {
                 try {
                     action()
                 } catch (e: Throwable) {
-                    errorSlot.child("p", "text-danger mt-3 mb-0", errorMessage(e))
+                    errorSlot.child("p", "text-danger mt-3 mb-0", friendlyError(e))
                     submit.textContent = idleLabel
                     submit.disabled = false
                 }

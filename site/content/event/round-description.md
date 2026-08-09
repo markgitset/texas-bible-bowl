@@ -9,7 +9,7 @@ weight: 3
 
 | | |
 |---|---|
-| **Who** | Intermediate and Advanced participants only (not Elementary) |
+| **Who** | Junior, Senior, and Adult participants (Elementary is exempt) |
 | **Format** | Closed Bible — a surprise-format test for well-prepared students |
 | **Score** | 50 points |
 | **Time** | 25 minutes |
@@ -65,4 +65,4 @@ weight: 3
 |---|---|
 | Elementary (no Power Round) | 200 points |
 | Junior / Senior / Adult | 250 points |
-| Team (4 members) | 800 points |
+| Team (4 members) | 800 points (4 × 200 — the Power Round is excluded) |

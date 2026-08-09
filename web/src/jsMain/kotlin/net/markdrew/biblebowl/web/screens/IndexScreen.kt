@@ -80,7 +80,7 @@ object IndexScreen {
                 renderResults()
             } catch (e: Throwable) {
                 results.clear()
-                results.errorLine("Couldn't load the ${kind.label.lowercase()} index: ${e.message}")
+                results.errorLine(e)
             }
         }
     }

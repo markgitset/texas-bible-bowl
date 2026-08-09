@@ -6,7 +6,9 @@
 // cache and re-patches only if something changed. The baked values (data/params.json at build
 // time) remain the fallback for first-ever visits and failed fetches.
 (function () {
-  var base = window.TBB_BACKEND_URL || "https://texas-bible-bowl.fly.dev";
+  // baseof.html sets TBB_BACKEND_URL from the build's backendURL param; the literal is the
+  // canonical prod API, so a build that loses the param still reaches a real backend.
+  var base = window.TBB_BACKEND_URL || "https://api.texasbiblebowl.org";
   var CACHE_KEY = "tbb-season";
 
   // Derived display keys — keep in sync with layouts/partials/season.html.

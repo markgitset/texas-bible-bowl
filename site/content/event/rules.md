@@ -61,7 +61,8 @@ Each division (except Adult) has **Inexperienced** and **Experienced** subdivisi
 | Round 5: Know the Chapter – Headings | Closed Bible | 40 | 10 min | 40 |
 
 - **Individual maximum:** 250 points (Elementary: 200, no Power Round)
-- **Team maximum:** 800 points combined
+- **Team maximum:** 800 points — four members × 200. Power Round scores count toward
+  individual totals only, never team totals.
 
 ## Testing Procedures
 

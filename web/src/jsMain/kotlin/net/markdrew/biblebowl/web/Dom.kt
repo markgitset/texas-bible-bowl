@@ -1,6 +1,7 @@
 package net.markdrew.biblebowl.web
 
 import kotlinx.browser.document
+import net.markdrew.biblebowl.client.ApiException
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
@@ -43,9 +44,33 @@ fun Element.spinner() {
     }
 }
 
+private const val UNREACHABLE = "Couldn't reach the server — check your connection and try again."
+
+/**
+ * A message safe to show a coach or parent. [ApiException] carries the server's human-readable
+ * reason, so it passes through; anything else means the request never got an answer (offline,
+ * cold start, DNS) and would otherwise surface a raw Ktor/JS exception string.
+ *
+ * A few server messages are deliberately operator-facing (they name env vars, for `curl` and the
+ * logs). Those are translated here by [ApiException.errorCode] rather than reworded server-side,
+ * so the wire keeps the precise diagnostic and only the UI gets the plain-English version.
+ */
+fun friendlyError(e: Throwable): String {
+    val api = e as? ApiException ?: return UNREACHABLE
+    return when (api.errorCode) {
+        "esv_unconfigured" -> "Bible text isn't available right now — please try again later."
+        else -> api.message ?: UNREACHABLE
+    }
+}
+
 /** The shared inline error line (red text, same convention as the Compose screens). */
 fun Element.errorLine(message: String) {
     child("p", "text-danger mb-2", message)
+}
+
+/** [errorLine] with the throwable run through [friendlyError] — the usual `catch` body. */
+fun Element.errorLine(e: Throwable) {
+    errorLine(friendlyError(e))
 }
 
 /**
