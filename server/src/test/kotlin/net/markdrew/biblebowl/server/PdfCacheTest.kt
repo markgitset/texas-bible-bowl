@@ -31,6 +31,7 @@ import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.esv.EsvPassageService
 import net.markdrew.biblebowl.server.esv.InMemoryEsvCache
+import net.markdrew.biblebowl.server.routes.LayoutRevisions
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
 import net.markdrew.biblebowl.server.study.InMemoryPdfCache
@@ -116,7 +117,12 @@ class PdfCacheTest {
         val seeded = "%PDF-cached-fake".toByteArray()
         // File names are set-prefixed with the REQUESTED set's slug (the season's; the fixture service
         // still caches under its own studySet key).
-        cache.put("acts-test", "acts-heading-flashcards.pdf", service.contentStamp(), seeded)
+        // Seeded at the stamp the route actually uses: the content stamp plus the deck's layout
+        // revision. Referenced symbolically so bumping a revision doesn't need this test edited.
+        cache.put(
+            "acts-test", "acts-heading-flashcards.pdf",
+            service.contentStamp() + LayoutRevisions.FLASHCARDS, seeded,
+        )
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),

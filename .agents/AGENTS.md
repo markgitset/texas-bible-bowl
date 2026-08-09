@@ -227,8 +227,18 @@ useHeadingsForChapters&chapterEndLines&verseOnNewLine&highlight&underlineUniqueW
 chapterHeadingSize&sectionHeadingSize`
 (highlight on by default). The footer stamps the season's event dates ("April 2–4, 2027"),
 not the generation date; the cached-PDF stamp is salted with that date line **and**
-`BIBLE_TEXT_LAYOUT_REVISION` — bump that constant whenever the rendering changes, or cached
-PDFs keep the old layout.
+`LayoutRevisions.BIBLE_TEXT` (see below).
+
+**Bump the generator's `LayoutRevisions` entry whenever you change how a PDF is drawn.**
+Generated PDFs are cached under `StudyDataService.contentStamp()` — the study text plus the
+word-list digest — which moves when the *material* changes but not when the *rendering* does. So
+a layout change is invisible to the cache: clients keep getting the PDF an earlier build
+compiled, and redeploying won't dislodge it (that's how the chapter-grouped headings sheet
+failed to reach staging). `LayoutRevisions` in `GenerateRoutes.kt` holds one constant per Typst
+generator, folded into the stamp of every PDF it produces; `respondIndexPdf`/`respondCachedPdf`
+require it, so a new endpoint can't skip it. A bump costs one recompile per study set — when in
+doubt, bump. The escape hatch for an already-stale cache is `DELETE /generate/cache`
+(SEASON_MANAGE).
 
 **Heading/footnote sizes are body-relative, never absolute.** Footnotes are left entirely to
 Typst (0.85em); chapter/section headings come from `HeadingSize` (`:shared-api`) — named chips
