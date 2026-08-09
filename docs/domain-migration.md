@@ -32,7 +32,7 @@ Then `fly certs check <hostname> -a <app>` (apps: `texas-bible-bowl-web` for ape
 `texas-bible-bowl` for api) until all three are issued. Cutover then starts with
 working TLS.
 
-## Phase 2 — DNS cutover (Namecheap)
+## Phase 2 — DNS cutover (Namecheap) ✅ done 2026-08-08
 
 Leaving MX/TXT alone and using TTL ≈ 5 min during the transition:
 
@@ -45,18 +45,27 @@ Leaving MX/TXT alone and using TTL ≈ 5 min during the transition:
 
 No downtime window: old and new hosts both serve the site during propagation.
 **Rollback** = restore the GitHub A/AAAA/CNAME values; the old snapshot stays intact in
-`tbb-website` until Phase 4, so don't retire it early.
+`tbb-website` until Phase 4, so don't retire it early. Records went out at the zone's
+standard 30-min TTL rather than the 5-min transition TTL, so a rollback would take that
+long to propagate — lower the TTL first next time.
 
-Verify: `curl -I https://texasbiblebowl.org` shows `server: Fly/…` (not GitHub);
-`https://www.texasbiblebowl.org/event/` 301s to the apex; `https://api.texasbiblebowl.org/health` is ok.
+Verified at cutover: apex + www + all deep pages serve `server: Fly/…`,
+`www.texasbiblebowl.org/event/` 301s to the apex, the `/study-resources/*` aliases still
+200, Let's Encrypt certs are live on all three hostnames, and
+`https://api.texasbiblebowl.org/health` returns ok.
 
 ## Phase 3 — clients onto the api domain
 
-1. `fly secrets set ALLOWED_ORIGINS="https://texasbiblebowl.org" -a texas-bible-bowl`
-   (safe any time ≥ Phase 0; the old Pages origins can ride along during transition).
+1. ✅ `ALLOWED_ORIGINS` already includes `https://texasbiblebowl.org` (released with the
+   2026-08-08 promotion); the old Pages origin rides along during the transition.
 2. Repo variable `BACKEND_URL` → `https://api.texasbiblebowl.org`
-   (`gh variable set BACKEND_URL --body "https://api.texasbiblebowl.org"`).
+   (`gh variable set BACKEND_URL --body "https://api.texasbiblebowl.org"`). It currently
+   reads `https://texas-bible-bowl.fly.dev`, which is what the live app shell talks to —
+   working, just not yet on the branded host.
 3. Run the "Deploy to production" promotion — rebuilds the site/app against the api URL.
+
+Nothing is broken until this lands; it only moves the app's API calls onto the branded
+host. Once it does, trim `ALLOWED_ORIGINS` to the origins still in use.
 
 The fly.dev backend URL keeps working indefinitely (Android's baked default; update
 `app/build.gradle.kts` `tbb.backendUrl` default at the next app release).

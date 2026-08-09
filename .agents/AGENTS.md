@@ -148,8 +148,10 @@ This renders the real pipeline without hitting Crossway.
   rotation math + markup off `data/curriculum.yaml` + `#curriculum-data`) — it applies a
   localStorage-cached season synchronously before first paint, then refreshes from the backend. Hugo binary: `/home/mark/bin/hugo`
   (v0.164.0 extended); local build: `hugo -s site --gc --minify -d <out>`.
-  Live: https://texasbiblebowl.org (app at `/app/#study`) once the DNS cutover lands; the
-  new host always answers at https://texas-bible-bowl-web.fly.dev for smoke tests.
+  Live: https://texasbiblebowl.org (app at `/app/#study`) — the DNS cutover landed
+  2026-08-08, so the domain now serves this stack, not the old Pages snapshot. `www` 301s to
+  the apex and the backend also answers at https://api.texasbiblebowl.org. The new host
+  always answers at https://texas-bible-bowl-web.fly.dev for smoke tests.
 - **Season params:** served by `GET /seasons/current` (public; PUT needs SEASON_MANAGE). Clients
   read them at launch (Compose: `LocalSeason`; web: `Session.season`) over the shared
   `FALLBACK_SEASON` baked into `:shared-api` — chapter counts and the season book are no longer
