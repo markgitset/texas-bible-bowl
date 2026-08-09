@@ -47,7 +47,7 @@ import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.resolvedStudySet
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
-import net.markdrew.biblebowl.app.navigation.StudySection
+import net.markdrew.biblebowl.api.StudySection
 import net.markdrew.biblebowl.app.platform.Mime
 import net.markdrew.biblebowl.app.platform.saveFile
 import net.markdrew.biblebowl.app.ui.ChapterChips

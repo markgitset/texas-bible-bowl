@@ -44,9 +44,10 @@ import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.api.isGlobalAdmin
+import net.markdrew.biblebowl.api.StudySection
 import net.markdrew.biblebowl.app.navigation.Routes
-import net.markdrew.biblebowl.app.navigation.StudySection
 import net.markdrew.biblebowl.app.navigation.TopDestination
+import net.markdrew.biblebowl.app.navigation.route
 import net.markdrew.biblebowl.app.navigation.topDestinationOf
 import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.screens.AccountScreen

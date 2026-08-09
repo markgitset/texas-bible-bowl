@@ -5,9 +5,10 @@ import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.StudyScopeParams
 import net.markdrew.biblebowl.api.scopeQueryParams
 import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.api.StudySection
 import net.markdrew.biblebowl.web.Session
-import net.markdrew.biblebowl.web.StudySection
 import net.markdrew.biblebowl.web.child
+import net.markdrew.biblebowl.web.route
 import net.markdrew.biblebowl.web.clear
 import net.markdrew.biblebowl.web.onClick
 import net.markdrew.biblebowl.web.ui.chapterChips

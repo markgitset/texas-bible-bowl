@@ -4,6 +4,7 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.MainScope
 import net.markdrew.biblebowl.api.Permission
+import net.markdrew.biblebowl.api.StudySection
 import net.markdrew.biblebowl.api.hasEventWidePermission
 import net.markdrew.biblebowl.web.screens.AccountScreen
 import net.markdrew.biblebowl.web.screens.AdminCountsScreen

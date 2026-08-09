@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.ui.graphics.vector.ImageVector
+import net.markdrew.biblebowl.api.StudySection
 
 /**
  * The app's route strings (see docs/gui-redesign.md §2.1). On web these become hash URLs
@@ -39,22 +40,11 @@ object Routes {
 }
 
 /**
- * The Study & Practice sections — one screen per study focus at `study/<slug>`, reached from the
- * Study tab's overview cards. Slugs (and thus route strings) are identical to the web app's
- * StudySection (web/.../Routes.kt) so deep links mean the same thing on both platforms — keep
- * the two enums in sync.
+ * The Study & Practice section screens live at `study/<slug>` — one per shared-api
+ * [StudySection], reached from the Study tab's overview cards. Route strings are identical to
+ * the web app's (same shared enum) so deep links mean the same thing on both platforms.
  */
-enum class StudySection(val slug: String, val title: String) {
-    TEXT("the-text", "The Text"),
-    GENERAL("general-knowledge", "General Knowledge"),
-    HEADINGS("chapter-headings", "Chapter Headings"),
-    UNIQUE_WORDS("unique-words", "Unique Words"),
-    PRACTICE_TESTS("practice-tests", "Practice Tests"),
-    REFERENCE("reference-documents", "Reference Documents"),
-    DATA("data-source-files", "Data & Source Files");
-
-    val route: String get() = "${Routes.STUDY}/$slug"
-}
+val StudySection.route: String get() = "${Routes.STUDY}/$slug"
 
 /**
  * The four top-level destinations (§2.2). Identical for everyone — role-gated features live
