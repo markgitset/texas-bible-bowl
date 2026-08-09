@@ -46,11 +46,16 @@
     return d;
   }
 
+  // "TBD" is the internal sentinel for an unset value (see layouts/partials/tbb-param.html, which
+  // maps it identically at build time) — visitors always see the spelled-out phrase instead.
+  var TBA = "To be announced";
+
   function patch(s) {
     if (!s) return;
     var d = derive(s);
     document.querySelectorAll("[data-tbb-param]").forEach(function (el) {
       var v = d[el.getAttribute("data-tbb-param")];
+      if (v === "TBD") v = TBA;
       if (v != null && el.textContent !== v) el.textContent = v;
     });
     renderCurriculum(s);

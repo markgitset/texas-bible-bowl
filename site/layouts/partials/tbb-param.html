@@ -1,7 +1,15 @@
 {{- /*
   Renders one season value in a span that params.js can patch live from /seasons/current.
   Usage: {{ partial "tbb-param.html" "eventYear" }}
+
+  "TBD" is the internal sentinel for an unset value — it's what the backend stores for text fields
+  that aren't announced yet, and what season.html derives for unset dates and prices. Visitors
+  never see it: every value is rendered through here, so mapping it once at the display layer
+  covers both kinds while leaving season.html's `eq … "TBD"` tests working on the raw value.
+  params.js does the same in patch() — keep the two sentinels in sync.
 */ -}}
 {{- $s := partialCached "season.html" . "season" -}}
-<span data-tbb-param="{{ . }}">{{ index $s . }}</span>
+{{- $v := index $s . -}}
+{{- if eq $v "TBD" }}{{ $v = "To be announced" }}{{ end -}}
+<span data-tbb-param="{{ . }}">{{ $v }}</span>
 {{- /* trailing newline trimmed */ -}}
