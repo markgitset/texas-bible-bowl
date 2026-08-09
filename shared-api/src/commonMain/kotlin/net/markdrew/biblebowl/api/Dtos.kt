@@ -1288,6 +1288,67 @@ data class MyScoresResponse(
 data class ClearPdfCacheResponse(val cleared: Int)
 
 // ---------------------------------------------------------------------------
+// Study materials (admin-curated section-page extras)
+// ---------------------------------------------------------------------------
+
+/** An uploaded file served back byte-exact, or a link to an externally hosted resource. */
+@Serializable
+enum class StudyMaterialType { DOCUMENT, LINK }
+
+/**
+ * One admin-curated study material: a document uploaded as-is (past tests and other hand-made
+ * files) or an external link (Kahoot, Quizlet, …), pinned to a study set and shown on one
+ * Study & Practice [section] page. Listings never carry the document bytes — those are fetched
+ * from [filePath].
+ */
+@Serializable
+data class StudyMaterialDto(
+    val id: String,
+    /** Strict StandardStudySet slug ("acts"). */
+    val studySet: String,
+    val section: StudySection,
+    val type: StudyMaterialType,
+    val title: String,
+    val description: String = "",
+    /** LINK only: the external http(s) URL. */
+    val url: String? = null,
+    /** DOCUMENT only: the exact original filename, echoed on download. */
+    val fileName: String? = null,
+    /** DOCUMENT only: the exact original content type, echoed on download. */
+    val contentType: String? = null,
+    /** DOCUMENT only: stored size in bytes (display). */
+    val fileSize: Long? = null,
+    /** Manual display order within (studySet, section); admins reorder explicitly. */
+    val sortPosition: Int = 0,
+)
+
+/** Server path of a DOCUMENT's byte-exact download; clients prefix their baseUrl. */
+fun StudyMaterialDto.filePath(): String = "/study-materials/$id/file"
+
+/**
+ * Creates and edits a material. A LINK posts this as JSON; a DOCUMENT posts multipart with this
+ * in a `metadata` part beside the `file` part. PUT edits metadata only ([type] must match the
+ * stored row — replacing a file is delete + re-add).
+ */
+@Serializable
+data class UpsertStudyMaterialRequest(
+    val studySet: String,
+    val section: StudySection,
+    val type: StudyMaterialType,
+    val title: String,
+    val description: String = "",
+    val url: String? = null,
+)
+
+/** Full display order for one (studySet, section) group; sortPosition becomes the list index. */
+@Serializable
+data class ReorderStudyMaterialsRequest(val orderedIds: List<String>)
+
+/** Every material of one study set in display order — mutations return this refreshed list. */
+@Serializable
+data class StudyMaterialsResponse(val materials: List<StudyMaterialDto>)
+
+// ---------------------------------------------------------------------------
 // Generic API envelope for errors
 // ---------------------------------------------------------------------------
 

@@ -22,6 +22,9 @@ object StudyScopeParams {
     const val CHAPTER = "chapter"
     const val THROUGH_CHAPTER = "throughChapter"
 
+    /** Study-section slug filter on the study-materials listing (see [StudySection.bySlug]). */
+    const val SECTION = "section"
+
     /** The `set` value meaning "no scope at all" (the full multi-season archive); never valid in [write]. */
     const val ALL = "all"
 
