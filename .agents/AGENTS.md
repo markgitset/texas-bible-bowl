@@ -129,13 +129,20 @@ This renders the real pipeline without hitting Crossway.
 
 ## Deploy — trunk-based: main auto-deploys STAGING; prod is a manual promotion
 - **Big picture (since 2026-08-08):** every merge to `main` auto-deploys the full **staging**
-  stack (`deploy-staging.yml`). **Nothing deploys prod automatically.** Prod (backend + Pages
-  together) ships via Actions → **"Deploy to production"** (`deploy-production.yml`): manual
-  dispatch (optionally of a pinned SHA; default `main` HEAD), gated on Mark approving the
-  `production` environment, `:server:test` re-run, then Fly deploy + Pages deploy from that
-  exact commit, health-checked and tagged `prod-YYYYMMDD-HHMM` — so `git tag -l 'prod-*'` is
-  the deploy history and the latest tag is what's live. Promote only commits staging already
-  ran. Fly deploy tokens live as environment-scoped GitHub secrets (`FLY_*_DEPLOY_TOKEN`).
+  stack (`deploy-staging.yml`). **Nothing deploys prod automatically.** Prod (backend +
+  frontend together) ships via Actions → **"Deploy to production"** (`deploy-production.yml`):
+  manual dispatch **from `main`** (optionally pinning a SHA in the `ref` input; default `main`
+  HEAD), gated on Mark approving the `production` environment **once**, `:server:test` re-run,
+  then Fly backend + Fly frontend deploy from that exact commit, health-checked and tagged
+  `prod-YYYYMMDD-HHMM` — so `git tag -l 'prod-*'` is the deploy history and the latest tag is
+  what's live. Promote only commits staging already ran. Fly deploy tokens live as
+  environment-scoped GitHub secrets — **`production` holds `FLY_BACKEND_DEPLOY_TOKEN` and is
+  the only reviewer-gated environment; `production-web` holds `FLY_WEB_DEPLOY_TOKEN` with no
+  reviewers** (GitHub gates per gated job, so a second gated environment would mean a second
+  approval click; the `frontend` job still can't start early because it `needs: backend`).
+  Both are restricted to the `main` branch. Don't "simplify" this by moving a Fly token to a
+  repo-level secret: the repo is public and has none, and the web token can publish anything
+  to texasbiblebowl.org. See `docs/staging.md`.
 - **Web (prod frontend):** static Fly app **`texas-bible-bowl-web`** (nginx, one always-warm
   machine, www→apex 301; same pattern as staging-web so staging rehearses prod), deployed
   ONLY by the production promotion above via `tools/deploy-web.sh prod` — ONE tree: the
