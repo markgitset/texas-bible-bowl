@@ -3,6 +3,8 @@ package net.markdrew.biblebowl.app.screens
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,6 +40,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.PdfFileNames
 import net.markdrew.biblebowl.api.schoolYear
 import net.markdrew.biblebowl.api.ScopeSelection
@@ -76,6 +79,8 @@ private data class StudyTextChoices(
     val verseOnNewLine: Boolean = false,
     val highlight: Boolean = true,
     val underlineUniqueWords: Boolean = true,
+    val chapterHeading: HeadingSize = HeadingSize.DEFAULT_CHAPTER,
+    val sectionHeading: HeadingSize = HeadingSize.DEFAULT_SECTION,
 )
 
 /**
@@ -250,6 +255,8 @@ fun StudySectionScreen(
             verseOnNewLine = c.verseOnNewLine,
             underlineUniqueWords = c.underlineUniqueWords,
             fontSize = c.fontSize,
+            chapterHeading = c.chapterHeading,
+            sectionHeading = c.sectionHeading,
         )
         download("Printable study text", withSet(name)) {
             api.bibleTextPdf(
@@ -262,6 +269,8 @@ fun StudySectionScreen(
                 verseOnNewLine = c.verseOnNewLine,
                 highlight = c.highlight,
                 underlineUniqueWords = c.underlineUniqueWords,
+                chapterHeading = c.chapterHeading,
+                sectionHeading = c.sectionHeading,
             )
         }
     }
@@ -605,6 +614,14 @@ private fun StudyTextOptions(
             )
         }
     }
+    // Only meaningful when chapters actually render as headings; inline chapter labels take the
+    // body size, so the chips would be a control that does nothing.
+    if (choices.chapterStyle.headings) {
+        Text("Chapter heading size", style = MaterialTheme.typography.labelLarge)
+        HeadingSizeChips(choices.chapterHeading) { onChange(choices.copy(chapterHeading = it)) }
+    }
+    Text("Section heading size", style = MaterialTheme.typography.labelLarge)
+    HeadingSizeChips(choices.sectionHeading) { onChange(choices.copy(sectionHeading = it)) }
     OptionSwitch("Two columns", choices.twoColumns) { onChange(choices.copy(twoColumns = it)) }
     OptionSwitch("Justified text", choices.justified) { onChange(choices.copy(justified = it)) }
     OptionSwitch("Each verse starts on a new line", choices.verseOnNewLine) {
@@ -614,6 +631,26 @@ private fun StudyTextOptions(
     OptionSwitch("Each chapter starts a new page", choices.chapterBreaksPage) {
         onChange(choices.copy(chapterBreaksPage = it))
     }*/
+}
+
+/** The shared heading-size chips, used for both the chapter and section controls. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun HeadingSizeChips(selected: HeadingSize, onSelect: (HeadingSize) -> Unit) {
+    // FlowRow, not Row: these labels are words rather than "11 pt", so they wrap on a phone.
+    FlowRow(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        HeadingSize.entries.forEach { size ->
+            FilterChip(
+                selected = selected == size,
+                onClick = { onSelect(size) },
+                label = { Text(size.label) },
+            )
+        }
+    }
 }
 
 @Composable

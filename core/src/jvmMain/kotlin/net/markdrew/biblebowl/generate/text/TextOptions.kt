@@ -17,8 +17,11 @@ import java.time.format.DateTimeFormatter
  * @param mainFont main body text font family
  * @param headingFont chapter and section headings font family
  * @param verseNumFont verse numbers font family
- * @param chapterFontSize chapter heading font size in points
- * @param headingFontSize section heading font size in points
+ * @param chapterHeadingScale chapter heading size as a multiple of [fontSize] (1.0 = same size as the
+ *   body text). Relative rather than absolute so headings stay proportional at every selectable body
+ *   size; `HeadingSize` in `:shared-api` defines the named steps the clients offer.
+ * @param sectionHeadingScale section heading size as a multiple of [fontSize]. Chosen independently of
+ *   [chapterHeadingScale], and may deliberately be the larger of the two.
  * @param justified body text justification
  * @param underlineUniqueWords if true, underline words that occur exactly once in the study set
  * @param customHighlights palette of regex/category-driven highlights, with caller-chosen colors.
@@ -35,8 +38,8 @@ data class TextOptions(
     val mainFont: String = "Quattrocento Sans",
     val verseNumFont: String = "Quattrocento Sans",
     val headingFont: String = "Quattrocento Sans",
-    val chapterFontSize: Int = 14,
-    val headingFontSize: Int = 16,
+    val chapterHeadingScale: Double = 1.4,
+    val sectionHeadingScale: Double = 1.2,
     val justified: Boolean = false,
     val underlineUniqueWords: Boolean = false,
     val customHighlights: HighlightPalette = HighlightPalette.empty(),

@@ -46,6 +46,21 @@ class PdfFileNamesTest {
     }
 
     @Test
+    fun bibleTextNamesOnlyNonDefaultHeadingSizes() {
+        // The name is the server's cache key, so two different heading pairs must never share one.
+        assertEquals("bible-text-highlighted.pdf", PdfFileNames.bibleText(
+            chapterHeading = HeadingSize.DEFAULT_CHAPTER, sectionHeading = HeadingSize.DEFAULT_SECTION,
+        ))
+        assertEquals("bible-text-highlighted-ch-head-large.pdf", PdfFileNames.bibleText(
+            chapterHeading = HeadingSize.LARGE,
+        ))
+        // The pre-2026-08 look: section heading bigger than the chapter heading.
+        assertEquals("bible-text-highlighted-ch-head-small-sec-head-medium.pdf", PdfFileNames.bibleText(
+            chapterHeading = HeadingSize.SMALL, sectionHeading = HeadingSize.MEDIUM,
+        ))
+    }
+
+    @Test
     fun bibleTextOmitsTheDefaultFontSize() {
         assertEquals(
             "bible-text-highlighted.pdf",

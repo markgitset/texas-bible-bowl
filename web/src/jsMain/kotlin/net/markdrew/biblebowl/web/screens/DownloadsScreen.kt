@@ -1,5 +1,6 @@
 package net.markdrew.biblebowl.web.screens
 
+import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.StudyScopeParams
 import net.markdrew.biblebowl.api.scopeQueryParams
@@ -45,6 +46,8 @@ private data class StudyTextChoices(
     val verseOnNewLine: Boolean = false,
     val highlight: Boolean = true,
     val underlineUniqueWords: Boolean = true,
+    val chapterHeading: HeadingSize = HeadingSize.DEFAULT_CHAPTER,
+    val sectionHeading: HeadingSize = HeadingSize.DEFAULT_SECTION,
 )
 
 /**
@@ -374,6 +377,8 @@ object DownloadsScreen {
             "verseOnNewLine" to true.takeIf { c.verseOnNewLine },
             "highlight" to false.takeIf { !c.highlight },
             "underlineUniqueWords" to true.takeIf { c.underlineUniqueWords },
+            "chapterHeadingSize" to c.chapterHeading.slug.takeIf { c.chapterHeading != HeadingSize.DEFAULT_CHAPTER },
+            "sectionHeadingSize" to c.sectionHeading.slug.takeIf { c.sectionHeading != HeadingSize.DEFAULT_SECTION },
         )
     }
 
@@ -477,6 +482,18 @@ object DownloadsScreen {
                 child("p", "fw-semibold mb-1", "Chapter titles")
                 chipRow(ChapterStyle.entries.map { it.label to it }, textChoices.chapterStyle) {
                     textChoices = textChoices.copy(chapterStyle = it); rerender()
+                }
+                // Only meaningful when chapters actually render as headings; inline chapter labels
+                // take the body size, so the chips would be a control that does nothing.
+                if (textChoices.chapterStyle.headings) {
+                    child("p", "fw-semibold mb-1", "Chapter heading size")
+                    chipRow(HeadingSize.entries.map { it.label to it }, textChoices.chapterHeading) {
+                        textChoices = textChoices.copy(chapterHeading = it); rerender()
+                    }
+                }
+                child("p", "fw-semibold mb-1", "Section heading size")
+                chipRow(HeadingSize.entries.map { it.label to it }, textChoices.sectionHeading) {
+                    textChoices = textChoices.copy(sectionHeading = it); rerender()
                 }
                 optionSwitch("Two columns", textChoices.twoColumns) {
                     textChoices = textChoices.copy(twoColumns = it); rerender()

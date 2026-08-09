@@ -223,6 +223,17 @@ LEADING_FOOTNOTE,FOOTNOTE)`. Feature layers are added on top:
 - **Small-caps** — handled inline in `emitText` (`LORD` → `#smallcaps[Lord]`); no layer.
 
 Endpoint: `GET /generate/bible-text.pdf?fontSize&twoColumns&justified&chapterBreaksPage&
-useHeadingsForChapters&chapterEndLines&verseOnNewLine&highlight&underlineUniqueWords`
+useHeadingsForChapters&chapterEndLines&verseOnNewLine&highlight&underlineUniqueWords&
+chapterHeadingSize&sectionHeadingSize`
 (highlight on by default). The footer stamps the season's event dates ("April 2–4, 2027"),
-not the generation date; the cached-PDF stamp is salted with that date line.
+not the generation date; the cached-PDF stamp is salted with that date line **and**
+`BIBLE_TEXT_LAYOUT_REVISION` — bump that constant whenever the rendering changes, or cached
+PDFs keep the old layout.
+
+**Heading/footnote sizes are body-relative, never absolute.** Footnotes are left entirely to
+Typst (0.85em); chapter/section headings come from `HeadingSize` (`:shared-api`) — named chips
+(Same as text/Small/Medium/Large) mapping to multipliers that `TypstBibleTextWriter` multiplies
+by `fontSize` and emits as points. Points, not `em`: inside `heading(...)` Typst has already
+applied its 1.4em/1.2em, so an `em` would compound instead of replace. The two heading controls
+are independent and either may be larger — a section heading bigger than the chapter heading is
+a supported preference, not a bug. See `docs/text-generation-backlog.md`.

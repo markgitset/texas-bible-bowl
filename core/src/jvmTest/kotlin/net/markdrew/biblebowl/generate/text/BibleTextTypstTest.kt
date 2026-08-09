@@ -6,6 +6,7 @@ import net.markdrew.biblebowl.ws.EsvIndexer
 import net.markdrew.biblebowl.ws.Passage
 import net.markdrew.biblebowl.ws.PassageMeta
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** Runs the copied render engine (walker + Typst handler) end-to-end over a fixture with prose and poetry. */
@@ -114,6 +115,48 @@ class BibleTextTypstTest {
                 "must not override Typst's body-relative footnote size (${fontSize}pt body)",
             )
         }
+    }
+
+    @Test
+    fun headingSizesScaleWithTheBodyTextAtEverySelectableSize() {
+        // The old fixed 14pt/16pt were right at one body size and wrong everywhere else — smaller than
+        // the text at the top of the range, dwarfing it at the bottom. Sizes are now multiples of the
+        // body size, so the relationship holds across the server's coerced 6..24 range.
+        for (fontSize in 6..24) {
+            val typst = bibleTextTypst(
+                genesis1(),
+                TextOptions(fontSize = fontSize, useHeadingsForChapters = true),
+            )
+            val sizes = Regex("""size: ([\d.]+)pt, weight: "bold"\)\[#label]""")
+                .findAll(typst).map { it.groupValues[1].toDouble() }.toList()
+            assertEquals(2, sizes.size, "one size for the chapter heading, one for the section heading")
+            val (chapter, section) = sizes
+            assertEquals(fontSize * 1.4, chapter, 0.01, "chapter heading defaults to Typst's 1.4em")
+            assertEquals(fontSize * 1.2, section, 0.01, "section heading defaults to Typst's 1.2em")
+            // The default hierarchy is chapter > section > body, at every body size.
+            assertTrue(chapter > section && section > fontSize, "headings outrank the body (${fontSize}pt)")
+        }
+    }
+
+    @Test
+    fun headingSizesAreAbsoluteBecauseEmWouldCompoundInsideHeading() {
+        // These sizes are set inside `heading(...)`, where Typst has already applied its own
+        // 1.4em/1.2em — a relative size would multiply with that rather than replace it (the same
+        // trap that made a relative footnote size render at ~0.74em). Points sidestep it.
+        val typst = bibleTextTypst(genesis1(), TextOptions(useHeadingsForChapters = true))
+        assertTrue(!typst.contains("em, weight: \"bold\")[#label]"), "heading sizes must not be em-relative")
+    }
+
+    @Test
+    fun sectionHeadingMayDeliberatelyOutsizeTheChapterHeading() {
+        // The pre-2026-08 study text had a larger section heading than chapter heading. That is a real
+        // preference, so it stays reachable — it just isn't the default any more.
+        val typst = bibleTextTypst(genesis1(), TextOptions(
+            fontSize = 10, useHeadingsForChapters = true,
+            chapterHeadingScale = 1.2, sectionHeadingScale = 1.7,
+        ))
+        assertTrue(typst.contains("size: 12pt, weight: \"bold\")[#label]"), "chapter heading at 1.2x")
+        assertTrue(typst.contains("size: 17pt, weight: \"bold\")[#label]"), "section heading at 1.7x")
     }
 
     @Test

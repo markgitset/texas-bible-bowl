@@ -4,6 +4,7 @@ import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
 import net.markdrew.biblebowl.api.ChangePasswordRequest
 import net.markdrew.biblebowl.api.CreateCongregationRequest
+import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
@@ -119,12 +120,15 @@ class TbbApiRequestTest {
             chapterBreaksPage = true,
             highlight = false,
             underlineUniqueWords = true,
+            chapterHeading = HeadingSize.SMALL,
+            sectionHeading = HeadingSize.LARGE,
         )
         val uri = requests.single()
         assertTrue(uri.startsWith("/generate/bible-text.pdf?"), uri)
         listOf(
             "fontSize=14", "twoColumns=true", "justified=true",
             "chapterBreaksPage=true", "highlight=false", "underlineUniqueWords=true",
+            "chapterHeadingSize=small", "sectionHeadingSize=large",
         ).forEach { param -> assertTrue(param in uri, "expected $param in $uri") }
     }
 

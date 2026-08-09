@@ -31,6 +31,21 @@ import net.markdrew.chupacabra.core.DisjointRangeSet
 private val asteriskBracketedWordRegex = Regex("""\*([^*]+)\*""")
 
 /**
+ * A heading size in points, computed from the body size so it tracks it.
+ *
+ * Deliberately emitted as an absolute length, never as `em`: these sizes are set *inside*
+ * `heading(...)`, where Typst has already applied its own 1.4em/1.2em, so a relative size would
+ * compound with that rather than replace it (`1.4em` would render at 1.96em) — the same trap that
+ * made a relative footnote size render at ~0.74em. Points sidestep it while still tracking the
+ * body size, because the multiplication happens here.
+ */
+internal fun headingPt(fontSize: Int, scale: Double): String {
+    val points = Math.round(fontSize * scale * 100.0) / 100.0
+    // Whole sizes print as "14pt", not "14.0pt" — Typst accepts both; this keeps the source readable.
+    return if (points % 1.0 == 0.0) points.toInt().toString() else points.toString()
+}
+
+/**
  * Renders [studyData] as a formatted Typst Bible-text document and returns the source (the server compiles
  * it to a PDF via TypstCompiler). Server-side entry point that replaces bible-bowl's file/CLI writer.
  *
@@ -86,8 +101,8 @@ private class TypstHandler(
         val headingFont = resolveTypstFont(options.headingFont)
         val verseNumFont = resolveTypstFont(options.verseNumFont)
 
-        val chapterFontSize = options.chapterFontSize
-        val headingFontSize = options.headingFontSize
+        val chapterFontSize = headingPt(options.fontSize, options.chapterHeadingScale)
+        val headingFontSize = headingPt(options.fontSize, options.sectionHeadingScale)
 
         out.appendLine("""
             #set page(
