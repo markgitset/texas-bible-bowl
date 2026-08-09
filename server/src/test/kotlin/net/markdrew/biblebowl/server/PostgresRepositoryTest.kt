@@ -15,7 +15,10 @@ import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.model.StandardStudySet
+import net.markdrew.biblebowl.api.StudyMaterialType
+import net.markdrew.biblebowl.api.StudySection
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
+import net.markdrew.biblebowl.api.UpsertStudyMaterialRequest
 import net.markdrew.biblebowl.server.data.QuestionScope
 import net.markdrew.biblebowl.api.AddCabinAssignmentRequest
 import net.markdrew.biblebowl.api.SeedMemberDto
@@ -53,7 +56,10 @@ import net.markdrew.biblebowl.server.data.RegistrationsTable
 import net.markdrew.biblebowl.server.data.RoleGrantsTable
 import net.markdrew.biblebowl.server.data.ScoreReleasesTable
 import net.markdrew.biblebowl.server.data.ScoresTable
+import net.markdrew.biblebowl.server.data.PostgresStudyMaterialRepository
 import net.markdrew.biblebowl.server.data.SeasonSitesTable
+import net.markdrew.biblebowl.server.data.StudyMaterialFile
+import net.markdrew.biblebowl.server.data.StudyMaterialsTable
 import net.markdrew.biblebowl.server.data.TeamsTable
 import net.markdrew.biblebowl.server.data.UpdateCongregationResult
 import net.markdrew.biblebowl.server.data.UsersTable
@@ -115,6 +121,7 @@ class PostgresRepositoryTest {
             SeasonSitesTable.deleteAll()
             CongregationsTable.deleteAll()
             RoleGrantsTable.deleteAll()
+            StudyMaterialsTable.deleteAll() // before users (created_by FK)
             // users.person_id <-> people.managed_by_user_id is a cycle: break both links first.
             UsersTable.update { it[personId] = null }
             PeopleTable.update { it[managedByUserId] = null }
@@ -1087,5 +1094,57 @@ class PostgresRepositoryTest {
         assertEquals(listOf("Taylor Jones"), tribes.listTribes("2027").single().leaders.map { it.name })
         assertTrue(tribes.deleteTribe(red.id))
         assertTrue(tribes.listTribes("2027").isEmpty())
+    }
+
+    @Test
+    fun studyMaterialsRoundTripWithSingleStatementListing() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val materials = PostgresStudyMaterialRepository(db)
+        val admin = users.create("materials@tbb.org", "Admin", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.ADMIN)))
+        fun upsert(title: String, type: StudyMaterialType, url: String? = null) = UpsertStudyMaterialRequest(
+            studySet = "acts", section = StudySection.PRACTICE_TESTS, type = type, title = title, url = url,
+        )
+
+        val link = materials.createLink(upsert("Quizlet", StudyMaterialType.LINK, "https://quizlet.com/x"), admin.id)
+        val bytes = ByteArray(2048) { (it % 251).toByte() }
+        val doc = materials.createDocument(
+            upsert("2026 Round 1", StudyMaterialType.DOCUMENT),
+            StudyMaterialFile("round-1.pdf", "application/pdf", bytes),
+            admin.id,
+        )
+
+        // Creates append in order, and the listing is ONE statement that never reads the bytes
+        // (fileSize comes from octet_length in the same select).
+        var listed: List<net.markdrew.biblebowl.api.StudyMaterialDto> = emptyList()
+        val statements = QueryCountInterceptor.measure { listed = materials.list("acts") }
+        assertEquals(1, statements)
+        assertEquals(listOf(link.id, doc.id), listed.map { it.id })
+        assertEquals(bytes.size.toLong(), listed.last().fileSize)
+
+        // The stored file round-trips byte-exact; LINK rows have no file.
+        val file = assertNotNull(materials.file(doc.id))
+        assertEquals("round-1.pdf", file.fileName)
+        assertEquals("application/pdf", file.contentType)
+        assertTrue(bytes.contentEquals(file.bytes))
+        assertNull(materials.file(link.id))
+
+        // Manual reorder rewrites positions; unknown ids are refused whole.
+        assertTrue(materials.reorder(listOf(doc.id, link.id)))
+        assertEquals(listOf(doc.id, link.id), materials.list("acts").map { it.id })
+        assertTrue(!materials.reorder(listOf(doc.id, "nope")))
+
+        // Metadata edits stick (section move shows up under the new section filter).
+        val updated = assertNotNull(materials.update(
+            link.id,
+            UpsertStudyMaterialRequest("acts", StudySection.GENERAL, StudyMaterialType.LINK,
+                "Quizlet (moved)", url = "https://quizlet.com/y"),
+        ))
+        assertEquals(StudySection.GENERAL, updated.section)
+        assertEquals(listOf(link.id), materials.list("acts", StudySection.GENERAL).map { it.id })
+
+        assertTrue(materials.delete(doc.id))
+        assertEquals(listOf(link.id), materials.list("acts").map { it.id })
     }
 }

@@ -329,6 +329,29 @@ object GeneratedPdfsTable : Table("generated_pdfs") {
 }
 
 /**
+ * Admin-curated study materials: uploaded documents (served back byte-exact) and external links,
+ * pinned to a study set + Study & Practice section slug, in manual sort order. A DOCUMENT's bytes
+ * live in [body] — listing queries must use an explicit column list that never selects it (Postgres
+ * TOASTs the bytea out-of-line, so a no-body select stays one cheap statement per page view).
+ */
+object StudyMaterialsTable : Table("study_materials") {
+    val id = varchar("id", 36)
+    val studySet = varchar("study_set", 64)
+    val section = varchar("section", 32)
+    val type = varchar("type", 12)
+    val title = varchar("title", 160)
+    val description = varchar("description", 1000).default("")
+    val url = varchar("url", 1000).nullable()
+    val fileName = varchar("file_name", 160).nullable()
+    val contentType = varchar("content_type", 120).nullable()
+    val body = binary("body").nullable() // bytea; DOCUMENT only
+    val sortPosition = integer("sort_position").default(0)
+    val createdAtEpochMs = long("created_at_epoch_ms")
+    val createdByUserId = varchar("created_by_user_id", 36).references(UsersTable.id)
+    override val primaryKey = PrimaryKey(id)
+}
+
+/**
  * Active password-reset codes (one per user; see AuthRoutes). Stores only the PBKDF2 hash of the
  * emailed 6-digit code, an epoch-ms expiry, and the wrong-guess counter that caps brute-forcing.
  */
