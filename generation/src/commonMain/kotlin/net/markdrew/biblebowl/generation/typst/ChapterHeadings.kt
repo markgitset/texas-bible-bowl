@@ -4,10 +4,17 @@ package net.markdrew.biblebowl.generation.typst
 data class ChapterHeadingRow(val title: String, val reference: String)
 
 /**
- * One book's headings on the sheet. [book] labels the band printed above them; pass null for a
+ * The headings of one chapter — everything that *starts* in [chapter], including a heading that runs
+ * on into the next one. These are the sheet's shading groups: a chapter's headings share a background
+ * and the shade flips at each chapter, so the chapter divisions read off the page without a label.
+ */
+data class ChapterHeadingChapter(val chapter: Int, val headings: List<ChapterHeadingRow>)
+
+/**
+ * One book's chapters on the sheet. [book] labels the band printed above them; pass null for a
  * single-book study set, where the sheet title already names the book and bands would be noise.
  */
-data class ChapterHeadingBook(val book: String?, val headings: List<ChapterHeadingRow>)
+data class ChapterHeadingBook(val book: String?, val chapters: List<ChapterHeadingChapter>)
 
 /** Page geometry of the sheet, in Typst units. Kept here so the fit search and the render agree. */
 private const val PAGE_WIDTH = "8.5in"
@@ -17,15 +24,16 @@ private const val MARGIN_Y = "0.4in"
 private const val GUTTER = "0.2in"
 
 /**
- * The text sizes each column count may use, in quarter-points. These bounds only keep the search
- * from spending measures on layouts that could never win — a 4-column sheet at 11pt wraps every
- * heading twice — so they can stay generous; which layout is actually chosen is decided by
- * [CANDIDATES] and [WRAP_TOLERANCE].
+ * The text sizes each column count may use, in quarter-points. These bounds only keep the search from
+ * spending measures on layouts that could never win — a 4-column sheet at 16pt wraps every heading
+ * twice over — so they can stay generous; which layout is actually chosen is decided by [CANDIDATES]
+ * and [WRAP_TOLERANCE]. The top of the range is well above a normal body size on purpose: the rows
+ * are tight, so a short set has to grow the text to fill its page rather than trail off half-empty.
  */
 private val COLUMN_TIERS: List<Pair<Int, IntRange>> = listOf(
-    2 to 32..44, // 8.0 – 11.0pt
-    3 to 24..44, // 6.0 – 11.0pt
-    4 to 18..36, // 4.5 –  9.0pt
+    2 to 32..64, // 8.0 – 16.0pt
+    3 to 24..56, // 6.0 – 14.0pt
+    4 to 18..44, // 4.5 – 11.0pt
 )
 
 /**
@@ -51,12 +59,15 @@ private val CANDIDATES: List<Pair<Int, Double>> = COLUMN_TIERS
 /**
  * Renders a one-page, at-a-glance listing of every ESV section heading in a study set as Typst
  * source: the set's title, then the headings in scripture order down flowing columns, each with the
- * verses it covers, banded like a spreadsheet so a row is easy to track across.
+ * verses it covers, shaded a chapter at a time so the chapter divisions are visible at a glance.
  *
  * "Fits on one page" is enforced by Typst rather than guessed here: at render time the sheet is
  * `measure`d at each of [CANDIDATES] in turn and drawn at the first one that both fits the page and
  * stays within [WRAP_TOLERANCE]. Measuring — rather than predicting a row height from the text size
  * — is what makes long headings that wrap to a second line count correctly, in both tests.
+ *
+ * The sheet is deliberately unlabelled apart from the book bands: the chapter shading and each row's
+ * own reference carry the structure, which keeps a heading per line and the whole set on one page.
  */
 fun chapterHeadingsTypst(
     title: String,
@@ -71,8 +82,11 @@ fun chapterHeadingsTypst(
         #set par(justify: false, leading: 0.5em)
 
         #let accent = rgb("#1f3864")
-        #let band_a = rgb("#dce6f4")
-        #let band_b = rgb("#eef3fb")
+        // The two chapter shades. They carry the chapter divisions on their own (nothing else marks
+        // them), so they need enough contrast to tell apart at a glance without going dark enough to
+        // fight the text or waste toner over a full page.
+        #let band_a = rgb("#c9dcf2")
+        #let band_b = rgb("#edf3fb")
 
         #let gutter = $GUTTER
         #let content_width = $PAGE_WIDTH - 2 * $MARGIN_X
@@ -83,12 +97,18 @@ fun chapterHeadingsTypst(
     )
 
     books.forEach { book ->
-        appendLine("""  (book: ${book.book?.let { "\"${escapeTypstString(it)}\"" } ?: "none"}, headings: (""")
-        book.headings.forEach { h ->
-            appendLine(
-                """    (title: "${escapeTypstString(h.title)}", """ +
-                    """reference: "${escapeTypstString(h.reference)}"),"""
-            )
+        appendLine("""  (book: ${book.book?.let { "\"${escapeTypstString(it)}\"" } ?: "none"}, chapters: (""")
+        book.chapters.forEach { chapter ->
+            // The chapter number itself isn't drawn — each row's reference already carries it — so
+            // only the grouping crosses into the markup.
+            appendLine("    (")
+            chapter.headings.forEach { h ->
+                appendLine(
+                    """      (title: "${escapeTypstString(h.title)}", """ +
+                        """reference: "${escapeTypstString(h.reference)}"),"""
+                )
+            }
+            appendLine("    ),")
         }
         appendLine("  )),")
     }
@@ -104,13 +124,18 @@ fun chapterHeadingsTypst(
           #v(4pt)
         ]
 
-        // A heading row: the title, then its reference pushed to the right margin. Non-breakable so a
-        // wrapped title never splits across a column boundary (which would also break the fit search).
-        #let heading_row(i, h) = block(
+        #let row_inset = (x: 3.5pt, y: 1.4pt)
+
+        // A heading row: the title, then its reference pushed out to the right edge. Non-breakable so
+        // a wrapped title never splits across a column boundary, and with no spacing above or below so
+        // that a chapter's rows meet and read as one solid block of colour rather than as stripes.
+        #let heading_row(h, shade) = block(
           breakable: false,
           width: 100%,
-          fill: if calc.even(i) { band_a } else { band_b },
-          inset: (x: 3.5pt, y: 2.5pt),
+          fill: shade,
+          inset: row_inset,
+          above: 0pt,
+          below: 0pt,
           grid(
             columns: (1fr, auto),
             column-gutter: 8pt,
@@ -123,8 +148,8 @@ fun chapterHeadingsTypst(
           breakable: false,
           width: 100%,
           fill: accent,
-          inset: (x: 3.5pt, y: 3pt),
-          above: 5pt,
+          inset: (x: row_inset.x, y: 2.5pt),
+          above: 4pt,
           below: 0pt,
           text(fill: white, weight: "bold")[#name],
         )
@@ -133,9 +158,17 @@ fun chapterHeadingsTypst(
 
         #let sheet(size) = {
           set text(size: size)
+          // Wrapped titles run on at exactly the row pitch, so a two-line heading looks like one taller
+          // row of its chapter's colour instead of opening a gap mid-block.
+          set par(leading: 2 * row_inset.y)
           for b in books {
             if b.book != none { book_band(b.book) }
-            for (i, h) in b.headings.enumerate() { heading_row(i, h) }
+            // Shade by chapter, not by row, and alternate over the chapter's position rather than its
+            // number — a set with gaps in it (Exodus 1-20 then 32-34) must not run two same-shaded
+            // chapters together just because 20 and 32 are both even.
+            for (i, chapter) in b.chapters.enumerate() {
+              for h in chapter { heading_row(h, if calc.even(i) { band_a } else { band_b }) }
+            }
           }
         }
 

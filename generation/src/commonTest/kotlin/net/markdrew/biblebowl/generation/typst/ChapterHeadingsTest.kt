@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.generation.typst
 
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -11,20 +12,29 @@ class ChapterHeadingsTest {
         ChapterHeadingBook(
             "Exodus",
             listOf(
-                ChapterHeadingRow("The Birth of Moses", "2:1-10"),
-                ChapterHeadingRow("The Burning Bush", "3:1-22"),
+                ChapterHeadingChapter(2, listOf(ChapterHeadingRow("The Birth of Moses", "2:1-10"))),
+                ChapterHeadingChapter(
+                    3,
+                    listOf(
+                        ChapterHeadingRow("The Burning Bush", "3:1-22"),
+                        ChapterHeadingRow("Moses Given Powerful Signs", "4:1-17"),
+                    ),
+                ),
             ),
         ),
-        ChapterHeadingBook("Numbers", listOf(ChapterHeadingRow("Korah's Rebellion", "16:1-50"))),
+        ChapterHeadingBook(
+            "Numbers",
+            listOf(ChapterHeadingChapter(16, listOf(ChapterHeadingRow("Korah's Rebellion", "16:1-50")))),
+        ),
     )
 
     @Test
-    fun emitsOneEntryPerHeadingGroupedUnderItsBook() {
+    fun emitsOneEntryPerHeadingGroupedByChapterWithinItsBook() {
         val source = chapterHeadingsTypst("Life of Moses", moses)
 
-        assertContains(source, """(book: "Exodus", headings: (""")
+        assertContains(source, """(book: "Exodus", chapters: (""")
         assertContains(source, """(title: "The Birth of Moses", reference: "2:1-10"),""")
-        assertContains(source, """(book: "Numbers", headings: (""")
+        assertContains(source, """(book: "Numbers", chapters: (""")
         assertTrue(
             source.indexOf("Korah's Rebellion") > source.indexOf("""book: "Numbers""""),
             "headings stay inside their book",
@@ -36,10 +46,23 @@ class ChapterHeadingsTest {
     }
 
     @Test
-    fun singleBookSheetsCarryNoBookBands() {
-        val source = chapterHeadingsTypst("Acts", listOf(ChapterHeadingBook(null, moses.first().headings)))
+    fun chaptersAreShadedAsAGroupSoAChapterReadsAsOneBlock() {
+        val source = chapterHeadingsTypst("Life of Moses", moses)
 
-        assertContains(source, "(book: none, headings: (")
+        // A chapter's headings are one nested array, and the shade is chosen per chapter — a heading
+        // that runs on past its chapter (4:17 under chapter 3) shades with the chapter it starts in.
+        val exodus = source.substringAfter("""(book: "Exodus", chapters: (""").substringBefore("""(book: "Numbers"""")
+        val chapters = exodus.split(Regex("""(?m)^ +\($""")).drop(1)
+        assertEquals(2, chapters.size, "one nested array per chapter, not per heading")
+        assertContains(chapters[1], "The Burning Bush")
+        assertContains(chapters[1], "Moses Given Powerful Signs")
+    }
+
+    @Test
+    fun singleBookSheetsCarryNoBookBands() {
+        val source = chapterHeadingsTypst("Acts", listOf(ChapterHeadingBook(null, moses.first().chapters)))
+
+        assertContains(source, "(book: none, chapters: (")
         assertFalse(source.contains("""book: """"), "a null book must not emit a band label")
     }
 
@@ -57,7 +80,12 @@ class ChapterHeadingsTest {
     fun rowStringsAreEscapedAsStringLiterals() {
         val source = chapterHeadingsTypst(
             "Set",
-            listOf(ChapterHeadingBook("""The "Big" Book""", listOf(ChapterHeadingRow("""He said "no"\""", "1:1")))),
+            listOf(
+                ChapterHeadingBook(
+                    """The "Big" Book""",
+                    listOf(ChapterHeadingChapter(1, listOf(ChapterHeadingRow("""He said "no"\""", "1:1")))),
+                )
+            ),
         )
 
         assertContains(source, """(book: "The \"Big\" Book"""")
@@ -75,7 +103,11 @@ class ChapterHeadingsTest {
             .toList()
 
         assertTrue(pairs.size > 20, "expected a fine-grained search, got ${pairs.size} candidates")
-        assertTrue(pairs.first() == 2 to 11.0, "the search must start at the biggest, widest layout")
+        assertEquals(
+            2 to pairs.maxOf { it.second },
+            pairs.first(),
+            "the search must start at the biggest text in the fewest columns",
+        )
         pairs.zipWithNext { (aCols, aSize), (bCols, bSize) ->
             assertTrue(
                 bSize < aSize || (bSize == aSize && bCols > aCols),

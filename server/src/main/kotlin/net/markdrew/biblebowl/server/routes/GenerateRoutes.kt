@@ -43,6 +43,7 @@ import net.markdrew.biblebowl.generate.text.highlightedBibleTextTypst
 import net.markdrew.biblebowl.generate.text.typst.bibleTextTypst
 import net.markdrew.biblebowl.generation.typst.CardText
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingBook
+import net.markdrew.biblebowl.generation.typst.ChapterHeadingChapter
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingRow
 import net.markdrew.biblebowl.generation.typst.Flashcard
 import net.markdrew.biblebowl.generation.typst.chapterHeadingsTypst
@@ -406,8 +407,14 @@ fun Route.generateRoutes(
                 val books = sd.headings.groupBy { it.verseRange.start.book }.map { (book, headings) ->
                     ChapterHeadingBook(
                         book = book.fullName.takeIf { multiBook },
-                        headings = headings.map {
-                            ChapterHeadingRow(it.title, it.verseRange.format(NO_BOOK_FORMAT))
+                        // Grouped by the chapter each heading *starts* in, so one that runs on into the
+                        // next chapter shades with the chapter it belongs to. `headings` is already in
+                        // scripture order and groupBy keeps encounter order, so the chapters stay in order.
+                        chapters = headings.groupBy { it.verseRange.start.chapter }.map { (chapter, hs) ->
+                            ChapterHeadingChapter(
+                                chapter,
+                                hs.map { ChapterHeadingRow(it.title, it.verseRange.format(NO_BOOK_FORMAT)) },
+                            )
                         },
                     )
                 }

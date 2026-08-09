@@ -18,6 +18,7 @@ import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingBook
+import net.markdrew.biblebowl.generation.typst.ChapterHeadingChapter
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingRow
 import net.markdrew.biblebowl.generation.typst.chapterHeadingsTypst
 import kotlinx.coroutines.runBlocking
@@ -264,12 +265,14 @@ class StudyRoutesTest {
             println("typst not on PATH; skipping PDF compile test")
             return
         }
-        val headings = (1..180).map {
-            ChapterHeadingRow("Paul and Barnabas Return to Antioch in Syria $it", "$it:1-25")
+        // Three books of 20 chapters, three headings each — 180 headings, denser than any real set.
+        val chapters = (1..20).map { chapter ->
+            ChapterHeadingChapter(
+                chapter,
+                (1..3).map { ChapterHeadingRow("Paul and Barnabas Return to Antioch in Syria $it", "$chapter:1-25") },
+            )
         }
-        val books = listOf("Exodus", "Numbers", "Deuteronomy").mapIndexed { i, book ->
-            ChapterHeadingBook(book, headings.drop(i * 60).take(60))
-        }
+        val books = listOf("Exodus", "Numbers", "Deuteronomy").map { ChapterHeadingBook(it, chapters) }
         val pdf = TypstCompiler.compile(chapterHeadingsTypst("Life of Moses", books))
 
         assertEquals(1, pdf.pdfPageCount(), "the sheet must shrink to fit rather than spill")
