@@ -109,13 +109,20 @@ jobs:
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
+          # Required: this job has no actions/checkout (it needs no source), so the gh CLI
+          # cannot infer the repo from a git remote and every call fails with
+          # "not a git repository".
+          GH_REPO: ${{ github.repository }}
           STATUS: ${{ steps.probe.outputs.status }}
           FAILURES: ${{ steps.probe.outputs.failures }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # NOTE: Actions runs this as `bash -e`, so an unguarded failing command aborts the
+          # step. Keep the `|| true` below — a transient API hiccup should not look like
+          # "no open issue" *or* kill the step before it can alert.
           set -uo pipefail
           gh label create health-check --color B60205 --description "Automated production health alert" --force >/dev/null 2>&1 || true
-          existing=$(gh issue list --label health-check --state open --limit 1 --json number --jq '.[0].number // empty')
+          existing=$(gh issue list --label health-check --state open --limit 1 --json number --jq '.[0].number // empty' || true)
 
           if [ -z "$STATUS" ]; then
             STATUS=failing
