@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    # Matches prod: Neon runs PostgreSQL 18.x, so local dev and CI exercise the same major
+    # version the real database uses. Bumping this is not just a tag swap — see the volume note.
+    image: postgres:18-alpine
     container_name: tbb-postgres
     environment:
       POSTGRES_DB: biblebowl
@@ -9,7 +11,20 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - tbb-pgdata:/var/lib/postgresql/data
+      # ONE mount at /var/lib/postgresql, not the old /var/lib/postgresql/data.
+      # postgres:18 moved PGDATA to /var/lib/postgresql/18/docker (major-version-specific
+      # directories, so pg_upgrade --link works) and declares its VOLUME one level up.
+      # Keeping the old .../data mount under 18 breaks in two stages: the first run works
+      # but writes the database into the container layer instead of the named volume, and
+      # the next `docker rm` + recreate refuses to boot at all — the entrypoint spots the
+      # leftover mount and aborts with "there appears to be PostgreSQL data in:
+      # /var/lib/postgresql/data (unused mount/volume)". The single-mount layout here is
+      # what the image itself recommends (docker-library/postgres#1259).
+      # The volume is renamed because a PG17 data directory can't be read by PG18: a fresh
+      # name gives 18 a clean initdb and leaves the old tbb-pgdata intact rather than
+      # destroying it. It only ever held throwaway dev/test data, so once you're happy:
+      # `docker volume rm texas-bible-bowl_tbb-pgdata`.
+      - tbb-pgdata18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U biblebowl"]
       interval: 5s
@@ -17,4 +32,4 @@ services:
       retries: 10
 
 volumes:
-  tbb-pgdata:
+  tbb-pgdata18:
