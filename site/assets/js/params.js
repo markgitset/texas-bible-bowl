@@ -133,8 +133,9 @@
 
   // Year-of-operation spans (<span data-tbb-years-since="2010">, see the years-of-operation
   // shortcode). Independent of season data — recompute the ordinal from the browser's clock so
-  // it ticks over on New Year's without waiting for a redeploy. Keep ordinalWord in sync with
-  // layouts/partials/ordinal.html.
+  // it ticks over on New Year's without waiting for a redeploy. The count is INCLUSIVE of the
+  // founding year (2010 was the first, so 2026 is the seventeenth) — keep the +1 in sync with
+  // the shortcode. Keep ordinalWord in sync with layouts/partials/ordinal.html.
   function ordinalWord(n) {
     var under20 = ["zeroth", "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
       "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth",
@@ -152,7 +153,7 @@
     var thisYear = new Date().getFullYear();
     document.querySelectorAll("[data-tbb-years-since]").forEach(function (el) {
       var since = parseInt(el.getAttribute("data-tbb-years-since"), 10);
-      var w = ordinalWord(thisYear - since);
+      var w = ordinalWord(thisYear - since + 1);
       if (w && el.textContent !== w) el.textContent = w;
     });
   } catch (e) {}
