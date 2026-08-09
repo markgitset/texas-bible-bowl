@@ -21,8 +21,9 @@ concurrency:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    # The approval gate + prod Fly token live on this environment; everything downstream
-    # (Pages build/deploy, tag) waits on this job, so one approval gates the whole deploy.
+    # The approval gate + prod Fly token live on this environment. NOTE: the `frontend`
+    # job names the same environment, so a promotion currently asks for TWO approvals
+    # (see the TODO there) — one per gated job, not one per run.
     environment: production
     permissions:
       contents: read
@@ -62,6 +63,14 @@ jobs:
   frontend:
     needs: backend
     runs-on: ubuntu-latest
+    # TODO (Mark, 2026-08-08): ONE approval should cover a whole promotion. GitHub gates
+    # per gated job, not per run, so naming `production` here forces a second "Review
+    # deployments" click after the backend job finishes. This job only names the
+    # environment to reach FLY_WEB_DEPLOY_TOKEN. Fix: move that token to a repo-level
+    # secret and drop this `environment:` line — the backend job's gate still fronts the
+    # run, since this job `needs` it and nothing here can start before that approval.
+    # Trade-off: the frontend deploy stops appearing under the production environment in
+    # the Environments UI (the backend deploy and the prod-* tag still record each ship).
     environment: production
     permissions:
       contents: read
