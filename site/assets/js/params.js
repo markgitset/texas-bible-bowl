@@ -22,6 +22,16 @@
     if (isNaN(d)) return "TBD";
     return d.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
   }
+  // Can a coach actually register right now? The backend feature toggle is live AND today (Texas
+  // time) falls inside the announced window — mirrors registrationOpen in
+  // layouts/partials/season.html and the server's requireRegistrationFeature +
+  // registrationWindowState. en-CA formats as YYYY-MM-DD, so the dates compare as plain strings.
+  function isRegistrationOpen(s) {
+    if (!s.registrationEnabled || !s.registrationOpensOn) return false;
+    var today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+    if (today < s.registrationOpensOn) return false;
+    return !s.registrationClosesOn || today <= s.registrationClosesOn;
+  }
   function derive(s) {
     var year = parseInt(s.eventYear, 10);
     var d = Object.assign({}, s);
@@ -43,6 +53,7 @@
     d.registrationOpensTitle = d.registrationOpens;
     d.feesTentativeNote =
       s.feesTentative === false ? "" : "Prices are tentative and subject to change.";
+    d.registrationOpen = isRegistrationOpen(s);
     return d;
   }
 
@@ -57,6 +68,13 @@
       var v = d[el.getAttribute("data-tbb-param")];
       if (v === "TBD") v = TBA;
       if (v != null && el.textContent !== v) el.textContent = v;
+    });
+    // Boolean-gated elements (currently the home page's Register Now button): show only while
+    // the named derived flag is true. Baked hidden/visible to match, so nothing flashes when the
+    // live season agrees. Bootstrap's reboot has `[hidden] { display: none !important }`, which
+    // beats the .btn display.
+    document.querySelectorAll("[data-tbb-show-if]").forEach(function (el) {
+      el.hidden = !d[el.getAttribute("data-tbb-show-if")];
     });
     renderCurriculum(s);
   }

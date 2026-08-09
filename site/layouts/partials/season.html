@@ -17,6 +17,7 @@
   "scholarshipAmount" site.Params.scholarshipAmount
   "registrationOpensOn" site.Params.registrationOpensOn
   "registrationClosesOn" site.Params.registrationClosesOn
+  "registrationEnabled" site.Params.registrationEnabled
   "scholarshipDeadline" site.Params.scholarshipDeadline
   "priceContestantCents" site.Params.priceContestantCents
   "priceVolunteerCents" site.Params.priceVolunteerCents
@@ -70,4 +71,23 @@
   "registrationOpensTitle" (index $s "registrationOpens")
   "feesTentativeNote" (cond (eq (index $s "feesTentative") false) "" "Prices are tentative and subject to change.")
 ) -}}
+{{- /*
+  registrationOpen: can a coach actually register right now? True only when the backend feature
+  toggle is live AND today (Texas time, per the site timeZone) falls inside the announced window
+  — the same two conditions the server enforces before accepting a registration (see
+  requireRegistrationFeature and registrationWindowState in server/.../RegistrationWindow.kt).
+  An unset opens-date means it hasn't been announced; an unset closes-date leaves it open.
+  Boolean, so it drives `data-tbb-show-if`, not a tbb-param span; params.js recomputes it the
+  same way for live toggling — keep the three in sync.
+*/ -}}
+{{- $regOpen := false -}}
+{{- $opens := index $s "registrationOpensOn" -}}
+{{- if and (index $s "registrationEnabled") $opens -}}
+  {{- $today := now.Format "2006-01-02" -}}
+  {{- $closes := index $s "registrationClosesOn" -}}
+  {{- if ge $today (string $opens) -}}
+    {{- $regOpen = or (not $closes) (le $today (string $closes)) -}}
+  {{- end -}}
+{{- end -}}
+{{- $s = merge $s (dict "registrationOpen" $regOpen) -}}
 {{- return $s -}}

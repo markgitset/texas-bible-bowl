@@ -5,6 +5,9 @@
 baseURL = "https://texasbiblebowl.org/"
 locale = "en-us"
 title = "Texas Bible Bowl"
+# The event's home zone: registration-window dates are Texas local (server-side too — see
+# TBB_ZONE in server/.../RegistrationWindow.kt), so `now` in templates must be too.
+timeZone = "America/Chicago"
 # Rewrite root-relative URLs written in content (e.g. /images/..., /uploads/...) with the
 # build's baseURL so they keep the path prefix on the GitHub Pages subpath deployment.
 canonifyURLs = true
@@ -25,6 +28,10 @@ canonifyURLs = true
   scholarshipAmount = "$25,000"   # total awarded in the prior year (eventYear - 1)
   registrationOpensOn = ""   # ISO date "2027-02-01"; "" = not announced (renders TBD)
   registrationClosesOn = ""  # ISO date, last day to register; "" = TBD
+  # Backend feature toggle (SeasonDto.registrationEnabled), off until the registration area
+  # launches. Combined with the two dates above into the derived `registrationOpen` in
+  # layouts/partials/season.html, which gates the home page's Register Now button.
+  registrationEnabled = false
   scholarshipDeadline = "TBD"       # Month day; year derived from eventYear
   # Fees in integer cents; omit/-1 for TBD. Display strings are derived in
   # layouts/partials/season.html and static params.js — keep the three in sync.
