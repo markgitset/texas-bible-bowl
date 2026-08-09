@@ -143,7 +143,8 @@ object DownloadsScreen {
                 "The official study guide and question flashcards, plus the interactive quiz and the " +
                     "community question bank."
             StudySection.HEADINGS ->
-                "Every ESV section heading (Round 5 material) — flashcards, a browser, and self-check mode."
+                "Every ESV section heading (Round 5 material) — a one-page list, flashcards, a browser, " +
+                    "and self-check mode."
             StudySection.UNIQUE_WORDS ->
                 "Words that appear only once in $scripture — flashcards and a printable index."
             StudySection.PRACTICE_TESTS ->
@@ -234,6 +235,12 @@ object DownloadsScreen {
     }
 
     private fun headingsCards() {
+        downloadCard(
+            title = "Chapter headings list",
+            subtitle = "Every ESV section heading in ${Session.season.eventScripture} on a single page, in " +
+                "order with the verses it covers — print it once and keep it in front of you.",
+            href = generateUrl("/generate/chapter-headings.pdf"),
+        )
         downloadCard(
             title = "Chapter-heading flashcards",
             subtitle = "One card per ESV section heading (Round 5 material)." +

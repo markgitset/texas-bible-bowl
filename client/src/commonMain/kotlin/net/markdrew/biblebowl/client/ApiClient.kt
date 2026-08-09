@@ -308,6 +308,11 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
             scopeParams(set, book, throughChapter, chapterKey = StudyScopeParams.THROUGH_CHAPTER)
         }.bodyOrThrow()
 
+    /** Fetches the one-page listing of every ESV section heading in the set, with its verse range. */
+    suspend fun chapterHeadingsPdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/chapter-headings.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }
+            .bodyOrThrow()
+
     /**
      * Fetches a formatted PDF of the covered text (verse numbers, headings, poetry, footnotes) with
      * categorized name/number highlighting ([highlight], on by default server-side); set

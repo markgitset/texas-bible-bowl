@@ -109,7 +109,8 @@ private fun blurb(section: StudySection, scripture: String): String = when (sect
         "The official study guide and question flashcards, plus the interactive quiz and the " +
             "community question bank."
     StudySection.HEADINGS ->
-        "Every ESV section heading (Round 5 material) — flashcards, a browser, and self-check mode."
+        "Every ESV section heading (Round 5 material) — a one-page list, flashcards, a browser, " +
+            "and self-check mode."
     StudySection.UNIQUE_WORDS ->
         "Words that appear only once in $scripture — flashcards and a printable index."
     StudySection.PRACTICE_TESTS ->
@@ -403,6 +404,17 @@ fun StudySectionScreen(
             }
 
             StudySection.HEADINGS -> {
+                DownloadCard(
+                    title = "Chapter headings list",
+                    subtitle = "Every ESV section heading in ${season.eventScripture} on a single page, in order " +
+                        "with the verses it covers — print it once and keep it in front of you.",
+                    busyCard = busyCard,
+                    onClick = {
+                        download("Chapter headings list", withSet(PdfFileNames.chapterHeadings())) {
+                            api.chapterHeadingsPdf()
+                        }
+                    },
+                )
                 DownloadCard(
                     title = "Chapter-heading flashcards",
                     subtitle = "One card per ESV section heading (Round 5 material)." +

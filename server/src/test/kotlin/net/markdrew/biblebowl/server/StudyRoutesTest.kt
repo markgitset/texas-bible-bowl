@@ -17,6 +17,9 @@ import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
+import net.markdrew.biblebowl.generation.typst.ChapterHeadingBook
+import net.markdrew.biblebowl.generation.typst.ChapterHeadingRow
+import net.markdrew.biblebowl.generation.typst.chapterHeadingsTypst
 import kotlinx.coroutines.runBlocking
 import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.StandardStudySet
@@ -74,6 +77,14 @@ private val PDF_COMPILE_TIMESTAMPS = Regex(
  */
 private fun ByteArray.pdfRenderBytes(): String =
     String(this, Charsets.ISO_8859_1).replace(PDF_COMPILE_TIMESTAMPS, "")
+
+/**
+ * The page count off the page-tree root's `/Count`. Typst writes that node uncompressed, so this
+ * needs no PDF library; it fails loudly rather than returning 0 if that ever stops being true.
+ */
+private fun ByteArray.pdfPageCount(): Int =
+    Regex("""/Count\s+(\d+)""").find(String(this, Charsets.ISO_8859_1))?.groupValues?.get(1)?.toInt()
+        ?: fail("no /Count in the PDF's page tree")
 
 class StudyRoutesTest {
 
@@ -214,6 +225,54 @@ class StudyRoutesTest {
         assertEquals(HttpStatusCode.OK, res.status)
         val bytes = res.bodyAsBytes()
         assertTrue(bytes.size > 4 && bytes.decodeToString(0, 4) == "%PDF", "response should be a PDF")
+    }
+
+    @Test
+    fun chapterHeadingsPdfEndpointCompilesToASetPrefixedOnePager() = testApplication {
+        if (!TypstCompiler.isAvailable) {
+            println("typst not on PATH; skipping PDF compile test")
+            return@testApplication
+        }
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
+            )
+        }
+        val api = createClient { }
+
+        val res = api.get("/generate/chapter-headings.pdf")
+        assertEquals(HttpStatusCode.OK, res.status)
+        val bytes = res.bodyAsBytes()
+        assertTrue(bytes.size > 4 && bytes.decodeToString(0, 4) == "%PDF", "response should be a PDF")
+        // Named by the resolved scope's set (the season's, with no ?set=), not the fixture's.
+        assertTrue("acts-chapter-headings.pdf" in res.headers[HttpHeaders.ContentDisposition].orEmpty())
+        assertEquals(1, bytes.pdfPageCount(), "the sheet must be a one-pager")
+
+        // Whole-set only: unknown sets are rejected before any ESV/Typst work.
+        assertEquals(HttpStatusCode.BadRequest, api.get("/generate/chapter-headings.pdf?set=zzz").status)
+    }
+
+    /**
+     * That the fit search really does keep the sheet to one page — the two-heading fixture above would
+     * fit at any size, so this drives [chapterHeadingsTypst] directly with a heading list far denser
+     * than any real study set (a whole Bible's worth) and compiles it.
+     */
+    @Test
+    fun chapterHeadingsShrinkToOnePageForALargeStudySet() {
+        if (!TypstCompiler.isAvailable) {
+            println("typst not on PATH; skipping PDF compile test")
+            return
+        }
+        val headings = (1..180).map {
+            ChapterHeadingRow("Paul and Barnabas Return to Antioch in Syria $it", "$it:1-25")
+        }
+        val books = listOf("Exodus", "Numbers", "Deuteronomy").mapIndexed { i, book ->
+            ChapterHeadingBook(book, headings.drop(i * 60).take(60))
+        }
+        val pdf = TypstCompiler.compile(chapterHeadingsTypst("Life of Moses", books))
+
+        assertEquals(1, pdf.pdfPageCount(), "the sheet must shrink to fit rather than spill")
     }
 
     @Test
