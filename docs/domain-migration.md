@@ -54,21 +54,19 @@ Verified at cutover: apex + www + all deep pages serve `server: Fly/…`,
 200, Let's Encrypt certs are live on all three hostnames, and
 `https://api.texasbiblebowl.org/health` returns ok.
 
-## Phase 3 — clients onto the api domain
+## Phase 3 — clients onto the api domain ✅ configured 2026-08-08
 
 1. ✅ `ALLOWED_ORIGINS` already includes `https://texasbiblebowl.org` (released with the
    2026-08-08 promotion); the old Pages origin rides along during the transition.
-2. Repo variable `BACKEND_URL` → `https://api.texasbiblebowl.org`
-   (`gh variable set BACKEND_URL --body "https://api.texasbiblebowl.org"`). It currently
-   reads `https://texas-bible-bowl.fly.dev`, which is what the live app shell talks to —
-   working, just not yet on the branded host.
-3. Run the "Deploy to production" promotion — rebuilds the site/app against the api URL.
-
-Nothing is broken until this lands; it only moves the app's API calls onto the branded
-host. Once it does, trim `ALLOWED_ORIGINS` to the origins still in use.
+2. ✅ Repo variable `BACKEND_URL` = `https://api.texasbiblebowl.org`.
+3. **Takes effect on the next "Deploy to production" promotion**, which rebuilds the site
+   and app against the api URL. Until that runs, the live app still calls
+   `texas-bible-bowl.fly.dev` — which works, so this is not urgent.
 
 The fly.dev backend URL keeps working indefinitely (Android's baked default; update
-`app/build.gradle.kts` `tbb.backendUrl` default at the next app release).
+`app/build.gradle.kts` `tbb.backendUrl` default at the next app release). Once the
+promotion has run and the site is confirmed healthy, trim `ALLOWED_ORIGINS` to the origins
+still in use (drop the old `markgitset.github.io` entry).
 
 ## Phase 4 — redirects + retirement (after a few stable days)
 

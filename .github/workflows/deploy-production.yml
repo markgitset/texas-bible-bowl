@@ -1,9 +1,9 @@
 name: Deploy to production
 
-# Manual promotion: Actions → "Deploy to production" → Run workflow, then approve the
-# `production` environment gate. Deploys BOTH halves from one commit — the backend to the
-# prod Fly app and the Hugo site + web app to the static Fly app texas-bible-bowl-web
-# (merges to main deploy staging only, never prod).
+# Manual promotion: Actions → "Deploy to production" → Run workflow (from main), then
+# approve the `production` gate ONCE — that one click covers the whole run. Deploys BOTH
+# halves from one commit — the backend to the prod Fly app and the Hugo site + web app to
+# the static Fly app texas-bible-bowl-web (merges to main deploy staging only, never prod).
 # Promote a commit that staging has already run — by default, main's HEAD.
 # Each successful deploy is tagged prod-YYYYMMDD-HHMM, so `git tag -l 'prod-*'` is the
 # deploy history and the latest tag is what's live.
@@ -21,8 +21,10 @@ concurrency:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    # The approval gate + prod Fly token live on this environment; everything downstream
-    # (Pages build/deploy, tag) waits on this job, so one approval gates the whole deploy.
+    # The single approval gate for the whole promotion, plus the backend Fly token. This is
+    # the ONLY job naming a reviewer-protected environment — see the note on `frontend`.
+    # Both prod environments are restricted to the `main` branch, so a promotion can only be
+    # dispatched from main; the `ref` input still picks which commit it deploys.
     environment: production
     permissions:
       contents: read
@@ -62,7 +64,17 @@ jobs:
   frontend:
     needs: backend
     runs-on: ubuntu-latest
-    environment: production
+    # Deliberately a DIFFERENT environment from the backend's. GitHub evaluates approval
+    # gates per gated job, not per run, so naming `production` here would demand a SECOND
+    # "Review deployments" click mid-promotion. `production-web` has no required reviewers,
+    # so one click covers the run — the gate still fronts this job, which `needs: backend`
+    # and cannot start before that approval.
+    #
+    # It exists as its own environment (rather than moving the token to a repo-level secret)
+    # to keep FLY_WEB_DEPLOY_TOKEN scoped: this repo is PUBLIC and has no repo-level secrets,
+    # and that token can publish arbitrary content to texasbiblebowl.org. Like `production`,
+    # it is restricted to the `main` branch.
+    environment: production-web
     permissions:
       contents: read
     steps:
@@ -92,7 +104,8 @@ jobs:
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_WEB_DEPLOY_TOKEN }}
           # Baked into the app shell as window.TBB_BACKEND_URL and used for the season-params
-          # bake; the repo variable flips to https://api.texasbiblebowl.org at the DNS cutover.
+          # bake. The repo variable is https://api.texasbiblebowl.org since the 2026-08-08
+          # cutover; the fly.dev fallback only applies if the variable is ever unset.
           BACKEND_URL: ${{ vars.BACKEND_URL || 'https://texas-bible-bowl.fly.dev' }}
         run: tools/deploy-web.sh prod
 

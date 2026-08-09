@@ -25,13 +25,28 @@ tools/deploy-staging.sh web       # web dist + Hugo (staging baseURL/backend) �
 tools/deploy-staging.sh all
 ```
 
-**Prod (manual promotion):** Actions → **"Deploy to production"** → Run workflow (optionally
-pinning a SHA; default is `main`'s HEAD) → approve the `production` environment gate. That
-one run re-tests, deploys the Fly backend AND GitHub Pages from the same commit,
-health-checks, and tags the commit `prod-YYYYMMDD-HHMM` — `git tag -l 'prod-*'` is the
-deploy history. Fly deploy tokens are environment-scoped GitHub secrets
-(`FLY_BACKEND_DEPLOY_TOKEN`, `FLY_WEB_DEPLOY_TOKEN`), created with
-`fly tokens create deploy -a <app>`.
+**Prod (manual promotion):** Actions → **"Deploy to production"** → Run workflow from `main`
+(optionally pinning a SHA in the `ref` input; default is `main`'s HEAD) → approve the
+`production` gate **once**. That one run re-tests, deploys the Fly backend AND the Fly
+static frontend from the same commit, health-checks both, and tags the commit
+`prod-YYYYMMDD-HHMM` — `git tag -l 'prod-*'` is the deploy history.
+
+Two environments back this, and the split is deliberate:
+
+| Environment | Holds | Reviewers | Branches |
+|---|---|---|---|
+| `production` | `FLY_BACKEND_DEPLOY_TOKEN` | **markgitset** — the one gate | `main` only |
+| `production-web` | `FLY_WEB_DEPLOY_TOKEN` | none | `main` only |
+
+GitHub evaluates approval gates *per gated job*, not per run, so pointing both jobs at
+`production` would demand a second click mid-promotion. `production-web` carries no
+reviewers, so one approval covers the run — the `frontend` job still can't start before it,
+because it `needs: backend`. Keeping it as its own environment (rather than moving the token
+to a repo-level secret) matters because **this repo is public and has no repo-level
+secrets**, and the web token can publish arbitrary content to texasbiblebowl.org.
+
+Tokens are made with `fly tokens create deploy -a <app>` and set with
+`gh secret set <NAME> --env <environment>`.
 
 ## Database: Neon branch workflow
 
