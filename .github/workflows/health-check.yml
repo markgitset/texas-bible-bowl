@@ -1,0 +1,141 @@
+name: Health check
+
+# Watches production and opens a GitHub issue when something breaks. Two failure modes it
+# exists to catch, neither of which is visible any other way:
+#   1. the site or backend is down and nobody notices for hours
+#   2. TLS renewal silently fails — Fly renews via the _acme-challenge CNAMEs at Namecheap,
+#      so deleting those breaks renewal with no symptom until certs expire and browsers
+#      refuse to connect. Checked here ~3 weeks ahead of expiry.
+#
+# CADENCE IS DELIBERATE, don't "simplify" it to one schedule:
+#   * The frontend (texas-bible-bowl-web) runs min_machines_running = 1, so it is always
+#     warm and polling it every 15 min costs nothing.
+#   * The backend (texas-bible-bowl) runs min_machines_running = 0 and auto-stops when
+#     idle. Every probe WAKES it and it stays up for a few minutes. Polling that every
+#     15 min would keep it running a large fraction of the day and turn a scale-to-zero
+#     app into an always-on bill — against this project's < $50/yr target. So the backend
+#     is probed on the 6-hourly schedule only: ~4 wakes/day, a few minutes each.
+# Trade-off accepted: a backend-only outage can go up to ~6h unnoticed. The static site
+# keeps serving during one; only the app's data calls fail.
+#
+# NOTE: GitHub disables scheduled workflows after 60 days with no repo activity. If commits
+# ever stop for that long, re-enable this in the Actions tab.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"   # frontend + certs (free — the web machine is always warm)
+    - cron: "17 */6 * * *"   # the above PLUS the backend probe (wakes a sleeping machine)
+  workflow_dispatch:          # manual runs check everything
+
+concurrency:
+  group: health-check
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe production
+        id: probe
+        run: |
+          set -uo pipefail
+          fail=""
+          note() { echo "::warning::$1"; fail="${fail}- $1"$'\n'; }
+
+          # --retry smooths over transient blips so a single dropped packet doesn't page.
+          code() { curl -sS -o /dev/null -w '%{http_code}' --max-time 45 \
+                     --retry 3 --retry-delay 5 --retry-all-errors "$1" 2>/dev/null || echo 000; }
+
+          echo "── frontend ──"
+          c=$(code https://texasbiblebowl.org/)
+          echo "apex: $c"
+          [ "$c" = 200 ] || note "Site down: https://texasbiblebowl.org/ returned $c (expected 200)"
+
+          c=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 45 --retry 3 --retry-delay 5 \
+                --retry-all-errors https://www.texasbiblebowl.org/event/ 2>/dev/null || echo 000)
+          echo "www redirect: $c"
+          [ "$c" = 301 ] || note "www no longer redirects: https://www.texasbiblebowl.org/event/ returned $c (expected 301)"
+
+          # The app shell must exist AND carry a backend URL, or the app loads but can't talk
+          # to anything — a deploy-assembly bug that a plain 200 check would miss.
+          shell=$(curl -sS --max-time 45 --retry 3 --retry-all-errors https://texasbiblebowl.org/app/ 2>/dev/null || true)
+          if ! grep -q 'TBB_BACKEND_URL' <<<"$shell"; then
+            note "App shell at /app/ is missing window.TBB_BACKEND_URL — the web app cannot reach the backend"
+          fi
+
+          echo "── certificates ──"
+          for host in texasbiblebowl.org www.texasbiblebowl.org api.texasbiblebowl.org; do
+            if ! cert=$(echo | timeout 30 openssl s_client -connect "$host:443" -servername "$host" 2>/dev/null); then
+              note "TLS handshake failed for $host"
+              continue
+            fi
+            if ! echo "$cert" | openssl x509 -checkend $((21*86400)) -noout >/dev/null 2>&1; then
+              expiry=$(echo "$cert" | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+              note "TLS cert for $host expires within 21 days ($expiry) — Fly renewal may be failing. Check the _acme-challenge CNAMEs at Namecheap still exist."
+            else
+              echo "$host: cert ok"
+            fi
+          done
+
+          # Backend only on the 6-hourly cron or a manual run — see the cadence note up top.
+          if [ "${{ github.event.schedule }}" != '*/15 * * * *' ]; then
+            echo "── backend (waking it) ──"
+            c=$(code https://api.texasbiblebowl.org/health)
+            echo "api health: $c"
+            [ "$c" = 200 ] || note "Backend down: https://api.texasbiblebowl.org/health returned $c (expected 200)"
+
+            c=$(code https://api.texasbiblebowl.org/seasons/current)
+            echo "seasons: $c"
+            [ "$c" = 200 ] || note "Backend degraded: /seasons/current returned $c (expected 200) — likely the database, since /health may still pass"
+          else
+            echo "── backend skipped (15-min run; avoids waking a scale-to-zero machine) ──"
+          fi
+
+          if [ -n "$fail" ]; then
+            { echo 'failures<<EOF'; echo "$fail"; echo EOF; } >> "$GITHUB_OUTPUT"
+            echo "status=failing" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=healthy" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open or close the alert issue
+        # always() so a crash in the probe step still alerts. An empty STATUS means the probe
+        # died before reaching its verdict — treated as failing, because a monitor that goes
+        # quiet when it breaks is worse than no monitor.
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS: ${{ steps.probe.outputs.status }}
+          FAILURES: ${{ steps.probe.outputs.failures }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          gh label create health-check --color B60205 --description "Automated production health alert" --force >/dev/null 2>&1 || true
+          existing=$(gh issue list --label health-check --state open --limit 1 --json number --jq '.[0].number // empty')
+
+          if [ -z "$STATUS" ]; then
+            STATUS=failing
+            FAILURES="- The health check itself failed to complete — see the run log. Production status is UNKNOWN, not necessarily broken."
+          fi
+
+          if [ "$STATUS" = failing ]; then
+            if [ -n "$existing" ]; then
+              # Already alerted. Stay quiet rather than commenting every 15 minutes.
+              echo "Still failing; issue #$existing already open — not re-notifying."
+              exit 1
+            fi
+            gh issue create --label health-check \
+              --title "Production health check failing" \
+              --body "$(printf 'The automated health check detected a problem in production.\n\n%s\nRun: %s\n\nThis issue closes itself when the next check passes.\n' "$FAILURES" "$RUN_URL")"
+            exit 1
+          fi
+
+          if [ -n "$existing" ]; then
+            gh issue close "$existing" --comment "Recovered — production health check passed. Run: $RUN_URL"
+            echo "Closed #$existing."
+          fi
+          echo "All checks passed."
