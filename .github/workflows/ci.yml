@@ -14,9 +14,11 @@ jobs:
     runs-on: ubuntu-latest
 
     # Real Postgres so PostgresRepositoryTest runs against an actual database in CI.
+    # Pinned to 18 to match prod (Neon). No volume here, so the PGDATA move in the
+    # postgres:18 image that docker-compose.yml has to account for doesn't apply.
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_DB: biblebowl
           POSTGRES_USER: biblebowl
