@@ -4,6 +4,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.delete
+import io.ktor.client.request.forms.MultiPartFormDataContent
+import io.ktor.client.request.forms.formData
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -13,8 +15,10 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
+import io.ktor.http.Headers
 import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
+import io.ktor.http.escapeIfNeeded
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.ApiError
@@ -77,7 +81,12 @@ import net.markdrew.biblebowl.api.UpsertIndividualRequest
 import net.markdrew.biblebowl.api.UpsertRosterEntryRequest
 import net.markdrew.biblebowl.api.UpsertTeamRequest
 import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.api.ReorderStudyMaterialsRequest
+import net.markdrew.biblebowl.api.StudyMaterialDto
+import net.markdrew.biblebowl.api.StudyMaterialsResponse
 import net.markdrew.biblebowl.api.StudyScopeParams
+import net.markdrew.biblebowl.api.StudySection
+import net.markdrew.biblebowl.api.UpsertStudyMaterialRequest
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.api.UserDto
 
@@ -805,6 +814,68 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
      */
     suspend fun clearPdfCache(): ClearPdfCacheResponse =
         client.delete("$baseUrl/generate/cache") { authorize() }.bodyOrThrow()
+
+    // --- Study materials (admin-curated section-page documents & links) ---
+
+    /** The admin-curated extras of [set] (public), optionally narrowed to one [section]. */
+    suspend fun studyMaterials(set: String? = null, section: StudySection? = null): List<StudyMaterialDto> =
+        client.get("$baseUrl/study-materials") {
+            if (set != null) parameter(StudyScopeParams.SET, set)
+            if (section != null) parameter(StudyScopeParams.SECTION, section.slug)
+        }.bodyOrThrow()
+
+    /** A DOCUMENT material's exact original bytes (public; the web app links to the URL directly). */
+    suspend fun studyMaterialFile(id: String): ByteArray =
+        client.get("$baseUrl/study-materials/$id/file").bodyOrThrow()
+
+    /** Adds an external link (SEASON_MANAGE); [req]`.type` must be LINK. */
+    suspend fun createLinkMaterial(req: UpsertStudyMaterialRequest): StudyMaterialsResponse =
+        client.post("$baseUrl/study-materials") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    /**
+     * Uploads a document to be served back byte-exact (SEASON_MANAGE); [req]`.type` must be
+     * DOCUMENT. No JSON content type here — the multipart body carries its own boundary type.
+     */
+    suspend fun createDocumentMaterial(
+        req: UpsertStudyMaterialRequest,
+        fileName: String,
+        fileContentType: String,
+        bytes: ByteArray,
+    ): StudyMaterialsResponse =
+        client.post("$baseUrl/study-materials") {
+            authorize()
+            setBody(MultiPartFormDataContent(formData {
+                append(
+                    "metadata", Json.encodeToString(UpsertStudyMaterialRequest.serializer(), req),
+                    Headers.build { append(HttpHeaders.ContentType, ContentType.Application.Json.toString()) },
+                )
+                append(
+                    "file", bytes,
+                    Headers.build {
+                        append(HttpHeaders.ContentType, fileContentType)
+                        append(HttpHeaders.ContentDisposition, "filename=${fileName.escapeIfNeeded()}")
+                    },
+                )
+            }))
+        }.bodyOrThrow()
+
+    /** Metadata-only edit; the type is immutable (replace a file by delete + re-add). */
+    suspend fun updateStudyMaterial(id: String, req: UpsertStudyMaterialRequest): StudyMaterialsResponse =
+        client.put("$baseUrl/study-materials/$id") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow()
+
+    /** Rewrites a (set, section) group's display order to exactly [orderedIds]. */
+    suspend fun reorderStudyMaterials(orderedIds: List<String>): StudyMaterialsResponse =
+        client.put("$baseUrl/study-materials/order") {
+            authorize(); contentType(ContentType.Application.Json)
+            setBody(ReorderStudyMaterialsRequest(orderedIds))
+        }.bodyOrThrow()
+
+    suspend fun deleteStudyMaterial(id: String): StudyMaterialsResponse =
+        client.delete("$baseUrl/study-materials/$id") { authorize() }.bodyOrThrow()
 
     /**
      * Returns the response body decoded as [T], or throws [ApiException] with the server's error message on
