@@ -1,0 +1,58 @@
+name: Deploy to staging
+
+# Every merge to main goes live on the staging stack (docs/staging.md):
+#   backend  → Fly app texas-bible-bowl-staging   (after :server:test)
+#   frontend → Fly app texas-bible-bowl-staging-web (Hugo site + web app at the staging URLs)
+# Production deploys are a separate, manually-approved workflow (deploy-production.yml).
+#
+# NOTE: merging a Flyway migration applies it to the Neon staging branch immediately.
+# For a real rehearsal, reset the branch from parent in the Neon console BEFORE merging.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One staging deploy at a time, in order; a queued push waits for the current one.
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Set up Hugo
+        uses: peaceiris/actions-hugo@v3
+        with:
+          hugo-version: "0.164.0"
+          extended: true
+
+      - name: Set up flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy backend (runs :server:test first)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_BACKEND_DEPLOY_TOKEN }}
+        run: tools/deploy-staging.sh backend
+
+      - name: Deploy frontend
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_WEB_DEPLOY_TOKEN }}
+        run: tools/deploy-staging.sh web
+
+      - name: Smoke check
+        run: |
+          curl -fsS --retry 3 --retry-delay 10 --max-time 90 https://texas-bible-bowl-staging.fly.dev/health
+          curl -fsS --max-time 30 -o /dev/null -w "staging-web: %{http_code}\n" https://texas-bible-bowl-staging-web.fly.dev/

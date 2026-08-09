@@ -1,0 +1,32 @@
+# Fly.io deployment for the PRODUCTION frontend (texasbiblebowl.org): the Hugo site +
+# Kotlin/JS app served statically by nginx — same pattern as staging-web/, so staging
+# genuinely rehearses this host. The build context is this directory only —
+# tools/deploy-web.sh prod assembles the static output into prod-web/public/ (gitignored)
+# before deploying. Deployed by deploy-production.yml (the "Deploy to production"
+# promotion); manual deploys via `tools/deploy-web.sh prod` are for emergencies.
+#
+# Domain migration runbook: docs/domain-migration.md
+app = "texas-bible-bowl-web"
+primary_region = "dfw"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 80
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  # The public site never cold-starts: keep one machine always warm (~$3/mo).
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb" # static nginx needs almost nothing

@@ -1,0 +1,2 @@
+# Assembled by tools/deploy-web.sh prod just before fly deploy.
+public/
