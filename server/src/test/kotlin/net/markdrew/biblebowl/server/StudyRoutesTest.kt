@@ -7,6 +7,7 @@ import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -34,6 +35,7 @@ import net.markdrew.biblebowl.server.typst.TypstCompiler
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 /** ESV text-format chapter bodies keyed by packed absolute-verse query, in EsvIndexer's expected shape. */
 private val CHAPTER_TEXTS = mapOf(
@@ -50,6 +52,28 @@ private val CHAPTER_TEXTS = mapOf(
           [1] When the day of Pentecost arrived, they were all together in one place. [2] And suddenly there came from heaven a sound.
     """.trimIndent(),
 )
+
+/** A generated PDF reduced to what's deterministic about it: its name and its render. */
+private data class RenderedPdf(val fileName: String, val render: String)
+
+/**
+ * The parts of a Typst PDF that change on every compile even when the source doesn't: the wall clock
+ * (`/CreationDate`, `/ModDate`, and the XMP packet's dates) and the timestamp-derived `/ID` and
+ * `xmpMM:InstanceID`. Verified against typst 0.14.2: strip these and back-to-back compiles of identical
+ * source are byte-identical, while any real rendering difference survives.
+ */
+private val PDF_COMPILE_TIMESTAMPS = Regex(
+    """/(?:CreationDate|ModDate)\s*\(D:[^)]*\)|/ID\s*\[[^]]*]|<\?xpacket begin.*?<\?xpacket end[^>]*>""",
+    RegexOption.DOT_MATCHES_ALL,
+)
+
+/**
+ * The PDF's bytes with the per-compile timestamps removed, as a latin-1 string (a lossless byte-per-char
+ * view — this is a comparison key, not text). Comparing raw PDF bytes is meaningless: two compiles seconds
+ * apart always differ, so `!a.contentEquals(b)` holds even when the render options were ignored entirely.
+ */
+private fun ByteArray.pdfRenderBytes(): String =
+    String(this, Charsets.ISO_8859_1).replace(PDF_COMPILE_TIMESTAMPS, "")
 
 class StudyRoutesTest {
 
@@ -333,8 +357,9 @@ class StudyRoutesTest {
         }
         val api = createClient { }
         // The attachment name is also the PDF cache key, so it's the assertion that matters: two
-        // different heading pairs must never resolve to one name. (PDF *bytes* can't be compared —
-        // typst stamps a CreationDate, so two renders a second apart differ regardless of options.)
+        // different heading pairs must never resolve to one name. (That the sizes reach the *render*
+        // is covered by [bibleTextPdfHonorsRenderOptions], which compares [pdfRenderBytes] — raw PDF
+        // bytes are useless here, since typst stamps every compile with the wall clock.)
         suspend fun name(query: String): String {
             val res = api.get("/generate/bible-text.pdf$query")
             assertEquals(HttpStatusCode.OK, res.status, "for query '$query'")
@@ -364,12 +389,18 @@ class StudyRoutesTest {
         }
         val api = createClient { }
 
-        suspend fun pdf(query: String): ByteArray {
+        suspend fun pdf(query: String): RenderedPdf {
             val res = api.get("/generate/bible-text.pdf$query")
             assertEquals(HttpStatusCode.OK, res.status, "for query '$query'")
-            return res.bodyAsBytes().also {
-                assertEquals("%PDF", it.decodeToString(0, 4), "for query '$query'")
-            }
+            val bytes = res.bodyAsBytes()
+            assertEquals("%PDF", bytes.decodeToString(0, 4), "for query '$query'")
+            val disposition = res.headers[HttpHeaders.ContentDisposition]
+            assertTrue(disposition != null, "for query '$query'")
+            return RenderedPdf(
+                fileName = ContentDisposition.parse(disposition).parameter(ContentDisposition.Parameters.FileName)
+                    ?: fail("no filename in Content-Disposition for query '$query'"),
+                render = bytes.pdfRenderBytes(),
+            )
         }
 
         val default = pdf("")
@@ -378,11 +409,29 @@ class StudyRoutesTest {
         val chapterLayout = pdf("?useHeadingsForChapters=true&chapterEndLines=true&verseOnNewLine=true")
         val headingSizes = pdf("?chapterHeadingSize=small&sectionHeadingSize=large")
 
-        // Typst output is deterministic, so byte-identical PDFs would mean the options were ignored.
-        assertTrue(!default.contentEquals(customized), "render options must change the PDF")
-        assertTrue(!default.contentEquals(plain), "highlight=false must change the PDF")
-        assertTrue(!default.contentEquals(chapterLayout), "chapter/verse layout options must change the PDF")
-        assertTrue(!default.contentEquals(headingSizes), "heading sizes must change the PDF")
+        // Self-check: two compiles of the SAME request must normalize to identical bytes. Without this, a
+        // stale [pdfRenderBytes] (say Typst starts stamping something new) would make every assertion below
+        // pass trivially — which is exactly how the old raw-byte version of this test rotted.
+        assertEquals(default.render, pdf("").render, "identical requests must render identically once normalized")
+
+        // The filename is also the PDF cache key, so it must spell out every option that was honored.
+        assertEquals("acts-bible-text-highlighted.pdf", default.fileName)
+        assertEquals(
+            "acts-bible-text-highlighted-2col-justified-page-per-ch-unique-words-14pt.pdf",
+            customized.fileName,
+        )
+        assertEquals("acts-bible-text.pdf", plain.fileName)
+        assertEquals(
+            "acts-bible-text-highlighted-ch-headings-ch-lines-verse-per-line.pdf",
+            chapterLayout.fileName,
+        )
+        assertEquals("acts-bible-text-highlighted-ch-head-small-sec-head-large.pdf", headingSizes.fileName)
+
+        // ...and the options must reach the rendering, not just the name.
+        assertTrue(default.render != customized.render, "render options must change the PDF")
+        assertTrue(default.render != plain.render, "highlight=false must change the PDF")
+        assertTrue(default.render != chapterLayout.render, "chapter/verse layout options must change the PDF")
+        assertTrue(default.render != headingSizes.render, "heading sizes must change the PDF")
     }
 
     @Test
@@ -392,8 +441,9 @@ class StudyRoutesTest {
             return
         }
         // The footer stamps the season's event dates, so the same request against two seasons that
-        // differ only in event dates must yield different PDFs.
-        fun pdfForSeason(dateRange: String): ByteArray {
+        // differ only in event dates must yield different PDFs (compared with the compile timestamps
+        // normalized out — see [pdfRenderBytes]).
+        fun pdfForSeason(dateRange: String): String {
             var bytes = ByteArray(0)
             testApplication {
                 application {
@@ -407,11 +457,12 @@ class StudyRoutesTest {
                 assertEquals(HttpStatusCode.OK, res.status)
                 bytes = res.bodyAsBytes()
             }
-            return bytes
+            return bytes.pdfRenderBytes()
         }
         val april = pdfForSeason("April 2–4")
         val march = pdfForSeason("March 5–7")
-        assertTrue(!april.contentEquals(march), "the season's event dates must appear in the PDF")
+        assertEquals(april, pdfForSeason("April 2–4"), "same season must render identically once normalized")
+        assertTrue(april != march, "the season's event dates must appear in the PDF")
     }
 
     @Test
