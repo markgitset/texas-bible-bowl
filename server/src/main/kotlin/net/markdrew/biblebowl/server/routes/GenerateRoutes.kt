@@ -42,7 +42,10 @@ import net.markdrew.biblebowl.generate.text.TextOptions
 import net.markdrew.biblebowl.generate.text.highlightedBibleTextTypst
 import net.markdrew.biblebowl.generate.text.typst.bibleTextTypst
 import net.markdrew.biblebowl.generation.typst.CardText
+import net.markdrew.biblebowl.generation.typst.ChapterHeadingBook
+import net.markdrew.biblebowl.generation.typst.ChapterHeadingRow
 import net.markdrew.biblebowl.generation.typst.Flashcard
+import net.markdrew.biblebowl.generation.typst.chapterHeadingsTypst
 import net.markdrew.biblebowl.generation.typst.flashcardsTypst
 import net.markdrew.biblebowl.generation.typst.markdownEscape
 import net.markdrew.biblebowl.generation.typst.practiceTestTypst
@@ -387,6 +390,28 @@ fun Route.generateRoutes(
                 }
             } catch (e: EsvUpstreamException) {
                 call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+            }
+        }
+
+        // GET /generate/chapter-headings.pdf?set=acts — every ESV section heading in the set on one
+        // page, in scripture order with the verses it covers. Whole-set only (no chapter scoping):
+        // it's a wall-chart/reference sheet, and the fit search needs the full list to size itself.
+        get("/generate/chapter-headings.pdf") {
+            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.chapterHeadings()) { s ->
+                val sd = s.studyData()
+                // A heading never spans books, so grouping keeps scripture order and lets each row's
+                // reference stay book-less — the band above it names the book. Single-book sets get no
+                // bands at all (the sheet title already says the book).
+                val multiBook = !sd.studySet.isSingleBook
+                val books = sd.headings.groupBy { it.verseRange.start.book }.map { (book, headings) ->
+                    ChapterHeadingBook(
+                        book = book.fullName.takeIf { multiBook },
+                        headings = headings.map {
+                            ChapterHeadingRow(it.title, it.verseRange.format(NO_BOOK_FORMAT))
+                        },
+                    )
+                }
+                chapterHeadingsTypst(sd.studySet.name, books)
             }
         }
 

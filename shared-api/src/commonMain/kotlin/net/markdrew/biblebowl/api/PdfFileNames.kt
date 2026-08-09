@@ -72,6 +72,9 @@ object PdfFileNames {
     /** The study-guide answer copy: each correct choice starred inline, with no answer key. */
     fun studyGuideAnswers(): String = "study-guide-answers.pdf"
 
+    /** The one-page listing of every ESV section heading in the set, with the verses it covers. */
+    fun chapterHeadings(): String = "chapter-headings.pdf"
+
     /** The Round 5 headings deck, cumulatively scoped, e.g. `heading-flashcards-through-ch5.pdf`. */
     fun headingFlashcards(throughChapter: Int? = null): String =
         "heading-flashcards${throughChapter?.let { "-through-ch$it" } ?: ""}.pdf"
