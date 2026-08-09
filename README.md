@@ -68,8 +68,9 @@ python3 -m http.server 8090 --directory web/build/dist/js/productionExecutable
   Unset → in-memory store (dev only).
 - `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE` — token signing/verification.
 - `ESV_API_TOKEN` — licensed ESV API token (server-side only, never shipped to clients).
-- `ALLOWED_ORIGINS` — comma-separated web origins for CORS (e.g. `https://markgitset.github.io`);
-  unset stays permissive for dev.
+- `ALLOWED_ORIGINS` — comma-separated web origins for CORS (prod: `https://texasbiblebowl.org`);
+  unset stays permissive for dev. Requests without an `Origin` header (the Android app,
+  curl) are unaffected by this.
 - `ADMIN_EMAIL` / `ADMIN_PASSWORD` — optional first-run admin bootstrap (created only if
   the email doesn't already exist).
 - `ESV_CACHE_DIR` — dev-only on-disk ESV chapter cache, used when `DATABASE_URL` is unset
@@ -81,8 +82,13 @@ python3 -m http.server 8090 --directory web/build/dist/js/productionExecutable
 
 ## Deployment (target: < $50/yr infrastructure)
 
-Stack: **backend → Fly.io**, **Postgres → Neon**, **web → GitHub Pages** — all
-scale-to-zero / free-tier.
+Stack: **backend → Fly.io**, **Postgres → Neon**, **web → Fly.io** (nginx static) —
+scale-to-zero / free-tier, except one always-warm machine for the public site.
+
+Trunk-based: merging to `main` auto-deploys **staging**; production is a manual,
+approved promotion of a commit staging already ran. See [docs/staging.md](docs/staging.md)
+for both flows and [docs/domain-migration.md](docs/domain-migration.md) for how
+texasbiblebowl.org got here.
 
 ### Backend → Fly.io
 
@@ -100,7 +106,7 @@ fly secrets set \
   DATABASE_URL='postgresql://user:pass@ep-xxx.neon.tech/biblebowl?sslmode=require' \
   JWT_SECRET="$(openssl rand -hex 32)" \
   ESV_API_TOKEN='<your ESV token>' \
-  ALLOWED_ORIGINS='https://markgitset.github.io' \
+  ALLOWED_ORIGINS='https://texasbiblebowl.org' \
   ADMIN_EMAIL='you@example.com' ADMIN_PASSWORD='<strong password>'
 
 fly deploy   # builds server/Dockerfile, ships to https://texas-bible-bowl.fly.dev
@@ -111,18 +117,22 @@ fly deploy   # builds server/Dockerfile, ships to https://texas-bible-bowl.fly.d
 Create a free project at neon.tech and copy its pooled connection string into the
 `DATABASE_URL` secret above. The server parses it into a JDBC url + credentials.
 
-### Web (site + app) → GitHub Pages ($0)
+### Web (site + app) → Fly.io (nginx static)
 
-Pushes to `main` trigger [.github/workflows/pages.yml](.github/workflows/pages.yml),
-which publishes **one artifact**: the Hugo site (`site/`) at the root and the
-Kotlin/JS app under `/app/`. Before the Hugo build it bakes the live season
-params (`GET /seasons/current`) into `site/data/params.json`, and it injects the
-backend URL from the repo variable `BACKEND_URL` into the app's `index.html` as
-`window.TBB_BACKEND_URL`. To wire it up: set `BACKEND_URL` (Settings → Secrets
-and variables → Actions → Variables) to the Fly URL, and enable Pages with the
-**GitHub Actions** source.
+[tools/deploy-web.sh](tools/deploy-web.sh) builds **one tree** — the Hugo site
+(`site/`) at the root and the Kotlin/JS app under `/app/` — and ships it to an nginx
+container ([prod-web/](prod-web), [staging-web/](staging-web)). Before the Hugo build it
+bakes the live season params (`GET /seasons/current`) into `site/data/params.json`, and it
+injects the backend URL from the repo variable `BACKEND_URL` into the app's `index.html`
+as `window.TBB_BACKEND_URL`.
 
-Live: <https://markgitset.github.io/texas-bible-bowl/> (app at `/app/#study`).
+| | Fly app | URL |
+|---|---|---|
+| Production | `texas-bible-bowl-web` | <https://texasbiblebowl.org> (app at `/app/#study`) |
+| Staging | `texas-bible-bowl-staging-web` | <https://texas-bible-bowl-staging-web.fly.dev> |
+
+`www` 301s to the apex, and the backend also answers at <https://api.texasbiblebowl.org>.
+GitHub Pages is no longer used for either environment.
 
 ## Status
 

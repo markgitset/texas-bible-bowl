@@ -52,8 +52,8 @@ rm -rf "$out"
 HUGO_PARAMS_BACKENDURL="$backend_url" "$HUGO" -s site --gc --minify "${hugo_args[@]}" -d "$out"
 cp "$params_bak" "$params" && rm -f "$params_bak" && trap - EXIT
 
-# Same /app/ assembly as the old pages.yml: Hugo renders the shared-chrome shell at
-# app/index.html; copy the JS dist around it, excluding the dev-only index.html.
+# /app/ assembly: Hugo renders the shared-chrome shell at app/index.html; copy the JS
+# dist around it, excluding the dev-only index.html.
 dist=web/build/dist/js/productionExecutable
 test -s "$out/app/index.html" || { echo "ERROR: Hugo did not render the app shell (app/index.html)"; exit 1; }
 rsync -a --exclude=index.html "$dist"/ "$out/app/"

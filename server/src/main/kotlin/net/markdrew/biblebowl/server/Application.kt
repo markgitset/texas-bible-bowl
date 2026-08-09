@@ -174,7 +174,8 @@ fun Application.module(
         allowHeader(HttpHeaders.ContentType)
         HttpMethod.DefaultMethods.forEach { allowMethod(it) }
         // Production: restrict to the web app's origin(s) via ALLOWED_ORIGINS (comma-separated,
-        // e.g. "https://markgitset.github.io"). Unset (dev/tests) stays permissive.
+        // e.g. "https://texasbiblebowl.org"). Unset (dev/tests) stays permissive. Clients that
+        // send no Origin header (the Android app, curl) are unaffected either way.
         val origins = System.getenv("ALLOWED_ORIGINS")
             ?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
             .orEmpty()

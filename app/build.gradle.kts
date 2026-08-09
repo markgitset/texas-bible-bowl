@@ -67,9 +67,11 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.1.0"
-        // The APK talks to the live Fly backend by default so a sideloaded build just works. Override for
+        // The APK talks to the live backend by default so a sideloaded build just works. Override for
         // local dev, e.g. `-Ptbb.backendUrl=http://10.0.2.2:8080` (the emulator's alias for the host).
-        val backendUrl = (project.findProperty("tbb.backendUrl") as String?) ?: "https://texas-bible-bowl.fly.dev"
+        // The old texas-bible-bowl.fly.dev URL still works, so APKs built before the 2026-08 domain
+        // migration keep running — but new builds use the branded host.
+        val backendUrl = (project.findProperty("tbb.backendUrl") as String?) ?: "https://api.texasbiblebowl.org"
         buildConfigField("String", "BACKEND_URL", "\"$backendUrl\"")
     }
     buildTypes {
