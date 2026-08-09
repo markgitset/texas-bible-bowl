@@ -36,6 +36,7 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.GradingSheetResponse
 import net.markdrew.biblebowl.api.HeadingDto
+import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.ChangePasswordRequest
 import net.markdrew.biblebowl.api.ForgotPasswordRequest
@@ -314,7 +315,8 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
      * season book) and [chapterBreaksPage] to start each chapter on a new page. Chapter titles render
      * inline with the first verse unless [useHeadingsForChapters] puts them on their own line
      * ([chapterEndLines] adds divider lines beside them); [verseOnNewLine] starts every prose verse
-     * on a fresh line.
+     * on a fresh line. [chapterHeading]/[sectionHeading] size each heading relative to the body text
+     * and are independent — either may be the larger.
      */
     suspend fun bibleTextPdf(
         fontSize: Int? = null,
@@ -326,6 +328,8 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         verseOnNewLine: Boolean = false,
         highlight: Boolean = true,
         underlineUniqueWords: Boolean = false,
+        chapterHeading: HeadingSize = HeadingSize.DEFAULT_CHAPTER,
+        sectionHeading: HeadingSize = HeadingSize.DEFAULT_SECTION,
         set: String? = null,
     ): ByteArray =
         client.get("$baseUrl/generate/bible-text.pdf") {
@@ -340,6 +344,8 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
             if (verseOnNewLine) parameter("verseOnNewLine", true)
             if (!highlight) parameter("highlight", false)
             if (underlineUniqueWords) parameter("underlineUniqueWords", true)
+            if (chapterHeading != HeadingSize.DEFAULT_CHAPTER) parameter("chapterHeadingSize", chapterHeading.slug)
+            if (sectionHeading != HeadingSize.DEFAULT_SECTION) parameter("sectionHeadingSize", sectionHeading.slug)
         }.bodyOrThrow()
 
     /** Lists the season's numbers index (every numeral/cardinal/ordinal/fraction and the verses it occurs in). */

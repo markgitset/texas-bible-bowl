@@ -17,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.ClearPdfCacheResponse
+import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.PdfFileNames
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.QuestionStatus
@@ -77,7 +78,9 @@ val GENERATE_RATE_LIMIT = RateLimitName("generate")
  * `bibleTextTypst` renders the same options differently, else the content-stamped cache keeps
  * serving the old layout. 1 = footnotes sized relative to the body text (were a fixed 10pt).
  */
-private const val BIBLE_TEXT_LAYOUT_REVISION = 1
+// Bumped whenever the study-text layout changes, so PDFs cached under the old rendering are retired.
+// 2: headings sized relative to the body text (was a fixed 14pt/16pt).
+private const val BIBLE_TEXT_LAYOUT_REVISION = 2
 
 fun Route.generateRoutes(
     users: UserRepository,
@@ -167,6 +170,7 @@ fun Route.generateRoutes(
 
         // GET /generate/bible-text.pdf?set=acts&fontSize=11&twoColumns=false&justified=false&chapterBreaksPage=false
         //     &useHeadingsForChapters=false&chapterEndLines=false&verseOnNewLine=false&underlineUniqueWords=false
+        //     &chapterHeadingSize=medium&sectionHeadingSize=small
         // A formatted PDF of the covered text (verse numbers, headings, poetry, footnotes) with categorized
         // name/number highlighting (highlight=true by default) and optional underlining of hapax words
         // (underlineUniqueWords) — words that appear exactly once in the study set. The footer stamps the
@@ -182,6 +186,10 @@ fun Route.generateRoutes(
             }
             val qp = call.request.queryParameters
             val season = seasons.current()
+            // Unrecognized slugs fall back to the defaults rather than 400 — a stale link should still
+            // render a sensible PDF, and the name it resolves to is what gets cached.
+            val chapterHeading = HeadingSize.bySlug(qp["chapterHeadingSize"]) ?: HeadingSize.DEFAULT_CHAPTER
+            val sectionHeading = HeadingSize.bySlug(qp["sectionHeadingSize"]) ?: HeadingSize.DEFAULT_SECTION
             val options = TextOptions(
                 dateLine = "${season.eventDateRange}, ${season.eventYear}",
                 fontSize = qp["fontSize"]?.toIntOrNull()?.coerceIn(6, 24) ?: 11,
@@ -192,6 +200,8 @@ fun Route.generateRoutes(
                 chapterEndLines = qp["chapterEndLines"]?.toBooleanStrictOrNull() ?: false,
                 verseOnNewLine = qp["verseOnNewLine"]?.toBooleanStrictOrNull() ?: false,
                 underlineUniqueWords = qp["underlineUniqueWords"]?.toBooleanStrictOrNull() ?: false,
+                chapterHeadingScale = chapterHeading.scale,
+                sectionHeadingScale = sectionHeading.scale,
             )
             // Categorized name/number highlighting is the point of the download, so it's on by default.
             val highlight = qp["highlight"]?.toBooleanStrictOrNull() ?: true
@@ -207,6 +217,8 @@ fun Route.generateRoutes(
                     verseOnNewLine = options.verseOnNewLine,
                     underlineUniqueWords = options.underlineUniqueWords,
                     fontSize = options.fontSize,
+                    chapterHeading = chapterHeading,
+                    sectionHeading = sectionHeading,
                 ))
                 call.advertiseCanonicalScope(scope)
                 // The footer date comes from the season params, which the content stamp doesn't cover —

@@ -39,7 +39,7 @@ state + option controls.
     `BIBLE_TEXT_LAYOUT_REVISION` folded into the bible-text stamp salt. **Bump it for any future
     change here** (the next item qualifies).
 
-- [ ] **User-choosable heading sizes, relative to the body text.** Let the user pick how large
+- [x] **User-choosable heading sizes, relative to the body text.** Let the user pick how large
   the **chapter headings** and the **subject (section) headings** render, expressed *relative*
   to the body text size (e.g. a scale/step, so it tracks the chosen `fontSize` rather than being
   an absolute point size). Chapter-heading size and subject-heading size should be independently
@@ -72,3 +72,25 @@ state + option controls.
   *Not a bug elsewhere:* `PracticeTest`, `Awards`, `Flashcards`, and `Nametags` also use absolute
   sizes, but each has a fixed 11pt body, so they're internally consistent. Study text is the only
   generator with a user-selectable body size, which is what makes absolute sizing wrong in it.
+
+  - **As built (2026-08-08):** `HeadingSize` in `:shared-api` — one shared chip vocabulary
+    (`Same as text` 1.0 / `Small` 1.2 / `Medium` 1.4 / `Large` 1.7) used by *both* controls, so
+    they're picked independently from the same list. `TextOptions` carries
+    `chapterHeadingScale`/`sectionHeadingScale` (replacing `chapterFontSize`/`headingFontSize`);
+    the writer multiplies by `fontSize` and emits **absolute points**. Defaults are Medium/Small
+    = Typst's own 1.4/1.2. Query params `chapterHeadingSize`/`sectionHeadingSize` take slugs and
+    fall back to the defaults when unrecognized (a stale link still renders); non-default choices
+    are spelled into the filename (`-ch-head-small-sec-head-large`) and
+    `BIBLE_TEXT_LAYOUT_REVISION` went to 2.
+  - **The inverted hierarchy was deliberate, not a bug** (Mark, 2026-08-08): a section heading
+    larger than the chapter heading is a real preference some readers hold — which is a large part
+    of *why* these are user-selectable. So it stays reachable (pick Small chapter + Medium section
+    to get the pre-2026-08 look); it just isn't the default any more. Don't "fix" it away.
+  - **Scales must not be emitted as `em`.** Same trap as the footnote item, one level down: these
+    sizes are set *inside* `heading(...)`, where Typst has already applied its 1.4em/1.2em, so
+    `1.4em` would compound to 1.96em. Multiplying in Kotlin and emitting points tracks the body
+    size without compounding.
+  - **Typst PDFs are not byte-reproducible across time** — they embed `/CreationDate` and
+    `/ModDate` (identical back-to-back, differing seconds apart). Any test that compares rendered
+    PDF bytes to prove an option took effect passes trivially; assert on the `Content-Disposition`
+    filename (also the cache key) or on the Typst source instead.

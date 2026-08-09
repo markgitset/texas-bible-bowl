@@ -27,6 +27,8 @@ object PdfFileNames {
         verseOnNewLine: Boolean = false,
         underlineUniqueWords: Boolean = false,
         fontSize: Int = DEFAULT_FONT_SIZE,
+        chapterHeading: HeadingSize = HeadingSize.DEFAULT_CHAPTER,
+        sectionHeading: HeadingSize = HeadingSize.DEFAULT_SECTION,
     ): String = buildString {
         append("bible-text")
         if (highlight) append("-highlighted")
@@ -38,6 +40,10 @@ object PdfFileNames {
         if (verseOnNewLine) append("-verse-per-line")
         if (underlineUniqueWords) append("-unique-words")
         if (fontSize != DEFAULT_FONT_SIZE) append("-${fontSize}pt")
+        // Heading sizes are part of the layout, so they must reach the cache key — a PDF cached
+        // under one pair of sizes must not be served for another.
+        if (chapterHeading != HeadingSize.DEFAULT_CHAPTER) append("-ch-head-${chapterHeading.slug}")
+        if (sectionHeading != HeadingSize.DEFAULT_SECTION) append("-sec-head-${sectionHeading.slug}")
         append(".pdf")
     }
 

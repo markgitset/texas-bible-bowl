@@ -320,6 +320,37 @@ class StudyRoutesTest {
     }
 
     @Test
+    fun bibleTextHeadingSizesReachTheFileNameAndFallBackWhenUnknown() = testApplication {
+        if (!TypstCompiler.isAvailable) {
+            println("typst not on PATH; skipping PDF compile test")
+            return@testApplication
+        }
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
+            )
+        }
+        val api = createClient { }
+        // The attachment name is also the PDF cache key, so it's the assertion that matters: two
+        // different heading pairs must never resolve to one name. (PDF *bytes* can't be compared —
+        // typst stamps a CreationDate, so two renders a second apart differ regardless of options.)
+        suspend fun name(query: String): String {
+            val res = api.get("/generate/bible-text.pdf$query")
+            assertEquals(HttpStatusCode.OK, res.status, "for query '$query'")
+            return res.headers[HttpHeaders.ContentDisposition].orEmpty()
+        }
+        assertTrue("acts-bible-text-highlighted.pdf" in name(""), "defaults name no heading sizes")
+        assertTrue(
+            "acts-bible-text-highlighted-ch-head-small-sec-head-large.pdf" in
+                name("?chapterHeadingSize=small&sectionHeadingSize=large"),
+            "chosen heading sizes are spelled out in the name",
+        )
+        // An unrecognized slug renders (and caches as) the default rather than failing the download.
+        assertTrue("acts-bible-text-highlighted.pdf" in name("?sectionHeadingSize=enormous"), "unknown → default")
+    }
+
+    @Test
     fun bibleTextPdfHonorsRenderOptions() = testApplication {
         if (!TypstCompiler.isAvailable) {
             println("typst not on PATH; skipping PDF compile test")
@@ -345,11 +376,13 @@ class StudyRoutesTest {
         val customized = pdf("?fontSize=14&twoColumns=true&justified=true&chapterBreaksPage=true&underlineUniqueWords=true")
         val plain = pdf("?highlight=false")
         val chapterLayout = pdf("?useHeadingsForChapters=true&chapterEndLines=true&verseOnNewLine=true")
+        val headingSizes = pdf("?chapterHeadingSize=small&sectionHeadingSize=large")
 
         // Typst output is deterministic, so byte-identical PDFs would mean the options were ignored.
         assertTrue(!default.contentEquals(customized), "render options must change the PDF")
         assertTrue(!default.contentEquals(plain), "highlight=false must change the PDF")
         assertTrue(!default.contentEquals(chapterLayout), "chapter/verse layout options must change the PDF")
+        assertTrue(!default.contentEquals(headingSizes), "heading sizes must change the PDF")
     }
 
     @Test
