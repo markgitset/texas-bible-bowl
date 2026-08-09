@@ -16,7 +16,7 @@ weight: 2
 
 Crossway's 2025 text update changed 68 words across 42 verses, and is still rolling out across
 the ESV's printed editions — so a Bible bought recently may carry either text. **Earlier ESV
-printings are acceptable**; competition materials and answer keys use the 2025 text.
+printings are acceptable**, but competition materials and answer keys use the latest text.
 
 ## Highlighting and Note-Taking
 
