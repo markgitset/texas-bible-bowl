@@ -80,9 +80,13 @@ study-focus section ("Start here" on The Text; `StudyOverviewScreen`), each open
 section's own screen at `study/<slug>` (`StudySectionScreen`, both in `StudyScreens.kt`);
 `downloads` survives as a deep-link alias rendering the overview. This matches the web app's
 study area (2026-07): `#study`, the same overview card grid, plus one page per study-focus
-section at `#study/<slug>` (web's DownloadsScreen renders both). BOTH apps have a
-`StudySection` enum in their `Routes.kt` with identical slugs/route strings — keep the two
-enums, hugo.toml's menu children, and sitemap.html's hand-written study list in sync. The web
+section at `#study/<slug>` (web's DownloadsScreen renders both). The `StudySection` enum is
+ONE shared class in `:shared-api` (slug-serialized; strict `bySlug`); each app adds its own
+`route` extension in its `Routes.kt`. hugo.toml's menu children and sitemap.html's
+hand-written study list still mirror it by hand — keep those two in sync. Section pages also
+render admin-curated **study materials** (uploaded documents served byte-exact + external
+links; `study_materials` table, public `GET /study-materials`) after the built-in cards;
+admins manage them at `admin/materials` (web only, SEASON_MANAGE, in the account menu). The web
 navbar's "Study & Practice" entry is a dropdown like Event/Scholarships/About whose children
 are the section pages; the Compose app reaches sections via the overview cards (plain pushes on
 the Study stack, so Back returns to the overview). Quiz, questions, and the browsers are

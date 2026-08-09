@@ -1,5 +1,7 @@
 package net.markdrew.biblebowl.web
 
+import net.markdrew.biblebowl.api.StudySection
+
 /**
  * Hash-route strings, kept identical to the Compose app's Routes so existing links from the
  * Hugo site (`/app/#study`, `/app/#downloads`, …) keep working unchanged.
@@ -20,6 +22,7 @@ object Routes {
     const val SIGN_IN = "signin"
     const val ACCOUNT = "account"
     const val ADMIN_SEASON = "admin/season"
+    const val ADMIN_MATERIALS = "admin/materials"
     const val ADMIN_REGISTRATIONS = "admin/registrations"
     const val ADMIN_COUNTS = "admin/counts"
     const val ADMIN_HOUSING = "admin/housing"
@@ -30,26 +33,16 @@ object Routes {
 }
 
 /**
- * The Study & Practice sections — one page per study focus under `#study/<slug>`, mirrored as the
- * children of the navbar's Study & Practice dropdown (hugo.toml) and listed on the Site Map
- * (sitemap.html). `#study` itself is the overview page whose cards link to these. Keep all three
- * in sync when adding or renaming a section.
+ * The Study & Practice section pages live under `#study/<slug>` — one per shared-api
+ * [StudySection], mirrored as the children of the navbar's Study & Practice dropdown (hugo.toml)
+ * and listed on the Site Map (sitemap.html); keep those two in sync when a section is added or
+ * renamed. `#study` itself is the overview page whose cards link to these.
  */
-enum class StudySection(val slug: String, val title: String) {
-    TEXT("the-text", "The Text"),
-    GENERAL("general-knowledge", "General Knowledge"),
-    HEADINGS("chapter-headings", "Chapter Headings"),
-    UNIQUE_WORDS("unique-words", "Unique Words"),
-    PRACTICE_TESTS("practice-tests", "Practice Tests"),
-    REFERENCE("reference-documents", "Reference Documents"),
-    DATA("data-source-files", "Data & Source Files");
+val StudySection.route: String get() = "${Routes.STUDY}/$slug"
 
-    val route: String get() = "${Routes.STUDY}/$slug"
-
-    companion object {
-        fun fromRoute(route: String): StudySection? = entries.firstOrNull { it.route == route }
-    }
-}
+/** The section whose page is [route] (`study/<slug>`), or null for any other route. */
+fun StudySection.Companion.fromRoute(route: String): StudySection? =
+    StudySection.entries.firstOrNull { it.route == route }
 
 /**
  * Study-family destinations reached from the hub (`#study`, the app's Study & Practice page);
@@ -82,6 +75,7 @@ fun routeLabel(route: String): String = StudySection.fromRoute(route)?.title ?: 
     Routes.SIGN_IN -> "Sign In"
     Routes.ACCOUNT -> "Account"
     Routes.ADMIN_SEASON -> "Season Settings"
+    Routes.ADMIN_MATERIALS -> "Study Materials"
     Routes.ADMIN_REGISTRATIONS -> "Registrations"
     Routes.ADMIN_COUNTS -> "Registration Counts"
     Routes.ADMIN_HOUSING -> "Housing"

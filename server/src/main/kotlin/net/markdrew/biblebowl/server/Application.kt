@@ -40,6 +40,9 @@ import net.markdrew.biblebowl.server.data.TribeRepository
 import net.markdrew.biblebowl.server.data.InMemoryHousingRepository
 import net.markdrew.biblebowl.server.data.InMemoryTribeRepository
 import net.markdrew.biblebowl.server.data.InMemoryScoreRepository
+import net.markdrew.biblebowl.server.data.InMemoryStudyMaterialRepository
+import net.markdrew.biblebowl.server.data.PostgresStudyMaterialRepository
+import net.markdrew.biblebowl.server.data.StudyMaterialRepository
 import net.markdrew.biblebowl.server.data.InMemorySeasonRepository
 import net.markdrew.biblebowl.server.data.InMemoryPasswordResetRepository
 import net.markdrew.biblebowl.server.data.InMemoryTesterIdRepository
@@ -82,6 +85,7 @@ import net.markdrew.biblebowl.server.routes.registrationRoutes
 import net.markdrew.biblebowl.server.routes.seedRoutes
 import net.markdrew.biblebowl.server.routes.scoreRoutes
 import net.markdrew.biblebowl.server.routes.seasonRoutes
+import net.markdrew.biblebowl.server.routes.studyMaterialRoutes
 import net.markdrew.biblebowl.server.routes.studyRoutes
 import net.markdrew.biblebowl.server.routes.testerRoutes
 import net.markdrew.biblebowl.server.routes.userRoutes
@@ -108,6 +112,7 @@ fun main() {
     val tribes = db?.let(::PostgresTribeRepository) ?: InMemoryTribeRepository()
     val testerIds = db?.let(::PostgresTesterIdRepository) ?: InMemoryTesterIdRepository()
     val resets = db?.let(::PostgresPasswordResetRepository) ?: InMemoryPasswordResetRepository()
+    val studyMaterials = db?.let(::PostgresStudyMaterialRepository) ?: InMemoryStudyMaterialRepository()
     // Prod uses the Postgres cache; local dev (no DATABASE_URL) uses a persisted on-disk cache so repeated
     // runs never re-hit the ESV API — only a first run (cache miss) or ESV_CACHE_REFRESH re-fetches. It
     // lives under the user's home (~/.cache/texas-bible-bowl/esv) so it survives git cleans and fresh clones.
@@ -137,6 +142,7 @@ fun main() {
             tribes = tribes,
             testerIds = testerIds,
             resets = resets,
+            studyMaterials = studyMaterials,
             email = emailServiceFromEnv(),
         )
     }.start(wait = true)
@@ -161,6 +167,7 @@ fun Application.module(
     tribes: TribeRepository = InMemoryTribeRepository(),
     testerIds: TesterIdRepository = InMemoryTesterIdRepository(),
     resets: PasswordResetRepository = InMemoryPasswordResetRepository(),
+    studyMaterials: StudyMaterialRepository = InMemoryStudyMaterialRepository(),
     email: EmailService = LogOnlyEmailService(),
 ) {
     seedAdminFromEnv(users)
@@ -241,6 +248,7 @@ fun Application.module(
         seedRoutes(users, congregations, registrations, seasons)
         housingRoutes(users, seasons, congregations, housing)
         tribeRoutes(users, seasons, tribes)
+        studyMaterialRoutes(users, studyMaterials)
         scoreRoutes(users, seasons, registrations, scores, testerIds)
         testerRoutes(users, seasons, registrations, testerIds)
         userRoutes(users, congregations)

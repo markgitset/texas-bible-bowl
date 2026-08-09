@@ -10,6 +10,9 @@ import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.ScoreEntryDto
+import net.markdrew.biblebowl.api.StudyMaterialType
+import net.markdrew.biblebowl.api.StudySection
+import net.markdrew.biblebowl.api.UpsertStudyMaterialRequest
 import net.markdrew.biblebowl.api.ShirtSize
 import net.markdrew.biblebowl.api.Gender
 import net.markdrew.biblebowl.api.UpdateCongregationRequest
@@ -36,11 +39,15 @@ class TbbApiRequestTest {
     private val requests = mutableListOf<String>()
     private val methods = mutableListOf<String>()
     private val authHeaders = mutableListOf<String?>()
+    private val contentTypes = mutableListOf<String?>()
+    private val bodies = mutableListOf<String>()
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
         createContext("/") { exchange ->
             requests += exchange.requestURI.toString()
             methods += exchange.requestMethod
             authHeaders += exchange.requestHeaders.getFirst("Authorization")
+            contentTypes += exchange.requestHeaders.getFirst("Content-Type")
+            bodies += exchange.requestBody.readAllBytes().decodeToString()
             val (body, contentType) = when (exchange.requestURI.path) {
                 "/auth/login" ->
                     """{"token":"tok123","user":{"id":"u1","email":"admin@tbb.org","displayName":"Admin"}}""" to
@@ -89,6 +96,11 @@ class TbbApiRequestTest {
                 "/scores/mine" ->
                     """{"seasonYear":"2027","released":false,"rows":[]}""" to "application/json"
                 "/questions", "/study/headings" -> "[]" to "application/json"
+                "/study-materials" ->
+                    if (exchange.requestMethod == "GET") "[]" to "application/json"
+                    else """{"materials":[]}""" to "application/json"
+                "/study-materials/order", "/study-materials/m1" ->
+                    """{"materials":[]}""" to "application/json"
                 else ->
                     if (exchange.requestURI.path.startsWith("/registration/")) {
                         // Mutation endpoints respond with the registration + candidates wrapper.
@@ -384,5 +396,54 @@ class TbbApiRequestTest {
         assertEquals("DELETE", methods.last())
         assertEquals("/generate/cache", requests.last())
         assertEquals("Bearer tok123", authHeaders.last(), "the clear must carry the signed-in token")
+    }
+
+    @Test
+    fun studyMaterialEndpointsSendScopedListsJsonLinksAndMultipartUploads() = runBlocking {
+        api.studyMaterials(set = "acts", section = StudySection.PRACTICE_TESTS)
+        requests.last().let { uri ->
+            assertTrue("set=acts" in uri && "section=practice-tests" in uri, uri)
+        }
+        api.studyMaterials()
+        assertEquals("/study-materials", requests.last(), "no filters when unscoped")
+
+        api.login(LoginRequest("admin@tbb.org", "supersecret"))
+        val req = UpsertStudyMaterialRequest(
+            studySet = "acts", section = StudySection.GENERAL, type = StudyMaterialType.LINK,
+            title = "Kahoot review", url = "https://kahoot.it/challenge/x",
+        )
+        api.createLinkMaterial(req)
+        assertEquals("POST" to "/study-materials", methods.last() to requests.last())
+        assertTrue(contentTypes.last()!!.startsWith("application/json"), contentTypes.last().toString())
+        assertTrue("\"url\":\"https://kahoot.it/challenge/x\"" in bodies.last(), bodies.last())
+
+        // The document upload is one multipart body: the metadata JSON part beside the file part,
+        // whose filename and content type ride the part headers (the server stores them verbatim).
+        api.createDocumentMaterial(
+            req.copy(type = StudyMaterialType.DOCUMENT, title = "2026 Round 1", url = null),
+            fileName = "2026 round 1.pdf",
+            fileContentType = "application/pdf",
+            bytes = "fake pdf bytes".toByteArray(),
+        )
+        assertEquals("POST" to "/study-materials", methods.last() to requests.last())
+        assertTrue(contentTypes.last()!!.startsWith("multipart/form-data; boundary="), contentTypes.last().toString())
+        bodies.last().let { body ->
+            assertTrue("name=metadata" in body && "\"title\":\"2026 Round 1\"" in body, body)
+            assertTrue("filename=\"2026 round 1.pdf\"" in body, body)
+            assertTrue("Content-Type: application/pdf" in body && "fake pdf bytes" in body, body)
+        }
+
+        api.updateStudyMaterial("m1", req)
+        assertEquals("PUT" to "/study-materials/m1", methods.last() to requests.last())
+        api.reorderStudyMaterials(listOf("m2", "m1"))
+        assertEquals("PUT" to "/study-materials/order", methods.last() to requests.last())
+        assertTrue("\"orderedIds\":[\"m2\",\"m1\"]" in bodies.last(), bodies.last())
+        api.deleteStudyMaterial("m1")
+        assertEquals("DELETE" to "/study-materials/m1", methods.last() to requests.last())
+        assertTrue(authHeaders.takeLast(5).all { it == "Bearer tok123" }, "mutations must carry the token")
+
+        val pdf = api.studyMaterialFile("m1")
+        assertEquals("GET" to "/study-materials/m1/file", methods.last() to requests.last())
+        assertTrue(pdf.decodeToString().startsWith("%PDF"), "expected the raw served bytes")
     }
 }
