@@ -20,7 +20,7 @@ registration, event ops/grading) need a coherent home before they're built.
 - Domains: keep github.io + texasbiblebowl.org both temporarily; migrate later.
 - Parents/score access: **owner-account model** — a contestant profile is a roster record owned by the account that created/claimed it; owner + team's coach see the scores. No PARENT role.
 - Public results: **nothing public.** Results visible only to signed-in, scoped users; the public history page shows only admin-curated past champions.
-- Download center includes **CSV/TSV exports** for Kahoot/Quizlet/Space import.
+- Download center includes **CSV/spreadsheet exports** for Kahoot/Quizlet/Space import.
 - Contestant accounts: **roster entries first, optional accounts** — coach enters names; a contestant/parent may later create an account and claim their entry via a coach-shared code.
 - Photos: **do not migrate the image assets.** Galleries become Google Photos albums; the site's `photos/` page is just a list of album links (one per year/event).
 - **No in-app reading view.** Reading the text is better served by dedicated apps/sites; the Study hub links out to good ESV readers (ESV.org, YouVersion, BibleGateway) instead of hosting one.
@@ -152,7 +152,7 @@ Typst compile.
 | Flashcards | All-rounds deck · Headings deck → `flashcards.pdf` / `heading-flashcards.pdf` | round, chapter |
 | Indices | Names · Numbers → `names/numbers-index.pdf` | — |
 | Practice tests | One card per round (R1–R5) → `practice-test.pdf` | limit, seed ("same test again"), exact vs through-chapter |
-| **Exports** | **Kahoot spreadsheet** (xlsx template) · **Quizlet/Space TSV** — question bank + headings as import-ready files (new endpoints) | round, chapter, source |
+| **Exports** | **Kahoot spreadsheet** (xlsx template) · **Quizlet/Space CSV** — question bank + headings as import-ready files (new endpoints) | round, chapter, source |
 
 ### C. Interactive study (public)
 - **`#/study` — hub & default landing.** Compact cards: Indices, Headings, Downloads,
@@ -253,7 +253,7 @@ role-gated destinations are reached from the navbar user menu, not from this pag
 - **New domain tables** (schema only, for E/F): `congregations`, `teams`, `team_members` (with
   owner-account id + claim code), `registrations`, `events`, `scores` — extending
   `server/.../data/`; DTOs in `shared-api/.../Dtos.kt`. Role/permission enums need **no changes**.
-- **Exports:** new `/generate/questions.xlsx` (Kahoot template) + `.tsv` (Quizlet/Space) endpoints
+- **Exports:** new `/generate/questions.xlsx` (Kahoot template) + `.csv` (Quizlet/Space) endpoints
   reusing the question repo + headings.
 - **CI/deploy:** one Pages workflow — curl `/seasons/current` → `site/data/params.json` →
   `hugo build` → `wasmJsBrowserDistribution` → copy into `public/app/` → single artifact.

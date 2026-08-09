@@ -318,8 +318,8 @@ fun StudySectionScreen(
                 api.questionsXlsx(headings, round, exportScope.chapter, book = exportScope.book?.name)
             }
         } else {
-            download("Quizlet / Space TSV", "quizlet-$base.tsv", Mime.TSV) {
-                api.questionsTsv(headings, round, exportScope.chapter, book = exportScope.book?.name)
+            download("Quizlet / Space CSV", "quizlet-$base.csv", Mime.CSV) {
+                api.questionsCsv(headings, round, exportScope.chapter, book = exportScope.book?.name)
             }
         }
     }
@@ -521,19 +521,19 @@ fun StudySectionScreen(
                     onCustomize = { customize = Customize.Export(kahoot = true) },
                 )
                 DownloadCard(
-                    title = "Quizlet / Space TSV",
-                    subtitle = "Question-and-answer pairs as tab-separated text, import-ready for " +
+                    title = "Quizlet / Space CSV",
+                    subtitle = "Question-and-answer pairs as comma-separated text, import-ready for " +
                         "Quizlet, Space, or Anki." + scopeNote(exportScope) + customizedNote(exportCustomized),
                     busyCard = busyCard,
                     onClick = { downloadExport(kahoot = false) },
                     onCustomize = { customize = Customize.Export(kahoot = false) },
                 )
                 DownloadCard(
-                    title = "Study guide (TSV)",
-                    subtitle = "The full study-guide question bank as tab-separated text — every question, its " +
+                    title = "Study guide (CSV)",
+                    subtitle = "The full study-guide question bank as comma-separated text — every question, its " +
                         "choices, answer, and reference — for building your own materials.",
                     busyCard = busyCard,
-                    onClick = { download("Study guide (TSV)", "study-guide.tsv", Mime.TSV) { api.studyGuideTsv() } },
+                    onClick = { download("Study guide (CSV)", "study-guide.csv", Mime.CSV) { api.studyGuideCsv() } },
                 )
             }
         }
@@ -868,7 +868,7 @@ private fun DownloadCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalButton(onClick = onClick, enabled = busyCard == null) {
                     if (busyCard == title) CircularProgressIndicator(Modifier.height(16.dp))
-                    else Text(if (title.contains("TSV") || title.contains("spreadsheet")) "Download" else "Download PDF")
+                    else Text(if (title.contains("CSV") || title.contains("spreadsheet")) "Download" else "Download PDF")
                 }
                 if (onCustomize != null) {
                     TextButton(onClick = onCustomize, enabled = busyCard == null) { Text("Customize") }

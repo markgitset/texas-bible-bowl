@@ -3,7 +3,7 @@ package net.markdrew.biblebowl.app.platform
 /** MIME types for the file kinds the app generates. */
 object Mime {
     const val PDF = "application/pdf"
-    const val TSV = "text/tab-separated-values"
+    const val CSV = "text/csv"
     const val XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 }
 

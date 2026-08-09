@@ -341,18 +341,18 @@ object DownloadsScreen {
             buttonLabel = "Download",
         )
         downloadCard(
-            title = "Quizlet / Space TSV",
-            subtitle = "Question-and-answer pairs as tab-separated text, import-ready for " +
+            title = "Quizlet / Space CSV",
+            subtitle = "Question-and-answer pairs as comma-separated text, import-ready for " +
                 "Quizlet, Space, or Anki." + scopeNote(exportScope) + customizedNote(exportCustomized),
             href = exportUrl(kahoot = false),
             customize = Customize.Export(kahoot = false),
             buttonLabel = "Download",
         )
         downloadCard(
-            title = "Study guide (TSV)",
-            subtitle = "The full study-guide question bank as tab-separated text — every question, its " +
+            title = "Study guide (CSV)",
+            subtitle = "The full study-guide question bank as comma-separated text — every question, its " +
                 "choices, answer, and reference — for building your own materials.",
-            href = generateUrl("/generate/study-guide.tsv"),
+            href = generateUrl("/generate/study-guide.csv"),
             buttonLabel = "Download",
         )
     }
@@ -398,7 +398,7 @@ object DownloadsScreen {
     )
 
     private fun exportUrl(kahoot: Boolean): String = generateUrl(
-        if (kahoot) "/generate/questions.xlsx" else "/generate/questions.tsv",
+        if (kahoot) "/generate/questions.xlsx" else "/generate/questions.csv",
         "source" to "headings".takeIf { exportHeadings },
         "round" to exportRound?.name.takeIf { !exportHeadings },
         *scopedParams(exportScope),

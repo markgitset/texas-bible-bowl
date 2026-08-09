@@ -316,11 +316,13 @@ class StudyRoutesTest {
         }
         val api = createClient { }
 
-        // The TSV is the raw curated source — served with no ESV/Typst dependency.
-        val tsv = api.get("/generate/study-guide.tsv")
-        assertEquals(HttpStatusCode.OK, tsv.status)
-        assertTrue("Theophilus" in tsv.bodyAsText(), "raw study-guide.tsv should stream the curated content")
-        assertTrue("study-guide.tsv" in tsv.headers[HttpHeaders.ContentDisposition].orEmpty())
+        // The CSV is the raw curated source (authored as TSV) — served with no ESV/Typst dependency.
+        val csv = api.get("/generate/study-guide.csv")
+        assertEquals(HttpStatusCode.OK, csv.status)
+        val body = csv.bodyAsText()
+        assertTrue("Theophilus" in body, "raw study guide should stream the curated content")
+        assertTrue('\t' !in body, "the curated tabs are re-emitted as CSV commas")
+        assertTrue("study-guide.csv" in csv.headers[HttpHeaders.ContentDisposition].orEmpty())
 
         if (!TypstCompiler.isAvailable) {
             println("typst not on PATH; skipping study-guide PDF compile assertion")
@@ -369,7 +371,7 @@ class StudyRoutesTest {
     }
 
     @Test
-    fun headingsExportAsQuizletTsvAndKahootXlsx() = testApplication {
+    fun headingsExportAsQuizletCsvAndKahootXlsx() = testApplication {
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
@@ -378,18 +380,18 @@ class StudyRoutesTest {
         }
         val api = createClient { }
 
-        // Quizlet TSV: title<TAB>chapter, anonymous; `chapter` scopes cumulatively.
-        val tsv = api.get("/generate/questions.tsv?source=headings")
-        assertEquals(HttpStatusCode.OK, tsv.status)
+        // Quizlet CSV: title,chapter, anonymous; `chapter` scopes cumulatively.
+        val csv = api.get("/generate/questions.csv?source=headings")
+        assertEquals(HttpStatusCode.OK, csv.status)
         assertEquals(
             listOf(
-                "The Promise of the Holy Spirit\tChapter 1",
-                "The Coming of the Holy Spirit\tChapter 2",
+                "The Promise of the Holy Spirit,Chapter 1",
+                "The Coming of the Holy Spirit,Chapter 2",
             ),
-            tsv.bodyAsText().trim().lines(),
+            csv.bodyAsText().trim().lines(),
         )
-        val filtered = api.get("/generate/questions.tsv?source=headings&chapter=1")
-        assertEquals("The Promise of the Holy Spirit\tChapter 1", filtered.bodyAsText().trim())
+        val filtered = api.get("/generate/questions.csv?source=headings&chapter=1")
+        assertEquals("The Promise of the Holy Spirit,Chapter 1", filtered.bodyAsText().trim())
 
         // Kahoot xlsx: which-chapter questions, distractors only from in-scope chapters.
         val xlsx = api.get("/generate/questions.xlsx?source=headings")

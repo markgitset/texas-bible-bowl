@@ -172,13 +172,13 @@ class ScopeRoutesTest {
         val api = createClient { install(ContentNegotiation) { json(json) } }
 
         // Question-bank exports need no ESV/Typst: assert the durable names end-to-end.
-        val acts = api.get("/generate/questions.tsv?chapter=2")
+        val acts = api.get("/generate/questions.csv?chapter=2")
         assertEquals(HttpStatusCode.OK, acts.status)
-        assertTrue("quizlet-acts-questions-ch2.tsv" in acts.headers[HttpHeaders.ContentDisposition].orEmpty())
+        assertTrue("quizlet-acts-questions-ch2.csv" in acts.headers[HttpHeaders.ContentDisposition].orEmpty())
 
         // A bare-book scope names by the book's own slug; single-book sets keep the -chN suffix.
-        val john = api.get("/generate/questions.tsv?book=JOH&chapter=3")
+        val john = api.get("/generate/questions.csv?book=JOH&chapter=3")
         assertEquals(HttpStatusCode.OK, john.status)
-        assertTrue("quizlet-john-questions-ch3.tsv" in john.headers[HttpHeaders.ContentDisposition].orEmpty())
+        assertTrue("quizlet-john-questions-ch3.csv" in john.headers[HttpHeaders.ContentDisposition].orEmpty())
     }
 }
