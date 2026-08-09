@@ -64,7 +64,10 @@ fun buildNavMenu(user: UserDto, season: SeasonDto): NavMenu {
         }
     }
     val admin = buildList {
-        if (Permission.SEASON_MANAGE in user.permissions) add(NavItem("Season Settings", Routes.ADMIN_SEASON))
+        if (Permission.SEASON_MANAGE in user.permissions) {
+            add(NavItem("Season Settings", Routes.ADMIN_SEASON))
+            add(NavItem("Study Materials", Routes.ADMIN_MATERIALS))
+        }
         if (Permission.USER_MANAGE in user.permissions) add(NavItem("User Management", Routes.ADMIN_USERS))
     }
     val sections = listOf(

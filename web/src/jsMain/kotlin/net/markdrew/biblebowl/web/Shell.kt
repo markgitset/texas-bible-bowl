@@ -13,6 +13,7 @@ import net.markdrew.biblebowl.web.screens.AdminTribesScreen
 import net.markdrew.biblebowl.web.screens.AdminRegistrationsScreen
 import net.markdrew.biblebowl.web.screens.AdminSeasonScreen
 import net.markdrew.biblebowl.web.screens.AdminTestersScreen
+import net.markdrew.biblebowl.web.screens.AdminMaterialsScreen
 import net.markdrew.biblebowl.web.screens.AdminMergePeopleScreen
 import net.markdrew.biblebowl.web.screens.AdminUsersScreen
 import net.markdrew.biblebowl.web.screens.AuthScreen
@@ -263,6 +264,9 @@ object Shell {
             }
             Routes.ADMIN_SEASON -> gated(container, Permission.SEASON_MANAGE) {
                 AdminSeasonScreen.render(container)
+            }
+            Routes.ADMIN_MATERIALS -> gated(container, Permission.SEASON_MANAGE) {
+                AdminMaterialsScreen.render(container)
             }
             Routes.ADMIN_REGISTRATIONS -> feature(container, Session.registrationVisible) {
                 gatedEventWide(container, Permission.REGISTRATION_MANAGE) {

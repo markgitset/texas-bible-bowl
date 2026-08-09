@@ -1,12 +1,17 @@
 package net.markdrew.biblebowl.web.screens
 
+import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.ScopeSelection
+import net.markdrew.biblebowl.api.StudyMaterialDto
+import net.markdrew.biblebowl.api.StudyMaterialType
 import net.markdrew.biblebowl.api.StudyScopeParams
+import net.markdrew.biblebowl.api.filePath
 import net.markdrew.biblebowl.api.scopeQueryParams
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.StudySection
 import net.markdrew.biblebowl.web.Session
+import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.route
 import net.markdrew.biblebowl.web.clear
@@ -85,6 +90,12 @@ object DownloadsScreen {
     private lateinit var root: HTMLElement
     private lateinit var grid: HTMLElement // the current section page's tile row; cards append cols to it
     private var section: StudySection? = null // null = the overview card grid
+
+    // Admin-curated extras (uploaded documents + external links), fetched once per page session
+    // for the whole study set and filtered per section. Best-effort: a fetch failure only costs
+    // the extras — the built-in cards must never break on a public page.
+    private var materials: List<StudyMaterialDto>? = null
+    private var materialsRequested = false
 
     fun render(container: HTMLElement, section: StudySection? = null) {
         root = container
@@ -174,6 +185,39 @@ object DownloadsScreen {
             StudySection.PRACTICE_TESTS -> practiceTestCards()
             StudySection.REFERENCE -> referenceCards()
             StudySection.DATA -> dataCards()
+        }
+        extraMaterialCards(section)
+    }
+
+    /** The admin-added documents and links assigned to [section], after the built-in cards. */
+    private fun extraMaterialCards(section: StudySection) {
+        val loaded = materials
+        if (loaded == null) {
+            if (!materialsRequested) {
+                materialsRequested = true
+                Shell.scope.launch {
+                    // Failure stays silent (and un-retried until the next full page load).
+                    runCatching { Session.api.studyMaterials(set = Session.studySet.simpleName) }
+                        .onSuccess { materials = it; if (this@DownloadsScreen.section != null) rerender() }
+                }
+            }
+            return
+        }
+        loaded.filter { it.section == section }.forEach { m ->
+            when (m.type) {
+                StudyMaterialType.DOCUMENT -> downloadCard(
+                    title = m.title,
+                    subtitle = m.description,
+                    href = Session.api.baseUrl + m.filePath(),
+                    buttonLabel = "Download",
+                )
+                StudyMaterialType.LINK -> linkCard(
+                    title = m.title,
+                    subtitle = m.description,
+                    links = listOf("Open" to (m.url ?: return@forEach)),
+                    newTab = true,
+                )
+            }
         }
     }
 
