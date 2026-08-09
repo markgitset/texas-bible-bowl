@@ -18,6 +18,6 @@
 {{ end }}
 
 {{ define "body-scripts" }}
-{{ with .Site.Params.backendURL }}<script>window.TBB_BACKEND_URL={{ . | jsonify | safeJS }};</script>{{ end }}
+{{/* window.TBB_BACKEND_URL is emitted for every page by baseof.html, just above this block. */}}
 <script src="{{ .Site.BaseURL }}app/tbb.js"></script>
 {{ end }}

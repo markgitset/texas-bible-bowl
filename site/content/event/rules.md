@@ -14,6 +14,10 @@ weight: 2
 - Downloaded digital copies
 - Copyrighted printed Bibles
 
+Crossway's 2025 text update changed 68 words across 42 verses, and is still rolling out across
+the ESV's printed editions — so a Bible bought recently may carry either text. **Earlier ESV
+printings are acceptable**, but competition materials and answer keys use the latest text.
+
 ## Highlighting and Note-Taking
 
 ### Margin Specifications
@@ -61,7 +65,8 @@ Each division (except Adult) has **Inexperienced** and **Experienced** subdivisi
 | Round 5: Know the Chapter – Headings | Closed Bible | 40 | 10 min | 40 |
 
 - **Individual maximum:** 250 points (Elementary: 200, no Power Round)
-- **Team maximum:** 800 points combined
+- **Team maximum:** 800 points — four members × 200. Power Round scores count toward
+  individual totals only, never team totals.
 
 ## Testing Procedures
 

@@ -8,6 +8,7 @@ import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.clear
+import net.markdrew.biblebowl.web.friendlyError
 import net.markdrew.biblebowl.web.ui.chipRow
 import org.w3c.dom.HTMLButtonElement
 import org.w3c.dom.HTMLElement
@@ -155,7 +156,7 @@ object ContributeScreen {
                 render(root) // re-render clears the form fields; the message re-appears below
             } catch (e: Throwable) {
                 isError = true
-                message = "Error: ${e.message}"
+                message = friendlyError(e)
                 refreshSubmit()
                 renderMessage()
             }

@@ -23,7 +23,7 @@ import org.w3c.dom.HTMLInputElement
 
 /**
  * Tribes & tribe leaders (item 16, F10; replaces the workbook's `Tribe leader assignment` tab):
- * a thin admin tool — tribes per site (2026: color names, two leaders each) with free-form leader
+ * a thin admin tool — tribes per site (usually color names, two leaders each) with free-form leader
  * names. The leader input suggests adults who flagged willingness (item 8: adult guests and
  * individual contestants with `tribeLeaderWilling`, from the desk payload), and a roll-up lists
  * the willing not yet assigned anywhere. Gated like housing (event-wide REGISTRATION_MANAGE).
@@ -104,7 +104,7 @@ object AdminTribesScreen {
         message?.let { content.errorLine(it) }
         content.child(
             "p", "text-muted small",
-            "Define the event's tribes (2026 used color names, two leaders each) and assign " +
+            "Define the event's tribes (color names with two leaders each is the usual pattern) and assign " +
                 "leaders — the name field suggests adults who volunteered on registration, but " +
                 "any adult can be typed in.",
         )
@@ -134,7 +134,7 @@ object AdminTribesScreen {
                     renderTribeEditor(this, tribe)
                 } else {
                     child("span", "fw-semibold", tribe.name)
-                    // The 2026 convention was two leaders per tribe — a hint, not a rule.
+                    // Two leaders per tribe is the usual convention — a hint, not a rule.
                     if (tribe.leaders.size < 2) child("span", "badge text-bg-warning", "needs leaders")
                     child("button", "btn btn-outline-secondary btn-sm ms-auto", "Rename") {
                         setAttribute("type", "button")

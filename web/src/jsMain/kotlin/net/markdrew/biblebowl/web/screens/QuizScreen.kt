@@ -16,6 +16,7 @@ import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.clear
 import net.markdrew.biblebowl.web.errorLine
+import net.markdrew.biblebowl.web.friendlyError
 import net.markdrew.biblebowl.web.onClick
 import net.markdrew.biblebowl.web.spinner
 import net.markdrew.biblebowl.web.ui.chapterChips
@@ -143,13 +144,13 @@ object QuizScreen {
                 if (e.isEmpty) {
                     error = when (source) {
                         QuizSource.QUESTIONS -> "No approved questions match — loosen the filters or contribute some!"
-                        QuizSource.HEADINGS -> "No headings available — is the server's ESV service configured?"
+                        QuizSource.HEADINGS -> "Chapter headings aren't available right now — please try again later."
                     }
                 } else {
                     engine = e
                 }
             } catch (t: Throwable) {
-                error = t.message
+                error = friendlyError(t)
             }
             rerender()
         }

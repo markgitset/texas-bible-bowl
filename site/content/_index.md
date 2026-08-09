@@ -7,7 +7,7 @@ description: "Texas Bible Bowl — Making God's Word Important. Annual Bible kno
 
 Texas Bible Bowl is an annual Bible-knowledge competition that brings together students
 from **3rd grade through adult** to study, memorize, and celebrate God's Word. Teams
-from congregations across Texas prepare all year on the year's study material — usually a
+from congregations across Texas and beyond prepare all year on the year's study material — usually a
 single book of the Bible, though some years span multiple books — then gather to compete
 in a series of written tests.
 

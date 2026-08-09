@@ -1,6 +1,6 @@
 {{ define "main" }}
-{{/* Branded 404 (GH Pages serves /404.html for unknown paths). Goes through baseof.html, so it
-     carries the light-canvas declarations — GitHub's default 404 was the last dark-flash hole. */}}
+{{/* Branded 404 (nginx serves /404.html for unknown paths — see prod-web/nginx.conf). Goes through
+     baseof.html, so it carries the light-canvas declarations and can't dark-flash. */}}
 <div class="container py-5 text-center">
   <h1 class="page-title mb-3">Page not found</h1>
   <p class="text-muted mb-4">
