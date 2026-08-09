@@ -87,6 +87,15 @@ val GENERATE_RATE_LIMIT = RateLimitName("generate")
 // 2: headings sized relative to the body text (was a fixed 14pt/16pt).
 private const val BIBLE_TEXT_LAYOUT_REVISION = 2
 
+/**
+ * Revision of the chapter-headings sheet's layout, folded into that PDF's cache stamp. The stamp
+ * itself is only the study text plus the word-list digest, so a change to how the sheet is *drawn*
+ * moves nothing and the cache keeps serving the old rendering — bump this whenever
+ * `chapterHeadingsTypst` renders the same headings differently.
+ * 1 = headings grouped and shaded by chapter, tighter rows, larger candidate sizes.
+ */
+private const val CHAPTER_HEADINGS_LAYOUT_REVISION = 1
+
 fun Route.generateRoutes(
     users: UserRepository,
     questions: QuestionRepository,
@@ -399,7 +408,10 @@ fun Route.generateRoutes(
         // page, in scripture order with the verses it covers. Whole-set only (no chapter scoping):
         // it's a wall-chart/reference sheet, and the fit search needs the full list to size itself.
         get("/generate/chapter-headings.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.chapterHeadings()) { s ->
+            respondIndexPdf(
+                study, seasons, pdfCache, PdfFileNames.chapterHeadings(),
+                stampSalt = CHAPTER_HEADINGS_LAYOUT_REVISION,
+            ) { s ->
                 val sd = s.studyData()
                 // A heading never spans books, so grouping keeps scripture order and lets each row's
                 // reference stay book-less — the band above it names the book. Single-book sets get no

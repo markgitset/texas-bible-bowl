@@ -41,6 +41,7 @@ import net.markdrew.biblebowl.server.typst.TypstCompiler
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -128,6 +129,40 @@ class PdfCacheTest {
         assertEquals(HttpStatusCode.OK, res.status)
         assertContentEquals(seeded, res.bodyAsBytes(), "a cache hit must serve the stored bytes verbatim")
         assertTrue("heading-flashcards.pdf" in res.headers[HttpHeaders.ContentDisposition].orEmpty())
+    }
+
+    /**
+     * The content stamp is only the study text plus the word-list digest, so it does not move when a
+     * PDF's *rendering* changes — a sheet cached by an older build would otherwise be served forever.
+     * The chapter-headings sheet folds a layout revision into its stamp for exactly that reason, and
+     * this pins it: an entry stored under the bare content stamp must be treated as stale.
+     */
+    @Test
+    fun chapterHeadingsIgnoreAnEntryCachedWithoutItsLayoutRevision() = testApplication {
+        if (!TypstCompiler.isAvailable) {
+            println("typst not on PATH; skipping PDF compile test")
+            return@testApplication
+        }
+        val service = studyService()
+        val cache = InMemoryPdfCache()
+        val stale = "%PDF-previous-layout".toByteArray()
+        cache.put("acts-test", "acts-chapter-headings.pdf", service.contentStamp(), stale)
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(service), pdfCache = cache,
+            )
+        }
+        val api = createClient { }
+
+        val res = api.get("/generate/chapter-headings.pdf")
+        assertEquals(HttpStatusCode.OK, res.status)
+        val bytes = res.bodyAsBytes()
+        assertNotEquals(
+            stale.toList(), bytes.toList(),
+            "a sheet cached under the bare content stamp must not survive a layout revision",
+        )
+        assertTrue(bytes.size > 4 && bytes.decodeToString(0, 4) == "%PDF", "should have recompiled a real PDF")
     }
 
     @Test
