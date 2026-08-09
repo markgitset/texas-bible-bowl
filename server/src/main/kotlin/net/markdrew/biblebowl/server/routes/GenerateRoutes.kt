@@ -79,13 +79,44 @@ import kotlin.random.nextInt
 val GENERATE_RATE_LIMIT = RateLimitName("generate")
 
 /**
- * Revision of the study-text layout, folded into that PDF's cache stamp. Bump it whenever
- * `bibleTextTypst` renders the same options differently, else the content-stamped cache keeps
- * serving the old layout. 1 = footnotes sized relative to the body text (were a fixed 10pt).
+ * Layout revisions for the cached PDFs, one per Typst generator, folded into the cache stamp of every
+ * PDF that generator produces.
+ *
+ * A generated PDF is cached under [StudyDataService.contentStamp] — the study text plus the word-list
+ * digest — which moves when the *material* changes but not when the *rendering* does. So a change to
+ * how a document is drawn is invisible to the cache: every client keeps getting the PDF some earlier
+ * build compiled, and no amount of redeploying dislodges it. That is not a hypothetical; it is how the
+ * chapter-grouped headings sheet failed to reach staging.
+ *
+ * **Bump the entry for a generator whenever you change what it emits**, including changes in the route
+ * that feed it (which cards, which columns, what text). A bump costs one recompile per study set; a
+ * missed bump costs a silently stale document, and the symptom — a deploy that appears to do nothing —
+ * is a genuinely confusing thing to debug. When in doubt, bump.
+ *
+ * Every entry moved when this object was introduced, deliberately: the stamp had not shifted since
+ * 2026-07-26, so anything rendered differently after that date had been frozen in the cache, and the
+ * cheapest way to know where we stood was to recompile the lot once rather than audit each one.
  */
-// Bumped whenever the study-text layout changes, so PDFs cached under the old rendering are retired.
-// 2: headings sized relative to the body text (was a fixed 14pt/16pt).
-private const val BIBLE_TEXT_LAYOUT_REVISION = 2
+internal object LayoutRevisions {
+    /** `bibleTextTypst`. 1 = footnotes relative to body text; 2 = headings relative to body text. */
+    const val BIBLE_TEXT = 2
+
+    /** `chapterHeadingsTypst`. 1 = grouped and shaded by chapter, tighter rows, larger candidate sizes. */
+    const val CHAPTER_HEADINGS = 1
+
+    /** `indexTypst` / `numbersIndexTypst` / `oneTimeWordsIndexTypst` — the printable word indices. */
+    const val INDEX = 1
+
+    /**
+     * `flashcardsTypst`, shared by the unique-word and chapter-heading decks. 1 = Markdown rich text
+     * with the unique word underlined, which only the unique-word deck was salted for at the time —
+     * the heading deck served the pre-Markdown rendering until 2 retired it.
+     */
+    const val FLASHCARDS = 2
+
+    /** `studyGuideTypst`, for both the student and answer copies. 1 = the embedded-font fix. */
+    const val STUDY_GUIDE = 1
+}
 
 fun Route.generateRoutes(
     users: UserRepository,
@@ -229,7 +260,7 @@ fun Route.generateRoutes(
                 // The footer date comes from the season params, which the content stamp doesn't cover —
                 // salt the stamp with it so editing the event dates refreshes cached study texts, and
                 // fold in the layout revision so a rendering change retires PDFs cached before it.
-                val salt = 31 * options.dateLine.hashCode() + BIBLE_TEXT_LAYOUT_REVISION
+                val salt = 31 * options.dateLine.hashCode() + LayoutRevisions.BIBLE_TEXT
                 respondCachedPdf(svc, pdfCache, fileName, stampSalt = salt) {
                     if (highlight) {
                         highlightedBibleTextTypst(svc.studyData(), svc.categoryResolution(), options)
@@ -244,21 +275,21 @@ fun Route.generateRoutes(
 
         // GET /generate/numbers-index.pdf?set=acts — the set's numbers index (alphabetical + by frequency)
         get("/generate/numbers-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.numbersIndex()) { s ->
+            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.numbersIndex(), LayoutRevisions.INDEX) { s ->
                 numbersIndexTypst(s.studyData())
             }
         }
 
         // GET /generate/names-index.pdf?set=acts — the set's names index (alphabetical + by frequency)
         get("/generate/names-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.namesIndex()) { s ->
+            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.namesIndex(), LayoutRevisions.INDEX) { s ->
                 indexTypst(s.studyData(), namesIndex(s.studyData(), s.categoryResolution()), "Name")
             }
         }
 
         // GET /generate/men-index.pdf?set=acts — the men named in the set (alphabetical + by frequency)
         get("/generate/men-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.menIndex()) { s ->
+            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.menIndex(), LayoutRevisions.INDEX) { s ->
                 val sd = s.studyData()
                 indexTypst(
                     sd, wordListIndex(sd, s.categoryResolution(), WordList.MEN),
@@ -269,7 +300,7 @@ fun Route.generateRoutes(
 
         // GET /generate/women-index.pdf?set=acts
         get("/generate/women-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.womenIndex()) { s ->
+            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.womenIndex(), LayoutRevisions.INDEX) { s ->
                 val sd = s.studyData()
                 indexTypst(
                     sd, wordListIndex(sd, s.categoryResolution(), WordList.WOMEN),
@@ -280,7 +311,7 @@ fun Route.generateRoutes(
 
         // GET /generate/places-index.pdf?set=acts
         get("/generate/places-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.placesIndex()) { s ->
+            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.placesIndex(), LayoutRevisions.INDEX) { s ->
                 val sd = s.studyData()
                 indexTypst(
                     sd, wordListIndex(sd, s.categoryResolution(), WordList.PLACES),
@@ -291,7 +322,7 @@ fun Route.generateRoutes(
 
         // GET /generate/full-index.pdf?set=acts — a complete word concordance for the set
         get("/generate/full-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.fullIndex()) { s ->
+            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.fullIndex(), LayoutRevisions.INDEX) { s ->
                 val sd = s.studyData()
                 indexTypst(sd, fullIndex(sd), "Word", title = "${sd.studySet.name} Complete Word Index")
             }
@@ -299,17 +330,18 @@ fun Route.generateRoutes(
 
         // GET /generate/unique-words-index.pdf?set=acts — the hapax index (alphabetical + by appearance)
         get("/generate/unique-words-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.uniqueWordsIndex()) { s ->
+            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.uniqueWordsIndex(), LayoutRevisions.INDEX) { s ->
                 oneTimeWordsIndexTypst(s.studyData())
             }
         }
 
         // GET /generate/unique-word-flashcards.pdf?set=acts — one card per one-time word: the word up
         // front, its verse (with the verse text as context, the word underlined) on the back. Cards run
-        // in the word's order of appearance. stampSalt is a format revision: bump it whenever the deck's
-        // rendering changes, else the content-stamped cache keeps serving the old layout.
+        // in the word's order of appearance.
         get("/generate/unique-word-flashcards.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.uniqueWordFlashcards(), stampSalt = 1) { s ->
+            respondIndexPdf(
+                study, seasons, pdfCache, PdfFileNames.uniqueWordFlashcards(), LayoutRevisions.FLASHCARDS,
+            ) { s ->
                 val sd = s.studyData()
                 val ranges = oneTimeWords(sd).sortedBy { it.first }
                 val whitespace = Regex("\\s+")
@@ -375,7 +407,7 @@ fun Route.generateRoutes(
                 val fileName = PdfFileNames.withSet(
                     scope.set.simpleName, "heading-flashcards${scope.chapterSuffix(cumulative = true)}.pdf",
                 )
-                respondCachedPdf(svc, pdfCache, fileName) {
+                respondCachedPdf(svc, pdfCache, fileName, LayoutRevisions.FLASHCARDS) {
                     // ChapterRef comparison is book-aware (absoluteChapter), so cumulative scoping is
                     // correct for multi-book sets too.
                     val headings = svc.studyData().headings
@@ -399,7 +431,9 @@ fun Route.generateRoutes(
         // page, in scripture order with the verses it covers. Whole-set only (no chapter scoping):
         // it's a wall-chart/reference sheet, and the fit search needs the full list to size itself.
         get("/generate/chapter-headings.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.chapterHeadings()) { s ->
+            respondIndexPdf(
+                study, seasons, pdfCache, PdfFileNames.chapterHeadings(), LayoutRevisions.CHAPTER_HEADINGS,
+            ) { s ->
                 val sd = s.studyData()
                 // A heading never spans books, so grouping keeps scripture order and lets each row's
                 // reference stay book-less — the band above it names the book. Single-book sets get no
@@ -636,25 +670,20 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(typstSource
 }
 
 /**
- * Serves the PDF from [pdfCache] when a row matches ([fileName], content stamp) — skipping both the
- * Typst compile and the markup build entirely — otherwise builds [typstSource], compiles, stores, and
- * responds. [fileName] doubles as the cache key, so it must encode every generation param (use
- * [PdfFileNames]). [stampSalt] folds request inputs the content stamp doesn't cover (e.g. the
- * season's event-date footer) into the row's validity. Concurrent misses may compile twice; the
- * upsert makes that benign. May throw [EsvUpstreamException] (resolving the stamp needs the study
- * text) — callers already catch it.
- */
-/**
  * The shared shape of the study-set index PDFs: `set=`-scoped (allowlisted, defaulting to the season),
  * ESV-gated (503 if unconfigured), cached, Typst-compiled, with upstream ESV failures mapped to 502.
  * [typstSource] receives the non-null, configured study service for the resolved set.
+ *
+ * [layoutRevision] is deliberately not defaulted: the content stamp can't see a rendering change, so
+ * every one of these endpoints has to name the [LayoutRevisions] entry for the generator behind it,
+ * and a new endpoint can't be added without deciding which one it belongs to.
  */
 private suspend fun io.ktor.server.routing.RoutingContext.respondIndexPdf(
     study: StudyDataRegistry?,
     seasons: SeasonRepository,
     pdfCache: PdfCache?,
     baseFileName: String,
-    stampSalt: Int = 0,
+    layoutRevision: Int,
     typstSource: suspend (StudyDataService) -> String,
 ) {
     val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return
@@ -668,7 +697,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondIndexPdf(
     try {
         call.advertiseCanonicalScope(scope)
         val fileName = PdfFileNames.withSet(scope.set.simpleName, baseFileName)
-        respondCachedPdf(svc, pdfCache, fileName, stampSalt) { typstSource(svc) }
+        respondCachedPdf(svc, pdfCache, fileName, layoutRevision) { typstSource(svc) }
     } catch (e: EsvUpstreamException) {
         call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
     }
@@ -700,8 +729,10 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondStudyGuidePdf(
         scope.set.simpleName,
         if (markAnswers) PdfFileNames.studyGuideAnswers() else PdfFileNames.studyGuide(),
     )
-    // Fold the logo + copy flag into the stamp so a new logo, or the other copy, never serves a stale PDF.
-    val stamp = 31 * guide.hashCode() + year + (logo?.contentHashCode() ?: 0) + if (markAnswers) 1 else 0
+    // Fold the logo, the copy flag and the layout revision into the stamp so a new logo, the other copy,
+    // or a change to how the guide is drawn never serves a stale PDF.
+    val stamp = 31 * guide.hashCode() + year + (logo?.contentHashCode() ?: 0) +
+        (if (markAnswers) 1 else 0) + LayoutRevisions.STUDY_GUIDE
     val cached = pdfCache?.let { c -> withContext(Dispatchers.IO) { c.get(svc.studySet.simpleName, fileName, stamp) } }
     if (cached != null) return respondAttachment(cached, fileName, ContentType.Application.Pdf)
     try {
@@ -717,11 +748,22 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondStudyGuidePdf(
     }
 }
 
+/**
+ * Serves the PDF from [pdfCache] when a row matches ([fileName], content stamp) — skipping both the
+ * Typst compile and the markup build entirely — otherwise builds [typstSource], compiles, stores, and
+ * responds. [fileName] doubles as the cache key, so it must encode every generation param (use
+ * [PdfFileNames]). Concurrent misses may compile twice; the upsert makes that benign. May throw
+ * [EsvUpstreamException] (resolving the stamp needs the study text) — callers already catch it.
+ *
+ * [stampSalt] folds in everything the content stamp can't see: always the generator's [LayoutRevisions]
+ * entry, plus any request input that shapes the document (e.g. the season's event-date footer). It has
+ * no default — forgetting it is exactly how a PDF goes stale without a trace.
+ */
 private suspend fun io.ktor.server.routing.RoutingContext.respondCachedPdf(
     study: StudyDataService,
     pdfCache: PdfCache?,
     fileName: String,
-    stampSalt: Int = 0,
+    stampSalt: Int,
     typstSource: suspend () -> String,
 ) {
     val studySet = study.studySet.simpleName

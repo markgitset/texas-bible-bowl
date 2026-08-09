@@ -36,7 +36,7 @@ state + option controls.
     local both pin `TYPST_VERSION=v0.14.2` (server/Dockerfile), so it can't drift without a
     reviewed bump. (3) The PDF cache is keyed on filename + content stamp, and footnote size isn't
     in the filename, so cached PDFs would have kept the old layout — hence
-    `BIBLE_TEXT_LAYOUT_REVISION` folded into the bible-text stamp salt. **Bump it for any future
+    `LayoutRevisions.BIBLE_TEXT` folded into the bible-text stamp salt. **Bump it for any future
     change here** (the next item qualifies).
 
 - [x] **User-choosable heading sizes, relative to the body text.** Let the user pick how large
@@ -67,7 +67,7 @@ state + option controls.
   design decision, and doing it twice would re-proportion the PDF twice.
 
   Blast radius differs between the two: section headings render in every study-text PDF, chapter
-  headings only when `useHeadingsForChapters` is on. Remember to bump `BIBLE_TEXT_LAYOUT_REVISION`.
+  headings only when `useHeadingsForChapters` is on. Remember to bump `LayoutRevisions.BIBLE_TEXT`.
 
   *Not a bug elsewhere:* `PracticeTest`, `Awards`, `Flashcards`, and `Nametags` also use absolute
   sizes, but each has a fixed 11pt body, so they're internally consistent. Study text is the only
@@ -81,7 +81,7 @@ state + option controls.
     = Typst's own 1.4/1.2. Query params `chapterHeadingSize`/`sectionHeadingSize` take slugs and
     fall back to the defaults when unrecognized (a stale link still renders); non-default choices
     are spelled into the filename (`-ch-head-small-sec-head-large`) and
-    `BIBLE_TEXT_LAYOUT_REVISION` went to 2.
+    `LayoutRevisions.BIBLE_TEXT` went to 2.
   - **The inverted hierarchy was deliberate, not a bug** (Mark, 2026-08-08): a section heading
     larger than the chapter heading is a real preference some readers hold — which is a large part
     of *why* these are user-selectable. So it stays reachable (pick Small chapter + Medium section
