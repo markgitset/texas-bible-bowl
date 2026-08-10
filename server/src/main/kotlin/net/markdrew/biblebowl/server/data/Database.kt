@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import java.net.URI
 import org.flywaydb.core.Flyway
+import org.jetbrains.exposed.v1.core.DatabaseConfig
 import org.jetbrains.exposed.v1.core.Table
 import org.jetbrains.exposed.v1.datetime.date
 import org.jetbrains.exposed.v1.jdbc.Database
@@ -425,7 +426,16 @@ object DatabaseFactory {
             .baselineOnMigrate(true) // pre-Flyway databases: record V1 as applied, don't run it
             .load()
             .migrate()
-        return Database.connect(dataSource)
+        return Database.connect(
+            dataSource,
+            databaseConfig = DatabaseConfig {
+                // Exposed's default (3) re-runs a transaction block on ANY SQLException — including a
+                // commit whose acknowledgement was lost after landing. Our blocks are non-idempotent
+                // (UUIDs minted inside them), so a replay can duplicate rows (`people` has no unique
+                // backstop). Fail fast instead; callers re-submit safely through the route-level checks.
+                defaultMaxAttempts = 1
+            },
+        )
     }
 }
 
