@@ -39,6 +39,7 @@ import net.markdrew.biblebowl.server.data.TribesTable
 import net.markdrew.biblebowl.server.data.CongregationsTable
 import net.markdrew.biblebowl.server.data.CreateCongregationResult
 import net.markdrew.biblebowl.server.data.DatabaseFactory
+import net.markdrew.biblebowl.server.data.DbSettings
 import net.markdrew.biblebowl.server.data.EnrollResult
 import net.markdrew.biblebowl.server.data.MergeResult
 import net.markdrew.biblebowl.server.data.ParticipantsTable
@@ -67,6 +68,7 @@ import net.markdrew.biblebowl.api.EventSiteDto
 import net.markdrew.biblebowl.server.data.DEFAULT_SEASON
 import net.markdrew.biblebowl.server.security.Passwords
 import org.jetbrains.exposed.v1.core.SqlExpressionBuilder.eq
+import org.junit.AfterClass
 import org.jetbrains.exposed.v1.jdbc.deleteAll
 import org.jetbrains.exposed.v1.jdbc.selectAll
 import org.jetbrains.exposed.v1.jdbc.update
@@ -84,6 +86,10 @@ import kotlin.test.assertTrue
  * Integration test against a real Postgres (docker-compose `postgres` service). Skips (vacuously passes)
  * when Postgres isn't reachable so unit-test runs don't require Docker.
  * Run: `docker compose up -d postgres && ./gradlew :server:test`
+ *
+ * Concurrent runs are safe but serialized: the suite holds a Postgres advisory lock for the
+ * duration of the class (see [lockSuite]), so a `:server:test` started while another is mid-class
+ * waits its turn instead of corrupting it (#147).
  */
 class PostgresRepositoryTest {
 
@@ -100,11 +106,45 @@ class PostgresRepositoryTest {
         // (5 eager connections) that nothing ever closes, so per-test connects leak pools until
         // Postgres's connection cap — CI died with "FATAL: sorry, too many clients already".
         private val db by lazy { DatabaseFactory.connect() }
+
+        // Everything on this machine shares the one dev Postgres at :5432, so two overlapping
+        // `:server:test` runs (e.g. parallel worktree sessions) interleave their per-test
+        // cleanTables sweeps with each other's test bodies — the FK-violation/deadlock bursts of
+        // issue #147. A session-level advisory lock serializes whole suite runs instead: the
+        // first cleanTables blocks until any other run's JVM releases it (in [unlockSuite], or by
+        // exiting). Held on a dedicated connection so pool churn can't drop it early.
+        private const val SUITE_LOCK_KEY = 0x7BB7E57L // "TBB TEST"
+        private var suiteLockConnection: java.sql.Connection? = null
+
+        private fun lockSuite() {
+            if (suiteLockConnection != null) return
+            val settings = DbSettings.fromEnv()
+            suiteLockConnection = DriverManager.getConnection(
+                settings.jdbcUrl, settings.user, settings.password,
+            ).also { conn ->
+                conn.createStatement().use { statement ->
+                    val locked = statement.executeQuery("SELECT pg_try_advisory_lock($SUITE_LOCK_KEY)")
+                        .use { it.next() && it.getBoolean(1) }
+                    if (!locked) {
+                        println("Another PostgresRepositoryTest run holds the suite lock — waiting for it to finish")
+                        statement.execute("SELECT pg_advisory_lock($SUITE_LOCK_KEY)")
+                    }
+                }
+            }
+        }
+
+        @JvmStatic
+        @AfterClass
+        fun unlockSuite() {
+            suiteLockConnection?.close() // closing the session releases the advisory lock
+            suiteLockConnection = null
+        }
     }
 
     @BeforeTest
     fun cleanTables() {
         if (!available) return
+        lockSuite() // before db: the pool + Flyway migration also stay inside the lock
         transaction(db) {
             QuestionVotesTable.deleteAll()
             QuestionsTable.deleteAll()

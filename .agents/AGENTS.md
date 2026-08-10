@@ -214,6 +214,11 @@ This renders the real pipeline without hitting Crossway.
   `defaultBaseUrl()`, the desktop `DEFAULT_BASE_URL`, and `EndToEndFlowTest`'s probe, so
   `.claude/launch.json` deliberately gives the `backend` config no `autoPort` (the static-file
   configs have it and are safe to run in parallel). Stop one before starting another.
+- **Concurrent `:server:test` runs are safe but serialized**: every worktree's
+  `PostgresRepositoryTest` shares the one dev Postgres at `:5432`, so the suite holds a
+  Postgres advisory lock for the duration of the class — a run started while another is
+  mid-class waits its turn. (Overlapping runs used to interleave their per-test cleanup
+  into FK-violation/deadlock bursts — issue #147.)
 - The local dev admin (`admin@tbb.org` / `admin-secret-123`) is passed by
   `.claude/launch.json` **only when `DATABASE_URL` is unset** — the server's env-var admin
   seeding itself works in any mode (a fresh prod DB seeds its first admin from fly
