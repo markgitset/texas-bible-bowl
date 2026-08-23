@@ -63,7 +63,7 @@ private val CHAPTER_TEXTS = mapOf(
 )
 
 /** Wraps a [PdfCache] and counts hits (non-null gets) and puts, to prove when Typst was skipped. */
-private class RecordingPdfCache(private val delegate: PdfCache = InMemoryPdfCache()) : PdfCache {
+internal class RecordingPdfCache(private val delegate: PdfCache = InMemoryPdfCache()) : PdfCache {
     var hits = 0
     var puts = 0
 

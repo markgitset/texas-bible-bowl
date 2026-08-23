@@ -96,5 +96,19 @@ class GeneratePdfTest {
         // No matching questions -> 404.
         val none = api.get("/generate/practice-test.pdf?round=POWER")
         assertEquals(HttpStatusCode.NotFound, none.status)
+
+        // ?format=typ hands back the markup instead. This document is built from our own crowd-sourced
+        // question bank rather than the ESV text, so its source is as public as its PDF — unlike the
+        // ESV-derived generators, which are SEASON_MANAGE-only (see TypstSourceDownloadTest).
+        val source = api.get("/generate/practice-test.pdf?round=FACT_FINDER&chapter=2&format=typ")
+        assertEquals(HttpStatusCode.OK, source.status, "question-bank markup should not require sign-in")
+        assertTrue(
+            "practice-fact_finder-ch2.typ" in source.headers[HttpHeaders.ContentDisposition].orEmpty(),
+            "should attach under the .typ sibling of the PDF's filename, got " +
+                source.headers[HttpHeaders.ContentDisposition],
+        )
+        val markup = source.bodyAsText()
+        assertTrue(markup.startsWith("#set page("), "should be Typst markup, got: ${markup.take(60)}")
+        assertTrue("Question number 0 about Pentecost?" in markup, "should carry the approved questions")
     }
 }
