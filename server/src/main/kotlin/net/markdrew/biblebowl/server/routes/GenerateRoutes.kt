@@ -4,6 +4,8 @@ import io.ktor.http.ContentDisposition
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.withCharset
+import io.ktor.server.application.ApplicationCall
 import io.ktor.server.auth.authenticate
 import io.ktor.server.plugins.ratelimit.RateLimitName
 import io.ktor.server.plugins.ratelimit.rateLimit
@@ -79,6 +81,41 @@ import kotlin.random.nextInt
 val GENERATE_RATE_LIMIT = RateLimitName("generate")
 
 /**
+ * `?format=typ` on any generated-PDF endpoint serves the Typst markup the generator produced
+ * instead of the document Typst compiled from it — same route, same params, same cache stamp, so the
+ * source you get is exactly the source behind the PDF those params would hand you.
+ *
+ * It rides the existing `.pdf` routes rather than getting `.typ` siblings so that every generator gets
+ * it for free from the three `respond*Pdf` helpers below: a new endpoint can't forget to offer it, and
+ * the options a PDF understands can never drift from the ones its source understands.
+ */
+private const val TYPST_SOURCE_FORMAT = "typ"
+
+/** Downloaded Typst source is plain UTF-8 text; the `.typ` extension carries the meaning. */
+private val TYPST_CONTENT_TYPE = ContentType.Text.Plain.withCharset(Charsets.UTF_8)
+
+/** True when the caller asked for [TYPST_SOURCE_FORMAT] markup rather than a compiled PDF. */
+private fun ApplicationCall.wantsTypstSource(): Boolean =
+    request.queryParameters["format"].equals(TYPST_SOURCE_FORMAT, ignoreCase = true)
+
+/** The `.typ` sibling of a `PdfFileNames` filename — same param encoding, so it caches alongside it. */
+private fun String.asTypstFileName(): String = removeSuffix(".pdf") + ".typ"
+
+/**
+ * Gate for Typst source built from the ESV text. The compiled PDF is public, but its source is the
+ * same words as machine-readable markup — a materially easier thing to redistribute or scrape than a
+ * typeset PDF, and our ESV licence is a non-profit one that keeps the text server-side. So sources
+ * that embed ESV text are SEASON_MANAGE-only (an authoring/debugging tool), while sources built purely
+ * from our own material — the study guide, the crowd-sourced question bank — stay as public as their PDFs.
+ *
+ * Responds 401/403 itself and returns false when the caller doesn't qualify.
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.allowEsvTypstSource(users: UserRepository): Boolean {
+    val user = currentUser(users) ?: return false
+    return requirePermission(user, Permission.SEASON_MANAGE)
+}
+
+/**
  * Layout revisions for the cached PDFs, one per Typst generator, folded into the cache stamp of every
  * PDF that generator produces.
  *
@@ -137,349 +174,357 @@ fun Route.generateRoutes(
     // endpoints restrict set= to the StandardStudySet allowlist (the ESV licence budget); question-bank
     // endpoints take any canonical scope. Filenames are set-prefixed (acts-bible-text.pdf) with
     // book-qualified chapter suffixes for multi-book sets (-num14).
-    rateLimit(GENERATE_RATE_LIMIT) {
-        // GET /generate/practice-test.pdf?round=FACT_FINDER&set=acts&book=ACT&chapter=2&limit=40&seed=1234
-        //
-        // R1/R4/R5 are generated deterministically from the ESV text; R2/R3 come from the approved
-        // crowd-sourced question bank. `chapter` is an exact chapter for the bank rounds and a cumulative
-        // "through chapter" for the text rounds (matching how the study material scopes cumulative tests).
-        get("/generate/practice-test.pdf") {
-            val round = call.request.queryParameters["round"]
-                ?.let { runCatching { Round.valueOf(it) }.getOrNull() }
-                ?: return@get call.respond(
-                    HttpStatusCode.BadRequest,
-                    ApiError("bad_round", "round must be one of ${Round.entries.joinToString()}"),
-                )
-            val seasonSet = seasons.currentStudySet()
+    //
+    // `authenticate(optional = true)` keeps every endpoint anonymous-friendly while still parsing a JWT
+    // when one is sent — which is all `?format=typ` needs to tell an admin from a passer-by. An absent
+    // or bad token is simply no principal here; only the Typst-source branch ever asks for one.
+    authenticate(optional = true) {
+        rateLimit(GENERATE_RATE_LIMIT) {
+            // GET /generate/practice-test.pdf?round=FACT_FINDER&set=acts&book=ACT&chapter=2&limit=40&seed=1234
+            //
+            // R1/R4/R5 are generated deterministically from the ESV text; R2/R3 come from the approved
+            // crowd-sourced question bank. `chapter` is an exact chapter for the bank rounds and a cumulative
+            // "through chapter" for the text rounds (matching how the study material scopes cumulative tests).
+            get("/generate/practice-test.pdf") {
+                val round = call.request.queryParameters["round"]
+                    ?.let { runCatching { Round.valueOf(it) }.getOrNull() }
+                    ?: return@get call.respond(
+                        HttpStatusCode.BadRequest,
+                        ApiError("bad_round", "round must be one of ${Round.entries.joinToString()}"),
+                    )
+                val seasonSet = seasons.currentStudySet()
 
-            if (round.textGenerated) {
-                val scope = call.resolveEsvScopeOrRespond(seasonSet) ?: return@get
-                val seed = call.request.queryParameters["seed"]?.toIntOrNull()
-                return@get respondTextPracticeTest(round, scope, seed, study?.forSet(scope.set))
-            }
-
-            val scope = call.resolveScopeOrRespond(seasonSet) ?: return@get
-            val limit = (call.request.queryParameters["limit"]?.toIntOrNull() ?: 40).coerceIn(1, 100)
-            val pool = questions.list(QuestionStatus.APPROVED, scope.toQuestionScope(), roundType = round, limit = limit)
-            if (pool.isEmpty()) {
-                return@get call.respond(
-                    HttpStatusCode.NotFound,
-                    ApiError("no_questions", "No approved ${round.displayName} questions" +
-                        (scope.chapterRef?.let { " for ${it.book.fullName} ${it.chapter}" } ?: "")),
-                )
-            }
-
-            call.advertiseCanonicalScope(scope)
-            val typstSource = practiceTestTypst(round, pool)
-            val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix()}.pdf"
-            respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName))
-        }
-
-        // GET /generate/flashcards.pdf?set=acts&book=ACT&chapter=2&round=IDENTIFICATION (all optional)
-        get("/generate/flashcards.pdf") {
-            val round = call.request.queryParameters["round"]
-                ?.let { runCatching { Round.valueOf(it) }.getOrNull() }
-
-            // The question bank only holds crowd-sourced rounds. R1/R4/R5 come from the text; R5 has its
-            // own deck at /generate/heading-flashcards.pdf.
-            if (round != null && round.textGenerated) {
-                return@get call.respond(
-                    HttpStatusCode.BadRequest,
-                    ApiError(
-                        "not_crowd_sourced",
-                        "${round.displayName} is generated from the text, not the question bank" +
-                            (if (round == Round.EVENTS) " — use /generate/heading-flashcards.pdf" else ""),
-                    ),
-                )
-            }
-
-            val scope = call.resolveScopeOrRespond(seasons.currentStudySet()) ?: return@get
-            val pool = questions.list(QuestionStatus.APPROVED, scope.toQuestionScope(), roundType = round, limit = 200)
-            if (pool.isEmpty()) {
-                return@get call.respond(
-                    HttpStatusCode.NotFound,
-                    ApiError("no_questions", "No approved questions" +
-                        (scope.chapterRef?.let { " for ${it.book.fullName} ${it.chapter}" } ?: "")),
-                )
-            }
-            call.advertiseCanonicalScope(scope)
-            val fileName = PdfFileNames.withSet(scope.set.simpleName, "flashcards${scope.chapterSuffix()}.pdf")
-            respondPdf(flashcardsTypst(pool.toFlashcards()), fileName)
-        }
-
-        // GET /generate/bible-text.pdf?set=acts&fontSize=11&twoColumns=false&justified=false&chapterBreaksPage=false
-        //     &useHeadingsForChapters=false&chapterEndLines=false&verseOnNewLine=false&underlineUniqueWords=false
-        //     &chapterHeadingSize=medium&sectionHeadingSize=small
-        // A formatted PDF of the covered text (verse numbers, headings, poetry, footnotes) with categorized
-        // name/number highlighting (highlight=true by default) and optional underlining of hapax words
-        // (underlineUniqueWords) — words that appear exactly once in the study set. The footer stamps the
-        // season's event dates (e.g. "April 2–4, 2027") rather than the generation date.
-        get("/generate/bible-text.pdf") {
-            val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return@get
-            val svc = study?.forSet(scope.set)
-            if (svc == null || !svc.isConfigured) {
-                return@get call.respond(
-                    HttpStatusCode.ServiceUnavailable,
-                    ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
-                )
-            }
-            val qp = call.request.queryParameters
-            val season = seasons.current()
-            // Unrecognized slugs fall back to the defaults rather than 400 — a stale link should still
-            // render a sensible PDF, and the name it resolves to is what gets cached.
-            val chapterHeading = HeadingSize.bySlug(qp["chapterHeadingSize"]) ?: HeadingSize.DEFAULT_CHAPTER
-            val sectionHeading = HeadingSize.bySlug(qp["sectionHeadingSize"]) ?: HeadingSize.DEFAULT_SECTION
-            val options = TextOptions(
-                dateLine = "${season.eventDateRange}, ${season.eventYear}",
-                fontSize = qp["fontSize"]?.toIntOrNull()?.coerceIn(6, 24) ?: 11,
-                twoColumns = qp["twoColumns"]?.toBooleanStrictOrNull() ?: false,
-                justified = qp["justified"]?.toBooleanStrictOrNull() ?: false,
-                chapterBreaksPage = qp["chapterBreaksPage"]?.toBooleanStrictOrNull() ?: false,
-                useHeadingsForChapters = qp["useHeadingsForChapters"]?.toBooleanStrictOrNull() ?: false,
-                chapterEndLines = qp["chapterEndLines"]?.toBooleanStrictOrNull() ?: false,
-                verseOnNewLine = qp["verseOnNewLine"]?.toBooleanStrictOrNull() ?: false,
-                underlineUniqueWords = qp["underlineUniqueWords"]?.toBooleanStrictOrNull() ?: false,
-                chapterHeadingScale = chapterHeading.scale,
-                sectionHeadingScale = sectionHeading.scale,
-            )
-            // Categorized name/number highlighting is the point of the download, so it's on by default.
-            val highlight = qp["highlight"]?.toBooleanStrictOrNull() ?: true
-            try {
-                // Named from the coerced options, so out-of-range requests share the row they resolve to.
-                val fileName = PdfFileNames.withSet(scope.set.simpleName, PdfFileNames.bibleText(
-                    highlight = highlight,
-                    twoColumns = options.twoColumns,
-                    justified = options.justified,
-                    chapterBreaksPage = options.chapterBreaksPage,
-                    useHeadingsForChapters = options.useHeadingsForChapters,
-                    chapterEndLines = options.chapterEndLines,
-                    verseOnNewLine = options.verseOnNewLine,
-                    underlineUniqueWords = options.underlineUniqueWords,
-                    fontSize = options.fontSize,
-                    chapterHeading = chapterHeading,
-                    sectionHeading = sectionHeading,
-                ))
-                call.advertiseCanonicalScope(scope)
-                // The footer date comes from the season params, which the content stamp doesn't cover —
-                // salt the stamp with it so editing the event dates refreshes cached study texts, and
-                // fold in the layout revision so a rendering change retires PDFs cached before it.
-                val salt = 31 * options.dateLine.hashCode() + LayoutRevisions.BIBLE_TEXT
-                respondCachedPdf(svc, pdfCache, fileName, stampSalt = salt) {
-                    if (highlight) {
-                        highlightedBibleTextTypst(svc.studyData(), svc.categoryResolution(), options)
-                    } else {
-                        bibleTextTypst(svc.studyData(), options)
-                    }
+                if (round.textGenerated) {
+                    val scope = call.resolveEsvScopeOrRespond(seasonSet) ?: return@get
+                    val seed = call.request.queryParameters["seed"]?.toIntOrNull()
+                    return@get respondTextPracticeTest(users, round, scope, seed, study?.forSet(scope.set))
                 }
-            } catch (e: EsvUpstreamException) {
-                call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
-            }
-        }
 
-        // GET /generate/numbers-index.pdf?set=acts — the set's numbers index (alphabetical + by frequency)
-        get("/generate/numbers-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.numbersIndex(), LayoutRevisions.INDEX) { s ->
-                numbersIndexTypst(s.studyData())
-            }
-        }
-
-        // GET /generate/names-index.pdf?set=acts — the set's names index (alphabetical + by frequency)
-        get("/generate/names-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.namesIndex(), LayoutRevisions.INDEX) { s ->
-                indexTypst(s.studyData(), namesIndex(s.studyData(), s.categoryResolution()), "Name")
-            }
-        }
-
-        // GET /generate/men-index.pdf?set=acts — the men named in the set (alphabetical + by frequency)
-        get("/generate/men-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.menIndex(), LayoutRevisions.INDEX) { s ->
-                val sd = s.studyData()
-                indexTypst(
-                    sd, wordListIndex(sd, s.categoryResolution(), WordList.MEN),
-                    "Man", plural = "Men", title = "${sd.studySet.name} Men Index",
-                )
-            }
-        }
-
-        // GET /generate/women-index.pdf?set=acts
-        get("/generate/women-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.womenIndex(), LayoutRevisions.INDEX) { s ->
-                val sd = s.studyData()
-                indexTypst(
-                    sd, wordListIndex(sd, s.categoryResolution(), WordList.WOMEN),
-                    "Woman", plural = "Women", title = "${sd.studySet.name} Women Index",
-                )
-            }
-        }
-
-        // GET /generate/places-index.pdf?set=acts
-        get("/generate/places-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.placesIndex(), LayoutRevisions.INDEX) { s ->
-                val sd = s.studyData()
-                indexTypst(
-                    sd, wordListIndex(sd, s.categoryResolution(), WordList.PLACES),
-                    "Place", title = "${sd.studySet.name} Places Index",
-                )
-            }
-        }
-
-        // GET /generate/full-index.pdf?set=acts — a complete word concordance for the set
-        get("/generate/full-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.fullIndex(), LayoutRevisions.INDEX) { s ->
-                val sd = s.studyData()
-                indexTypst(sd, fullIndex(sd), "Word", title = "${sd.studySet.name} Complete Word Index")
-            }
-        }
-
-        // GET /generate/unique-words-index.pdf?set=acts — the hapax index (alphabetical + by appearance)
-        get("/generate/unique-words-index.pdf") {
-            respondIndexPdf(study, seasons, pdfCache, PdfFileNames.uniqueWordsIndex(), LayoutRevisions.INDEX) { s ->
-                oneTimeWordsIndexTypst(s.studyData())
-            }
-        }
-
-        // GET /generate/unique-word-flashcards.pdf?set=acts — one card per one-time word: the word up
-        // front, its verse (with the verse text as context, the word underlined) on the back. Cards run
-        // in the word's order of appearance.
-        get("/generate/unique-word-flashcards.pdf") {
-            respondIndexPdf(
-                study, seasons, pdfCache, PdfFileNames.uniqueWordFlashcards(), LayoutRevisions.FLASHCARDS,
-            ) { s ->
-                val sd = s.studyData()
-                val ranges = oneTimeWords(sd).sortedBy { it.first }
-                val whitespace = Regex("\\s+")
-                val cards = ranges.mapIndexedNotNull { i, range ->
-                    val verse = sd.verseEnclosing(range) ?: return@mapIndexedNotNull null
-                    // Locate the word in its verse by raw char offsets (not text search, which could
-                    // hit a substring of another word), then emphasize it in a markdown note.
-                    val note = sd.verseIndex[verse]?.let { verseRange ->
-                        val raw = sd.excerpt(verseRange).excerptText
-                        val start = range.first - verseRange.first
-                        val end = start + (range.last - range.first + 1)
-                        val pre = raw.substring(0, start).replace(whitespace, " ").trimStart()
-                        val word = raw.substring(start, end)
-                        val post = raw.substring(end).replace(whitespace, " ").trimEnd()
-                        CardText.Markdown(
-                            markdownEscape(pre) + "**<u>" + markdownEscape(word) + "</u>**" + markdownEscape(post)
-                        )
-                    } ?: CardText.Plain("")
-                    Flashcard(
-                        front = CardText.Plain(sd.excerpt(range).excerptText),
-                        back = CardText.Plain(sd.verseRefFormat(verse)),
-                        note = note,
-                        footer = "${i + 1} of ${ranges.size}",
+                val scope = call.resolveScopeOrRespond(seasonSet) ?: return@get
+                val limit = (call.request.queryParameters["limit"]?.toIntOrNull() ?: 40).coerceIn(1, 100)
+                val pool = questions.list(QuestionStatus.APPROVED, scope.toQuestionScope(), roundType = round, limit = limit)
+                if (pool.isEmpty()) {
+                    return@get call.respond(
+                        HttpStatusCode.NotFound,
+                        ApiError("no_questions", "No approved ${round.displayName} questions" +
+                            (scope.chapterRef?.let { " for ${it.book.fullName} ${it.chapter}" } ?: "")),
                     )
                 }
-                flashcardsTypst(cards)
-            }
-        }
 
-        // GET /generate/questions.csv?source=questions|headings&round=FACT_FINDER&chapter=2
-        // Comma-separated term/definition pairs, import-ready for Quizlet/Space/Anki. `source=questions`
-        // (default) exports the approved bank (prompt -> answer); `source=headings` exports the R5
-        // headings (title -> chapter), with `chapter` meaning "through chapter" as usual for headings.
-        get("/generate/questions.csv") {
-            respondExport(questions, seasons, study, format = ExportFormat.CSV)
-        }
-
-        // GET /generate/questions.xlsx?source=questions|headings&round=FACT_FINDER&chapter=2
-        // A Kahoot-import spreadsheet (their template layout). Only multiple-choice material can go
-        // to Kahoot, so `source=questions` keeps just questions whose choices contain the answer;
-        // `source=headings` builds which-chapter questions with in-scope distractor chapters.
-        get("/generate/questions.xlsx") {
-            respondExport(questions, seasons, study, format = ExportFormat.KAHOOT_XLSX)
-        }
-
-        // GET /generate/heading-flashcards.pdf?set=acts&book=ACT&throughChapter=5 — Round 5 deck,
-        // cumulatively scoped (headings whose chapter starts at or before the through-chapter).
-        get("/generate/heading-flashcards.pdf") {
-            val scope = call.resolveEsvScopeOrRespond(
-                seasons.currentStudySet(), chapterKey = StudyScopeParams.THROUGH_CHAPTER,
-            ) ?: return@get
-            val svc = study?.forSet(scope.set)
-            if (svc == null || !svc.isConfigured) {
-                return@get call.respond(
-                    HttpStatusCode.ServiceUnavailable,
-                    ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+                call.advertiseCanonicalScope(scope)
+                val typstSource = practiceTestTypst(round, pool)
+                val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix()}.pdf"
+                respondPdf(
+                    typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName), users, esvDerived = false,
                 )
             }
-            val throughRef = scope.chapterRef
 
-            try {
-                call.advertiseCanonicalScope(scope, chapterKey = StudyScopeParams.THROUGH_CHAPTER)
-                val fileName = PdfFileNames.withSet(
-                    scope.set.simpleName, "heading-flashcards${scope.chapterSuffix(cumulative = true)}.pdf",
+            // GET /generate/flashcards.pdf?set=acts&book=ACT&chapter=2&round=IDENTIFICATION (all optional)
+            get("/generate/flashcards.pdf") {
+                val round = call.request.queryParameters["round"]
+                    ?.let { runCatching { Round.valueOf(it) }.getOrNull() }
+
+                // The question bank only holds crowd-sourced rounds. R1/R4/R5 come from the text; R5 has its
+                // own deck at /generate/heading-flashcards.pdf.
+                if (round != null && round.textGenerated) {
+                    return@get call.respond(
+                        HttpStatusCode.BadRequest,
+                        ApiError(
+                            "not_crowd_sourced",
+                            "${round.displayName} is generated from the text, not the question bank" +
+                                (if (round == Round.EVENTS) " — use /generate/heading-flashcards.pdf" else ""),
+                        ),
+                    )
+                }
+
+                val scope = call.resolveScopeOrRespond(seasons.currentStudySet()) ?: return@get
+                val pool = questions.list(QuestionStatus.APPROVED, scope.toQuestionScope(), roundType = round, limit = 200)
+                if (pool.isEmpty()) {
+                    return@get call.respond(
+                        HttpStatusCode.NotFound,
+                        ApiError("no_questions", "No approved questions" +
+                            (scope.chapterRef?.let { " for ${it.book.fullName} ${it.chapter}" } ?: "")),
+                    )
+                }
+                call.advertiseCanonicalScope(scope)
+                val fileName = PdfFileNames.withSet(scope.set.simpleName, "flashcards${scope.chapterSuffix()}.pdf")
+                respondPdf(flashcardsTypst(pool.toFlashcards()), fileName, users, esvDerived = false)
+            }
+
+            // GET /generate/bible-text.pdf?set=acts&fontSize=11&twoColumns=false&justified=false&chapterBreaksPage=false
+            //     &useHeadingsForChapters=false&chapterEndLines=false&verseOnNewLine=false&underlineUniqueWords=false
+            //     &chapterHeadingSize=medium&sectionHeadingSize=small
+            // A formatted PDF of the covered text (verse numbers, headings, poetry, footnotes) with categorized
+            // name/number highlighting (highlight=true by default) and optional underlining of hapax words
+            // (underlineUniqueWords) — words that appear exactly once in the study set. The footer stamps the
+            // season's event dates (e.g. "April 2–4, 2027") rather than the generation date.
+            get("/generate/bible-text.pdf") {
+                val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return@get
+                val svc = study?.forSet(scope.set)
+                if (svc == null || !svc.isConfigured) {
+                    return@get call.respond(
+                        HttpStatusCode.ServiceUnavailable,
+                        ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+                    )
+                }
+                val qp = call.request.queryParameters
+                val season = seasons.current()
+                // Unrecognized slugs fall back to the defaults rather than 400 — a stale link should still
+                // render a sensible PDF, and the name it resolves to is what gets cached.
+                val chapterHeading = HeadingSize.bySlug(qp["chapterHeadingSize"]) ?: HeadingSize.DEFAULT_CHAPTER
+                val sectionHeading = HeadingSize.bySlug(qp["sectionHeadingSize"]) ?: HeadingSize.DEFAULT_SECTION
+                val options = TextOptions(
+                    dateLine = "${season.eventDateRange}, ${season.eventYear}",
+                    fontSize = qp["fontSize"]?.toIntOrNull()?.coerceIn(6, 24) ?: 11,
+                    twoColumns = qp["twoColumns"]?.toBooleanStrictOrNull() ?: false,
+                    justified = qp["justified"]?.toBooleanStrictOrNull() ?: false,
+                    chapterBreaksPage = qp["chapterBreaksPage"]?.toBooleanStrictOrNull() ?: false,
+                    useHeadingsForChapters = qp["useHeadingsForChapters"]?.toBooleanStrictOrNull() ?: false,
+                    chapterEndLines = qp["chapterEndLines"]?.toBooleanStrictOrNull() ?: false,
+                    verseOnNewLine = qp["verseOnNewLine"]?.toBooleanStrictOrNull() ?: false,
+                    underlineUniqueWords = qp["underlineUniqueWords"]?.toBooleanStrictOrNull() ?: false,
+                    chapterHeadingScale = chapterHeading.scale,
+                    sectionHeadingScale = sectionHeading.scale,
                 )
-                respondCachedPdf(svc, pdfCache, fileName, LayoutRevisions.FLASHCARDS) {
-                    // ChapterRef comparison is book-aware (absoluteChapter), so cumulative scoping is
-                    // correct for multi-book sets too.
-                    val headings = svc.studyData().headings
-                        .filter { throughRef == null || it.chapterRange.start <= throughRef }
-                    val cards = headings.map { h ->
+                // Categorized name/number highlighting is the point of the download, so it's on by default.
+                val highlight = qp["highlight"]?.toBooleanStrictOrNull() ?: true
+                try {
+                    // Named from the coerced options, so out-of-range requests share the row they resolve to.
+                    val fileName = PdfFileNames.withSet(scope.set.simpleName, PdfFileNames.bibleText(
+                        highlight = highlight,
+                        twoColumns = options.twoColumns,
+                        justified = options.justified,
+                        chapterBreaksPage = options.chapterBreaksPage,
+                        useHeadingsForChapters = options.useHeadingsForChapters,
+                        chapterEndLines = options.chapterEndLines,
+                        verseOnNewLine = options.verseOnNewLine,
+                        underlineUniqueWords = options.underlineUniqueWords,
+                        fontSize = options.fontSize,
+                        chapterHeading = chapterHeading,
+                        sectionHeading = sectionHeading,
+                    ))
+                    call.advertiseCanonicalScope(scope)
+                    // The footer date comes from the season params, which the content stamp doesn't cover —
+                    // salt the stamp with it so editing the event dates refreshes cached study texts, and
+                    // fold in the layout revision so a rendering change retires PDFs cached before it.
+                    val salt = 31 * options.dateLine.hashCode() + LayoutRevisions.BIBLE_TEXT
+                    respondCachedPdf(users, svc, pdfCache, fileName, stampSalt = salt) {
+                        if (highlight) {
+                            highlightedBibleTextTypst(svc.studyData(), svc.categoryResolution(), options)
+                        } else {
+                            bibleTextTypst(svc.studyData(), options)
+                        }
+                    }
+                } catch (e: EsvUpstreamException) {
+                    call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+                }
+            }
+
+            // GET /generate/numbers-index.pdf?set=acts — the set's numbers index (alphabetical + by frequency)
+            get("/generate/numbers-index.pdf") {
+                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.numbersIndex(), LayoutRevisions.INDEX) { s ->
+                    numbersIndexTypst(s.studyData())
+                }
+            }
+
+            // GET /generate/names-index.pdf?set=acts — the set's names index (alphabetical + by frequency)
+            get("/generate/names-index.pdf") {
+                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.namesIndex(), LayoutRevisions.INDEX) { s ->
+                    indexTypst(s.studyData(), namesIndex(s.studyData(), s.categoryResolution()), "Name")
+                }
+            }
+
+            // GET /generate/men-index.pdf?set=acts — the men named in the set (alphabetical + by frequency)
+            get("/generate/men-index.pdf") {
+                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.menIndex(), LayoutRevisions.INDEX) { s ->
+                    val sd = s.studyData()
+                    indexTypst(
+                        sd, wordListIndex(sd, s.categoryResolution(), WordList.MEN),
+                        "Man", plural = "Men", title = "${sd.studySet.name} Men Index",
+                    )
+                }
+            }
+
+            // GET /generate/women-index.pdf?set=acts
+            get("/generate/women-index.pdf") {
+                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.womenIndex(), LayoutRevisions.INDEX) { s ->
+                    val sd = s.studyData()
+                    indexTypst(
+                        sd, wordListIndex(sd, s.categoryResolution(), WordList.WOMEN),
+                        "Woman", plural = "Women", title = "${sd.studySet.name} Women Index",
+                    )
+                }
+            }
+
+            // GET /generate/places-index.pdf?set=acts
+            get("/generate/places-index.pdf") {
+                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.placesIndex(), LayoutRevisions.INDEX) { s ->
+                    val sd = s.studyData()
+                    indexTypst(
+                        sd, wordListIndex(sd, s.categoryResolution(), WordList.PLACES),
+                        "Place", title = "${sd.studySet.name} Places Index",
+                    )
+                }
+            }
+
+            // GET /generate/full-index.pdf?set=acts — a complete word concordance for the set
+            get("/generate/full-index.pdf") {
+                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.fullIndex(), LayoutRevisions.INDEX) { s ->
+                    val sd = s.studyData()
+                    indexTypst(sd, fullIndex(sd), "Word", title = "${sd.studySet.name} Complete Word Index")
+                }
+            }
+
+            // GET /generate/unique-words-index.pdf?set=acts — the hapax index (alphabetical + by appearance)
+            get("/generate/unique-words-index.pdf") {
+                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.uniqueWordsIndex(), LayoutRevisions.INDEX) { s ->
+                    oneTimeWordsIndexTypst(s.studyData())
+                }
+            }
+
+            // GET /generate/unique-word-flashcards.pdf?set=acts — one card per one-time word: the word up
+            // front, its verse (with the verse text as context, the word underlined) on the back. Cards run
+            // in the word's order of appearance.
+            get("/generate/unique-word-flashcards.pdf") {
+                respondIndexPdf(
+                    users, study, seasons, pdfCache, PdfFileNames.uniqueWordFlashcards(), LayoutRevisions.FLASHCARDS,
+                ) { s ->
+                    val sd = s.studyData()
+                    val ranges = oneTimeWords(sd).sortedBy { it.first }
+                    val whitespace = Regex("\\s+")
+                    val cards = ranges.mapIndexedNotNull { i, range ->
+                        val verse = sd.verseEnclosing(range) ?: return@mapIndexedNotNull null
+                        // Locate the word in its verse by raw char offsets (not text search, which could
+                        // hit a substring of another word), then emphasize it in a markdown note.
+                        val note = sd.verseIndex[verse]?.let { verseRange ->
+                            val raw = sd.excerpt(verseRange).excerptText
+                            val start = range.first - verseRange.first
+                            val end = start + (range.last - range.first + 1)
+                            val pre = raw.substring(0, start).replace(whitespace, " ").trimStart()
+                            val word = raw.substring(start, end)
+                            val post = raw.substring(end).replace(whitespace, " ").trimEnd()
+                            CardText.Markdown(
+                                markdownEscape(pre) + "**<u>" + markdownEscape(word) + "</u>**" + markdownEscape(post)
+                            )
+                        } ?: CardText.Plain("")
                         Flashcard(
-                            front = h.title,
-                            back = chapterLabel(scope.set, h.chapterRange.start),
-                            note = h.verseRange.format(NO_BOOK_FORMAT),
-                            footer = "${h.index} of ${h.maxIndex}",
+                            front = CardText.Plain(sd.excerpt(range).excerptText),
+                            back = CardText.Plain(sd.verseRefFormat(verse)),
+                            note = note,
+                            footer = "${i + 1} of ${ranges.size}",
                         )
                     }
                     flashcardsTypst(cards)
                 }
-            } catch (e: EsvUpstreamException) {
-                call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
             }
-        }
 
-        // GET /generate/chapter-headings.pdf?set=acts — every ESV section heading in the set on one
-        // page, in scripture order with the verses it covers. Whole-set only (no chapter scoping):
-        // it's a wall-chart/reference sheet, and the fit search needs the full list to size itself.
-        get("/generate/chapter-headings.pdf") {
-            respondIndexPdf(
-                study, seasons, pdfCache, PdfFileNames.chapterHeadings(), LayoutRevisions.CHAPTER_HEADINGS,
-            ) { s ->
-                val sd = s.studyData()
-                // A heading never spans books, so grouping keeps scripture order and lets each row's
-                // reference stay book-less — the band above it names the book. Single-book sets get no
-                // bands at all (the sheet title already says the book).
-                val multiBook = !sd.studySet.isSingleBook
-                val books = sd.headings.groupBy { it.verseRange.start.book }.map { (book, headings) ->
-                    ChapterHeadingBook(
-                        book = book.fullName.takeIf { multiBook },
-                        // Grouped by the chapter each heading *starts* in, so one that runs on into the
-                        // next chapter shades with the chapter it belongs to. `headings` is already in
-                        // scripture order and groupBy keeps encounter order, so the chapters stay in order.
-                        chapters = headings.groupBy { it.verseRange.start.chapter }.map { (chapter, hs) ->
-                            ChapterHeadingChapter(
-                                chapter,
-                                hs.map { ChapterHeadingRow(it.title, it.verseRange.format(NO_BOOK_FORMAT)) },
-                            )
-                        },
+            // GET /generate/questions.csv?source=questions|headings&round=FACT_FINDER&chapter=2
+            // Comma-separated term/definition pairs, import-ready for Quizlet/Space/Anki. `source=questions`
+            // (default) exports the approved bank (prompt -> answer); `source=headings` exports the R5
+            // headings (title -> chapter), with `chapter` meaning "through chapter" as usual for headings.
+            get("/generate/questions.csv") {
+                respondExport(questions, seasons, study, format = ExportFormat.CSV)
+            }
+
+            // GET /generate/questions.xlsx?source=questions|headings&round=FACT_FINDER&chapter=2
+            // A Kahoot-import spreadsheet (their template layout). Only multiple-choice material can go
+            // to Kahoot, so `source=questions` keeps just questions whose choices contain the answer;
+            // `source=headings` builds which-chapter questions with in-scope distractor chapters.
+            get("/generate/questions.xlsx") {
+                respondExport(questions, seasons, study, format = ExportFormat.KAHOOT_XLSX)
+            }
+
+            // GET /generate/heading-flashcards.pdf?set=acts&book=ACT&throughChapter=5 — Round 5 deck,
+            // cumulatively scoped (headings whose chapter starts at or before the through-chapter).
+            get("/generate/heading-flashcards.pdf") {
+                val scope = call.resolveEsvScopeOrRespond(
+                    seasons.currentStudySet(), chapterKey = StudyScopeParams.THROUGH_CHAPTER,
+                ) ?: return@get
+                val svc = study?.forSet(scope.set)
+                if (svc == null || !svc.isConfigured) {
+                    return@get call.respond(
+                        HttpStatusCode.ServiceUnavailable,
+                        ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
                     )
                 }
-                chapterHeadingsTypst(sd.studySet.name, books)
+                val throughRef = scope.chapterRef
+
+                try {
+                    call.advertiseCanonicalScope(scope, chapterKey = StudyScopeParams.THROUGH_CHAPTER)
+                    val fileName = PdfFileNames.withSet(
+                        scope.set.simpleName, "heading-flashcards${scope.chapterSuffix(cumulative = true)}.pdf",
+                    )
+                    respondCachedPdf(users, svc, pdfCache, fileName, LayoutRevisions.FLASHCARDS) {
+                        // ChapterRef comparison is book-aware (absoluteChapter), so cumulative scoping is
+                        // correct for multi-book sets too.
+                        val headings = svc.studyData().headings
+                            .filter { throughRef == null || it.chapterRange.start <= throughRef }
+                        val cards = headings.map { h ->
+                            Flashcard(
+                                front = h.title,
+                                back = chapterLabel(scope.set, h.chapterRange.start),
+                                note = h.verseRange.format(NO_BOOK_FORMAT),
+                                footer = "${h.index} of ${h.maxIndex}",
+                            )
+                        }
+                        flashcardsTypst(cards)
+                    }
+                } catch (e: EsvUpstreamException) {
+                    call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+                }
             }
-        }
 
-        // GET /generate/study-guide.pdf?set=acts — the multiple-choice study guide (student copy, key at the end).
-        get("/generate/study-guide.pdf") { respondStudyGuidePdf(study, pdfCache, seasons, markAnswers = false) }
+            // GET /generate/chapter-headings.pdf?set=acts — every ESV section heading in the set on one
+            // page, in scripture order with the verses it covers. Whole-set only (no chapter scoping):
+            // it's a wall-chart/reference sheet, and the fit search needs the full list to size itself.
+            get("/generate/chapter-headings.pdf") {
+                respondIndexPdf(
+                    users, study, seasons, pdfCache, PdfFileNames.chapterHeadings(), LayoutRevisions.CHAPTER_HEADINGS,
+                ) { s ->
+                    val sd = s.studyData()
+                    // A heading never spans books, so grouping keeps scripture order and lets each row's
+                    // reference stay book-less — the band above it names the book. Single-book sets get no
+                    // bands at all (the sheet title already says the book).
+                    val multiBook = !sd.studySet.isSingleBook
+                    val books = sd.headings.groupBy { it.verseRange.start.book }.map { (book, headings) ->
+                        ChapterHeadingBook(
+                            book = book.fullName.takeIf { multiBook },
+                            // Grouped by the chapter each heading *starts* in, so one that runs on into the
+                            // next chapter shades with the chapter it belongs to. `headings` is already in
+                            // scripture order and groupBy keeps encounter order, so the chapters stay in order.
+                            chapters = headings.groupBy { it.verseRange.start.chapter }.map { (chapter, hs) ->
+                                ChapterHeadingChapter(
+                                    chapter,
+                                    hs.map { ChapterHeadingRow(it.title, it.verseRange.format(NO_BOOK_FORMAT)) },
+                                )
+                            },
+                        )
+                    }
+                    chapterHeadingsTypst(sd.studySet.name, books)
+                }
+            }
 
-        // GET /generate/study-guide-answers.pdf?set=acts — the answer copy: correct choices starred inline, no key.
-        get("/generate/study-guide-answers.pdf") { respondStudyGuidePdf(study, pdfCache, seasons, markAnswers = true) }
+            // GET /generate/study-guide.pdf?set=acts — the multiple-choice study guide (student copy, key at the end).
+            get("/generate/study-guide.pdf") { respondStudyGuidePdf(study, pdfCache, seasons, markAnswers = false) }
 
-        // GET /generate/study-guide.csv?set=acts — the raw curated source, for other creators (Data & Source Files)
-        get("/generate/study-guide.csv") {
-            val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return@get
-            val svc = study?.forSet(scope.set) ?: return@get call.respond(
-                HttpStatusCode.ServiceUnavailable,
-                ApiError("esv_unconfigured", "Study set is not configured"),
-            )
-            val tsv = StudyGuideParser.rawTsvOrNull(svc.studySet) ?: return@get call.respond(
-                HttpStatusCode.NotFound,
-                ApiError("no_study_guide", "This study set has no study guide"),
-            )
-            respondAttachment(
-                tsvToCsv(tsv), PdfFileNames.withSet(scope.set.simpleName, "study-guide.csv"), CSV_CONTENT_TYPE,
-            )
+            // GET /generate/study-guide-answers.pdf?set=acts — the answer copy: correct choices starred inline, no key.
+            get("/generate/study-guide-answers.pdf") { respondStudyGuidePdf(study, pdfCache, seasons, markAnswers = true) }
+
+            // GET /generate/study-guide.csv?set=acts — the raw curated source, for other creators (Data & Source Files)
+            get("/generate/study-guide.csv") {
+                val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return@get
+                val svc = study?.forSet(scope.set) ?: return@get call.respond(
+                    HttpStatusCode.ServiceUnavailable,
+                    ApiError("esv_unconfigured", "Study set is not configured"),
+                )
+                val tsv = StudyGuideParser.rawTsvOrNull(svc.studySet) ?: return@get call.respond(
+                    HttpStatusCode.NotFound,
+                    ApiError("no_study_guide", "This study set has no study guide"),
+                )
+                respondAttachment(
+                    tsvToCsv(tsv), PdfFileNames.withSet(scope.set.simpleName, "study-guide.csv"), CSV_CONTENT_TYPE,
+                )
+            }
         }
     }
 
@@ -507,6 +552,7 @@ private fun chapterLabel(set: StudySet, ref: ChapterRef): String =
  * through that chapter; [seed] makes selection reproducible.
  */
 private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTest(
+    users: UserRepository,
     round: Round,
     scope: StudyScope,
     seed: Int?,
@@ -540,7 +586,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
     }
     call.advertiseCanonicalScope(scope)
     val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix(cumulative = true)}.pdf"
-    respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName))
+    respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName), users, esvDerived = true)
 }
 
 
@@ -662,8 +708,25 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondAttachment(
     call.respondBytes(bytes, contentType)
 }
 
-/** Compiles [typstSource] off the event loop and responds with PDF bytes as a named attachment. */
-private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(typstSource: String, fileName: String) {
+/**
+ * Compiles [typstSource] off the event loop and responds with PDF bytes as a named attachment — or,
+ * for `?format=typ`, hands back [typstSource] itself. These are the uncached endpoints (a practice test
+ * is freshly sampled per request), so the source isn't cached either: same treatment as the PDF it
+ * would have produced.
+ *
+ * [esvDerived] says whether [typstSource] embeds ESV text — true for the text-generated practice
+ * rounds, false for the question-bank documents. See [allowEsvTypstSource].
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(
+    typstSource: String,
+    fileName: String,
+    users: UserRepository,
+    esvDerived: Boolean,
+) {
+    if (call.wantsTypstSource()) {
+        if (esvDerived && !allowEsvTypstSource(users)) return
+        return respondAttachment(typstSource.encodeToByteArray(), fileName.asTypstFileName(), TYPST_CONTENT_TYPE)
+    }
     try {
         val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(typstSource) }
         respondAttachment(pdf, fileName, ContentType.Application.Pdf)
@@ -682,6 +745,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(typstSource
  * and a new endpoint can't be added without deciding which one it belongs to.
  */
 private suspend fun io.ktor.server.routing.RoutingContext.respondIndexPdf(
+    users: UserRepository,
     study: StudyDataRegistry?,
     seasons: SeasonRepository,
     pdfCache: PdfCache?,
@@ -700,7 +764,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondIndexPdf(
     try {
         call.advertiseCanonicalScope(scope)
         val fileName = PdfFileNames.withSet(scope.set.simpleName, baseFileName)
-        respondCachedPdf(svc, pdfCache, fileName, layoutRevision) { typstSource(svc) }
+        respondCachedPdf(users, svc, pdfCache, fileName, layoutRevision) { typstSource(svc) }
     } catch (e: EsvUpstreamException) {
         call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
     }
@@ -736,6 +800,20 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondStudyGuidePdf(
     // or a change to how the guide is drawn never serves a stale PDF.
     val stamp = 31 * guide.hashCode() + year + (logo?.contentHashCode() ?: 0) +
         (if (markAnswers) 1 else 0) + LayoutRevisions.STUDY_GUIDE
+    // `?format=typ` serves the markup instead, cached under the `.typ` sibling and the same stamp. No ESV
+    // gate: the guide is our own curated TSV. The source does `#image("tbb-logo.png")`, so compiling it
+    // outside the server needs that file dropped in beside it — everything else is self-contained.
+    if (call.wantsTypstSource()) {
+        val typFileName = fileName.asTypstFileName()
+        val cachedSource =
+            pdfCache?.let { c -> withContext(Dispatchers.IO) { c.get(svc.studySet.simpleName, typFileName, stamp) } }
+        if (cachedSource != null) return respondAttachment(cachedSource, typFileName, TYPST_CONTENT_TYPE)
+        val bytes = studyGuideTypst(
+            guide, svc.studySet, year, logoFile = logo?.let { STUDY_GUIDE_LOGO_FILE }, markAnswers = markAnswers,
+        ).encodeToByteArray()
+        pdfCache?.let { c -> withContext(Dispatchers.IO) { c.put(svc.studySet.simpleName, typFileName, stamp, bytes) } }
+        return respondAttachment(bytes, typFileName, TYPST_CONTENT_TYPE)
+    }
     val cached = pdfCache?.let { c -> withContext(Dispatchers.IO) { c.get(svc.studySet.simpleName, fileName, stamp) } }
     if (cached != null) return respondAttachment(cached, fileName, ContentType.Application.Pdf)
     try {
@@ -761,8 +839,14 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondStudyGuidePdf(
  * [stampSalt] folds in everything the content stamp can't see: always the generator's [LayoutRevisions]
  * entry, plus any request input that shapes the document (e.g. the season's event-date footer). It has
  * no default — forgetting it is exactly how a PDF goes stale without a trace.
+ *
+ * `?format=typ` serves the markup instead, cached under the `.typ` sibling filename and the very same
+ * stamp — so the source invalidates on exactly the same events as the PDF, and a [LayoutRevisions] bump
+ * retires both. Everything reaching this helper is built from a [StudyDataService], i.e. from the ESV
+ * text, so the source is always SEASON_MANAGE-gated here.
  */
 private suspend fun io.ktor.server.routing.RoutingContext.respondCachedPdf(
+    users: UserRepository,
     study: StudyDataService,
     pdfCache: PdfCache?,
     fileName: String,
@@ -771,6 +855,16 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondCachedPdf(
 ) {
     val studySet = study.studySet.simpleName
     val stamp = study.contentStamp() + stampSalt
+    if (call.wantsTypstSource()) {
+        if (!allowEsvTypstSource(users)) return
+        val typFileName = fileName.asTypstFileName()
+        val cachedSource =
+            pdfCache?.let { cache -> withContext(Dispatchers.IO) { cache.get(studySet, typFileName, stamp) } }
+        if (cachedSource != null) return respondAttachment(cachedSource, typFileName, TYPST_CONTENT_TYPE)
+        val bytes = typstSource().encodeToByteArray()
+        pdfCache?.let { cache -> withContext(Dispatchers.IO) { cache.put(studySet, typFileName, stamp, bytes) } }
+        return respondAttachment(bytes, typFileName, TYPST_CONTENT_TYPE)
+    }
     val cached = pdfCache?.let { cache -> withContext(Dispatchers.IO) { cache.get(studySet, fileName, stamp) } }
     if (cached != null) return respondAttachment(cached, fileName, ContentType.Application.Pdf)
     val source = typstSource()
