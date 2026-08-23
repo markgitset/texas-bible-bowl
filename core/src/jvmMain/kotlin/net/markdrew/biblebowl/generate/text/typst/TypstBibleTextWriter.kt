@@ -111,20 +111,24 @@ private class TypstHandler(
               columns: $columns,
               header: context {
                 let page-num = counter(page).get().first()
-                let page-verses = query(<verse-marker>).filter(v => v.location().page() == page-num)
-                let val = if page-verses.len() > 0 {
-                  if calc.even(page-num) {
-                    page-verses.first().value
-                  } else {
-                    page-verses.last().value
-                  }
+                // Dictionary-style running head: the page's first verse on even (left) pages, its last
+                // verse on odd (right) ones.
+                //
+                // "On the page" is not "has its number printed on the page". A verse that starts on the
+                // previous page runs over onto this one (Acts 9:19 spills past the "Saul Proclaims Jesus
+                // in Synagogues" heading), and that spill is the page's first verse even though the
+                // first number printed on it belongs to the next verse. So verse ends are tagged as well
+                // as verse starts, and each side asks the marker that can see past the page boundary:
+                // the first verse on a page is the first one *ending* on it or later, and the last is
+                // the last one *starting* on it or earlier. Either query can come up empty (a page with
+                // no verse text at all), hence the length checks. `<verse-end>` labels a box wrapping the
+                // metadata (see verseEnd), so its reference is one level down, in `.body.value`.
+                let val = if calc.even(page-num) {
+                  let ends = query(<verse-end>).filter(v => v.location().page() >= page-num)
+                  if ends.len() > 0 { ends.first().body.value } else { "" }
                 } else {
-                  let before-verses = query(<verse-marker>).filter(v => v.location().page() < page-num)
-                  if before-verses.len() > 0 {
-                    before-verses.last().value
-                  } else {
-                    ""
-                  }
+                  let starts = query(<verse-marker>).filter(v => v.location().page() <= page-num)
+                  if starts.len() > 0 { starts.last().value } else { "" }
                 }
                 if val != "" {
                   if calc.even(page-num) {
@@ -175,11 +179,14 @@ private class TypstHandler(
 
         out.appendLine("""
             #let myhl(color, body) = highlight(fill: color, body)
-            #let versenum(n) = box(
+            // The verse number carries the running head's start marker, *inside* its own box: a marker
+            // set beside the number is a separate inline item, and Typst may break the line — and so
+            // the page — between the two, which reports the verse as starting a page before it does.
+            #let versenum(n, ref) = box(
                 fill: rgb("404040"),
                 inset: (x: 3pt, y: 1pt),
                 radius: 1pt,
-                text(fill: white, weight: "bold", font: "$verseNumFont")[#n],
+                text(fill: white, weight: "bold", font: "$verseNumFont")[#n] + [#metadata(ref)<verse-marker>],
             )
             #let chapter-heading(label) = heading(
                 level: 1, outlined: false,
@@ -205,8 +212,8 @@ private class TypstHandler(
             // Poetry verse number: hangs into the whitespace to the left of the *first* indent
             // (`pstep`), regardless of this line's indent `level`, with zero net advance — so the
             // contents stay at `pstep * level` and the number sits near the margin at every level.
-            #let pverse(n, level) = context {
-                let label = versenum(n)
+            #let pverse(n, level, ref) = context {
+                let label = versenum(n, ref)
                 let w = measure(label).width
                 let gap = 0.3em
                 let back = calc.max(level - 1, 0) * pstep + w + gap
@@ -287,7 +294,6 @@ private class TypstHandler(
         inPoetry: Boolean,
     ) {
         val formattedRef = escape(verse.format(FULL_BOOK_FORMAT))
-        out.append("#metadata(\"$formattedRef\")<verse-marker>")
         // In poetry, the line break is produced by paragraphEnd; only prose needs the leading newline.
         if (!inPoetry) {
             // With verseOnNewLine, force a visual line break before every prose verse except the one
@@ -296,18 +302,29 @@ private class TypstHandler(
             out.appendLine()
         }
         firstVerseInParagraph = false
+        // Each branch carries the running head's `<verse-marker>` inside the box it draws, so the marker
+        // can never be broken onto a different line — or page — than the verse it opens.
         if (isFirstVerseOfChapter && !useHeadingsForChapters) {
             // Inline chapter label at the start of the chapter's first verse — mirrors DOCX's
             // useHeadingsForChapters=false path.
-            out.append("*${escape(chapterLabel(chapter, multiBook))}*")
+            out.append("#box[*${escape(chapterLabel(chapter, multiBook))}*#metadata(\"$formattedRef\")<verse-marker>]")
         } else {
             // In poetry the number hangs left of the first indent (near the margin) while the contents
             // stay at their indent; in prose it sits inline.
             out.append(
-                if (inPoetry) "#pverse(${verse.verse}, $currentPoetryIndentLevel)"
-                else "#versenum(${verse.verse})"
+                if (inPoetry) "#pverse(${verse.verse}, $currentPoetryIndentLevel, \"$formattedRef\")"
+                else "#versenum(${verse.verse}, \"$formattedRef\")"
             )
         }
+    }
+
+    override fun verseEnd(verse: VerseRef) {
+        // Tells the running head which page a verse's text *reaches*, rather than where its number was
+        // printed. Wrapped in a box because a bare tag at the end of a paragraph is flushed with the
+        // page break that follows it, which would report the last verse of a page as starting the next
+        // one; a zero-width box is ordinary inline content, so it stays glued to the verse's last
+        // character (and, having no width and no break opportunity before it, changes no layout).
+        out.append("#box(metadata(\"${escape(verse.format(FULL_BOOK_FORMAT))}\"))<verse-end>")
     }
 
     override fun verseSeparator(inPoetry: Boolean) {

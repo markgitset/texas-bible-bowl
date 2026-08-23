@@ -54,7 +54,11 @@ object BibleTextWalker {
                 handler.trailingFootnote(verseRef, value as String, continuing)
             }
 
-            // 2. Structural endings
+            // 2. Structural endings. The verse ends first: verse ranges are trimmed, so this transition
+            //    sits on the whitespace between the verse's last character and whatever follows, and
+            //    firing here (rather than after the paragraph/chapter break) keeps anything a handler
+            //    emits attached to that last character.
+            transition.ended(VERSE)?.apply { handler.verseEnd(value as VerseRef) }
             if (transition.isEnded(PARAGRAPH)) handler.paragraphEnd(transition.isPresent(POETRY))
             if (transition.isEnded(POETRY)) handler.poetryEnd()
             if (transition.isEnded(CHAPTER)) handler.chapterEnd(options.chapterBreaksPage)

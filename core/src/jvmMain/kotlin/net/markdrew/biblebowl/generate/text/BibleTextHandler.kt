@@ -42,7 +42,7 @@ sealed interface HighlightContext {
  *
  *  1. [uniqueWordEnd], [regexEnd], [smallCapsEnd]
  *  2. [trailingFootnote]
- *  3. [paragraphEnd], [poetryEnd], [chapterEnd]
+ *  3. [verseEnd], [paragraphEnd], [poetryEnd], [chapterEnd]
  *  4. (the walker skips the rest of the iteration if we're not inside a paragraph)
  *  5. [bookBegin], [chapterBegin], [headingBegin]
  *  6. [paragraphBegin], [verseBegin]
@@ -125,6 +125,17 @@ interface BibleTextHandler {
         useHeadingsForChapters: Boolean,
         inPoetry: Boolean,
     )
+
+    /**
+     * The current verse has just ended.
+     *
+     * Fires before [paragraphEnd]/[chapterEnd] and before the whitespace run that separates this verse
+     * from the next, so a handler that emits something here places it immediately after the verse's
+     * last character — which is what lets Typst tell which page a verse's text actually reaches.
+     *
+     * @param verse the verse being left
+     */
+    fun verseEnd(verse: VerseRef)
 
     /**
      * Emitted after [verseBegin] (and [leadingFootnote]) to separate the verse label from the

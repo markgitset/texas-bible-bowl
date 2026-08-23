@@ -98,8 +98,11 @@ val GENERATE_RATE_LIMIT = RateLimitName("generate")
  * cheapest way to know where we stood was to recompile the lot once rather than audit each one.
  */
 internal object LayoutRevisions {
-    /** `bibleTextTypst`. 1 = footnotes relative to body text; 2 = headings relative to body text. */
-    const val BIBLE_TEXT = 2
+    /**
+     * `bibleTextTypst`. 1 = footnotes relative to body text; 2 = headings relative to body text;
+     * 3 = running head counts a verse that spills onto a page, not just the numbers printed on it.
+     */
+    const val BIBLE_TEXT = 3
 
     /** `chapterHeadingsTypst`. 1 = grouped and shaded by chapter, tighter rows, larger candidate sizes. */
     const val CHAPTER_HEADINGS = 1
