@@ -159,6 +159,85 @@ class BibleTextTypstTest {
         assertTrue(typst.contains("size: 17pt, weight: \"bold\")[#label]"), "section heading at 1.7x")
     }
 
+    /**
+     * A fixture in the shape of Acts 9:19, where the ESV drops a heading into the *middle* of a verse:
+     * verse 2 opens before "The Second Day" and continues under it.
+     */
+    private fun genesisWithMidVerseHeading(): net.markdrew.biblebowl.model.StudyData {
+        val meta = PassageMeta(
+            canonical = "Genesis 1:1–3",
+            chapterStart = listOf(1001001, 1001003),
+            chapterEnd = listOf(1001001, 1001003),
+            prevVerse = null, nextVerse = null, prevChapter = null, nextChapter = null,
+        )
+        val passage = Passage(
+            canonical = "Genesis 1:1–3",
+            range = 1001001..1001003,
+            meta = meta,
+            text = """
+                _______________________________________________________
+                The Creation of the World
+
+                [1] In the beginning, God created the heavens and the earth. [2] The earth was without form.
+
+                _______________________________________________________
+                The Second Day
+
+                  And darkness was over the face of the deep. [3] And God said.
+            """.trimIndent(),
+        )
+        return EsvIndexer(StandardStudySet.GENESIS.set).indexBook(sequenceOf(passage))
+    }
+
+    @Test
+    fun runningHeadMarksWhereEachVerseStartsAndEnds() {
+        val typst = bibleTextTypst(genesisWithMidVerseHeading())
+
+        // The start marker rides *inside* the box the verse opens with — the verse number, or the
+        // inline chapter label that replaces it on a chapter's first verse. Beside that box, as a tag
+        // or a box of its own, Typst may break the line between the two, and then a verse that opens a
+        // page is reported on the page before it.
+        assertTrue(typst.contains("""#versenum(2, "Genesis 1:2")"""), "verse number carries the start marker")
+        assertTrue(
+            typst.contains("""#box[*Chapter 1*#metadata("Genesis 1:1")<verse-marker>]"""),
+            "the inline chapter label carries it for a chapter's first verse",
+        )
+
+        // The end marker is glued to the verse's last character, before the whitespace that follows.
+        // A bare tag there would be flushed onto the next page with the page break after it, so it is
+        // boxed: real inline content stays with the text it follows.
+        assertTrue(
+            typst.contains("""the earth.#box(metadata("Genesis 1:1"))<verse-end>"""),
+            "verse 1 ends where its text ends",
+        )
+
+        // Verse 2 runs *under* the mid-verse heading, so it ends after the text below the heading —
+        // this is the case that made the running head name Acts 9:20 on a page opening with 9:19.
+        val headingAt = typst.indexOf("#section-heading[The Second Day]")
+        val verse2EndsAt = typst.indexOf("""#box(metadata("Genesis 1:2"))<verse-end>""")
+        assertTrue(headingAt in 0..<verse2EndsAt, "verse 2 ends below the heading that splits it")
+        assertTrue(
+            typst.contains("""face of the deep.#box(metadata("Genesis 1:2"))<verse-end>"""),
+            "verse 2 ends after the text it continues under the heading",
+        )
+    }
+
+    @Test
+    fun headerAsksWhichVersesReachThePageNotWhichNumbersArePrintedOnIt() {
+        val typst = bibleTextTypst(genesisWithMidVerseHeading())
+        // A verse spilling onto a page is that page's first verse even though its number was printed on
+        // the previous one, so the first verse on a page is the first one *ending* on it or later; the
+        // last is the last one *starting* on it or earlier.
+        assertTrue(
+            typst.contains("query(<verse-end>).filter(v => v.location().page() >= page-num)"),
+            "even (left) pages take the first verse ending on the page or later",
+        )
+        assertTrue(
+            typst.contains("query(<verse-marker>).filter(v => v.location().page() <= page-num)"),
+            "odd (right) pages take the last verse starting on the page or earlier",
+        )
+    }
+
     @Test
     fun verseOnNewLineBreaksBeforeLaterProseVerses() {
         assertTrue(!bibleTextTypst(genesis1()).contains("#linebreak()"), "no forced breaks by default")
