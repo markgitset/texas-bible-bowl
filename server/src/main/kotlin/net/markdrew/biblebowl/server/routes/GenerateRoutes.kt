@@ -102,15 +102,18 @@ private fun ApplicationCall.wantsTypstSource(): Boolean =
 private fun String.asTypstFileName(): String = removeSuffix(".pdf") + ".typ"
 
 /**
- * Gate for Typst source built from the ESV text. The compiled PDF is public, but its source is the
- * same words as machine-readable markup — a materially easier thing to redistribute or scrape than a
- * typeset PDF, and our ESV licence is a non-profit one that keeps the text server-side. So sources
- * that embed ESV text are SEASON_MANAGE-only (an authoring/debugging tool), while sources built purely
- * from our own material — the study guide, the crowd-sourced question bank — stay as public as their PDFs.
+ * Gate for the study text's Typst source, the one document whose markup reproduces the season's ESV
+ * text end to end. The compiled PDF is public, but its source is those same words machine-readable —
+ * a materially easier thing to redistribute or scrape than a typeset PDF — and our ESV licence is a
+ * non-profit one that keeps the text server-side, so that one is SEASON_MANAGE-only.
+ *
+ * Nothing else needs it: the indices are word lists and verse references, the flashcard decks and
+ * practice rounds are short excerpts, and the study guide and question bank are our own material. Their
+ * markup is as public as their PDFs.
  *
  * Responds 401/403 itself and returns false when the caller doesn't qualify.
  */
-private suspend fun io.ktor.server.routing.RoutingContext.allowEsvTypstSource(users: UserRepository): Boolean {
+private suspend fun io.ktor.server.routing.RoutingContext.allowStudyTextSource(users: UserRepository): Boolean {
     val user = currentUser(users) ?: return false
     return requirePermission(user, Permission.SEASON_MANAGE)
 }
@@ -176,8 +179,9 @@ fun Route.generateRoutes(
     // book-qualified chapter suffixes for multi-book sets (-num14).
     //
     // `authenticate(optional = true)` keeps every endpoint anonymous-friendly while still parsing a JWT
-    // when one is sent — which is all `?format=typ` needs to tell an admin from a passer-by. An absent
-    // or bad token is simply no principal here; only the Typst-source branch ever asks for one.
+    // when one is sent. Only one thing in here needs that — `?format=typ` on the study text, whose markup
+    // reproduces the running ESV text — but it wraps the whole group rather than splitting that endpoint
+    // out of it. An absent or bad token is simply no principal; nothing else ever asks for one.
     authenticate(optional = true) {
         rateLimit(GENERATE_RATE_LIMIT) {
             // GET /generate/practice-test.pdf?round=FACT_FINDER&set=acts&book=ACT&chapter=2&limit=40&seed=1234
@@ -197,7 +201,7 @@ fun Route.generateRoutes(
                 if (round.textGenerated) {
                     val scope = call.resolveEsvScopeOrRespond(seasonSet) ?: return@get
                     val seed = call.request.queryParameters["seed"]?.toIntOrNull()
-                    return@get respondTextPracticeTest(users, round, scope, seed, study?.forSet(scope.set))
+                    return@get respondTextPracticeTest(round, scope, seed, study?.forSet(scope.set))
                 }
 
                 val scope = call.resolveScopeOrRespond(seasonSet) ?: return@get
@@ -214,9 +218,7 @@ fun Route.generateRoutes(
                 call.advertiseCanonicalScope(scope)
                 val typstSource = practiceTestTypst(round, pool)
                 val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix()}.pdf"
-                respondPdf(
-                    typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName), users, esvDerived = false,
-                )
+                respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName))
             }
 
             // GET /generate/flashcards.pdf?set=acts&book=ACT&chapter=2&round=IDENTIFICATION (all optional)
@@ -248,7 +250,7 @@ fun Route.generateRoutes(
                 }
                 call.advertiseCanonicalScope(scope)
                 val fileName = PdfFileNames.withSet(scope.set.simpleName, "flashcards${scope.chapterSuffix()}.pdf")
-                respondPdf(flashcardsTypst(pool.toFlashcards()), fileName, users, esvDerived = false)
+                respondPdf(flashcardsTypst(pool.toFlashcards()), fileName)
             }
 
             // GET /generate/bible-text.pdf?set=acts&fontSize=11&twoColumns=false&justified=false&chapterBreaksPage=false
@@ -308,7 +310,7 @@ fun Route.generateRoutes(
                     // salt the stamp with it so editing the event dates refreshes cached study texts, and
                     // fold in the layout revision so a rendering change retires PDFs cached before it.
                     val salt = 31 * options.dateLine.hashCode() + LayoutRevisions.BIBLE_TEXT
-                    respondCachedPdf(users, svc, pdfCache, fileName, stampSalt = salt) {
+                    respondCachedPdf(svc, pdfCache, fileName, stampSalt = salt, gatedSourceUsers = users) {
                         if (highlight) {
                             highlightedBibleTextTypst(svc.studyData(), svc.categoryResolution(), options)
                         } else {
@@ -322,21 +324,21 @@ fun Route.generateRoutes(
 
             // GET /generate/numbers-index.pdf?set=acts — the set's numbers index (alphabetical + by frequency)
             get("/generate/numbers-index.pdf") {
-                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.numbersIndex(), LayoutRevisions.INDEX) { s ->
+                respondIndexPdf(study, seasons, pdfCache, PdfFileNames.numbersIndex(), LayoutRevisions.INDEX) { s ->
                     numbersIndexTypst(s.studyData())
                 }
             }
 
             // GET /generate/names-index.pdf?set=acts — the set's names index (alphabetical + by frequency)
             get("/generate/names-index.pdf") {
-                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.namesIndex(), LayoutRevisions.INDEX) { s ->
+                respondIndexPdf(study, seasons, pdfCache, PdfFileNames.namesIndex(), LayoutRevisions.INDEX) { s ->
                     indexTypst(s.studyData(), namesIndex(s.studyData(), s.categoryResolution()), "Name")
                 }
             }
 
             // GET /generate/men-index.pdf?set=acts — the men named in the set (alphabetical + by frequency)
             get("/generate/men-index.pdf") {
-                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.menIndex(), LayoutRevisions.INDEX) { s ->
+                respondIndexPdf(study, seasons, pdfCache, PdfFileNames.menIndex(), LayoutRevisions.INDEX) { s ->
                     val sd = s.studyData()
                     indexTypst(
                         sd, wordListIndex(sd, s.categoryResolution(), WordList.MEN),
@@ -347,7 +349,7 @@ fun Route.generateRoutes(
 
             // GET /generate/women-index.pdf?set=acts
             get("/generate/women-index.pdf") {
-                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.womenIndex(), LayoutRevisions.INDEX) { s ->
+                respondIndexPdf(study, seasons, pdfCache, PdfFileNames.womenIndex(), LayoutRevisions.INDEX) { s ->
                     val sd = s.studyData()
                     indexTypst(
                         sd, wordListIndex(sd, s.categoryResolution(), WordList.WOMEN),
@@ -358,7 +360,7 @@ fun Route.generateRoutes(
 
             // GET /generate/places-index.pdf?set=acts
             get("/generate/places-index.pdf") {
-                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.placesIndex(), LayoutRevisions.INDEX) { s ->
+                respondIndexPdf(study, seasons, pdfCache, PdfFileNames.placesIndex(), LayoutRevisions.INDEX) { s ->
                     val sd = s.studyData()
                     indexTypst(
                         sd, wordListIndex(sd, s.categoryResolution(), WordList.PLACES),
@@ -369,7 +371,7 @@ fun Route.generateRoutes(
 
             // GET /generate/full-index.pdf?set=acts — a complete word concordance for the set
             get("/generate/full-index.pdf") {
-                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.fullIndex(), LayoutRevisions.INDEX) { s ->
+                respondIndexPdf(study, seasons, pdfCache, PdfFileNames.fullIndex(), LayoutRevisions.INDEX) { s ->
                     val sd = s.studyData()
                     indexTypst(sd, fullIndex(sd), "Word", title = "${sd.studySet.name} Complete Word Index")
                 }
@@ -377,7 +379,7 @@ fun Route.generateRoutes(
 
             // GET /generate/unique-words-index.pdf?set=acts — the hapax index (alphabetical + by appearance)
             get("/generate/unique-words-index.pdf") {
-                respondIndexPdf(users, study, seasons, pdfCache, PdfFileNames.uniqueWordsIndex(), LayoutRevisions.INDEX) { s ->
+                respondIndexPdf(study, seasons, pdfCache, PdfFileNames.uniqueWordsIndex(), LayoutRevisions.INDEX) { s ->
                     oneTimeWordsIndexTypst(s.studyData())
                 }
             }
@@ -387,7 +389,7 @@ fun Route.generateRoutes(
             // in the word's order of appearance.
             get("/generate/unique-word-flashcards.pdf") {
                 respondIndexPdf(
-                    users, study, seasons, pdfCache, PdfFileNames.uniqueWordFlashcards(), LayoutRevisions.FLASHCARDS,
+                    study, seasons, pdfCache, PdfFileNames.uniqueWordFlashcards(), LayoutRevisions.FLASHCARDS,
                 ) { s ->
                     val sd = s.studyData()
                     val ranges = oneTimeWords(sd).sortedBy { it.first }
@@ -454,7 +456,7 @@ fun Route.generateRoutes(
                     val fileName = PdfFileNames.withSet(
                         scope.set.simpleName, "heading-flashcards${scope.chapterSuffix(cumulative = true)}.pdf",
                     )
-                    respondCachedPdf(users, svc, pdfCache, fileName, LayoutRevisions.FLASHCARDS) {
+                    respondCachedPdf(svc, pdfCache, fileName, LayoutRevisions.FLASHCARDS) {
                         // ChapterRef comparison is book-aware (absoluteChapter), so cumulative scoping is
                         // correct for multi-book sets too.
                         val headings = svc.studyData().headings
@@ -479,7 +481,7 @@ fun Route.generateRoutes(
             // it's a wall-chart/reference sheet, and the fit search needs the full list to size itself.
             get("/generate/chapter-headings.pdf") {
                 respondIndexPdf(
-                    users, study, seasons, pdfCache, PdfFileNames.chapterHeadings(), LayoutRevisions.CHAPTER_HEADINGS,
+                    study, seasons, pdfCache, PdfFileNames.chapterHeadings(), LayoutRevisions.CHAPTER_HEADINGS,
                 ) { s ->
                     val sd = s.studyData()
                     // A heading never spans books, so grouping keeps scripture order and lets each row's
@@ -552,7 +554,6 @@ private fun chapterLabel(set: StudySet, ref: ChapterRef): String =
  * through that chapter; [seed] makes selection reproducible.
  */
 private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTest(
-    users: UserRepository,
     round: Round,
     scope: StudyScope,
     seed: Int?,
@@ -586,7 +587,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
     }
     call.advertiseCanonicalScope(scope)
     val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix(cumulative = true)}.pdf"
-    respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName), users, esvDerived = true)
+    respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName))
 }
 
 
@@ -713,18 +714,9 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondAttachment(
  * for `?format=typ`, hands back [typstSource] itself. These are the uncached endpoints (a practice test
  * is freshly sampled per request), so the source isn't cached either: same treatment as the PDF it
  * would have produced.
- *
- * [esvDerived] says whether [typstSource] embeds ESV text — true for the text-generated practice
- * rounds, false for the question-bank documents. See [allowEsvTypstSource].
  */
-private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(
-    typstSource: String,
-    fileName: String,
-    users: UserRepository,
-    esvDerived: Boolean,
-) {
+private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(typstSource: String, fileName: String) {
     if (call.wantsTypstSource()) {
-        if (esvDerived && !allowEsvTypstSource(users)) return
         return respondAttachment(typstSource.encodeToByteArray(), fileName.asTypstFileName(), TYPST_CONTENT_TYPE)
     }
     try {
@@ -745,7 +737,6 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(
  * and a new endpoint can't be added without deciding which one it belongs to.
  */
 private suspend fun io.ktor.server.routing.RoutingContext.respondIndexPdf(
-    users: UserRepository,
     study: StudyDataRegistry?,
     seasons: SeasonRepository,
     pdfCache: PdfCache?,
@@ -764,7 +755,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondIndexPdf(
     try {
         call.advertiseCanonicalScope(scope)
         val fileName = PdfFileNames.withSet(scope.set.simpleName, baseFileName)
-        respondCachedPdf(users, svc, pdfCache, fileName, layoutRevision) { typstSource(svc) }
+        respondCachedPdf(svc, pdfCache, fileName, layoutRevision) { typstSource(svc) }
     } catch (e: EsvUpstreamException) {
         call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
     }
@@ -842,21 +833,24 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondStudyGuidePdf(
  *
  * `?format=typ` serves the markup instead, cached under the `.typ` sibling filename and the very same
  * stamp — so the source invalidates on exactly the same events as the PDF, and a [LayoutRevisions] bump
- * retires both. Everything reaching this helper is built from a [StudyDataService], i.e. from the ESV
- * text, so the source is always SEASON_MANAGE-gated here.
+ * retires both.
+ *
+ * [gatedSourceUsers] is non-null for the study text alone, whose markup reproduces the running ESV text
+ * and so is SEASON_MANAGE-only (see [allowStudyTextSource]); everything else here serves its source as
+ * publicly as its PDF.
  */
 private suspend fun io.ktor.server.routing.RoutingContext.respondCachedPdf(
-    users: UserRepository,
     study: StudyDataService,
     pdfCache: PdfCache?,
     fileName: String,
     stampSalt: Int,
+    gatedSourceUsers: UserRepository? = null,
     typstSource: suspend () -> String,
 ) {
     val studySet = study.studySet.simpleName
     val stamp = study.contentStamp() + stampSalt
     if (call.wantsTypstSource()) {
-        if (!allowEsvTypstSource(users)) return
+        if (gatedSourceUsers != null && !allowStudyTextSource(gatedSourceUsers)) return
         val typFileName = fileName.asTypstFileName()
         val cachedSource =
             pdfCache?.let { cache -> withContext(Dispatchers.IO) { cache.get(studySet, typFileName, stamp) } }

@@ -61,9 +61,9 @@ private val CHAPTER_TEXTS = mapOf(
 /**
  * `?format=typ` — the Typst markup behind a generated PDF, served instead of the compiled document.
  *
- * Two things matter and are pinned here: sources built from the ESV text are SEASON_MANAGE-only (the
- * PDF is public, but its source is the same words as machine-readable markup), and a source is cached
- * exactly like the PDF it compiles to — same stamp, `.typ` sibling filename, so both invalidate together.
+ * Two things matter and are pinned here: the study text's source is SEASON_MANAGE-only while every
+ * other generator's is as public as its PDF, and a source is cached exactly like the PDF it compiles
+ * to — same stamp, `.typ` sibling filename, so both invalidate together.
  */
 class TypstSourceDownloadTest {
 
@@ -121,7 +121,7 @@ class TypstSourceDownloadTest {
     }
 
     @Test
-    fun esvBackedSourceRequiresSeasonManage() = testApplication {
+    fun studyTextSourceRequiresSeasonManage() = testApplication {
         application {
             module(
                 users(), InMemoryQuestionRepository(),
@@ -133,22 +133,23 @@ class TypstSourceDownloadTest {
 
         // Anonymous → 401, contestant → 403. The PDF at the same URL stays public either way.
         assertEquals(
-            HttpStatusCode.Unauthorized, api.get("/generate/names-index.pdf?format=typ").status,
-            "anonymous must not get ESV-derived markup",
+            HttpStatusCode.Unauthorized, api.get("/generate/bible-text.pdf?highlight=false&format=typ").status,
+            "anonymous must not get the study text's markup",
         )
-        val forbidden = api.get("/generate/names-index.pdf?format=typ") {
+        val forbidden = api.get("/generate/bible-text.pdf?highlight=false&format=typ") {
             header(HttpHeaders.Authorization, "Bearer $kidToken")
         }
-        assertEquals(HttpStatusCode.Forbidden, forbidden.status, "a contestant must not get ESV-derived markup")
+        assertEquals(HttpStatusCode.Forbidden, forbidden.status, "a contestant must not get the study text's markup")
 
         // Admin → the markup itself, named as a .typ attachment.
-        val ok = api.get("/generate/names-index.pdf?format=typ") {
+        val ok = api.get("/generate/bible-text.pdf?highlight=false&format=typ") {
             header(HttpHeaders.Authorization, "Bearer $adminToken")
         }
         assertEquals(HttpStatusCode.OK, ok.status)
         assertEquals(ContentType.Text.Plain.withCharset(Charsets.UTF_8), ok.contentType())
         assertTrue(
-            "acts-names-index.typ" in ok.headers[HttpHeaders.ContentDisposition].orEmpty(),
+            "bible-text" in ok.headers[HttpHeaders.ContentDisposition].orEmpty() &&
+                ".typ" in ok.headers[HttpHeaders.ContentDisposition].orEmpty(),
             "should attach under the .typ sibling of the PDF's filename",
         )
         val body = ok.bodyAsText()
@@ -169,7 +170,7 @@ class TypstSourceDownloadTest {
                 JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
             )
         }
-        val res = createClient { }.get("/generate/names-index.pdf")
+        val res = createClient { }.get("/generate/bible-text.pdf?highlight=false")
         assertEquals(HttpStatusCode.OK, res.status)
         assertEquals("%PDF", res.bodyAsBytes().decodeToString(0, 4))
     }
@@ -189,12 +190,9 @@ class TypstSourceDownloadTest {
                 esv = null, study = StudyDataRegistry.fixed(service), pdfCache = cache,
             )
         }
-        val api = createClient { install(ContentNegotiation) { json(json) } }
-        val (_, adminToken) = tokens(api)
+        val api = createClient { }
 
-        val first = api.get("/generate/names-index.pdf?format=typ") {
-            header(HttpHeaders.Authorization, "Bearer $adminToken")
-        }
+        val first = api.get("/generate/names-index.pdf?format=typ")
         assertEquals(HttpStatusCode.OK, first.status)
         assertEquals(
             service.contentStamp() + LayoutRevisions.INDEX, cache.storedStamps["acts-names-index.typ"],
@@ -202,13 +200,40 @@ class TypstSourceDownloadTest {
         )
         assertEquals(1, cache.puts, "the first request should build and store the source")
 
-        val second = api.get("/generate/names-index.pdf?format=typ") {
-            header(HttpHeaders.Authorization, "Bearer $adminToken")
-        }
+        val second = api.get("/generate/names-index.pdf?format=typ")
         assertEquals(HttpStatusCode.OK, second.status)
         assertEquals(1, cache.puts, "the second request should not rebuild the source")
         assertEquals(1, cache.hits, "the second request should be served from the cache")
         assertContentEquals(first.bodyAsBytes(), second.bodyAsBytes())
+    }
+
+    /**
+     * Only the study text is gated. Everything else built from the study data — indices of words and
+     * verse references, flashcard decks and heading sheets of short excerpts — serves its markup as
+     * publicly as its PDF, with no token at all.
+     */
+    @Test
+    fun everyOtherGeneratorServesItsSourceAnonymously() = testApplication {
+        application {
+            module(
+                users(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
+            )
+        }
+        val api = createClient { }
+
+        listOf(
+            "names-index", "numbers-index", "men-index", "women-index", "places-index", "full-index",
+            "unique-words-index", "unique-word-flashcards", "heading-flashcards", "chapter-headings",
+        ).forEach { name ->
+            val res = api.get("/generate/$name.pdf?format=typ")
+            assertEquals(HttpStatusCode.OK, res.status, "$name markup should not require sign-in")
+            assertTrue(
+                "$name.typ" in res.headers[HttpHeaders.ContentDisposition].orEmpty(),
+                "$name should attach as a .typ, got ${res.headers[HttpHeaders.ContentDisposition]}",
+            )
+            assertTrue(res.bodyAsText().startsWith("#"), "$name should be Typst markup")
+        }
     }
 
     /**
@@ -228,12 +253,9 @@ class TypstSourceDownloadTest {
                 esv = null, study = StudyDataRegistry.fixed(studyService()), pdfCache = cache,
             )
         }
-        val api = createClient { install(ContentNegotiation) { json(json) } }
-        val (_, adminToken) = tokens(api)
+        val api = createClient { }
 
-        val source = api.get("/generate/numbers-index.pdf?format=typ") {
-            header(HttpHeaders.Authorization, "Bearer $adminToken")
-        }
+        val source = api.get("/generate/numbers-index.pdf?format=typ")
         val pdf = api.get("/generate/numbers-index.pdf")
         assertEquals(HttpStatusCode.OK, source.status)
         assertEquals(HttpStatusCode.OK, pdf.status)

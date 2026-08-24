@@ -48,8 +48,8 @@ private fun typstSourceUrl(href: String): String? {
 }
 
 /**
- * Whether to offer Typst source at all. The server's rule is finer — markup built from the ESV text is
- * SEASON_MANAGE-only, markup built from our own material is as public as its PDF — but the *link* is
+ * Whether to offer Typst source at all. The server only gates the study text (whose markup reproduces
+ * the running ESV text) and serves every other generator's source publicly — but the *link* is
  * admin-only across the board: it's an authoring tool nobody else asked for, and one uniform rule beats
  * a per-card one that mostly says "hidden". Anyone else who wants it can still add `format=typ` by hand.
  */
