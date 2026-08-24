@@ -24,13 +24,13 @@ import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
+import net.markdrew.biblebowl.generate.LayoutRevisions
 import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.StudySet
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.esv.EsvPassageService
 import net.markdrew.biblebowl.server.esv.InMemoryEsvCache
-import net.markdrew.biblebowl.server.routes.LayoutRevisions
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
 import net.markdrew.biblebowl.server.study.StudyDataRegistry
@@ -197,6 +197,11 @@ class TypstSourceDownloadTest {
         assertEquals(
             service.contentStamp() + LayoutRevisions.INDEX, cache.storedStamps["acts-names-index.typ"],
             "the source must be stamped exactly like the PDF it compiles to",
+        )
+        assertTrue(
+            "[r${LayoutRevisions.INDEX}]" in first.bodyAsText(),
+            "the served source must carry the corner layout-revision mark the compiler applies, " +
+                "so recompiling the download reproduces the served PDF",
         )
         assertEquals(1, cache.puts, "the first request should build and store the source")
 

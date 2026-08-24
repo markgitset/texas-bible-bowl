@@ -1,5 +1,6 @@
 package net.markdrew.biblebowl.server.typst
 
+import net.markdrew.biblebowl.generate.stampLayoutRevision
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -29,12 +30,23 @@ object TypstCompiler {
      * into the compile directory next to the source, so the markup can reference it by name (e.g.
      * `#image("tbb-logo.png")`) — `typst` sees a lone string otherwise, with no bundled files.
      *
+     * [layoutRevision] is the generator's [net.markdrew.biblebowl.generate.LayoutRevisions] entry,
+     * stamped in tiny gray type in the bottom-right corner of the document's last page so any copy
+     * names the layout that drew it. It is deliberately not defaulted: requiring it here — the one
+     * place every PDF passes through — is what keeps a new endpoint from shipping an undatable
+     * document.
+     *
      * @throws TypstException if typst is unavailable, times out, or reports errors
      */
-    fun compile(typstSource: String, timeoutSeconds: Long = 60, assets: Map<String, ByteArray> = emptyMap()): ByteArray {
+    fun compile(
+        typstSource: String,
+        layoutRevision: Int,
+        timeoutSeconds: Long = 60,
+        assets: Map<String, ByteArray> = emptyMap(),
+    ): ByteArray {
         if (!isAvailable) throw TypstException("typst binary not found on PATH")
         val dir: Path = Files.createTempDirectory("tbb-typst")
-        val typFile = dir.resolve("doc.typ").apply { writeText(typstSource) }
+        val typFile = dir.resolve("doc.typ").apply { writeText(stampLayoutRevision(typstSource, layoutRevision)) }
         val pdfFile = dir.resolve("doc.pdf")
         val assetFiles = assets.map { (name, bytes) -> dir.resolve(name).apply { writeBytes(bytes) } }
         try {

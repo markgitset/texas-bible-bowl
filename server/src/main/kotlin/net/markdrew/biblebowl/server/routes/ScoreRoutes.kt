@@ -16,6 +16,7 @@ import net.markdrew.biblebowl.api.divisionLabel
 import net.markdrew.biblebowl.generation.typst.AwardBracket
 import net.markdrew.biblebowl.generation.typst.AwardRow
 import net.markdrew.biblebowl.generation.typst.AwardSite
+import net.markdrew.biblebowl.generate.LayoutRevisions
 import net.markdrew.biblebowl.generation.typst.awardsTypst
 import net.markdrew.biblebowl.server.typst.TypstCompiler
 import net.markdrew.biblebowl.server.typst.TypstException
@@ -205,7 +206,7 @@ fun Route.scoreRoutes(
             }
             val title = "Texas Bible Bowl ${season.eventYear} — Awards"
             try {
-                val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(awardsTypst(title, sites)) }
+                val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(awardsTypst(title, sites), LayoutRevisions.AWARDS) }
                 call.response.header(
                     HttpHeaders.ContentDisposition,
                     ContentDisposition.Attachment

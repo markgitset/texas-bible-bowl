@@ -30,6 +30,8 @@ import net.markdrew.biblebowl.generate.practice.findTheVerseTypst
 import net.markdrew.biblebowl.generate.practice.quotesTypst
 import net.markdrew.biblebowl.analysis.WordList
 import net.markdrew.biblebowl.analysis.fullIndex
+import net.markdrew.biblebowl.generate.LayoutRevisions
+import net.markdrew.biblebowl.generate.stampLayoutRevision
 import net.markdrew.biblebowl.analysis.namesIndex
 import net.markdrew.biblebowl.analysis.oneTimeWords
 import net.markdrew.biblebowl.analysis.wordListIndex
@@ -81,9 +83,11 @@ import kotlin.random.nextInt
 val GENERATE_RATE_LIMIT = RateLimitName("generate")
 
 /**
- * `?format=typ` on any generated-PDF endpoint serves the Typst markup the generator produced
+ * `?format=typ` on any generated-PDF endpoint serves the Typst source behind the document
  * instead of the document Typst compiled from it — same route, same params, same cache stamp, so the
- * source you get is exactly the source behind the PDF those params would hand you.
+ * source you get is exactly the source behind the PDF those params would hand you: the generator's
+ * markup wrapped with the same corner layout-revision stamp the compiler applies, so recompiling the
+ * download reproduces the served PDF.
  *
  * It rides the existing `.pdf` routes rather than getting `.typ` siblings so that every generator gets
  * it for free from the three `respond*Pdf` helpers below: a new endpoint can't forget to offer it, and
@@ -116,49 +120,6 @@ private fun String.asTypstFileName(): String = removeSuffix(".pdf") + ".typ"
 private suspend fun io.ktor.server.routing.RoutingContext.allowStudyTextSource(users: UserRepository): Boolean {
     val user = currentUser(users) ?: return false
     return requirePermission(user, Permission.SEASON_MANAGE)
-}
-
-/**
- * Layout revisions for the cached PDFs, one per Typst generator, folded into the cache stamp of every
- * PDF that generator produces.
- *
- * A generated PDF is cached under [StudyDataService.contentStamp] — the study text plus the word-list
- * digest — which moves when the *material* changes but not when the *rendering* does. So a change to
- * how a document is drawn is invisible to the cache: every client keeps getting the PDF some earlier
- * build compiled, and no amount of redeploying dislodges it. That is not a hypothetical; it is how the
- * chapter-grouped headings sheet failed to reach staging.
- *
- * **Bump the entry for a generator whenever you change what it emits**, including changes in the route
- * that feed it (which cards, which columns, what text). A bump costs one recompile per study set; a
- * missed bump costs a silently stale document, and the symptom — a deploy that appears to do nothing —
- * is a genuinely confusing thing to debug. When in doubt, bump.
- *
- * Every entry moved when this object was introduced, deliberately: the stamp had not shifted since
- * 2026-07-26, so anything rendered differently after that date had been frozen in the cache, and the
- * cheapest way to know where we stood was to recompile the lot once rather than audit each one.
- */
-internal object LayoutRevisions {
-    /**
-     * `bibleTextTypst`. 1 = footnotes relative to body text; 2 = headings relative to body text;
-     * 3 = running head counts a verse that spills onto a page, not just the numbers printed on it.
-     */
-    const val BIBLE_TEXT = 3
-
-    /** `chapterHeadingsTypst`. 1 = grouped and shaded by chapter, tighter rows, larger candidate sizes. */
-    const val CHAPTER_HEADINGS = 1
-
-    /** `indexTypst` / `numbersIndexTypst` / `oneTimeWordsIndexTypst` — the printable word indices. */
-    const val INDEX = 1
-
-    /**
-     * `flashcardsTypst`, shared by the unique-word and chapter-heading decks. 1 = Markdown rich text
-     * with the unique word underlined, which only the unique-word deck was salted for at the time —
-     * the heading deck served the pre-Markdown rendering until 2 retired it.
-     */
-    const val FLASHCARDS = 2
-
-    /** `studyGuideTypst`, for both the student and answer copies. 1 = the embedded-font fix. */
-    const val STUDY_GUIDE = 1
 }
 
 fun Route.generateRoutes(
@@ -218,7 +179,7 @@ fun Route.generateRoutes(
                 call.advertiseCanonicalScope(scope)
                 val typstSource = practiceTestTypst(round, pool)
                 val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix()}.pdf"
-                respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName))
+                respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName), LayoutRevisions.PRACTICE_TEST)
             }
 
             // GET /generate/flashcards.pdf?set=acts&book=ACT&chapter=2&round=IDENTIFICATION (all optional)
@@ -250,7 +211,7 @@ fun Route.generateRoutes(
                 }
                 call.advertiseCanonicalScope(scope)
                 val fileName = PdfFileNames.withSet(scope.set.simpleName, "flashcards${scope.chapterSuffix()}.pdf")
-                respondPdf(flashcardsTypst(pool.toFlashcards()), fileName)
+                respondPdf(flashcardsTypst(pool.toFlashcards()), fileName, LayoutRevisions.FLASHCARDS)
             }
 
             // GET /generate/bible-text.pdf?set=acts&fontSize=11&twoColumns=false&justified=false&chapterBreaksPage=false
@@ -307,10 +268,13 @@ fun Route.generateRoutes(
                     ))
                     call.advertiseCanonicalScope(scope)
                     // The footer date comes from the season params, which the content stamp doesn't cover —
-                    // salt the stamp with it so editing the event dates refreshes cached study texts, and
-                    // fold in the layout revision so a rendering change retires PDFs cached before it.
-                    val salt = 31 * options.dateLine.hashCode() + LayoutRevisions.BIBLE_TEXT
-                    respondCachedPdf(svc, pdfCache, fileName, stampSalt = salt, gatedSourceUsers = users) {
+                    // salt the stamp with it so editing the event dates refreshes cached study texts.
+                    respondCachedPdf(
+                        svc, pdfCache, fileName,
+                        layoutRevision = LayoutRevisions.BIBLE_TEXT,
+                        extraStampSalt = options.dateLine.hashCode(),
+                        gatedSourceUsers = users,
+                    ) {
                         if (highlight) {
                             highlightedBibleTextTypst(svc.studyData(), svc.categoryResolution(), options)
                         } else {
@@ -573,11 +537,11 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
 
     val content = studyData.practice(scope.chapterRef)
     val practiceTest = PracticeTest(round, content, randomSeed = seed ?: Random.nextInt(1..9_999))
-    val typstSource: String? = when (round) {
-        Round.FIND_THE_VERSE -> findTheVerseTypst(practiceTest)
-        Round.QUOTES -> quotesTypst(practiceTest)
-        Round.EVENTS -> eventsTypst(practiceTest)
-        else -> null // unreachable: guarded by round.textGenerated at the call site
+    val (typstSource, layoutRevision) = when (round) {
+        Round.FIND_THE_VERSE -> findTheVerseTypst(practiceTest) to LayoutRevisions.FIND_THE_VERSE
+        Round.QUOTES -> quotesTypst(practiceTest) to LayoutRevisions.QUOTES
+        Round.EVENTS -> eventsTypst(practiceTest) to LayoutRevisions.EVENTS
+        else -> null to 0 // unreachable: guarded by round.textGenerated at the call site
     }
     if (typstSource == null) {
         return call.respond(
@@ -587,7 +551,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
     }
     call.advertiseCanonicalScope(scope)
     val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix(cumulative = true)}.pdf"
-    respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName))
+    respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName), layoutRevision)
 }
 
 
@@ -711,16 +675,21 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondAttachment(
 
 /**
  * Compiles [typstSource] off the event loop and responds with PDF bytes as a named attachment — or,
- * for `?format=typ`, hands back [typstSource] itself. These are the uncached endpoints (a practice test
- * is freshly sampled per request), so the source isn't cached either: same treatment as the PDF it
- * would have produced.
+ * for `?format=typ`, hands back the source exactly as the compiler would consume it (wrapped with the
+ * [layoutRevision] corner stamp). These are the uncached endpoints (a practice test is freshly sampled
+ * per request), so the source isn't cached either: same treatment as the PDF it would have produced.
  */
-private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(typstSource: String, fileName: String) {
+private suspend fun io.ktor.server.routing.RoutingContext.respondPdf(
+    typstSource: String,
+    fileName: String,
+    layoutRevision: Int,
+) {
     if (call.wantsTypstSource()) {
-        return respondAttachment(typstSource.encodeToByteArray(), fileName.asTypstFileName(), TYPST_CONTENT_TYPE)
+        val source = stampLayoutRevision(typstSource, layoutRevision).encodeToByteArray()
+        return respondAttachment(source, fileName.asTypstFileName(), TYPST_CONTENT_TYPE)
     }
     try {
-        val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(typstSource) }
+        val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(typstSource, layoutRevision) }
         respondAttachment(pdf, fileName, ContentType.Application.Pdf)
     } catch (e: TypstException) {
         call.respond(HttpStatusCode.ServiceUnavailable, ApiError("typst_failed", e.message ?: "PDF generation failed"))
@@ -799,8 +768,11 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondStudyGuidePdf(
         val cachedSource =
             pdfCache?.let { c -> withContext(Dispatchers.IO) { c.get(svc.studySet.simpleName, typFileName, stamp) } }
         if (cachedSource != null) return respondAttachment(cachedSource, typFileName, TYPST_CONTENT_TYPE)
-        val bytes = studyGuideTypst(
-            guide, svc.studySet, year, logoFile = logo?.let { STUDY_GUIDE_LOGO_FILE }, markAnswers = markAnswers,
+        val bytes = stampLayoutRevision(
+            studyGuideTypst(
+                guide, svc.studySet, year, logoFile = logo?.let { STUDY_GUIDE_LOGO_FILE }, markAnswers = markAnswers,
+            ),
+            LayoutRevisions.STUDY_GUIDE,
         ).encodeToByteArray()
         pdfCache?.let { c -> withContext(Dispatchers.IO) { c.put(svc.studySet.simpleName, typFileName, stamp, bytes) } }
         return respondAttachment(bytes, typFileName, TYPST_CONTENT_TYPE)
@@ -812,7 +784,9 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondStudyGuidePdf(
             guide, svc.studySet, year, logoFile = logo?.let { STUDY_GUIDE_LOGO_FILE }, markAnswers = markAnswers,
         )
         val assets = logo?.let { mapOf(STUDY_GUIDE_LOGO_FILE to it) } ?: emptyMap()
-        val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(source, assets = assets) }
+        val pdf = withContext(Dispatchers.IO) {
+            TypstCompiler.compile(source, LayoutRevisions.STUDY_GUIDE, assets = assets)
+        }
         pdfCache?.let { c -> withContext(Dispatchers.IO) { c.put(svc.studySet.simpleName, fileName, stamp, pdf) } }
         respondAttachment(pdf, fileName, ContentType.Application.Pdf)
     } catch (e: TypstException) {
@@ -827,9 +801,12 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondStudyGuidePdf(
  * [PdfFileNames]). Concurrent misses may compile twice; the upsert makes that benign. May throw
  * [EsvUpstreamException] (resolving the stamp needs the study text) — callers already catch it.
  *
- * [stampSalt] folds in everything the content stamp can't see: always the generator's [LayoutRevisions]
- * entry, plus any request input that shapes the document (e.g. the season's event-date footer). It has
- * no default — forgetting it is exactly how a PDF goes stale without a trace.
+ * [layoutRevision] is the generator's [LayoutRevisions] entry, folded into the cache stamp (a
+ * rendering change is invisible to the content stamp, so this is what retires artifacts cached before
+ * it) and stamped on both artifacts — printed as the corner mark on the compiled PDF and wrapped into
+ * the served source — so the number a document shows and the key it caches under can never disagree.
+ * [extraStampSalt] folds in any other request input the content stamp can't see (e.g. the season's
+ * event-date footer).
  *
  * `?format=typ` serves the markup instead, cached under the `.typ` sibling filename and the very same
  * stamp — so the source invalidates on exactly the same events as the PDF, and a [LayoutRevisions] bump
@@ -843,19 +820,20 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondCachedPdf(
     study: StudyDataService,
     pdfCache: PdfCache?,
     fileName: String,
-    stampSalt: Int,
+    layoutRevision: Int,
+    extraStampSalt: Int = 0,
     gatedSourceUsers: UserRepository? = null,
     typstSource: suspend () -> String,
 ) {
     val studySet = study.studySet.simpleName
-    val stamp = study.contentStamp() + stampSalt
+    val stamp = study.contentStamp() + 31 * extraStampSalt + layoutRevision
     if (call.wantsTypstSource()) {
         if (gatedSourceUsers != null && !allowStudyTextSource(gatedSourceUsers)) return
         val typFileName = fileName.asTypstFileName()
         val cachedSource =
             pdfCache?.let { cache -> withContext(Dispatchers.IO) { cache.get(studySet, typFileName, stamp) } }
         if (cachedSource != null) return respondAttachment(cachedSource, typFileName, TYPST_CONTENT_TYPE)
-        val bytes = typstSource().encodeToByteArray()
+        val bytes = stampLayoutRevision(typstSource(), layoutRevision).encodeToByteArray()
         pdfCache?.let { cache -> withContext(Dispatchers.IO) { cache.put(studySet, typFileName, stamp, bytes) } }
         return respondAttachment(bytes, typFileName, TYPST_CONTENT_TYPE)
     }
@@ -863,7 +841,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondCachedPdf(
     if (cached != null) return respondAttachment(cached, fileName, ContentType.Application.Pdf)
     val source = typstSource()
     try {
-        val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(source) }
+        val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(source, layoutRevision) }
         pdfCache?.let { cache -> withContext(Dispatchers.IO) { cache.put(studySet, fileName, stamp, pdf) } }
         respondAttachment(pdf, fileName, ContentType.Application.Pdf)
     } catch (e: TypstException) {
