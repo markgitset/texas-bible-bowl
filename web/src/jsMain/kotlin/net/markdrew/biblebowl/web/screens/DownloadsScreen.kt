@@ -1,7 +1,12 @@
 package net.markdrew.biblebowl.web.screens
 
+import kotlinx.browser.document
+import kotlinx.browser.window
+import kotlinx.coroutines.await
 import kotlinx.coroutines.launch
+import kotlin.js.json
 import net.markdrew.biblebowl.api.HeadingSize
+import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.StudyMaterialDto
 import net.markdrew.biblebowl.api.StudyMaterialType
@@ -20,11 +25,81 @@ import net.markdrew.biblebowl.web.ui.chapterChips
 import net.markdrew.biblebowl.web.ui.chipRow
 import net.markdrew.biblebowl.web.ui.optionSwitch
 import org.w3c.dom.Element
+import org.w3c.dom.HTMLAnchorElement
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.url.URL
+import org.w3c.fetch.RequestInit
 
 /** JS global for URL-encoding a book name into the external reader/audio links (e.g. "1 Samuel" → "1%20Samuel"). */
 private external fun encodeURIComponent(value: String): String
+
+/**
+ * The `?format=typ` twin of a generated-PDF URL: the Typst markup the server compiled that PDF from,
+ * with whatever options the card is currently set to.
+ *
+ * Derived from the href rather than passed per card, so every generated PDF offers its source and a
+ * new card can't forget to. Anything that isn't one of our generated PDFs — the CSV/XLSX exports,
+ * admin-uploaded study materials — has no Typst behind it and gets nothing.
+ */
+private fun typstSourceUrl(href: String): String? {
+    if ("/generate/" !in href || ".pdf" !in href) return null
+    return href + (if ('?' in href) "&" else "?") + "format=typ"
+}
+
+/**
+ * Whether to offer Typst source at all. The server only gates the study text (whose markup reproduces
+ * the running ESV text) and serves every other generator's source publicly — but the *link* is
+ * admin-only across the board: it's an authoring tool nobody else asked for, and one uniform rule beats
+ * a per-card one that mostly says "hidden". Anyone else who wants it can still add `format=typ` by hand.
+ */
+private val showTypstSource: Boolean
+    get() = Session.user?.let { Permission.SEASON_MANAGE in it.permissions } == true
+
+/**
+ * Fetches [href] with the signed-in user's bearer token and saves the response as a file.
+ *
+ * A plain `<a href download>` is how every other download here works, but it can't carry an
+ * `Authorization` header, and our JWT lives in localStorage rather than a cookie — so a gated download
+ * has to come through `fetch` and a blob URL. The filename comes from the server's `Content-Disposition`
+ * (CORS-exposed for exactly this), so the saved file keeps its set-prefixed, param-encoded name.
+ */
+private fun downloadWithAuth(href: String) {
+    Shell.scope.launch {
+        val response = runCatching {
+            window.fetch(
+                href,
+                RequestInit(headers = json("Authorization" to "Bearer ${Session.api.token.orEmpty()}")),
+            ).await()
+        }.getOrNull()
+        if (response == null || !response.ok) {
+            window.alert(
+                if (response?.status?.toInt() == 403) "Your account can't download Typst source."
+                else "Couldn't download the Typst source. Please try again.",
+            )
+            return@launch
+        }
+        val fileName = FILENAME_PARAM.find(response.headers.get("Content-Disposition").orEmpty())
+            ?.groupValues?.get(1)
+            ?: href.substringAfterLast('/').substringBefore('?').removeSuffix(".pdf") + ".typ"
+        val blobUrl = URL.createObjectURL(response.blob().await())
+        try {
+            (document.createElement("a") as HTMLAnchorElement).apply {
+                this.href = blobUrl
+                download = fileName
+                // Firefox only honours a synthetic click on a connected node.
+                document.body?.appendChild(this)
+                click()
+                remove()
+            }
+        } finally {
+            URL.revokeObjectURL(blobUrl)
+        }
+    }
+}
+
+/** `filename="acts-names-index.typ"` out of a Content-Disposition header (quoted or bare). */
+private val FILENAME_PARAM = Regex("""filename\*?=(?:UTF-8'')?"?([^";]+)"?""")
 
 /** Which card's customize panel is expanded. */
 private sealed interface Customize {
@@ -525,6 +600,15 @@ object DownloadsScreen {
                             DownloadsScreen.customize = if (open) null else customize
                             rerender()
                         }
+                    }
+                }
+                // The Typst source behind this exact PDF — same options, same URL, ?format=typ. Sits
+                // last and muted: it's an authoring tool, not something a student needs to step past.
+                typstSourceUrl(href)?.takeIf { showTypstSource }?.let { sourceHref ->
+                    child("button", "btn btn-link btn-sm text-muted ms-auto p-0", ".typ") {
+                        setAttribute("type", "button")
+                        setAttribute("title", "Download the Typst source this PDF is compiled from")
+                        onClick { downloadWithAuth(sourceHref) }
                     }
                 }
             }

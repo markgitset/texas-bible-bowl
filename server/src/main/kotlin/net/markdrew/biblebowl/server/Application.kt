@@ -179,6 +179,11 @@ fun Application.module(
     install(CORS) {
         allowHeader(HttpHeaders.Authorization)
         allowHeader(HttpHeaders.ContentType)
+        // Downloads that need a bearer token can't be a plain <a href> — the web app fetches them and
+        // saves the blob itself, which means reading the filename the server picked. Response headers
+        // are hidden from cross-origin JS unless exposed, and the app is cross-origin from the API
+        // (texasbiblebowl.org → api.texasbiblebowl.org), so without this the file saves unnamed.
+        exposeHeader(HttpHeaders.ContentDisposition)
         HttpMethod.DefaultMethods.forEach { allowMethod(it) }
         // Production: restrict to the web app's origin(s) via ALLOWED_ORIGINS (comma-separated,
         // e.g. "https://texasbiblebowl.org"). Unset (dev/tests) stays permissive. Clients that

@@ -251,6 +251,20 @@ chapterHeadingSize&sectionHeadingSize`
 not the generation date; the cached-PDF stamp is salted with that date line **and**
 `LayoutRevisions.BIBLE_TEXT` (see below).
 
+**`?format=typ` on any generated-PDF endpoint serves the Typst markup instead of the document.**
+Implemented once, inside the three `respond*Pdf` helpers in `GenerateRoutes.kt` (all of which
+already hold the generator's source as a `String`), so every generator offers it and a new endpoint
+can't forget to — don't add `.typ` sibling routes. Sources cache exactly like their PDFs: same
+`PdfCache`, same stamp, stored under the `.typ` sibling of the param-encoded filename, so a
+`LayoutRevisions` bump retires both. The uncached endpoints (practice tests) leave their source
+uncached too. **Only the study text's markup is SEASON_MANAGE-gated** — it's the one document that
+reproduces the running ESV text, and the licence keeps text server-side (pass `gatedSourceUsers` to
+`respondCachedPdf`); every other generator emits word lists, verse references or short excerpts and
+serves its source as publicly as its PDF. The web app shows a muted
+`.typ` link on each generated-PDF card, admin-only across the board (`DownloadsScreen.kt`); because
+a bearer token can't ride an `<a href>`, it fetches and saves the blob, reading the filename from
+`Content-Disposition` (which is why CORS `exposeHeader`s it).
+
 **Bump the generator's `LayoutRevisions` entry whenever you change how a PDF is drawn.**
 Generated PDFs are cached under `StudyDataService.contentStamp()` — the study text plus the
 word-list digest — which moves when the *material* changes but not when the *rendering* does. So
