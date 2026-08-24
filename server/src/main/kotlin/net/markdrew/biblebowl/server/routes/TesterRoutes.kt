@@ -26,6 +26,7 @@ import net.markdrew.biblebowl.api.siteFor
 import net.markdrew.biblebowl.api.testerTeamPart
 import net.markdrew.biblebowl.generation.typst.Nametag
 import net.markdrew.biblebowl.generation.typst.NametagSheet
+import net.markdrew.biblebowl.generate.LayoutRevisions
 import net.markdrew.biblebowl.generation.typst.nametagsTypst
 import net.markdrew.biblebowl.server.data.RegistrationRepository
 import net.markdrew.biblebowl.server.data.SeasonRepository
@@ -145,7 +146,7 @@ fun Route.testerRoutes(
             val siteSuffix = siteIdParam?.let { season.siteFor(it)?.name }
                 ?.lowercase()?.replace(Regex("[^a-z0-9]+"), "-")?.let { "-$it" } ?: ""
             try {
-                val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(nametagsTypst(sheets)) }
+                val pdf = withContext(Dispatchers.IO) { TypstCompiler.compile(nametagsTypst(sheets), LayoutRevisions.NAMETAGS) }
                 call.response.header(
                     HttpHeaders.ContentDisposition,
                     ContentDisposition.Attachment

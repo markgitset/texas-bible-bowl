@@ -270,11 +270,15 @@ Generated PDFs are cached under `StudyDataService.contentStamp()` — the study 
 word-list digest — which moves when the *material* changes but not when the *rendering* does. So
 a layout change is invisible to the cache: clients keep getting the PDF an earlier build
 compiled, and redeploying won't dislodge it (that's how the chapter-grouped headings sheet
-failed to reach staging). `LayoutRevisions` in `GenerateRoutes.kt` holds one constant per Typst
-generator, folded into the stamp of every PDF it produces; `respondIndexPdf`/`respondCachedPdf`
-require it, so a new endpoint can't skip it. A bump costs one recompile per study set — when in
-doubt, bump. The escape hatch for an already-stale cache is `DELETE /generate/cache`
-(SEASON_MANAGE).
+failed to reach staging). `LayoutRevisions` (core commonMain, `net.markdrew.biblebowl.generate`)
+holds one constant per Typst generator, folded into the stamp of every cached PDF it produces;
+`respondIndexPdf`/`respondCachedPdf` require it, so a new endpoint can't skip it. The same
+constant is printed on the document itself: `TypstCompiler.compile` requires a revision and
+stamps `r<N>` in tiny gray type in the bottom-right corner of the last page of every PDF it
+compiles (cached or not — practice tests, nametags, awards too), so any printed copy names the
+layout that drew it and a stale cache is visible from the PDF alone. A bump costs one recompile
+per study set — when in doubt, bump. The escape hatch for an already-stale cache is
+`DELETE /generate/cache` (SEASON_MANAGE).
 
 **Heading/footnote sizes are body-relative, never absolute.** Footnotes are left entirely to
 Typst (0.85em); chapter/section headings come from `HeadingSize` (`:shared-api`) — named chips

@@ -17,6 +17,7 @@ import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
+import net.markdrew.biblebowl.generate.LayoutRevisions
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingBook
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingChapter
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingRow
@@ -273,7 +274,7 @@ class StudyRoutesTest {
             )
         }
         val books = listOf("Exodus", "Numbers", "Deuteronomy").map { ChapterHeadingBook(it, chapters) }
-        val pdf = TypstCompiler.compile(chapterHeadingsTypst("Life of Moses", books))
+        val pdf = TypstCompiler.compile(chapterHeadingsTypst("Life of Moses", books), LayoutRevisions.CHAPTER_HEADINGS)
 
         assertEquals(1, pdf.pdfPageCount(), "the sheet must shrink to fit rather than spill")
     }

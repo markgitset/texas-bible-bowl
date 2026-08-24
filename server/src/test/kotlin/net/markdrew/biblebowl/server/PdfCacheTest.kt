@@ -25,13 +25,13 @@ import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
+import net.markdrew.biblebowl.generate.LayoutRevisions
 import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.StudySet
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
 import net.markdrew.biblebowl.server.esv.EsvPassageService
 import net.markdrew.biblebowl.server.esv.InMemoryEsvCache
-import net.markdrew.biblebowl.server.routes.LayoutRevisions
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.security.Passwords
 import net.markdrew.biblebowl.server.study.InMemoryPdfCache
