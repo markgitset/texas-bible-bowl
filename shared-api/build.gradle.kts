@@ -30,3 +30,14 @@ android {
     compileSdk = 35
     defaultConfig { minSdk = 26 }
 }
+
+// Bakes the StudySection enum into site/data/study-sections.json, which the Hugo navbar
+// (nav.html) and Site Map (sitemap.html) render the Study & Practice links from. The file is
+// checked in (plain Hugo builds need no Gradle step); StudySectionsDataTest fails when it's stale.
+val jvmMainCompilation = kotlin.jvm().compilations.getByName("main")
+tasks.register<JavaExec>("generateStudySectionsData") {
+    description = "Regenerates site/data/study-sections.json from the StudySection enum"
+    classpath(jvmMainCompilation.output.allOutputs, jvmMainCompilation.runtimeDependencyFiles)
+    mainClass.set("net.markdrew.biblebowl.api.StudySectionsDataKt")
+    args(rootProject.layout.projectDirectory.file("site/data/study-sections.json").asFile.absolutePath)
+}

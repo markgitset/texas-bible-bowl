@@ -17,7 +17,20 @@
           {{/* menuActive front matter forces a top item active on pages outside the menu tree
                (the /app/ shell); the app's Shell also re-toggles these classes per hash route. */}}
           {{ $active := or ($.IsMenuCurrent "main" .) ($.HasMenuCurrent "main" .) (eq ($.Param "menuActive") .Name) }}
-          {{ if .HasChildren }}
+          {{/* Dropdown children come from hugo.toml for site sections; the Study & Practice
+               children live in the app (hash routes into /app/), so they render from
+               site/data/study-sections.json — generated from shared-api's StudySection enum
+               (./gradlew :shared-api:generateStudySectionsData). */}}
+          {{ $children := slice }}
+          {{ range .Children }}
+            {{ $children = $children | append (dict "url" .URL "name" .Name) }}
+          {{ end }}
+          {{ if eq .Identifier "study" }}
+            {{ range (index site.Data "study-sections").sections }}
+              {{ $children = $children | append (dict "url" (printf "%sapp/#study/%s" $.Site.BaseURL .slug) "name" .title) }}
+            {{ end }}
+          {{ end }}
+          {{ if $children }}
             {{/* data-route lets the app re-toggle active per hash route: a hash-URL parent (the
                  Study & Practice dropdown into /app/) lights for its whole route family; on
                  dropdown items the app matches the hash exactly (see Shell.updateNav). */}}
@@ -33,10 +46,10 @@
               <ul class="dropdown-menu dropdown-menu-end">
                 <li><a class="dropdown-item" {{ with $parentHash }}data-route="{{ . }}"{{ end }} href="{{ .URL }}">{{ .Name }} overview</a></li>
                 <li><hr class="dropdown-divider"></li>
-                {{ range .Children }}
-                  {{ $parts := split .URL "#" }}
+                {{ range $children }}
+                  {{ $parts := split .url "#" }}
                   {{ $hash := cond (gt (len $parts) 1) (index $parts 1) "" }}
-                  <li><a class="dropdown-item" {{ with $hash }}data-route="{{ . }}"{{ end }} href="{{ .URL }}">{{ .Name }}</a></li>
+                  <li><a class="dropdown-item" {{ with $hash }}data-route="{{ . }}"{{ end }} href="{{ .url }}">{{ .name }}</a></li>
                 {{ end }}
               </ul>
             </li>

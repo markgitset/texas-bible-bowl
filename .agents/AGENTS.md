@@ -82,8 +82,10 @@ section's own screen at `study/<slug>` (`StudySectionScreen`, both in `StudyScre
 study area (2026-07): `#study`, the same overview card grid, plus one page per study-focus
 section at `#study/<slug>` (web's DownloadsScreen renders both). The `StudySection` enum is
 ONE shared class in `:shared-api` (slug-serialized; strict `bySlug`); each app adds its own
-`route` extension in its `Routes.kt`. hugo.toml's menu children and sitemap.html's
-hand-written study list still mirror it by hand — keep those two in sync. Section pages also
+`route` extension in its `Routes.kt`. The site's navbar dropdown (nav.html) and sitemap.html
+render their study lists from the generated `site/data/study-sections.json` — run
+`./gradlew :shared-api:generateStudySectionsData` after changing the enum (a `:shared-api`
+jvmTest fails CI while it's stale). Section pages also
 render admin-curated **study materials** (uploaded documents served byte-exact + external
 links; `study_materials` table, public `GET /study-materials`) after the built-in cards;
 admins manage them at `admin/materials` (web only, SEASON_MANAGE, in the account menu). The web

@@ -34,9 +34,10 @@ object Routes {
 
 /**
  * The Study & Practice section pages live under `#study/<slug>` — one per shared-api
- * [StudySection], mirrored as the children of the navbar's Study & Practice dropdown (hugo.toml)
- * and listed on the Site Map (sitemap.html); keep those two in sync when a section is added or
- * renamed. `#study` itself is the overview page whose cards link to these.
+ * [StudySection]. The navbar's Study & Practice dropdown (nav.html) and the Site Map
+ * (sitemap.html) render the same list from the generated site/data/study-sections.json
+ * (`./gradlew :shared-api:generateStudySectionsData` after changing the enum — a jvmTest fails
+ * CI if it's stale). `#study` itself is the overview page whose cards link to these.
  */
 val StudySection.route: String get() = "${Routes.STUDY}/$slug"
 
