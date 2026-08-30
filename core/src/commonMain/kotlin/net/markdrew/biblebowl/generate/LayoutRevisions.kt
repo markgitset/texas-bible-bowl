@@ -33,9 +33,10 @@ object LayoutRevisions {
 
     /**
      * `chapterHeadingsTypst`. 1 = grouped and shaded by chapter, tighter rows, larger candidate
-     * sizes; 2 = the corner revision mark.
+     * sizes; 2 = the corner revision mark; 3 = a chapter drawn as one labelled block, balanced
+     * columns, row padding grown to fill the page, narrower margins, count in the subtitle.
      */
-    const val CHAPTER_HEADINGS = 2
+    const val CHAPTER_HEADINGS = 3
 
     /**
      * `indexTypst` / `numbersIndexTypst` / `oneTimeWordsIndexTypst` — the printable word indices.

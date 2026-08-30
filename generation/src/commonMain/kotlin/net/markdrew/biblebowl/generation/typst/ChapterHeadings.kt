@@ -5,8 +5,8 @@ data class ChapterHeadingRow(val title: String, val reference: String)
 
 /**
  * The headings of one chapter — everything that *starts* in [chapter], including a heading that runs
- * on into the next one. These are the sheet's shading groups: a chapter's headings share a background
- * and the shade flips at each chapter, so the chapter divisions read off the page without a label.
+ * on into the next one. A chapter is the sheet's unit: its headings are drawn as one block, labelled
+ * with its number, and a column is only ever cut between blocks, never inside one.
  */
 data class ChapterHeadingChapter(val chapter: Int, val headings: List<ChapterHeadingRow>)
 
@@ -19,21 +19,21 @@ data class ChapterHeadingBook(val book: String?, val chapters: List<ChapterHeadi
 /** Page geometry of the sheet, in Typst units. Kept here so the fit search and the render agree. */
 private const val PAGE_WIDTH = "8.5in"
 private const val PAGE_HEIGHT = "11in"
-private const val MARGIN_X = "0.45in"
-private const val MARGIN_Y = "0.4in"
-private const val GUTTER = "0.2in"
+private const val MARGIN_X = "0.35in"
+private const val MARGIN_Y = "0.35in"
+private const val GUTTER = "0.18in"
 
 /**
  * The text sizes each column count may use, in quarter-points. These bounds only keep the search from
- * spending measures on layouts that could never win — a 4-column sheet at 16pt wraps every heading
+ * spending measures on layouts that could never win — a 4-column sheet at 24pt wraps every heading
  * twice over — so they can stay generous; which layout is actually chosen is decided by [CANDIDATES]
- * and [WRAP_TOLERANCE]. The top of the range is well above a normal body size on purpose: the rows
- * are tight, so a short set has to grow the text to fill its page rather than trail off half-empty.
+ * and [WRAP_TOLERANCE]. The top of the range is well above a normal body size on purpose: a short set
+ * has to grow its text to fill the page rather than trail off half empty.
  */
 private val COLUMN_TIERS: List<Pair<Int, IntRange>> = listOf(
-    2 to 32..64, // 8.0 – 16.0pt
-    3 to 24..56, // 6.0 – 14.0pt
-    4 to 18..44, // 4.5 – 11.0pt
+    2 to 32..96, // 8.0 – 24.0pt
+    3 to 28..72, // 7.0 – 18.0pt
+    4 to 26..56, // 6.5 – 14.0pt
 )
 
 /**
@@ -47,6 +47,21 @@ private val COLUMN_TIERS: List<Pair<Int, IntRange>> = listOf(
 private const val WRAP_TOLERANCE = 1.12
 
 /**
+ * The row padding, as a fraction of the text size, that a layout has to be able to afford. Below this
+ * the rows run together into a wall of text (descenders touching the line under them), so a candidate
+ * that only fits by crushing its rows is not treated as fitting at all — the search drops a size, or
+ * adds a column, instead.
+ */
+private const val MIN_ROW_PAD = 0.11
+
+/**
+ * ...and how far the padding may then grow to fill the page out. Past this the rows drift apart into
+ * a list of unrelated lines; a set small enough to hit the cap is better left with white space under
+ * it than spread over the whole sheet.
+ */
+private const val MAX_ROW_PAD = 0.75
+
+/**
  * Candidate (column count, text size) layouts, best first: biggest text wins, and at equal size the
  * fewest columns (fewer columns are wider, so fewer headings wrap). The last candidate is the floor
  * — if even that overflows, Typst renders it anyway and the sheet spills onto a second page rather
@@ -58,35 +73,41 @@ private val CANDIDATES: List<Pair<Int, Double>> = COLUMN_TIERS
 
 /**
  * Renders a one-page, at-a-glance listing of every ESV section heading in a study set as Typst
- * source: the set's title, then the headings in scripture order down flowing columns, each with the
- * verses it covers, shaded a chapter at a time so the chapter divisions are visible at a glance.
+ * source: the set's title over the headings in scripture order down flowing columns, a chapter at a
+ * time. Each chapter is one shaded block with its number set large alongside it and a rule down its
+ * left edge, so the chapter divisions read off the page without spending a row on a label.
  *
- * "Fits on one page" is enforced by Typst rather than guessed here: at render time the sheet is
- * `measure`d at each of [CANDIDATES] in turn and drawn at the first one that both fits the page and
- * stays within [WRAP_TOLERANCE]. Measuring — rather than predicting a row height from the text size
- * — is what makes long headings that wrap to a second line count correctly, in both tests.
+ * "Fits on one page" is enforced by Typst rather than guessed here, in two passes. The first measures
+ * every chapter block at each of [CANDIDATES] in turn and takes the first layout that both fits the
+ * page at [MIN_ROW_PAD] and stays within [WRAP_TOLERANCE]; the second grows the row padding from
+ * there until the longest column reaches the bottom margin, so the sheet ends up as full as its
+ * chapter blocks allow. Measuring — rather than predicting a row height from the text size — is what
+ * makes long headings that wrap to a second line count correctly.
  *
- * The sheet is deliberately unlabelled apart from the book bands: the chapter shading and each row's
- * own reference carry the structure, which keeps a heading per line and the whole set on one page.
+ * Columns are split and balanced here too rather than left to Typst's `columns`, which fills the
+ * first column to the page bottom and leaves the last one short. Cutting only between chapter blocks
+ * is what keeps a chapter (and a book band, which is carried by the chapter under it) whole.
  */
 fun chapterHeadingsTypst(
     title: String,
     books: List<ChapterHeadingBook>,
     subtitle: String = "Chapter Headings",
 ): String = buildString {
+    val headingCount = books.sumOf { book -> book.chapters.sumOf { it.headings.size } }
+
     appendLine(
         """
         #set page(paper: "us-letter", margin: (x: $MARGIN_X, y: $MARGIN_Y))
         // Only fonts the typst binary embeds: the prod image ships no system fonts.
         #set text(font: "Libertinus Serif")
-        #set par(justify: false, leading: 0.5em)
+        #set par(justify: false)
 
-        #let accent = rgb("#1f3864")
-        // The two chapter shades. They carry the chapter divisions on their own (nothing else marks
-        // them), so they need enough contrast to tell apart at a glance without going dark enough to
-        // fight the text or waste toner over a full page.
-        #let band_a = rgb("#c9dcf2")
-        #let band_b = rgb("#edf3fb")
+        #let accent = rgb("#1f4368")
+        // Chapters alternate between the tint and plain white. The shading only has to separate one
+        // chapter from the next — the number and the accent rule already label them — so it stays
+        // pale enough not to fight the text or soak a page in toner.
+        #let stripe = rgb("#eff4fa")
+        #let muted = rgb("#7c8894")
 
         #let gutter = $GUTTER
         #let content_width = $PAGE_WIDTH - 2 * $MARGIN_X
@@ -99,16 +120,14 @@ fun chapterHeadingsTypst(
     books.forEach { book ->
         appendLine("""  (book: ${book.book?.let { "\"${escapeTypstString(it)}\"" } ?: "none"}, chapters: (""")
         book.chapters.forEach { chapter ->
-            // The chapter number itself isn't drawn — each row's reference already carries it — so
-            // only the grouping crosses into the markup.
-            appendLine("    (")
+            appendLine("    (chapter: ${chapter.chapter}, headings: (")
             chapter.headings.forEach { h ->
                 appendLine(
                     """      (title: "${escapeTypstString(h.title)}", """ +
                         """reference: "${escapeTypstString(h.reference)}"),"""
                 )
             }
-            appendLine("    ),")
+            appendLine("    )),")
         }
         appendLine("  )),")
     }
@@ -117,88 +136,172 @@ fun chapterHeadingsTypst(
         """
         )
 
-        #let title_block = align(center)[
-          #text(size: 16pt, weight: "bold", fill: accent)[${escapeTypst(title)}]
-          #v(1pt)
-          #text(size: 10pt, fill: luma(80))[${escapeTypst(subtitle)}]
-          #v(4pt)
-        ]
+        #let multibook = books.len() > 1
 
-        #let row_inset = (x: 3.5pt, y: 1.4pt)
+        // What a column may be cut between: one entry per chapter, in scripture order. A book band is
+        // carried by the chapter under it, so a band can never be left stranded at the foot of a
+        // column. Chapters alternate shade by their position in the set, not by their number — a set
+        // with a gap in it (Exodus 1-20, then 32-34) must not run two same-shaded chapters together
+        // just because 20 and 32 are both even.
+        #let items = {
+          let out = ()
+          let i = 0
+          for b in books {
+            let band = if multibook { b.book } else { none }
+            for ch in b.chapters {
+              out.push((chapter: ch.chapter, headings: ch.headings, shade: calc.even(i), band: band))
+              band = none
+              i += 1
+            }
+          }
+          out
+        }
 
-        // A heading row: the title, then its reference pushed out to the right edge. Non-breakable so
-        // a wrapped title never splits across a column boundary, and with no spacing above or below so
-        // that a chapter's rows meet and read as one solid block of colour rather than as stripes.
-        #let heading_row(h, shade) = block(
-          breakable: false,
+        // One chapter: its headings stacked, its number set large and centred against them, the whole
+        // block shaded and ruled down the accent edge.
+        #let chapter_block(it, pad, size) = block(
           width: 100%,
-          fill: shade,
-          inset: row_inset,
-          above: 0pt,
-          below: 0pt,
+          fill: if it.shade { stripe } else { white },
+          above: 0pt, below: 0pt,
+          stroke: (left: 1.5pt + accent),
+          inset: (left: 3pt, right: 4pt, y: pad * 0.7),
           grid(
-            columns: (1fr, auto),
-            column-gutter: 8pt,
-            h.title,
-            text(fill: accent)[#h.reference],
+            columns: (size * 1.9, 1fr, auto),
+            column-gutter: 6pt,
+            row-gutter: 2 * pad,
+            align: (center + horizon, left + top, right + top),
+            grid.cell(
+              rowspan: it.headings.len(),
+              text(size: size * 1.35, weight: "bold", fill: accent)[#it.chapter],
+            ),
+            ..it.headings.map(h => (h.title, text(fill: muted)[#h.reference])).flatten(),
           ),
         )
 
-        #let book_band(name) = block(
-          breakable: false,
-          width: 100%,
-          fill: accent,
-          inset: (x: row_inset.x, y: 2.5pt),
-          above: 4pt,
-          below: 0pt,
-          text(fill: white, weight: "bold")[#name],
+        // `top` is false everywhere the height is *measured*, so an item that lands at the head of a
+        // column (where the band's leading space is dropped) can only ever draw shorter than planned.
+        #let draw(it, pad, size, top: false) = {
+          if it.band != none {
+            block(width: 100%, above: 0pt, below: 0pt,
+              inset: (top: if top { 0pt } else { pad * 2.5 }, bottom: pad),
+              block(width: 100%, fill: accent, above: 0pt, below: 0pt,
+                inset: (x: 5pt, y: pad * 0.9 + 1pt),
+                text(fill: white, weight: "bold", size: size * 1.02)[#it.band],
+              ),
+            )
+          }
+          block(width: 100%, above: 0pt, below: 0pt, inset: (bottom: pad * 0.9),
+            chapter_block(it, pad, size),
+          )
+        }
+
+        #let stack(rows, pad, size, top: false) = {
+          set text(size: size)
+          set par(leading: 0.5em)
+          for (i, it) in rows.enumerate() { draw(it, pad, size, top: top and i == 0) }
+        }
+
+        #let title_block = align(center)[
+          #text(size: 22pt, weight: "bold", fill: accent)[${escapeTypst(title)}]
+          #v(-0.62em)
+          #text(size: 10.5pt, weight: "bold", fill: accent, tracking: 0.08em)[
+            #upper[$headingCount ${escapeTypst(subtitle)}]
+          ]
+          #v(7pt)
+        ]
+
+        #let column_width(cols) = (content_width - (cols - 1) * gutter) / cols
+
+        // Fill each column until the next block would pass `target`, then move on. Blocks are whole
+        // chapters, so every cut lands on a chapter boundary.
+        #let split(heights, cols, target, avail) = {
+          let out = ()
+          let cur = ()
+          let h = 0pt
+          for (i, hi) in heights.enumerate() {
+            if cur.len() > 0 and out.len() + 1 < cols and (h + hi > target or h + hi > avail) {
+              out.push(cur)
+              cur = ()
+              h = 0pt
+            }
+            cur.push(i)
+            h += hi
+          }
+          out.push(cur)
+          out
+        }
+
+        #let col_heights(heights, sp) = sp.map(c => c.fold(0pt, (a, i) => a + heights.at(i)))
+
+        #let fits(heights, sp, cols, avail) = (
+          sp.len() <= cols and col_heights(heights, sp).all(h => h <= avail)
         )
+
+        // The most even split that still fits: sweep the target the fill aims at and keep the one
+        // whose longest column is shortest. Evening the columns out is also what lets the rows
+        // breathe — the padding can only grow until the *longest* column reaches the page bottom.
+        #let balance(heights, cols, avail) = {
+          let floor = calc.max(..heights.map(h => h.pt())) * 1pt
+          let best = none
+          let best_max = avail
+          for step in range(0, 41) {
+            let sp = split(heights, cols, floor + (avail - floor) * step / 40, avail)
+            if not fits(heights, sp, cols, avail) { continue }
+            let m = calc.max(..col_heights(heights, sp).map(h => h.pt())) * 1pt
+            if best == none or m < best_max {
+              best = sp
+              best_max = m
+            }
+          }
+          best
+        }
 
         #let candidates = (${CANDIDATES.joinToString(", ") { (cols, size) -> "($cols, ${size}pt)" }},)
 
-        #let sheet(size) = {
-          set text(size: size)
-          // Wrapped titles run on at exactly the row pitch, so a two-line heading looks like one taller
-          // row of its chapter's colour instead of opening a gap mid-block.
-          set par(leading: 2 * row_inset.y)
-          for b in books {
-            if b.book != none { book_band(b.book) }
-            // Shade by chapter, not by row, and alternate over the chapter's position rather than its
-            // number — a set with gaps in it (Exodus 1-20 then 32-34) must not run two same-shaded
-            // chapters together just because 20 and 32 are both even.
-            for (i, chapter) in b.chapters.enumerate() {
-              for h in chapter { heading_row(h, if calc.even(i) { band_a } else { band_b }) }
-            }
-          }
-        }
-
         #context {
-          let title_height = measure(block(width: content_width, title_block)).height
-          let available = content_height - title_height
-          // The sheet's height with every heading on one line: laid out far wider than any column,
-          // so nothing can wrap. Comparing a candidate against this is how much wrapping it causes.
-          let unwrapped(size) = measure(block(width: 40in, sheet(size))).height
+          // 2pt of slack absorbs the rounding at each column break, where a block that doesn't quite
+          // fit moves down whole.
+          let avail = content_height - measure(block(width: content_width, title_block)).height - 2pt
+          let min_pad(size) = $MIN_ROW_PAD * size
 
-          let fitting = none // first candidate that fits at all — the fallback
-          let chosen = none  // ...and the first that also keeps wrapping under the tolerance
+          let plan(cols, size, pad) = {
+            let cw = column_width(cols)
+            let hs = items.map(it => measure(block(width: cw, stack((it,), pad, size))).height)
+            (hs: hs, sp: balance(hs, cols, avail))
+          }
+
+          let chosen = none
           for (cols, size) in candidates {
-            let column_width = (content_width - (cols - 1) * gutter) / cols
-            let height = measure(block(width: column_width, sheet(size))).height
-            // The 0.97 leaves room for the rounding at each column break, where a row that doesn't
-            // quite fit moves down whole.
-            if height <= cols * available * 0.97 {
-              if fitting == none { fitting = (cols, size) }
-              if height <= unwrapped(size) * $WRAP_TOLERANCE {
-                chosen = (cols, size)
-                break
-              }
+            let p = plan(cols, size, min_pad(size))
+            if p.sp == none { continue }
+            if chosen == none { chosen = (cols, size) } // fits, but may wrap heavily — the fallback
+            // The sheet's height with every heading on one line: laid out far wider than any column,
+            // so nothing can wrap. Comparing a candidate against it is how much wrapping it causes.
+            let unwrapped = measure(block(width: 40in, stack(items, min_pad(size), size))).height
+            if p.hs.fold(0pt, (a, b) => a + b) <= unwrapped * $WRAP_TOLERANCE {
+              chosen = (cols, size)
+              break
             }
           }
-          let (cols, size) = if chosen != none { chosen } else if fitting != none { fitting }
-            else { candidates.last() }
+          let (cols, size) = if chosen != none { chosen } else { candidates.last() }
+
+          let pad = min_pad(size)
+          let best = plan(cols, size, pad)
+          for step in range(1, 200) {
+            let p = min_pad(size) + step * 0.3pt
+            if p > $MAX_ROW_PAD * size { break }
+            let candidate = plan(cols, size, p)
+            if candidate.sp == none { break }
+            pad = p
+            best = candidate
+          }
 
           title_block
-          columns(cols, gutter: gutter, sheet(size))
+          block(above: 0pt, below: 0pt, grid(
+            columns: (1fr,) * cols,
+            column-gutter: gutter,
+            ..best.sp.map(c => stack(c.map(i => items.at(i)), pad, size, top: true)),
+          ))
         }
         """.trimIndent()
     )
