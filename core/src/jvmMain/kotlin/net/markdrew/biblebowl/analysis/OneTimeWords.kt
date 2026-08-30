@@ -9,6 +9,40 @@ import net.markdrew.chupacabra.core.DisjointRangeMap
 fun oneTimeWords(studyData: StudyData): List<IntRange> = studyData.wordIndex
     .filterValues { it.size == 1 }.values.flatten()
 
+/**
+ * One flashcard's worth of a one-time word: the word as printed, its verse, the heading above it, and
+ * the verse's text split around the word (whitespace-normalized) so each renderer can emphasize the
+ * word its own way. Cards run in the word's order of appearance.
+ */
+data class OneTimeWordCard(
+    val word: String,
+    val verseRef: VerseRef,
+    val heading: String?,
+    val versePrefix: String,
+    val verseSuffix: String,
+)
+
+/** The one-time-word flashcard deck of [studyData] — shared by the PDF deck and the Quizlet CSV export. */
+fun oneTimeWordCards(studyData: StudyData): List<OneTimeWordCard> {
+    val whitespace = Regex("\\s+")
+    return oneTimeWords(studyData).sortedBy { it.first }.mapNotNull { range ->
+        val verse = studyData.verseEnclosing(range) ?: return@mapNotNull null
+        val verseRange = studyData.verseIndex[verse] ?: return@mapNotNull null
+        // Locate the word in its verse by raw char offsets (not text search, which could hit a
+        // substring of another word), then split the verse around it.
+        val raw = studyData.excerpt(verseRange).excerptText
+        val start = range.first - verseRange.first
+        val end = start + (range.last - range.first + 1)
+        OneTimeWordCard(
+            word = raw.substring(start, end),
+            verseRef = verse,
+            heading = studyData.headingCharRanges.valueEnclosing(range),
+            versePrefix = raw.substring(0, start).replace(whitespace, " ").trimStart(),
+            verseSuffix = raw.substring(end).replace(whitespace, " ").trimEnd(),
+        )
+    }
+}
+
 /** One-time words keyed by word → the single verse each occurs in (source for the alphabetical section). */
 fun oneTimeWordsIndexByWord(
     studyData: StudyData,

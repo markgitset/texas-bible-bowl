@@ -33,7 +33,7 @@ import net.markdrew.biblebowl.analysis.fullIndex
 import net.markdrew.biblebowl.generate.LayoutRevisions
 import net.markdrew.biblebowl.generate.stampLayoutRevision
 import net.markdrew.biblebowl.analysis.namesIndex
-import net.markdrew.biblebowl.analysis.oneTimeWords
+import net.markdrew.biblebowl.analysis.oneTimeWordCards
 import net.markdrew.biblebowl.analysis.wordListIndex
 import net.markdrew.biblebowl.generate.indices.indexTypst
 import net.markdrew.biblebowl.generate.indices.numbersIndexTypst
@@ -58,6 +58,7 @@ import net.markdrew.biblebowl.generation.typst.toFlashcards
 import net.markdrew.biblebowl.api.StudyScopeParams
 import net.markdrew.biblebowl.model.BRIEF_BOOK_FORMAT
 import net.markdrew.biblebowl.model.ChapterRef
+import net.markdrew.biblebowl.model.FULL_BOOK_FORMAT
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.model.StudyScope
 import net.markdrew.biblebowl.model.StudySet
@@ -68,6 +69,8 @@ import net.markdrew.biblebowl.server.esv.EsvUpstreamException
 import net.markdrew.biblebowl.server.export.KahootQuestion
 import net.markdrew.biblebowl.server.export.kahootXlsx
 import net.markdrew.biblebowl.server.export.quizletCsv
+import net.markdrew.biblebowl.server.export.quizletTabbed
+import net.markdrew.biblebowl.server.export.spaceCsv
 import net.markdrew.biblebowl.server.export.tsvToCsv
 import net.markdrew.biblebowl.server.security.currentUser
 import net.markdrew.biblebowl.server.security.requirePermission
@@ -356,32 +359,39 @@ fun Route.generateRoutes(
                     study, seasons, pdfCache, PdfFileNames.uniqueWordFlashcards(), LayoutRevisions.FLASHCARDS,
                 ) { s ->
                     val sd = s.studyData()
-                    val ranges = oneTimeWords(sd).sortedBy { it.first }
-                    val whitespace = Regex("\\s+")
-                    val cards = ranges.mapIndexedNotNull { i, range ->
-                        val verse = sd.verseEnclosing(range) ?: return@mapIndexedNotNull null
-                        // Locate the word in its verse by raw char offsets (not text search, which could
-                        // hit a substring of another word), then emphasize it in a markdown note.
-                        val note = sd.verseIndex[verse]?.let { verseRange ->
-                            val raw = sd.excerpt(verseRange).excerptText
-                            val start = range.first - verseRange.first
-                            val end = start + (range.last - range.first + 1)
-                            val pre = raw.substring(0, start).replace(whitespace, " ").trimStart()
-                            val word = raw.substring(start, end)
-                            val post = raw.substring(end).replace(whitespace, " ").trimEnd()
-                            CardText.Markdown(
-                                markdownEscape(pre) + "**<u>" + markdownEscape(word) + "</u>**" + markdownEscape(post)
+                    val cards = oneTimeWordCards(sd)
+                    flashcardsTypst(
+                        cards.mapIndexed { i, c ->
+                            Flashcard(
+                                front = CardText.Plain(c.word),
+                                back = CardText.Plain(sd.verseRefFormat(c.verseRef)),
+                                note = CardText.Markdown(
+                                    markdownEscape(c.versePrefix) + "**<u>" + markdownEscape(c.word) + "</u>**" +
+                                        markdownEscape(c.verseSuffix)
+                                ),
+                                footer = "${i + 1} of ${cards.size}",
                             )
-                        } ?: CardText.Plain("")
-                        Flashcard(
-                            front = CardText.Plain(sd.excerpt(range).excerptText),
-                            back = CardText.Plain(sd.verseRefFormat(verse)),
-                            note = note,
-                            footer = "${i + 1} of ${ranges.size}",
-                        )
-                    }
-                    flashcardsTypst(cards)
+                        },
+                    )
                 }
+            }
+
+            // GET /generate/unique-word-flashcards.csv?set=acts — the same deck as a Space-importable
+            // CSV (getspace.app): the word up front; the heading, verse reference, and verse text behind
+            // it, on real lines with Markdown emphasis, which is what Space's cards render (import-tested
+            // 2026-08: its "basic HTML" support does NOT cover this shape). A blank line separates the
+            // heading from the reference — a lone newline is only a Markdown soft break.
+            get("/generate/unique-word-flashcards.csv") {
+                respondUniqueWordDeck(study, seasons, forSpace = true)
+            }
+
+            // GET /generate/unique-word-flashcards.txt?set=acts — the same deck as a Quizlet paste file:
+            // TAB between term and definition, a blank line between cards (on Quizlet's import screen
+            // choose Tab, and a custom "\n\n" between cards) so definitions keep their single line
+            // breaks. Emphasis is Quizlet's own markup, and only the *bold* part: import-tested
+            // 2026-08, _underline_ does not survive its importer.
+            get("/generate/unique-word-flashcards.txt") {
+                respondUniqueWordDeck(study, seasons, forSpace = false)
             }
 
             // GET /generate/questions.csv?source=questions|headings&round=FACT_FINDER&chapter=2
@@ -654,6 +664,52 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
             }
             respondAttachment(kahootXlsx(rows), "kahoot-$baseName.xlsx", XLSX_CONTENT_TYPE)
         }
+    }
+}
+
+/**
+ * The unique-word flashcard deck as a per-app import file, [forSpace]'s CSV or Quizlet's tabbed
+ * text (see the route comments for the two formats). Same shape either way: the one-time word up
+ * front; the heading, full verse reference, and the verse with the word emphasized behind it — the
+ * original bible-bowl Cram export, in each importer's own markup.
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.respondUniqueWordDeck(
+    study: StudyDataRegistry?,
+    seasons: SeasonRepository,
+    forSpace: Boolean,
+) {
+    val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return
+    val svc = study?.forSet(scope.set)
+    if (svc == null || !svc.isConfigured) {
+        return call.respond(
+            HttpStatusCode.ServiceUnavailable,
+            ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+        )
+    }
+    try {
+        call.advertiseCanonicalScope(scope)
+        val sd = svc.studyData()
+        val cards = oneTimeWordCards(sd).map { c ->
+            // The full book name (unlike the PDF's set-relative refs): the export leaves the app, so
+            // each card has to name its verse completely on its own.
+            val ref = c.verseRef.format(FULL_BOOK_FORMAT)
+            val back =
+                if (forSpace) listOfNotNull(
+                    c.heading?.let { "$it\n" }, // + the joiner's newline = the Markdown paragraph break
+                    "**$ref**",
+                    "${c.versePrefix}***${c.word}***${c.verseSuffix}",
+                ) else listOfNotNull(
+                    c.heading,
+                    "*$ref*",
+                    "${c.versePrefix}*${c.word}*${c.verseSuffix}",
+                )
+            c.word to back.joinToString("\n")
+        }
+        val baseName = PdfFileNames.withSet(scope.set.simpleName, "unique-words")
+        if (forSpace) respondAttachment(spaceCsv(cards).toByteArray(), "space-$baseName.csv", CSV_CONTENT_TYPE)
+        else respondAttachment(quizletTabbed(cards).toByteArray(), "quizlet-$baseName.txt", ContentType.Text.Plain)
+    } catch (e: EsvUpstreamException) {
+        call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
     }
 }
 

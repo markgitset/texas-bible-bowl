@@ -4,6 +4,7 @@ package net.markdrew.biblebowl.app.platform
 object Mime {
     const val PDF = "application/pdf"
     const val CSV = "text/csv"
+    const val TEXT = "text/plain"
     const val XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 }
 

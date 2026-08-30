@@ -402,6 +402,14 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun uniqueWordFlashcardsPdf(set: String? = null): ByteArray =
         client.get("$baseUrl/generate/unique-word-flashcards.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
+    /** Fetches the unique-word flashcard deck as a Space-importable CSV (Front,Back + Markdown). */
+    suspend fun uniqueWordFlashcardsCsv(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/unique-word-flashcards.csv") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
+
+    /** Fetches the unique-word flashcard deck as a Quizlet paste-import file (Tab/Semicolon delimited). */
+    suspend fun uniqueWordFlashcardsTxt(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/unique-word-flashcards.txt") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
+
     /** Fetches the multiple-choice study guide PDF (questions by chapter + answer key). */
     suspend fun studyGuidePdf(set: String? = null): ByteArray =
         client.get("$baseUrl/generate/study-guide.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
