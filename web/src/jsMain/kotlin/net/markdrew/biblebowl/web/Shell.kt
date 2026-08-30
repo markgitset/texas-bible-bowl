@@ -215,39 +215,8 @@ object Shell {
                 setAttribute("href", "#${Routes.SIGN_IN}")
             }
         } else {
-            // Grouped user menu — params.js renders the same markup on static pages from the
-            // tbb.nav cache (Session), so keep the two renderers' DOM identical.
-            val menu = buildNavMenu(user, Session.season)
-            slot.child("a", "btn btn-outline-light btn-sm px-3 dropdown-toggle") {
-                setAttribute("href", "#${Routes.ACCOUNT}")
-                setAttribute("role", "button")
-                setAttribute("data-bs-toggle", "dropdown")
-                setAttribute("aria-expanded", "false")
-                child("i", "bi bi-person-circle me-1")
-                append(menu.name)
-            }
-            slot.child("ul", "dropdown-menu dropdown-menu-end") {
-                menu.sections.forEachIndexed { i, section ->
-                    if (i > 0) child("li") { child("hr", "dropdown-divider") }
-                    child("li") { child("h6", "dropdown-header", section.label) }
-                    section.items.forEach { item ->
-                        child("li") {
-                            child("a", "dropdown-item") {
-                                setAttribute("href", "#${item.route}")
-                                append(item.label)
-                                if (item.badge) child("span", "badge text-bg-warning ms-2", "hidden until launch")
-                            }
-                        }
-                    }
-                }
-                child("li") { child("hr", "dropdown-divider") }
-                child("li") {
-                    child("button", "dropdown-item", "Sign out") {
-                        setAttribute("type", "button")
-                        onClick { Session.signOut() }
-                    }
-                }
-            }
+            // The one menu renderer (NavMenu.kt) — Session caches its HTML for static pages.
+            renderAccountMenu(slot, buildNavMenu(user, Session.season)) { Session.signOut() }
         }
     }
 
