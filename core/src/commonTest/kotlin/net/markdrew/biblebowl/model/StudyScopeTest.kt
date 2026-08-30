@@ -2,6 +2,7 @@ package net.markdrew.biblebowl.model
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -9,15 +10,26 @@ import kotlin.test.assertTrue
 private val ACTS = StandardStudySet.ACTS.set
 private val MOSES = StandardStudySet.LIFE_OF_MOSES.set
 
-private fun resolved(setParam: String? = null, bookParam: String? = null, chapter: Int? = null): StudyScope =
-    assertIs<ScopeResolution.Resolved>(resolveStudyScope(setParam, bookParam, chapter, ACTS)).scope
+private fun resolved(
+    setParam: String? = null,
+    bookParam: String? = null,
+    chapter: Int? = null,
+    fromChapter: Int? = null,
+    cumulative: Boolean = false,
+): StudyScope = assertIs<ScopeResolution.Resolved>(
+    resolveStudyScope(setParam, bookParam, chapter, ACTS, fromChapter, cumulative)
+).scope
 
 private fun error(
     setParam: String? = null,
     bookParam: String? = null,
     chapter: Int? = null,
     season: StudySet = ACTS,
-): ScopeError = assertIs<ScopeResolution.Invalid>(resolveStudyScope(setParam, bookParam, chapter, season)).error
+    fromChapter: Int? = null,
+    cumulative: Boolean = false,
+): ScopeError = assertIs<ScopeResolution.Invalid>(
+    resolveStudyScope(setParam, bookParam, chapter, season, fromChapter, cumulative)
+).error
 
 class ChapterRangeChapterRefsTest {
 
@@ -119,7 +131,41 @@ class ResolveStudyScopeTest {
 
     @Test
     fun bareChapterResolvesAgainstASingleBookSeason() {
-        assertEquals(StudyScope(ACTS, Book.ACT, 22), resolved(chapter = 22))
+        assertEquals(StudyScope(ACTS, Book.ACT, Book.ACT.chapterRange(22, 22)), resolved(chapter = 22))
+    }
+
+    @Test
+    fun aLoneEndpointMeansWhateverItsOwnParameterMeant() {
+        // The same `chapter = 5` is one chapter on an exact endpoint and a reach-back on a cumulative
+        // one — which is the whole reason the caller's key is passed down rather than guessed here.
+        assertEquals(Book.ACT.chapterRange(5, 5), resolved(chapter = 5).chapters)
+        assertEquals(Book.ACT.chapterRange(1, 5), resolved(chapter = 5, cumulative = true).chapters)
+    }
+
+    @Test
+    fun aStartAndAnEndMakeAnExplicitRange() {
+        assertEquals(Book.ACT.chapterRange(3, 7), resolved(chapter = 7, fromChapter = 3).chapters)
+        // Cumulative or not, naming both ends says the same thing — the start is no longer implied.
+        assertEquals(Book.ACT.chapterRange(3, 7), resolved(chapter = 7, fromChapter = 3, cumulative = true).chapters)
+    }
+
+    @Test
+    fun aLoneStartRunsToTheEndOfTheSet() {
+        assertEquals(Book.ACT.chapterRange(26, 28), resolved(fromChapter = 26).chapters)
+    }
+
+    @Test
+    fun aBackwardsRangeIsRejected() {
+        assertIs<ScopeError.BackwardsChapterRange>(error(chapter = 3, fromChapter = 7))
+        // Equal ends are a single chapter, not backwards.
+        assertEquals(Book.ACT.chapterRange(4, 4), resolved(chapter = 4, fromChapter = 4).chapters)
+    }
+
+    @Test
+    fun aRangeEndpointIsValidatedLikeAnyOtherChapter() {
+        assertIs<ScopeError.ChapterNotInSet>(error(fromChapter = 99))
+        assertIs<ScopeError.ChapterNotInSet>(error(setParam = "moses", bookParam = "EXO", fromChapter = 21))
+        assertIs<ScopeError.BookRequired>(error(setParam = "moses", fromChapter = 3))
     }
 
     @Test
@@ -135,7 +181,10 @@ class ResolveStudyScopeTest {
 
     @Test
     fun multiBookSetWithBookAndChapterResolves() {
-        assertEquals(StudyScope(MOSES, Book.NUM, 14), resolved(setParam = "moses", bookParam = "NUM", chapter = 14))
+        assertEquals(
+            StudyScope(MOSES, Book.NUM, Book.NUM.chapterRange(14, 14)),
+            resolved(setParam = "moses", bookParam = "NUM", chapter = 14),
+        )
     }
 
     @Test
@@ -146,7 +195,10 @@ class ResolveStudyScopeTest {
     @Test
     fun bareBookScopesToThatWholeBookIndependentOfTheSeason() {
         // Off-year study of John during the Acts season — the durable-URL case
-        assertEquals(StudyScope(StandardStudySet.JOHN.set, Book.JOH, 3), resolved(bookParam = "JOH", chapter = 3))
+        assertEquals(
+            StudyScope(StandardStudySet.JOHN.set, Book.JOH, Book.JOH.chapterRange(3, 3)),
+            resolved(bookParam = "JOH", chapter = 3),
+        )
     }
 
     @Test
@@ -178,8 +230,9 @@ class StudyScopeRangesTest {
 
     @Test
     fun singleChapterScopeCoversJustThatChapter() {
-        val scope = StudyScope(ACTS, Book.ACT, 22)
+        val scope = StudyScope(ACTS, Book.ACT, Book.ACT.chapterRange(22, 22))
         assertEquals(listOf(Book.ACT.chapterRange(22, 22)), scope.ranges())
+        assertEquals(Book.ACT.chapterRef(22), scope.singleChapterRef)
     }
 
     @Test
@@ -194,8 +247,9 @@ class StudyScopeRangesTest {
     }
 
     @Test
-    fun throughIsCumulativeAndSkipsGaps() {
-        val scope = StudyScope(MOSES, Book.NUM, 14)
+    fun aCumulativeSpanSkipsTheGapsOfAPartialSet() {
+        // Exo 1-20, 32-34, Num 1-3, 10-14 … — the span reaches across books, ranges() clips the gaps.
+        val scope = StudyScope(MOSES, Book.NUM, MOSES.chapterRanges.first().start..Book.NUM.chapterRef(14))
         assertEquals(
             listOf(
                 Book.EXO.chapterRange(1, 20),
@@ -203,12 +257,46 @@ class StudyScopeRangesTest {
                 Book.NUM.chapterRange(1, 3),
                 Book.NUM.chapterRange(10, 14),
             ),
-            scope.through(),
+            scope.ranges(),
         )
     }
 
     @Test
-    fun throughForASingleBookSetMatchesTheSimpleCase() {
-        assertEquals(listOf(Book.ACT.chapterRange(1, 5)), StudyScope(ACTS, Book.ACT, 5).through())
+    fun aCumulativeSpanForASingleBookSetMatchesTheSimpleCase() {
+        val scope = StudyScope(ACTS, Book.ACT, Book.ACT.chapterRange(1, 5))
+        assertEquals(listOf(Book.ACT.chapterRange(1, 5)), scope.ranges())
+    }
+
+    @Test
+    fun anExplicitRangeIsClippedToTheSetAtBothEnds() {
+        // Exo 18-33 straddles the set's 21-31 gap, so it comes back as the two pieces that survive.
+        val scope = StudyScope(MOSES, Book.EXO, Book.EXO.chapterRange(18, 33))
+        assertEquals(listOf(Book.EXO.chapterRange(18, 20), Book.EXO.chapterRange(32, 33)), scope.ranges())
+    }
+
+    @Test
+    fun aMultiChapterScopeHasNoSingleChapter() {
+        // The point of the null: file-name suffixes and the single-chapter practice content have no
+        // meaning for a span, so they must not silently see one end of it.
+        assertNull(StudyScope(ACTS, Book.ACT, Book.ACT.chapterRange(3, 7)).singleChapterRef)
+        assertNull(StudyScope(ACTS, Book.ACT, null).singleChapterRef)
+    }
+
+    @Test
+    fun coversAnswersForEveryShapeOfScope() {
+        val range = StudyScope(ACTS, Book.ACT, Book.ACT.chapterRange(3, 7))
+        assertTrue(range.covers(Book.ACT.chapterRef(3)) && range.covers(Book.ACT.chapterRef(7)))
+        assertFalse(range.covers(Book.ACT.chapterRef(2)) || range.covers(Book.ACT.chapterRef(8)))
+
+        // A book with no span is that book's slice; a bare set covers everything.
+        val book = StudyScope(MOSES, Book.NUM, null)
+        assertTrue(book.covers(Book.NUM.chapterRef(14)))
+        assertFalse(book.covers(Book.EXO.chapterRef(1)))
+        assertTrue(StudyScope(MOSES, null, null).covers(Book.EXO.chapterRef(1)))
+
+        // Cumulative spans reach back across books, which is what makes them book-aware.
+        val cumulative = StudyScope(MOSES, Book.NUM, MOSES.chapterRanges.first().start..Book.NUM.chapterRef(3))
+        assertTrue(cumulative.covers(Book.EXO.chapterRef(20)))
+        assertFalse(cumulative.covers(Book.NUM.chapterRef(14)))
     }
 }

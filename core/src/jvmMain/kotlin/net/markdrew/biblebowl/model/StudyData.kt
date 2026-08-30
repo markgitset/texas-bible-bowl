@@ -289,12 +289,12 @@ class StudyData(
         }
 
     /**
-     * Returns a [PracticeContent] view of this data, optionally limited to the chapters up through
-     * [throughChapter] (inclusive) for cumulative practice.
+     * Returns a [PracticeContent] view of this data, optionally limited to [chapters] — any subset of
+     * [chapterRefs], so a cumulative "through chapter 5" and an explicit "chapters 3-7" are the same
+     * kind of request here. Null covers everything this data holds.
      */
-    fun practice(throughChapter: ChapterRef? = null): PracticeContent =
-        if (throughChapter == null) PracticeContent(this)
-        else PracticeContent(this, chapterRefs.take(chapterRefs.indexOf(throughChapter) + 1))
+    fun practice(chapters: List<ChapterRef>? = null): PracticeContent =
+        if (chapters == null) PracticeContent(this) else PracticeContent(this, chapters)
 
     companion object {
 

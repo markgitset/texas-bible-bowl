@@ -536,6 +536,20 @@ class StudyRoutesTest {
 
         // In the set but outside the studied text: an empty deck is a 404, not a zero-card file.
         assertEquals(HttpStatusCode.NotFound, deck("?chapter=3").status)
+
+        // An explicit range names both ends; the file name spells them out rather than "through".
+        val ranged = deck("?fromChapter=1&throughChapter=2")
+        assertEquals(HttpStatusCode.OK, ranged.status)
+        assertTrue("space-acts-verses-through-ch2.csv" in ranged.headers[HttpHeaders.ContentDisposition].orEmpty())
+        listOf("Acts 1:1", "Acts 2:2").forEach { assertTrue("**$it**" in ranged.bodyAsText()) }
+
+        // A range starting past chapter 1 keeps its own start in the name, since it isn't the set's.
+        val tail = deck("?fromChapter=2&throughChapter=2")
+        assertTrue("space-acts-verses-ch2.csv" in tail.headers[HttpHeaders.ContentDisposition].orEmpty())
+        assertTrue("**Acts 1:" !in tail.bodyAsText())
+
+        // Backwards ranges are a 400 from the scope resolver, not an empty deck.
+        assertEquals(HttpStatusCode.BadRequest, deck("?fromChapter=2&throughChapter=1").status)
     }
 
     @Test
@@ -563,6 +577,17 @@ class StudyRoutesTest {
         )
         val filtered = api.get("/generate/space-questions.csv?source=headings&chapter=1")
         assertEquals("Front,Back\nThe Promise of the Holy Spirit,Chapter 1", filtered.bodyAsText().trim())
+
+        // `chapter=2` must reach back and keep chapter 1: this route spells its parameter "chapter" but
+        // means "through chapter", and chapter=1 alone can't tell the two readings apart.
+        val cumulative = api.get("/generate/space-questions.csv?source=headings&chapter=2").bodyAsText()
+        assertTrue("The Promise of the Holy Spirit" in cumulative, "chapter=2 must stay cumulative")
+        assertTrue("The Coming of the Holy Spirit" in cumulative)
+
+        // Naming a start turns the same endpoint into an explicit range, which does not reach back.
+        val ranged = api.get("/generate/space-questions.csv?source=headings&fromChapter=2&chapter=2").bodyAsText()
+        assertTrue("The Promise of the Holy Spirit" !in ranged, "an explicit range must not reach back:\n$ranged")
+        assertTrue("The Coming of the Holy Spirit" in ranged)
 
         // Quizlet paste file: TAB between title and chapter, one card per line — the importer's
         // default shape (single-line material needs no custom between-cards separator), no header.
