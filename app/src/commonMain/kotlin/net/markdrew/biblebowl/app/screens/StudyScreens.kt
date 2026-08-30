@@ -458,6 +458,17 @@ fun StudySectionScreen(
                     busyCard = busyCard,
                     onClick = { download("Unique words index", withSet(PdfFileNames.uniqueWordsIndex())) { api.uniqueWordsIndexPdf() } },
                 )
+                DownloadCard(
+                    title = "Quizlet / Space CSV",
+                    subtitle = "The flashcard deck as comma-separated term/definition pairs — each unique word " +
+                        "with its verse — import-ready for Quizlet, Space, or Anki.",
+                    busyCard = busyCard,
+                    onClick = {
+                        download("Quizlet / Space CSV", "quizlet-${withSet("unique-words")}.csv", Mime.CSV) {
+                            api.uniqueWordFlashcardsCsv()
+                        }
+                    },
+                )
             }
 
             StudySection.PRACTICE_TESTS -> {

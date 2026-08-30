@@ -398,6 +398,13 @@ object DownloadsScreen {
                 "in order of appearance.",
             href = generateUrl("/generate/unique-words-index.pdf"),
         )
+        downloadCard(
+            title = "Quizlet / Space CSV",
+            subtitle = "The flashcard deck as comma-separated term/definition pairs — each unique word with " +
+                "its verse — import-ready for Quizlet, Space, or Anki.",
+            href = generateUrl("/generate/unique-word-flashcards.csv"),
+            buttonLabel = "Download",
+        )
     }
 
     private fun practiceTestCards() {

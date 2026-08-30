@@ -375,6 +375,32 @@ class StudyRoutesTest {
     }
 
     @Test
+    fun uniqueWordsExportAsQuizletCsv() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
+            )
+        }
+        val api = createClient { }
+
+        val res = api.get("/generate/unique-word-flashcards.csv")
+        assertEquals(HttpStatusCode.OK, res.status)
+        assertTrue("quizlet-acts-unique-words.csv" in res.headers[HttpHeaders.ContentDisposition].orEmpty())
+
+        // Word,definition rows in order of appearance: the definition carries the heading, the full
+        // verse reference, and the verse with the word *emphasized* (plain text for the importers).
+        val lines = res.bodyAsText().trim().lines()
+        val theophilus = lines.indexOfFirst { it.startsWith("Theophilus,") }
+        val pentecost = lines.indexOfFirst { it.startsWith("Pentecost,") }
+        assertTrue(theophilus >= 0 && pentecost >= 0, "expected one-time words from both chapters in $lines")
+        assertTrue(theophilus < pentecost, "cards must run in order of appearance")
+        assertTrue("The Promise of the Holy Spirit — Acts 1:1 — " in lines[theophilus])
+        assertTrue("O *Theophilus*," in lines[theophilus])
+        assertTrue("The Coming of the Holy Spirit — Acts 2:1 — " in lines[pentecost])
+    }
+
+    @Test
     fun headingsExportAsQuizletCsvAndKahootXlsx() = testApplication {
         application {
             module(

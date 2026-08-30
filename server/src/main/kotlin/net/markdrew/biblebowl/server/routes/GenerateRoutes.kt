@@ -33,7 +33,7 @@ import net.markdrew.biblebowl.analysis.fullIndex
 import net.markdrew.biblebowl.generate.LayoutRevisions
 import net.markdrew.biblebowl.generate.stampLayoutRevision
 import net.markdrew.biblebowl.analysis.namesIndex
-import net.markdrew.biblebowl.analysis.oneTimeWords
+import net.markdrew.biblebowl.analysis.oneTimeWordCards
 import net.markdrew.biblebowl.analysis.wordListIndex
 import net.markdrew.biblebowl.generate.indices.indexTypst
 import net.markdrew.biblebowl.generate.indices.numbersIndexTypst
@@ -58,6 +58,7 @@ import net.markdrew.biblebowl.generation.typst.toFlashcards
 import net.markdrew.biblebowl.api.StudyScopeParams
 import net.markdrew.biblebowl.model.BRIEF_BOOK_FORMAT
 import net.markdrew.biblebowl.model.ChapterRef
+import net.markdrew.biblebowl.model.FULL_BOOK_FORMAT
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.model.StudyScope
 import net.markdrew.biblebowl.model.StudySet
@@ -356,31 +357,50 @@ fun Route.generateRoutes(
                     study, seasons, pdfCache, PdfFileNames.uniqueWordFlashcards(), LayoutRevisions.FLASHCARDS,
                 ) { s ->
                     val sd = s.studyData()
-                    val ranges = oneTimeWords(sd).sortedBy { it.first }
-                    val whitespace = Regex("\\s+")
-                    val cards = ranges.mapIndexedNotNull { i, range ->
-                        val verse = sd.verseEnclosing(range) ?: return@mapIndexedNotNull null
-                        // Locate the word in its verse by raw char offsets (not text search, which could
-                        // hit a substring of another word), then emphasize it in a markdown note.
-                        val note = sd.verseIndex[verse]?.let { verseRange ->
-                            val raw = sd.excerpt(verseRange).excerptText
-                            val start = range.first - verseRange.first
-                            val end = start + (range.last - range.first + 1)
-                            val pre = raw.substring(0, start).replace(whitespace, " ").trimStart()
-                            val word = raw.substring(start, end)
-                            val post = raw.substring(end).replace(whitespace, " ").trimEnd()
-                            CardText.Markdown(
-                                markdownEscape(pre) + "**<u>" + markdownEscape(word) + "</u>**" + markdownEscape(post)
+                    val cards = oneTimeWordCards(sd)
+                    flashcardsTypst(
+                        cards.mapIndexed { i, c ->
+                            Flashcard(
+                                front = CardText.Plain(c.word),
+                                back = CardText.Plain(sd.verseRefFormat(c.verseRef)),
+                                note = CardText.Markdown(
+                                    markdownEscape(c.versePrefix) + "**<u>" + markdownEscape(c.word) + "</u>**" +
+                                        markdownEscape(c.verseSuffix)
+                                ),
+                                footer = "${i + 1} of ${cards.size}",
                             )
-                        } ?: CardText.Plain("")
-                        Flashcard(
-                            front = CardText.Plain(sd.excerpt(range).excerptText),
-                            back = CardText.Plain(sd.verseRefFormat(verse)),
-                            note = note,
-                            footer = "${i + 1} of ${ranges.size}",
-                        )
+                        },
+                    )
+                }
+            }
+
+            // GET /generate/unique-word-flashcards.csv?set=acts — the same deck as term/definition pairs,
+            // import-ready for Quizlet/Space/Anki: the word up front; the heading, verse reference, and
+            // verse text behind it. Those importers read plain text (no HTML/markdown), so the word is
+            // emphasized in its verse with *asterisks*.
+            get("/generate/unique-word-flashcards.csv") {
+                val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return@get
+                val svc = study?.forSet(scope.set)
+                if (svc == null || !svc.isConfigured) {
+                    return@get call.respond(
+                        HttpStatusCode.ServiceUnavailable,
+                        ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+                    )
+                }
+                try {
+                    call.advertiseCanonicalScope(scope)
+                    val sd = svc.studyData()
+                    val cards = oneTimeWordCards(sd).map { c ->
+                        // The full book name (unlike the PDF's set-relative refs): the export leaves the
+                        // app, so each card has to name its verse completely on its own.
+                        val ref = c.verseRef.format(FULL_BOOK_FORMAT)
+                        val verse = "${c.versePrefix}*${c.word}*${c.verseSuffix}"
+                        c.word to listOfNotNull(c.heading, ref, verse).joinToString(" — ")
                     }
-                    flashcardsTypst(cards)
+                    val baseName = PdfFileNames.withSet(scope.set.simpleName, "unique-words")
+                    respondAttachment(quizletCsv(cards).toByteArray(), "quizlet-$baseName.csv", CSV_CONTENT_TYPE)
+                } catch (e: EsvUpstreamException) {
+                    call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
                 }
             }
 
