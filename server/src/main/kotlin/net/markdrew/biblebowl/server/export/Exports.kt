@@ -25,12 +25,13 @@ fun spaceCsv(cards: List<Pair<String, String>>): String =
     }
 
 /**
- * A Quizlet paste-import file: TAB between term and definition, `;` ending each card. Imported with
- * "between term and definition: Tab" and "between cards: Semicolon" on Quizlet's import screen, a
- * definition's real line breaks survive inside the card (newline can't separate cards then).
+ * A Quizlet paste-import file: TAB between term and definition, a blank line between cards.
+ * Imported with "between term and definition: Tab" and a custom `\n\n` "between cards" on Quizlet's
+ * import screen (import-tested 2026-08), a definition's single line breaks survive inside the card —
+ * and unlike a `;` separator, a blank line can never occur inside a verse.
  */
 fun quizletTabbed(cards: List<Pair<String, String>>): String =
-    cards.joinToString("\n") { (term, definition) -> "$term\t$definition;" }
+    cards.joinToString("\n\n") { (term, definition) -> "$term\t$definition" }
 
 /**
  * Re-emits a tab-separated file as CSV, dropping the trailing empty column a trailing tab leaves.

@@ -472,7 +472,7 @@ fun StudySectionScreen(
                 DownloadCard(
                     title = "Flashcards for Quizlet",
                     subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
-                        "between term and definition, and Semicolon between cards.",
+                        "between term and definition, and enter \\n\\n as the custom separator between cards.",
                     busyCard = busyCard,
                     onClick = {
                         download("Flashcards for Quizlet", "quizlet-${withSet("unique-words")}.txt", Mime.TEXT) {

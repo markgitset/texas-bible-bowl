@@ -398,15 +398,17 @@ class StudyRoutesTest {
         assertTrue("The Coming of the Holy Spirit\n\n**Acts 2:1**\n" in csvBody)
         assertTrue(csvBody.indexOf("***Theophilus***") < csvBody.indexOf("***Pentecost***"), "appearance order")
 
-        // Quizlet paste file (import-tested 2026-08): term TAB definition, each card ending ";" so
-        // definitions keep their line breaks; only *bold* markup (underline doesn't survive import).
+        // Quizlet paste file (import-tested 2026-08): term TAB definition, a blank line between cards
+        // (custom "\n\n" card separator on import, so definitions keep their single line breaks);
+        // only *bold* markup (underline doesn't survive import).
         val txt = api.get("/generate/unique-word-flashcards.txt")
         assertEquals(HttpStatusCode.OK, txt.status)
         assertTrue("quizlet-acts-unique-words.txt" in txt.headers[HttpHeaders.ContentDisposition].orEmpty())
         val txtBody = txt.bodyAsText()
-        val theophilusRow = "Theophilus\tThe Promise of the Holy Spirit\n*Acts 1:1*\nIn the first book, " +
-            "O *Theophilus*, I have dealt with all that Jesus began to do and teach,;"
-        assertTrue(theophilusRow in txtBody, "unexpected Quizlet card shape in:\n$txtBody")
+        val theophilusTxtCard = "Theophilus\tThe Promise of the Holy Spirit\n*Acts 1:1*\nIn the first book, " +
+            "O *Theophilus*, I have dealt with all that Jesus began to do and teach,"
+        assertTrue("$theophilusTxtCard\n\n" in txtBody, "unexpected Quizlet card shape in:\n$txtBody")
+        assertTrue("\n\n\n" !in txtBody, "definitions must not contain blank lines — they'd split the card")
         assertTrue("_" !in txtBody, "no underline markup — Quizlet's importer drops it")
     }
 

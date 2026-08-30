@@ -386,9 +386,10 @@ fun Route.generateRoutes(
             }
 
             // GET /generate/unique-word-flashcards.txt?set=acts — the same deck as a Quizlet paste file:
-            // TAB between term and definition, ";" ending each card (choose Tab / Semicolon on Quizlet's
-            // import screen so definitions keep their line breaks). Emphasis is Quizlet's own markup, and
-            // only the *bold* part: import-tested 2026-08, _underline_ does not survive its importer.
+            // TAB between term and definition, a blank line between cards (on Quizlet's import screen
+            // choose Tab, and a custom "\n\n" between cards) so definitions keep their single line
+            // breaks. Emphasis is Quizlet's own markup, and only the *bold* part: import-tested
+            // 2026-08, _underline_ does not survive its importer.
             get("/generate/unique-word-flashcards.txt") {
                 respondUniqueWordDeck(study, seasons, forSpace = false)
             }
