@@ -376,8 +376,9 @@ fun Route.generateRoutes(
 
             // GET /generate/unique-word-flashcards.csv?set=acts — the same deck as term/definition pairs,
             // import-ready for Quizlet/Space/Anki: the word up front; the heading, verse reference, and
-            // verse text behind it. Those importers read plain text (no HTML/markdown), so the word is
-            // emphasized in its verse with *asterisks*.
+            // verse text behind it. The definition uses the basic HTML those importers render (the shape
+            // of the original bible-bowl Cram export): <br/> between the three lines, the reference bold,
+            // and the word bold+underlined in its verse.
             get("/generate/unique-word-flashcards.csv") {
                 val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return@get
                 val svc = study?.forSet(scope.set)
@@ -394,8 +395,8 @@ fun Route.generateRoutes(
                         // The full book name (unlike the PDF's set-relative refs): the export leaves the
                         // app, so each card has to name its verse completely on its own.
                         val ref = c.verseRef.format(FULL_BOOK_FORMAT)
-                        val verse = "${c.versePrefix}*${c.word}*${c.verseSuffix}"
-                        c.word to listOfNotNull(c.heading, ref, verse).joinToString(" — ")
+                        val verse = "${c.versePrefix}<b><u>${c.word}</u></b>${c.verseSuffix}"
+                        c.word to listOfNotNull(c.heading, "<b>$ref</b>", verse).joinToString("<br/>")
                     }
                     val baseName = PdfFileNames.withSet(scope.set.simpleName, "unique-words")
                     respondAttachment(quizletCsv(cards).toByteArray(), "quizlet-$baseName.csv", CSV_CONTENT_TYPE)
