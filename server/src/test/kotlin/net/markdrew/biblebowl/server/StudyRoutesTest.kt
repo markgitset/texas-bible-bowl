@@ -375,7 +375,7 @@ class StudyRoutesTest {
     }
 
     @Test
-    fun uniqueWordsExportAsQuizletCsv() = testApplication {
+    fun uniqueWordsExportForSpaceAndQuizlet() = testApplication {
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
@@ -384,21 +384,30 @@ class StudyRoutesTest {
         }
         val api = createClient { }
 
-        val res = api.get("/generate/unique-word-flashcards.csv")
-        assertEquals(HttpStatusCode.OK, res.status)
-        assertTrue("quizlet-acts-unique-words.csv" in res.headers[HttpHeaders.ContentDisposition].orEmpty())
+        // Space CSV (import-tested 2026-08): Front,Back header, quoted multi-line definitions in
+        // Markdown — heading, then a blank line (a lone newline is only a soft break), then the bold
+        // reference, then the verse with the word bold+italic. Cards run in order of appearance.
+        val csv = api.get("/generate/unique-word-flashcards.csv")
+        assertEquals(HttpStatusCode.OK, csv.status)
+        assertTrue("space-acts-unique-words.csv" in csv.headers[HttpHeaders.ContentDisposition].orEmpty())
+        val csvBody = csv.bodyAsText()
+        assertTrue(csvBody.startsWith("Front,Back\n"), "Space requires the header row")
+        val theophilusCard = "Theophilus,\"The Promise of the Holy Spirit\n\n**Acts 1:1**\nIn the first book, " +
+            "O ***Theophilus***, I have dealt with all that Jesus began to do and teach,\""
+        assertTrue(theophilusCard in csvBody, "unexpected Space card shape in:\n$csvBody")
+        assertTrue("The Coming of the Holy Spirit\n\n**Acts 2:1**\n" in csvBody)
+        assertTrue(csvBody.indexOf("***Theophilus***") < csvBody.indexOf("***Pentecost***"), "appearance order")
 
-        // Word,definition rows in order of appearance: the definition is the bible-bowl Cram shape —
-        // heading, bold full verse reference, and the verse with the word bold+underlined, on three
-        // <br/>-separated lines of the basic HTML the flashcard importers render.
-        val lines = res.bodyAsText().trim().lines()
-        val theophilus = lines.indexOfFirst { it.startsWith("Theophilus,") }
-        val pentecost = lines.indexOfFirst { it.startsWith("Pentecost,") }
-        assertTrue(theophilus >= 0 && pentecost >= 0, "expected one-time words from both chapters in $lines")
-        assertTrue(theophilus < pentecost, "cards must run in order of appearance")
-        assertTrue("The Promise of the Holy Spirit<br/><b>Acts 1:1</b><br/>" in lines[theophilus])
-        assertTrue("O <b><u>Theophilus</u></b>," in lines[theophilus])
-        assertTrue("The Coming of the Holy Spirit<br/><b>Acts 2:1</b><br/>" in lines[pentecost])
+        // Quizlet paste file (import-tested 2026-08): term TAB definition, each card ending ";" so
+        // definitions keep their line breaks; only *bold* markup (underline doesn't survive import).
+        val txt = api.get("/generate/unique-word-flashcards.txt")
+        assertEquals(HttpStatusCode.OK, txt.status)
+        assertTrue("quizlet-acts-unique-words.txt" in txt.headers[HttpHeaders.ContentDisposition].orEmpty())
+        val txtBody = txt.bodyAsText()
+        val theophilusRow = "Theophilus\tThe Promise of the Holy Spirit\n*Acts 1:1*\nIn the first book, " +
+            "O *Theophilus*, I have dealt with all that Jesus began to do and teach,;"
+        assertTrue(theophilusRow in txtBody, "unexpected Quizlet card shape in:\n$txtBody")
+        assertTrue("_" !in txtBody, "no underline markup — Quizlet's importer drops it")
     }
 
     @Test

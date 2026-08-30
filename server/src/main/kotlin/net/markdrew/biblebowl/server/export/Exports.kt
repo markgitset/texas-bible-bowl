@@ -15,6 +15,24 @@ fun quizletCsv(cards: List<Pair<String, String>>): String =
     cards.joinToString("\n") { (term, definition) -> csvRow(listOf(term, definition)) }
 
 /**
+ * A Space-importable CSV (getspace.app): the `Front,Back` header row its importer requires, then one
+ * card per row. Unlike [quizletCsv], a definition's real line breaks are kept (RFC 4180 quoted) —
+ * Space renders them, along with Markdown emphasis, inside a card.
+ */
+fun spaceCsv(cards: List<Pair<String, String>>): String =
+    "Front,Back\n" + cards.joinToString("\n") { (front, back) ->
+        csvRow(listOf(front, back), keepLineBreaks = true)
+    }
+
+/**
+ * A Quizlet paste-import file: TAB between term and definition, `;` ending each card. Imported with
+ * "between term and definition: Tab" and "between cards: Semicolon" on Quizlet's import screen, a
+ * definition's real line breaks survive inside the card (newline can't separate cards then).
+ */
+fun quizletTabbed(cards: List<Pair<String, String>>): String =
+    cards.joinToString("\n") { (term, definition) -> "$term\t$definition;" }
+
+/**
  * Re-emits a tab-separated file as CSV, dropping the trailing empty column a trailing tab leaves.
  * The curated study guide is authored as TSV (`StudyGuideParser`); CSV is only its download shape.
  */
@@ -23,14 +41,24 @@ fun tsvToCsv(tsv: ByteArray): ByteArray =
         .joinToString("\n") { line -> csvRow(line.split('\t').dropLastWhile { it.isBlank() }) }
         .toByteArray()
 
-/** An RFC 4180 row: fields joined by commas, each quoted only when it contains a comma or quote. */
-private fun csvRow(fields: List<String>): String = fields.joinToString(",") { field ->
-    val value = field.replace(ROW_BREAKERS, " ").trim()
-    if (',' in value || '"' in value) "\"" + value.replace("\"", "\"\"") + "\"" else value
-}
+/**
+ * An RFC 4180 row: fields joined by commas, each quoted only when it needs it. [keepLineBreaks]
+ * preserves newlines inside a field (forcing the quotes RFC 4180 then requires) instead of
+ * collapsing them for one-line-per-card importers.
+ */
+private fun csvRow(fields: List<String>, keepLineBreaks: Boolean = false): String =
+    fields.joinToString(",") { field ->
+        val value =
+            if (keepLineBreaks) field.replace("\r\n", "\n").replace(IN_LINE_BREAKERS, " ").trim()
+            else field.replace(ROW_BREAKERS, " ").trim()
+        if (',' in value || '"' in value || '\n' in value) "\"" + value.replace("\"", "\"\"") + "\"" else value
+    }
 
 /** Importers read one card/question per line, so tabs and newlines collapse to spaces in a field. */
 private val ROW_BREAKERS = Regex("[\\t\\n\\r]+")
+
+/** What still collapses when line breaks are kept: tabs and stray carriage returns. */
+private val IN_LINE_BREAKERS = Regex("[\\t\\r]+")
 
 /**
  * One Kahoot question: 2–4 [answers] with 1-based [correctIndices] into them. Kahoot's template

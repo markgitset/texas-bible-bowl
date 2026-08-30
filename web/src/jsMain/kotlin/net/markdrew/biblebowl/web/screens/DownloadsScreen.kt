@@ -399,10 +399,17 @@ object DownloadsScreen {
             href = generateUrl("/generate/unique-words-index.pdf"),
         )
         downloadCard(
-            title = "Quizlet / Space CSV",
-            subtitle = "The flashcard deck as comma-separated term/definition pairs — each unique word with " +
-                "its verse — import-ready for Quizlet, Space, or Anki.",
+            title = "Flashcards for the Space app",
+            subtitle = "The flashcard deck as a CSV that imports straight into Space (getspace.app) — " +
+                "each unique word up front, its verse with the word bolded on the back.",
             href = generateUrl("/generate/unique-word-flashcards.csv"),
+            buttonLabel = "Download",
+        )
+        downloadCard(
+            title = "Flashcards for Quizlet",
+            subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
+                "between term and definition, and Semicolon between cards.",
+            href = generateUrl("/generate/unique-word-flashcards.txt"),
             buttonLabel = "Download",
         )
     }

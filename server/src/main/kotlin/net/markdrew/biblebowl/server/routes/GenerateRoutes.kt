@@ -69,6 +69,8 @@ import net.markdrew.biblebowl.server.esv.EsvUpstreamException
 import net.markdrew.biblebowl.server.export.KahootQuestion
 import net.markdrew.biblebowl.server.export.kahootXlsx
 import net.markdrew.biblebowl.server.export.quizletCsv
+import net.markdrew.biblebowl.server.export.quizletTabbed
+import net.markdrew.biblebowl.server.export.spaceCsv
 import net.markdrew.biblebowl.server.export.tsvToCsv
 import net.markdrew.biblebowl.server.security.currentUser
 import net.markdrew.biblebowl.server.security.requirePermission
@@ -374,35 +376,21 @@ fun Route.generateRoutes(
                 }
             }
 
-            // GET /generate/unique-word-flashcards.csv?set=acts — the same deck as term/definition pairs,
-            // import-ready for Quizlet/Space/Anki: the word up front; the heading, verse reference, and
-            // verse text behind it. The definition uses the basic HTML those importers render (the shape
-            // of the original bible-bowl Cram export): <br/> between the three lines, the reference bold,
-            // and the word bold+underlined in its verse.
+            // GET /generate/unique-word-flashcards.csv?set=acts — the same deck as a Space-importable
+            // CSV (getspace.app): the word up front; the heading, verse reference, and verse text behind
+            // it, on real lines with Markdown emphasis, which is what Space's cards render (import-tested
+            // 2026-08: its "basic HTML" support does NOT cover this shape). A blank line separates the
+            // heading from the reference — a lone newline is only a Markdown soft break.
             get("/generate/unique-word-flashcards.csv") {
-                val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return@get
-                val svc = study?.forSet(scope.set)
-                if (svc == null || !svc.isConfigured) {
-                    return@get call.respond(
-                        HttpStatusCode.ServiceUnavailable,
-                        ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
-                    )
-                }
-                try {
-                    call.advertiseCanonicalScope(scope)
-                    val sd = svc.studyData()
-                    val cards = oneTimeWordCards(sd).map { c ->
-                        // The full book name (unlike the PDF's set-relative refs): the export leaves the
-                        // app, so each card has to name its verse completely on its own.
-                        val ref = c.verseRef.format(FULL_BOOK_FORMAT)
-                        val verse = "${c.versePrefix}<b><u>${c.word}</u></b>${c.verseSuffix}"
-                        c.word to listOfNotNull(c.heading, "<b>$ref</b>", verse).joinToString("<br/>")
-                    }
-                    val baseName = PdfFileNames.withSet(scope.set.simpleName, "unique-words")
-                    respondAttachment(quizletCsv(cards).toByteArray(), "quizlet-$baseName.csv", CSV_CONTENT_TYPE)
-                } catch (e: EsvUpstreamException) {
-                    call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
-                }
+                respondUniqueWordDeck(study, seasons, forSpace = true)
+            }
+
+            // GET /generate/unique-word-flashcards.txt?set=acts — the same deck as a Quizlet paste file:
+            // TAB between term and definition, ";" ending each card (choose Tab / Semicolon on Quizlet's
+            // import screen so definitions keep their line breaks). Emphasis is Quizlet's own markup, and
+            // only the *bold* part: import-tested 2026-08, _underline_ does not survive its importer.
+            get("/generate/unique-word-flashcards.txt") {
+                respondUniqueWordDeck(study, seasons, forSpace = false)
             }
 
             // GET /generate/questions.csv?source=questions|headings&round=FACT_FINDER&chapter=2
@@ -675,6 +663,52 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
             }
             respondAttachment(kahootXlsx(rows), "kahoot-$baseName.xlsx", XLSX_CONTENT_TYPE)
         }
+    }
+}
+
+/**
+ * The unique-word flashcard deck as a per-app import file, [forSpace]'s CSV or Quizlet's tabbed
+ * text (see the route comments for the two formats). Same shape either way: the one-time word up
+ * front; the heading, full verse reference, and the verse with the word emphasized behind it — the
+ * original bible-bowl Cram export, in each importer's own markup.
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.respondUniqueWordDeck(
+    study: StudyDataRegistry?,
+    seasons: SeasonRepository,
+    forSpace: Boolean,
+) {
+    val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return
+    val svc = study?.forSet(scope.set)
+    if (svc == null || !svc.isConfigured) {
+        return call.respond(
+            HttpStatusCode.ServiceUnavailable,
+            ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+        )
+    }
+    try {
+        call.advertiseCanonicalScope(scope)
+        val sd = svc.studyData()
+        val cards = oneTimeWordCards(sd).map { c ->
+            // The full book name (unlike the PDF's set-relative refs): the export leaves the app, so
+            // each card has to name its verse completely on its own.
+            val ref = c.verseRef.format(FULL_BOOK_FORMAT)
+            val back =
+                if (forSpace) listOfNotNull(
+                    c.heading?.let { "$it\n" }, // + the joiner's newline = the Markdown paragraph break
+                    "**$ref**",
+                    "${c.versePrefix}***${c.word}***${c.verseSuffix}",
+                ) else listOfNotNull(
+                    c.heading,
+                    "*$ref*",
+                    "${c.versePrefix}*${c.word}*${c.verseSuffix}",
+                )
+            c.word to back.joinToString("\n")
+        }
+        val baseName = PdfFileNames.withSet(scope.set.simpleName, "unique-words")
+        if (forSpace) respondAttachment(spaceCsv(cards).toByteArray(), "space-$baseName.csv", CSV_CONTENT_TYPE)
+        else respondAttachment(quizletTabbed(cards).toByteArray(), "quizlet-$baseName.txt", ContentType.Text.Plain)
+    } catch (e: EsvUpstreamException) {
+        call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
     }
 }
 
