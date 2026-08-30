@@ -5,9 +5,11 @@ import kotlinx.serialization.Serializable
 
 /**
  * The Study & Practice sections — the one canonical list, shared by the server (the
- * `study_materials.section` column), both apps' `study/<slug>` routes, hugo.toml's menu children,
- * and sitemap.html's study list (the last two still need manual sync). Serialized as the slug, so
- * the wire format, the URL fragment, and the stored value are the same string.
+ * `study_materials.section` column), both apps' `study/<slug>` routes, and — via the generated
+ * site/data/study-sections.json (regenerated automatically on :shared-api JVM builds and at
+ * deploy; a jvmTest self-heals it and fails CI while the committed copy is stale) — the site
+ * navbar's dropdown and the Site Map. Serialized as the slug, so the wire format, the URL
+ * fragment, and the stored value are the same string.
  */
 @Serializable
 enum class StudySection(val slug: String, val title: String) {

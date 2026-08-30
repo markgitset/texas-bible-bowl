@@ -39,20 +39,16 @@
           <li class="nav-item"><a class="nav-link" href="../registration/">Registration</a></li>
           <li class="nav-item"><a class="nav-link" href="../event/">Event</a></li>
           <!-- Study & Practice dropdown, mirroring the Hugo navbar (nav.html): overview + one
-               item per StudySection, so previews exercise Shell's data-route toggling. -->
+               item per StudySection. The section items aren't listed here — Shell.start() fills
+               any [data-study-sections] list from the enum itself, so this dev shell can't drift
+               (prod markup has no marker; Hugo renders the items statically from the generated
+               site/data/study-sections.json). -->
           <li class="nav-item dropdown">
             <a class="nav-link dropdown-toggle" href="#study" role="button" data-bs-toggle="dropdown"
                aria-expanded="false" data-route="study">Study &amp; Practice</a>
-            <ul class="dropdown-menu dropdown-menu-end">
+            <ul class="dropdown-menu dropdown-menu-end" data-study-sections>
               <li><a class="dropdown-item" data-route="study" href="#study">Study &amp; Practice overview</a></li>
               <li><hr class="dropdown-divider"></li>
-              <li><a class="dropdown-item" data-route="study/the-text" href="#study/the-text">The Text</a></li>
-              <li><a class="dropdown-item" data-route="study/general-knowledge" href="#study/general-knowledge">General Knowledge</a></li>
-              <li><a class="dropdown-item" data-route="study/chapter-headings" href="#study/chapter-headings">Chapter Headings</a></li>
-              <li><a class="dropdown-item" data-route="study/unique-words" href="#study/unique-words">Unique Words</a></li>
-              <li><a class="dropdown-item" data-route="study/practice-tests" href="#study/practice-tests">Practice Tests</a></li>
-              <li><a class="dropdown-item" data-route="study/reference-documents" href="#study/reference-documents">Reference Documents</a></li>
-              <li><a class="dropdown-item" data-route="study/data-source-files" href="#study/data-source-files">Data &amp; Source Files</a></li>
             </ul>
           </li>
           <li class="nav-item"><a class="nav-link" href="../scholarships/">Scholarships</a></li>

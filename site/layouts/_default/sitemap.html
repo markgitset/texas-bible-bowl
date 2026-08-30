@@ -31,19 +31,15 @@
     {{ range .Site.Sections.ByWeight }}
     <div class="col-md-6 col-lg-4">
       {{ if eq .Section "study-resources" }}
-      {{- /* The Study & Practice pages live in the app (hash routes), not in Hugo, so this
-             section (whose Hugo pages are just redirects into the app) is listed by hand.
-             Keep in sync with the nav menu children (hugo.toml) and the app's StudySection
-             enum (web/.../Routes.kt). */ -}}
+      {{- /* The Study & Practice pages live in the app (hash routes), not in Hugo (this
+             section's Hugo pages are just redirects into the app), so the section links
+             render from site/data/study-sections.json — generated from shared-api's
+             StudySection enum (./gradlew :shared-api:generateStudySectionsData). */ -}}
       <h2 class="h5 sitemap-section"><a href="{{ $.Site.BaseURL }}app/#study">Study &amp; Practice</a></h2>
       <ul class="list-unstyled small">
-        <li><a href="{{ $.Site.BaseURL }}app/#study/the-text">The Text</a></li>
-        <li><a href="{{ $.Site.BaseURL }}app/#study/general-knowledge">General Knowledge</a></li>
-        <li><a href="{{ $.Site.BaseURL }}app/#study/chapter-headings">Chapter Headings</a></li>
-        <li><a href="{{ $.Site.BaseURL }}app/#study/unique-words">Unique Words</a></li>
-        <li><a href="{{ $.Site.BaseURL }}app/#study/practice-tests">Practice Tests</a></li>
-        <li><a href="{{ $.Site.BaseURL }}app/#study/reference-documents">Reference Documents</a></li>
-        <li><a href="{{ $.Site.BaseURL }}app/#study/data-source-files">Data &amp; Source Files</a></li>
+        {{ range (index site.Data "study-sections").sections }}
+        <li><a href="{{ $.Site.BaseURL }}app/#study/{{ .slug }}">{{ .title }}</a></li>
+        {{ end }}
         <li><a href="{{ $.Site.BaseURL }}app/#quiz">Quiz Me</a></li>
         <li><a href="{{ $.Site.BaseURL }}app/#questions">Community Questions</a></li>
       </ul>

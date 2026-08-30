@@ -58,6 +58,7 @@ object Shell {
 
     fun start() {
         app = document.getElementById("app") as HTMLElement
+        populateStudySections()
         Session.onChange = { render() }
         Session.boot(scope)
         window.addEventListener("hashchange", { render() })
@@ -70,6 +71,27 @@ object Shell {
             }
         })
         render()
+    }
+
+    /**
+     * Dev-shell support: the checked-in dev index.html marks its Study & Practice dropdown with
+     * `data-study-sections` instead of hand-listing the sections; fill it from [StudySection]
+     * here so it can't drift from the enum. Production markup has no marker (Hugo's nav.html
+     * renders the items statically from the generated site/data/study-sections.json), making
+     * this a no-op there. Runs before the first render so updateNav sees the items.
+     */
+    private fun populateStudySections() {
+        document.querySelectorAll("[data-study-sections]").asList().forEach { node ->
+            val list = node as? HTMLElement ?: return@forEach
+            StudySection.entries.forEach { section ->
+                list.child("li") {
+                    child("a", "dropdown-item", section.title) {
+                        setAttribute("data-route", section.route)
+                        setAttribute("href", "#${section.route}")
+                    }
+                }
+            }
+        }
     }
 
     private fun currentHash(): String = window.location.hash.substringAfter('#', "")

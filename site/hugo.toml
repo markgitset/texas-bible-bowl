@@ -143,56 +143,17 @@ canonifyURLs = true
   weight = 6
 
 # Study & Practice is a dropdown like Event/Scholarships/About, but its pages live in the
-# app (hash routes into /app/), not in Hugo. The children mirror the app's StudySection enum
-# (web/.../Routes.kt) and the Site Map's hand-written study list (layouts/_default/sitemap.html)
-# — keep all three in sync. /study-resources/* pages are redirects into the app so old links
-# keep working.
+# app (hash routes into /app/), not in Hugo, so its children are NOT listed here: nav.html
+# (matching on this identifier) and the Site Map render them from data/study-sections.json,
+# which is generated from shared-api's StudySection enum and kept fresh automatically
+# (:shared-api JVM builds and deploy-web.sh regenerate it; a jvmTest fails CI if the
+# committed copy is stale). /study-resources/* pages are redirects into the app so old
+# links keep working.
 [[menus.main]]
-  name   = "Study & Practice"
-  url    = "/app/#study"
-  weight = 30
-
-[[menus.main]]
-  name   = "The Text"
-  url    = "/app/#study/the-text"
-  parent = "Study & Practice"
-  weight = 1
-
-[[menus.main]]
-  name   = "General Knowledge"
-  url    = "/app/#study/general-knowledge"
-  parent = "Study & Practice"
-  weight = 2
-
-[[menus.main]]
-  name   = "Chapter Headings"
-  url    = "/app/#study/chapter-headings"
-  parent = "Study & Practice"
-  weight = 3
-
-[[menus.main]]
-  name   = "Unique Words"
-  url    = "/app/#study/unique-words"
-  parent = "Study & Practice"
-  weight = 4
-
-[[menus.main]]
-  name   = "Practice Tests"
-  url    = "/app/#study/practice-tests"
-  parent = "Study & Practice"
-  weight = 5
-
-[[menus.main]]
-  name   = "Reference Documents"
-  url    = "/app/#study/reference-documents"
-  parent = "Study & Practice"
-  weight = 6
-
-[[menus.main]]
-  name   = "Data & Source Files"
-  url    = "/app/#study/data-source-files"
-  parent = "Study & Practice"
-  weight = 7
+  name       = "Study & Practice"
+  identifier = "study"
+  url        = "/app/#study"
+  weight     = 30
 
 [[menus.main]]
   name   = "Scholarships"

@@ -30,7 +30,9 @@ esac
 FLY=$(command -v fly || command -v flyctl || echo /home/linuxbrew/.linuxbrew/bin/fly)
 HUGO=$(command -v hugo || echo "$HOME/bin/hugo")
 
-./gradlew :web:jsBrowserDistribution
+# The web dist, plus a fresh site/data/study-sections.json (nav/sitemap study links) so the
+# deployed site can never render a stale section list even if a regeneration wasn't committed.
+./gradlew :web:jsBrowserDistribution :shared-api:generateStudySectionsData
 
 # Bake current season params from this environment's backend, restoring the committed
 # fallback afterward so the working tree stays clean. The backup must live OUTSIDE
