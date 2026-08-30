@@ -9,6 +9,7 @@ import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.StudyScopeParams
+import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.ScopeResolution
 import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.model.StudyScope
@@ -32,9 +33,12 @@ fun SeasonRepository.currentStudySet(): StudySet =
 suspend fun ApplicationCall.resolveScopeOrRespond(
     seasonSet: StudySet,
     chapterKey: String = StudyScopeParams.CHAPTER,
+    cumulative: Boolean = chapterKey == StudyScopeParams.THROUGH_CHAPTER,
 ): StudyScope? {
     val raw = StudyScopeParams.read({ request.queryParameters[it] }, chapterKey)
-    return when (val res = resolveStudyScope(raw.set, raw.book, raw.chapter, seasonSet)) {
+    return when (
+        val res = resolveStudyScope(raw.set, raw.book, raw.chapter, seasonSet, raw.fromChapter, cumulative)
+    ) {
         is ScopeResolution.Resolved -> res.scope
         is ScopeResolution.Invalid -> {
             respond(HttpStatusCode.BadRequest, ApiError(res.error.code, res.error.message))
@@ -51,8 +55,9 @@ suspend fun ApplicationCall.resolveScopeOrRespond(
 suspend fun ApplicationCall.resolveEsvScopeOrRespond(
     seasonSet: StudySet,
     chapterKey: String = StudyScopeParams.CHAPTER,
+    cumulative: Boolean = chapterKey == StudyScopeParams.THROUGH_CHAPTER,
 ): StudyScope? {
-    val scope = resolveScopeOrRespond(seasonSet, chapterKey) ?: return null
+    val scope = resolveScopeOrRespond(seasonSet, chapterKey, cumulative) ?: return null
     if (StandardStudySet.bySlug(scope.set.simpleName) != scope.set) {
         respond(
             HttpStatusCode.BadRequest,
@@ -70,7 +75,7 @@ suspend fun ApplicationCall.resolveEsvScopeOrRespond(
  * by interpretation; this is how they learn the season-proof spelling.
  */
 fun ApplicationCall.advertiseCanonicalScope(scope: StudyScope, chapterKey: String = StudyScopeParams.CHAPTER) {
-    val scopeKeys = setOf(StudyScopeParams.SET, StudyScopeParams.BOOK, chapterKey)
+    val scopeKeys = StudyScopeParams.scopeKeys(chapterKey)
     val canonical = StudyScopeParams.write(scope, chapterKey)
     val actual = request.queryParameters.entries()
         .filter { it.key in scopeKeys }
@@ -85,14 +90,20 @@ fun ApplicationCall.advertiseCanonicalScope(scope: StudyScope, chapterKey: Strin
 
 /** This scope as a question-bank query: one exact chapter, or the OR of the scope's ranges. */
 fun StudyScope.toQuestionScope(): QuestionScope =
-    chapterRef?.let { QuestionScope.Chapter(it) } ?: QuestionScope.Ranges(ranges())
+    singleChapterRef?.let { QuestionScope.Chapter(it) } ?: QuestionScope.Ranges(ranges())
 
 /**
- * Filename fragment pinning this scope's chapter: today's `-ch2` for single-book sets, book-qualified
- * `-num14` for multi-book sets (a bare number would be ambiguous); empty for whole-set scopes.
+ * Filename fragment pinning this scope's chapters: today's `-ch2` for single-book sets, book-qualified
+ * `-num14` for multi-book sets (a bare number would be ambiguous); empty for whole-set scopes. A span
+ * spells both ends — `-ch3-7`, or `-through-ch5` when it reaches back to the set's first chapter, which
+ * is the name cumulative downloads already had.
  */
-fun StudyScope.chapterSuffix(cumulative: Boolean = false): String {
-    val ref = chapterRef ?: return ""
-    val core = if (set.isSingleBook) "ch${ref.chapter}" else ref.serialize().lowercase()
-    return (if (cumulative) "-through-" else "-") + core
+fun StudyScope.chapterSuffix(): String {
+    val span = chapters ?: return ""
+    fun core(ref: ChapterRef) = if (set.isSingleBook) "ch${ref.chapter}" else ref.serialize().lowercase()
+    return when {
+        span.start == span.endInclusive -> "-${core(span.endInclusive)}"
+        span.start == set.chapterRanges.first().start -> "-through-${core(span.endInclusive)}"
+        else -> "-${core(span.start)}-${span.endInclusive.chapter}"
+    }
 }

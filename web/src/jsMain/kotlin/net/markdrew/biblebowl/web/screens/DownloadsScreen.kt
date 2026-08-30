@@ -168,11 +168,6 @@ object DownloadsScreen {
     private var practiceScope = ScopeSelection()
     private var exportScope = ScopeSelection()
     private var verseScope = ScopeSelection()
-
-    // Which chapter spelling the verse decks use: cumulative "through chapter" (review everything
-    // learned so far) or the chapter on its own (drill just this one). Only meaningful once a
-    // chapter is picked, so the toggle stays hidden until then.
-    private var verseCumulative = false
     private var customize: Customize? = null
     private var textChoices = StudyTextChoices()
     private var flashcardRound: Round? = null
@@ -598,18 +593,15 @@ object DownloadsScreen {
         "seed" to practiceSeed.toIntOrNull().takeIf { !round.crowdSourced },
     )
 
-    /** A verse deck at [path], scoped under whichever chapter key the "Include" toggle selected. */
+    /**
+     * A verse deck at [path]. The picker names both ends, so the endpoint is spelled exactly — a lone
+     * "through chapter 5" is what the user gets by leaving the From row on "Start".
+     */
     private fun verseDeckUrl(path: String): String =
-        generateUrl(path, *scopedParams(verseScope, chapterKey = verseChapterKey()))
+        generateUrl(path, *scopedParams(verseScope, chapterKey = StudyScopeParams.THROUGH_CHAPTER))
 
-    private fun verseChapterKey(): String =
-        if (verseCumulative) StudyScopeParams.THROUGH_CHAPTER else StudyScopeParams.CHAPTER
-
-    /** "Through Acts 5." / "Scoped to Acts 5." — the cards echo which half of the toggle is live. */
-    private fun verseScopeNote(): String {
-        val label = scopeLabel(verseScope) ?: return ""
-        return if (verseCumulative && verseScope.chapter != null) " Through $label." else " Scoped to $label."
-    }
+    /** "Scoped to Acts 3-7." — the cards echo whatever span the two rows add up to. */
+    private fun verseScopeNote(): String = verseScope.label()?.let { " Scoped to $it." } ?: ""
 
     private fun exportUrl(app: ExportApp): String = generateUrl(
         when (app) {
@@ -792,18 +784,8 @@ object DownloadsScreen {
             }
             Customize.HeadingFlashcards ->
                 chapterScope(headingScope, "Through chapter", cumulative = true) { headingScope = it }
-            is Customize.VerseDeck -> {
-                chapterScope(verseScope, cumulative = verseCumulative) { verseScope = it }
-                // Only/through is meaningless for the whole set, so the toggle appears with the choice
-                // it qualifies rather than sitting there as a third mode to decode.
-                if (verseScope.chapter != null) {
-                    child("p", "fw-semibold mb-1", "Include")
-                    chipRow(
-                        listOf("Only this chapter" to false, "Through this chapter" to true),
-                        verseCumulative,
-                    ) { verseCumulative = it; rerender() }
-                }
-            }
+            is Customize.VerseDeck ->
+                chapterScope(verseScope, "Chapters", range = true) { verseScope = it }
             is Customize.PracticeTest -> {
                 chapterScope(practiceScope) { practiceScope = it }
                 if (target.round.crowdSourced) {
@@ -854,10 +836,12 @@ object DownloadsScreen {
         selected: ScopeSelection,
         label: String = "Chapter scope",
         cumulative: Boolean = false,
+        range: Boolean = false,
         onSelect: (ScopeSelection) -> Unit,
     ) {
         child("p", "fw-semibold mb-1", label)
-        chapterChips(selected, cumulative) { onSelect(it); rerender() }
+        // A range picker labels its own two rows; the outer label would just repeat the first one.
+        chapterChips(selected, cumulative, range) { onSelect(it); rerender() }
     }
 
     /** Human label for a selection: "Acts 2", or just the book for a whole-book slice. */

@@ -59,6 +59,7 @@ import net.markdrew.biblebowl.generation.typst.toFlashcards
 import net.markdrew.biblebowl.api.StudyScopeParams
 import net.markdrew.biblebowl.model.BRIEF_BOOK_FORMAT
 import net.markdrew.biblebowl.model.ChapterRef
+import net.markdrew.biblebowl.model.format
 import net.markdrew.biblebowl.model.FULL_BOOK_FORMAT
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.model.StudyScope
@@ -185,7 +186,9 @@ fun Route.generateRoutes(
                 val seasonSet = seasons.currentStudySet()
 
                 if (round.textGenerated) {
-                    val scope = call.resolveEsvScopeOrRespond(seasonSet) ?: return@get
+                    // Spelled `chapter` but meant cumulatively — a legacy pairing this route has to keep,
+                    // so the flag is passed explicitly rather than inferred from the parameter's name.
+                    val scope = call.resolveEsvScopeOrRespond(seasonSet, cumulative = true) ?: return@get
                     val seed = call.request.queryParameters["seed"]?.toIntOrNull()
                     return@get respondTextPracticeTest(round, scope, seed, study?.forSet(scope.set))
                 }
@@ -197,7 +200,7 @@ fun Route.generateRoutes(
                     return@get call.respond(
                         HttpStatusCode.NotFound,
                         ApiError("no_questions", "No approved ${round.displayName} questions" +
-                            (scope.chapterRef?.let { " for ${it.book.fullName} ${it.chapter}" } ?: "")),
+                            (scope.chapters?.let { " for ${it.format()}" } ?: "")),
                     )
                 }
 
@@ -232,7 +235,7 @@ fun Route.generateRoutes(
                     return@get call.respond(
                         HttpStatusCode.NotFound,
                         ApiError("no_questions", "No approved questions" +
-                            (scope.chapterRef?.let { " for ${it.book.fullName} ${it.chapter}" } ?: "")),
+                            (scope.chapters?.let { " for ${it.format()}" } ?: "")),
                     )
                 }
                 call.advertiseCanonicalScope(scope)
@@ -474,18 +477,16 @@ fun Route.generateRoutes(
                         ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
                     )
                 }
-                val throughRef = scope.chapterRef
-
                 try {
                     call.advertiseCanonicalScope(scope, chapterKey = StudyScopeParams.THROUGH_CHAPTER)
                     val fileName = PdfFileNames.withSet(
-                        scope.set.simpleName, "heading-flashcards${scope.chapterSuffix(cumulative = true)}.pdf",
+                        scope.set.simpleName, "heading-flashcards${scope.chapterSuffix()}.pdf",
                     )
                     respondCachedPdf(svc, pdfCache, fileName, LayoutRevisions.FLASHCARDS) {
-                        // ChapterRef comparison is book-aware (absoluteChapter), so cumulative scoping is
-                        // correct for multi-book sets too.
+                        // The scope's own span test — book-aware, so it stays correct across the books of
+                        // a multi-book set whether it was spelled cumulatively or as an explicit range.
                         val headings = svc.studyData().headings
-                            .filter { throughRef == null || it.chapterRange.start <= throughRef }
+                            .filter { scope.covers(it.chapterRange.start) }
                         val cards = headings.map { h ->
                             Flashcard(
                                 front = h.title,
@@ -608,7 +609,16 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
         return call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
     }
 
-    val content = studyData.practice(scope.chapterRef)
+    // Filtering the data's own chapters (not the set's) keeps this to material we actually have — the
+    // same guarantee the old take-through-index gave, now over an arbitrary span.
+    val covered = studyData.chapterRefs.filter { scope.covers(it) }
+    if (covered.isEmpty()) {
+        return call.respond(
+            HttpStatusCode.NotFound,
+            ApiError("no_chapters", "No chapters in scope${scope.chapters?.let { " for ${it.format()}" } ?: ""}"),
+        )
+    }
+    val content = studyData.practice(covered)
     val practiceTest = PracticeTest(round, content, randomSeed = seed ?: Random.nextInt(1..9_999))
     val (typstSource, layoutRevision) = when (round) {
         Round.FIND_THE_VERSE -> findTheVerseTypst(practiceTest) to LayoutRevisions.FIND_THE_VERSE
@@ -622,8 +632,10 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
             ApiError("not_enough_chapters", "Not enough chapters covered to build a ${round.displayName} test"),
         )
     }
+    // Advertised under `chapter`, the key this route actually reads — canonicalising it to
+    // `throughChapter` would emit a URL that comes back here meaning something narrower.
     call.advertiseCanonicalScope(scope)
-    val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix(cumulative = true)}.pdf"
+    val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix()}.pdf"
     respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName), layoutRevision)
 }
 
@@ -696,8 +708,9 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
         return
     }
 
-    // source == "headings" — the R5 material; `chapter` scopes cumulatively (through chapter N).
-    val scope = call.resolveEsvScopeOrRespond(seasonSet) ?: return
+    // source == "headings" — the R5 material; `chapter` scopes cumulatively (through chapter N). Like
+    // the text practice rounds, the key says "exact" and the route means "through", so say so.
+    val scope = call.resolveEsvScopeOrRespond(seasonSet, cumulative = true) ?: return
     val svc = study?.forSet(scope.set)
     if (svc == null || !svc.isConfigured) {
         return call.respond(
@@ -705,16 +718,16 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
             ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
         )
     }
-    val throughRef = scope.chapterRef
     val headings = try {
-        // Book-aware cumulative filter (ChapterRef compares by absoluteChapter across books).
-        svc.studyData().headings.filter { throughRef == null || it.chapterRange.start <= throughRef }
+        // The scope's own span test — book-aware, and the same for a cumulative or an explicit range.
+        svc.studyData().headings.filter { scope.covers(it.chapterRange.start) }
     } catch (e: EsvUpstreamException) {
         return call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
     }
     if (headings.isEmpty()) return call.respond(HttpStatusCode.NotFound, ApiError("no_headings", "No headings in scope"))
+    // Advertised under `chapter`, the key this route reads (see above).
     call.advertiseCanonicalScope(scope)
-    val baseName = PdfFileNames.withSet(scope.set.simpleName, "headings${scope.chapterSuffix(cumulative = true)}")
+    val baseName = PdfFileNames.withSet(scope.set.simpleName, "headings${scope.chapterSuffix()}")
     when (format) {
         ExportFormat.SPACE_CSV, ExportFormat.QUIZLET_TXT -> respondCardFile(
             format,
@@ -814,12 +827,16 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondVerseDeck(
     seasons: SeasonRepository,
     forSpace: Boolean,
 ) {
-    // Two spellings of the chapter scope, because memory work wants both: `throughChapter=N` is
-    // cumulative (everything learned so far), plain `chapter=N` is that chapter on its own. Which
-    // one the request used picks the filter, the filename suffix, and the canonical URL we advertise;
-    // `throughChapter` wins if a request somehow carries both.
-    val cumulative = call.request.queryParameters[StudyScopeParams.THROUGH_CHAPTER] != null
-    val chapterKey = if (cumulative) StudyScopeParams.THROUGH_CHAPTER else StudyScopeParams.CHAPTER
+    // Both endpoint spellings, because memory work wants both: `throughChapter=N` is cumulative
+    // (everything learned so far), plain `chapter=N` is that chapter on its own, and `fromChapter`
+    // narrows the start of either into an explicit range. Which key the request used only decides how
+    // a lone endpoint is read; the resolved span is what filters, names the file, and gets advertised.
+    // `throughChapter` wins if a request somehow carries both endpoints.
+    val chapterKey = if (call.request.queryParameters[StudyScopeParams.THROUGH_CHAPTER] != null) {
+        StudyScopeParams.THROUGH_CHAPTER
+    } else {
+        StudyScopeParams.CHAPTER
+    }
     val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet(), chapterKey) ?: return
     val svc = study?.forSet(scope.set)
     if (svc == null || !svc.isConfigured) {
@@ -831,18 +848,8 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondVerseDeck(
     try {
         call.advertiseCanonicalScope(scope, chapterKey)
         val sd = svc.studyData()
-        val endRef = scope.chapterRef
-        val book = scope.book
-        val inScope = sd.verses.entries.filter { (_, verseRef) ->
-            when {
-                // ChapterRef comparison is book-aware (absoluteChapter), so a cumulative scope reaches
-                // back through earlier books of a multi-book set, not just earlier chapters of this one.
-                endRef != null -> if (cumulative) verseRef.chapterRef <= endRef else verseRef.chapterRef == endRef
-                // A book with no chapter is that book's slice of the set — the picker's "All of Num".
-                book != null -> verseRef.book == book
-                else -> true
-            }
-        }
+        // One span test for every spelling: a single chapter, a cumulative reach-back, or a range.
+        val inScope = sd.verses.entries.filter { (_, verseRef) -> scope.covers(verseRef.chapterRef) }
         if (inScope.isEmpty()) {
             return call.respond(HttpStatusCode.NotFound, ApiError("no_verses", "No verses in scope"))
         }
@@ -861,7 +868,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondVerseDeck(
             // The stored text keeps the layout's line breaks; a card front wants one flowing paragraph.
             sd.text.substring(range).normalizeWS() to back.joinToString("\n")
         }
-        val baseName = PdfFileNames.withSet(scope.set.simpleName, "verses${scope.chapterSuffix(cumulative)}")
+        val baseName = PdfFileNames.withSet(scope.set.simpleName, "verses${scope.chapterSuffix()}")
         if (forSpace) respondAttachment(spaceCsv(cards).toByteArray(), "space-$baseName.csv", CSV_CONTENT_TYPE)
         else respondAttachment(quizletTabbed(cards).toByteArray(), "quizlet-$baseName.txt", ContentType.Text.Plain)
     } catch (e: EsvUpstreamException) {

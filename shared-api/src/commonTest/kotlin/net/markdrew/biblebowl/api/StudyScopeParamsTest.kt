@@ -1,10 +1,13 @@
 package net.markdrew.biblebowl.api
 
 import net.markdrew.biblebowl.model.Book
+import net.markdrew.biblebowl.model.ScopeResolution
 import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.model.StudyScope
+import net.markdrew.biblebowl.model.resolveStudyScope
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 class StudyScopeParamsTest {
 
@@ -25,6 +28,12 @@ class StudyScopeParamsTest {
             StudyScopeParams.RawScope(null, null, 7),
             StudyScopeParams.read(cumulative::get, chapterKey = StudyScopeParams.THROUGH_CHAPTER),
         )
+        // fromChapter reads the same under either endpoint key — narrowing the start means one thing.
+        val ranged = mapOf("fromChapter" to "3", "throughChapter" to "7")
+        assertEquals(
+            StudyScopeParams.RawScope(null, null, 7, fromChapter = 3),
+            StudyScopeParams.read(ranged::get, chapterKey = StudyScopeParams.THROUGH_CHAPTER),
+        )
     }
 
     @Test
@@ -33,7 +42,7 @@ class StudyScopeParamsTest {
         val acts = StandardStudySet.ACTS.set
         assertEquals(
             listOf("book" to "ACT", "chapter" to "22"),
-            StudyScopeParams.write(StudyScope(acts, Book.ACT, 22)),
+            StudyScopeParams.write(StudyScope(acts, Book.ACT, Book.ACT.chapterRange(22, 22))),
         )
         assertEquals(
             listOf("book" to "ACT"),
@@ -46,7 +55,7 @@ class StudyScopeParamsTest {
         val moses = StandardStudySet.LIFE_OF_MOSES.set
         assertEquals(
             listOf("set" to "moses", "book" to "NUM", "chapter" to "14"),
-            StudyScopeParams.write(StudyScope(moses, Book.NUM, 14)),
+            StudyScopeParams.write(StudyScope(moses, Book.NUM, Book.NUM.chapterRange(14, 14))),
         )
         assertEquals(
             listOf("set" to "moses"),
@@ -61,21 +70,71 @@ class StudyScopeParamsTest {
         val ltc = StandardStudySet.LIFE_OF_MOSES_LTC.set
         assertEquals(
             listOf("set" to "moses-ltc", "book" to "EXO", "chapter" to "7"),
-            StudyScopeParams.write(StudyScope(ltc, Book.EXO, 7)),
+            StudyScopeParams.write(StudyScope(ltc, Book.EXO, Book.EXO.chapterRange(7, 7))),
         )
         val luke = StandardStudySet.LUKE.set
         assertEquals(
             listOf("book" to "LUK", "chapter" to "7"),
-            StudyScopeParams.write(StudyScope(luke, Book.LUK, 7)),
+            StudyScopeParams.write(StudyScope(luke, Book.LUK, Book.LUK.chapterRange(7, 7))),
         )
     }
 
     @Test
     fun writesCumulativeScopesUnderThroughChapter() {
+        // A span starting at the set's own first chapter drops the redundant start, which is exactly
+        // the pre-range spelling — the guarantee that no existing link changes.
         val acts = StandardStudySet.ACTS.set
         assertEquals(
             listOf("book" to "ACT", "throughChapter" to "5"),
-            StudyScopeParams.write(StudyScope(acts, Book.ACT, 5), chapterKey = StudyScopeParams.THROUGH_CHAPTER),
+            StudyScopeParams.write(
+                StudyScope(acts, Book.ACT, Book.ACT.chapterRange(1, 5)),
+                chapterKey = StudyScopeParams.THROUGH_CHAPTER,
+            ),
         )
+    }
+
+    @Test
+    fun spellsARangeWithBothEndsAndNeitherRedundantOne() {
+        val acts = StandardStudySet.ACTS.set
+        assertEquals(
+            listOf("book" to "ACT", "fromChapter" to "3", "chapter" to "7"),
+            StudyScopeParams.write(StudyScope(acts, Book.ACT, Book.ACT.chapterRange(3, 7))),
+        )
+        // Running to the end of the set needs no endpoint: naming the last chapter would only go
+        // stale if the set ever grew, and `fromChapter` alone already says "from here on".
+        assertEquals(
+            listOf("book" to "ACT", "fromChapter" to "26"),
+            StudyScopeParams.write(StudyScope(acts, Book.ACT, Book.ACT.chapterRange(26, 28))),
+        )
+        // A span covering the whole set is just the set — canonicalised, not spelled out.
+        assertEquals(
+            listOf("book" to "ACT"),
+            StudyScopeParams.write(StudyScope(acts, Book.ACT, Book.ACT.chapterRange(1, 28))),
+        )
+    }
+
+    @Test
+    fun everySpellingSurvivesARoundTrip() {
+        // write -> read -> resolve must land on the scope we started from, for each shape, under the
+        // endpoint key its own route would use. This is what keeps advertised canonical URLs honest.
+        val acts = StandardStudySet.ACTS.set
+        listOf(
+            Book.ACT.chapterRange(22, 22) to StudyScopeParams.CHAPTER,
+            Book.ACT.chapterRange(1, 5) to StudyScopeParams.THROUGH_CHAPTER,
+            Book.ACT.chapterRange(3, 7) to StudyScopeParams.CHAPTER,
+            Book.ACT.chapterRange(3, 7) to StudyScopeParams.THROUGH_CHAPTER,
+            Book.ACT.chapterRange(26, 28) to StudyScopeParams.CHAPTER,
+        ).forEach { (span, key) ->
+            val scope = StudyScope(acts, Book.ACT, span)
+            val written = StudyScopeParams.write(scope, key).toMap()
+            val raw = StudyScopeParams.read(written::get, key)
+            val round = assertIs<ScopeResolution.Resolved>(
+                resolveStudyScope(
+                    raw.set, raw.book, raw.chapter, acts, raw.fromChapter,
+                    cumulative = key == StudyScopeParams.THROUGH_CHAPTER,
+                )
+            ).scope
+            assertEquals(scope.chapters, round.chapters, "round trip of $span under $key")
+        }
     }
 }

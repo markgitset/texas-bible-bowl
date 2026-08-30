@@ -29,13 +29,10 @@ fun Route.studyRoutes(study: StudyDataRegistry?, seasons: SeasonRepository) {
                 ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
             )
         }
-        val throughRef = scope.chapterRef
-
         try {
             call.advertiseCanonicalScope(scope, chapterKey = StudyScopeParams.THROUGH_CHAPTER)
-            // Book-aware cumulative filter (ChapterRef compares by absoluteChapter across books).
-            val headings = svc.studyData().headings
-                .filter { throughRef == null || it.chapterRange.start <= throughRef }
+            // The scope's own span test — book-aware, and the same for a cumulative or explicit range.
+            val headings = svc.studyData().headings.filter { scope.covers(it.chapterRange.start) }
             call.respond(headings.map { it.toDto() })
         } catch (e: EsvUpstreamException) {
             call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))

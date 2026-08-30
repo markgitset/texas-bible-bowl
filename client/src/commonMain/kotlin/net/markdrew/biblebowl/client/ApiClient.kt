@@ -142,10 +142,12 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         book: String?,
         chapter: Int?,
         chapterKey: String = StudyScopeParams.CHAPTER,
+        fromChapter: Int? = null,
     ) {
         if (set != null) parameter(StudyScopeParams.SET, set)
         if (book != null) parameter(StudyScopeParams.BOOK, book)
         if (chapter != null) parameter(chapterKey, chapter)
+        if (fromChapter != null) parameter(StudyScopeParams.FROM_CHAPTER, fromChapter)
     }
 
     /** The verse decks take either chapter spelling; which one is the caller's "cumulative" choice. */
@@ -250,11 +252,12 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         chapter: Int? = null,
         set: String? = null,
         book: String? = null,
+        fromChapter: Int? = null,
     ): List<QuestionDto> =
         client.get("$baseUrl/questions") {
             authorize()
             if (status != null) parameter("status", status.name)
-            scopeParams(set, book, chapter)
+            scopeParams(set, book, chapter, fromChapter = fromChapter)
         }.bodyOrThrow()
 
     suspend fun submitQuestion(req: SubmitQuestionRequest): QuestionDto =
@@ -281,11 +284,12 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         seed: Int? = null,
         set: String? = null,
         book: String? = null,
+        fromChapter: Int? = null,
     ): ByteArray =
         client.get("$baseUrl/generate/practice-test.pdf") {
             authorize()
             parameter("round", round.name)
-            scopeParams(set, book, chapter)
+            scopeParams(set, book, chapter, fromChapter = fromChapter)
             if (limit != null) parameter("limit", limit)
             if (seed != null) parameter("seed", seed)
         }.bodyOrThrow()
@@ -296,18 +300,24 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         round: Round? = null,
         set: String? = null,
         book: String? = null,
+        fromChapter: Int? = null,
     ): ByteArray =
         client.get("$baseUrl/generate/flashcards.pdf") {
             authorize()
-            scopeParams(set, book, chapter)
+            scopeParams(set, book, chapter, fromChapter = fromChapter)
             if (round != null) parameter("round", round.name)
         }.bodyOrThrow()
 
     /** Lists the season book's ESV section headings (Round 5 material), optionally through a chapter. */
-    suspend fun headings(throughChapter: Int? = null, set: String? = null, book: String? = null): List<HeadingDto> =
+    suspend fun headings(
+        throughChapter: Int? = null,
+        set: String? = null,
+        book: String? = null,
+        fromChapter: Int? = null,
+    ): List<HeadingDto> =
         client.get("$baseUrl/study/headings") {
             authorize()
-            scopeParams(set, book, throughChapter, chapterKey = StudyScopeParams.THROUGH_CHAPTER)
+            scopeParams(set, book, throughChapter, chapterKey = StudyScopeParams.THROUGH_CHAPTER, fromChapter = fromChapter)
         }.bodyOrThrow()
 
     /** Fetches a chapter-headings flashcard deck PDF, optionally limited through a chapter. */
@@ -315,10 +325,11 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         throughChapter: Int? = null,
         set: String? = null,
         book: String? = null,
+        fromChapter: Int? = null,
     ): ByteArray =
         client.get("$baseUrl/generate/heading-flashcards.pdf") {
             authorize()
-            scopeParams(set, book, throughChapter, chapterKey = StudyScopeParams.THROUGH_CHAPTER)
+            scopeParams(set, book, throughChapter, chapterKey = StudyScopeParams.THROUGH_CHAPTER, fromChapter = fromChapter)
         }.bodyOrThrow()
 
     /** Fetches the one-page listing of every ESV section heading in the set, with its verse range. */
@@ -427,10 +438,11 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         cumulative: Boolean = false,
         set: String? = null,
         book: String? = null,
+        fromChapter: Int? = null,
     ): ByteArray =
         client.get("$baseUrl/generate/space-verses.csv") {
             authorize()
-            scopeParams(set, book, chapter, chapterKey = verseChapterKey(cumulative))
+            scopeParams(set, book, chapter, verseChapterKey(cumulative), fromChapter)
         }.bodyOrThrow()
 
     /** Fetches the same verse deck as a Quizlet paste-import file (Tab, blank line between cards). */
@@ -439,10 +451,11 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         cumulative: Boolean = false,
         set: String? = null,
         book: String? = null,
+        fromChapter: Int? = null,
     ): ByteArray =
         client.get("$baseUrl/generate/quizlet-verses.txt") {
             authorize()
-            scopeParams(set, book, chapter, chapterKey = verseChapterKey(cumulative))
+            scopeParams(set, book, chapter, verseChapterKey(cumulative), fromChapter)
         }.bodyOrThrow()
 
     /** Fetches the multiple-choice study guide PDF (questions by chapter + answer key). */
@@ -468,12 +481,13 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         chapter: Int? = null,
         set: String? = null,
         book: String? = null,
+        fromChapter: Int? = null,
     ): ByteArray =
         client.get("$baseUrl/generate/space-questions.csv") {
             authorize()
             if (headingsSource) parameter("source", "headings")
             if (round != null) parameter("round", round.name)
-            scopeParams(set, book, chapter)
+            scopeParams(set, book, chapter, fromChapter = fromChapter)
         }.bodyOrThrow()
 
     /**
@@ -486,12 +500,13 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         chapter: Int? = null,
         set: String? = null,
         book: String? = null,
+        fromChapter: Int? = null,
     ): ByteArray =
         client.get("$baseUrl/generate/quizlet-questions.txt") {
             authorize()
             if (headingsSource) parameter("source", "headings")
             if (round != null) parameter("round", round.name)
-            scopeParams(set, book, chapter)
+            scopeParams(set, book, chapter, fromChapter = fromChapter)
         }.bodyOrThrow()
 
     /** Fetches a Kahoot-importable .xlsx (multiple-choice material only; params as [spaceQuestionsCsv]). */
@@ -501,12 +516,13 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         chapter: Int? = null,
         set: String? = null,
         book: String? = null,
+        fromChapter: Int? = null,
     ): ByteArray =
         client.get("$baseUrl/generate/kahoot-questions.xlsx") {
             authorize()
             if (headingsSource) parameter("source", "headings")
             if (round != null) parameter("round", round.name)
-            scopeParams(set, book, chapter)
+            scopeParams(set, book, chapter, fromChapter = fromChapter)
         }.bodyOrThrow()
 
     // --- Registration (coach flow; docs/gui-redesign.md §5E) ---
