@@ -1,9 +1,9 @@
 package net.markdrew.biblebowl.web
 
+import kotlinx.browser.document
 import kotlinx.browser.localStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.FALLBACK_SEASON
 import net.markdrew.biblebowl.api.SeasonDto
@@ -12,21 +12,22 @@ import net.markdrew.biblebowl.api.isGlobalAdmin
 import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.api.resolvedStudySet
 import net.markdrew.biblebowl.model.StudySet
+import org.w3c.dom.HTMLElement
 
 /** App-wide client state: the shared [TbbApi], the current season, and the signed-in user. */
 object Session {
     private const val TOKEN_KEY = "tbb.token"
 
     /**
-     * The signed-in user menu as JSON ([NavMenu]); the site's params.js renders it on static
-     * pages' navbars. Refreshed on every auth/season change here, so it can lag a server-side
-     * role/toggle change until the next app visit — cosmetic only, all access is enforced by
-     * the Shell's route gates and the server.
+     * The signed-in user menu as rendered HTML (see [renderAccountMenu]); the site's params.js
+     * injects it into static pages' navbars. Refreshed on every auth/season change here, so it
+     * can lag a server-side role/toggle change until the next app visit — cosmetic only, all
+     * access is enforced by the Shell's route gates and the server.
      */
-    private const val NAV_KEY = "tbb.nav"
+    private const val NAV_KEY = "tbb.navHtml"
 
-    /** Pre-user-menu cache of the display name; purge so old params.js data can't linger. */
-    private const val LEGACY_NAME_KEY = "tbb.user-name"
+    /** Superseded caches — the display name, then the NavMenu model JSON; purge both. */
+    private val legacyNavKeys = listOf("tbb.user-name", "tbb.nav")
 
     val api = TbbApi()
 
@@ -91,12 +92,20 @@ object Session {
         onChange()
     }
 
-    /** Mirrors the signed-in user menu into localStorage for the static pages' navbar. */
+    /** Mirrors the rendered signed-in user menu into localStorage for the static pages' navbar. */
     private fun cacheNavState() {
         val u = user
-        if (u == null) localStorage.removeItem(NAV_KEY)
-        else localStorage.setItem(NAV_KEY, Json.encodeToString(buildNavMenu(u, season)))
-        localStorage.removeItem(LEGACY_NAME_KEY)
+        if (u == null) {
+            localStorage.removeItem(NAV_KEY)
+        } else {
+            // Detached render (the live slot is Shell's). The sign-out listener can't survive
+            // innerHTML serialization anyway, so the cached copy gets a no-op; params.js
+            // re-wires the button when it injects this into a static page.
+            val slot = document.createElement("li") as HTMLElement
+            renderAccountMenu(slot, buildNavMenu(u, season)) {}
+            localStorage.setItem(NAV_KEY, slot.innerHTML)
+        }
+        legacyNavKeys.forEach { localStorage.removeItem(it) }
     }
 
     /** Adopts an admin's just-saved season so every screen sees the new values immediately. */

@@ -57,9 +57,9 @@
             <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center">
               <a class="btn btn-warning btn-sm fw-bold px-3" href="{{ .URL }}">{{ .Name }}</a>
             </li>
-            {{/* Site-wide account slot: params.js swaps in the cached signed-in user menu
-                 (localStorage "tbb.nav"); on /app/ the Shell owns it. Keep the id/markup in
-                 sync with web/.../Shell.updateNav and the params.js renderer. */}}
+            {{/* Site-wide account slot: params.js swaps in the app's cached rendered user menu
+                 (localStorage "tbb.navHtml", written by web/.../Session.kt from the one
+                 renderer, renderAccountMenu); on /app/ the Shell owns it. */}}
             <li class="nav-item ms-lg-2 my-1 my-lg-0 d-flex align-items-center" id="accountSlot">
               <a class="btn btn-outline-light btn-sm px-3" href="{{ $.Site.BaseURL }}app/#signin">Sign in</a>
             </li>

@@ -320,10 +320,12 @@ is a Bootstrap dropdown with sections rendered only when the user qualifies — 
 (Account, My Scores), Coach (Register My Teams), Event Staff (Grading Desk, Standings,
 Registration Desk), Admin (Season Settings, User Management), then Sign out — with the
 "hidden until launch" badges preserved for admin preview of dark features. The gating
-logic lives once in `web/.../NavMenu.kt`; `Shell.updateNav` renders it live in-app, and
-`Session` caches the model as JSON under the localStorage key `tbb.nav` (replacing the
-old `tbb.user-name` name swap) so the site's `params.js` renders the identical menu on
-static pages, including working sign-out. The cache can lag a server-side role/toggle
+logic lives once in `web/.../NavMenu.kt`, and so does the rendering
+(`renderAccountMenu`): `Shell.updateNav` renders it live in-app, and `Session` caches
+the rendered HTML under the localStorage key `tbb.navHtml` (which replaced the `tbb.nav`
+model-JSON cache, which replaced the old `tbb.user-name` name swap) so the site's
+`params.js` injects the identical menu on static pages — fixing up the app-relative
+hrefs and re-wiring sign-out — with no renderer of its own. The cache can lag a server-side role/toggle
 change until the next app visit — cosmetic only; route gates and the server enforce.
 This supersedes §2.3's "role-aware Event-hub cards" for the web (the web app has no
 Event season hub; the Hugo event pages serve that role) and trims §5H: the account page
