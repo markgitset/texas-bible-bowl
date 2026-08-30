@@ -195,10 +195,20 @@ class TbbApiRequestTest {
         api.namesIndexPdf(set = "1sam")
         assertEquals("/generate/names-index.pdf?set=1sam", requests.last())
 
-        api.questionsCsv(round = Round.FACT_FINDER, chapter = 3, book = "JOH")
+        api.spaceQuestionsCsv(round = Round.FACT_FINDER, chapter = 3, book = "JOH")
         requests.last().let { uri ->
+            assertTrue(uri.startsWith("/generate/space-questions.csv"), uri)
             assertTrue("round=FACT_FINDER" in uri && "book=JOH" in uri && "chapter=3" in uri, uri)
         }
+
+        api.quizletQuestionsTxt(headingsSource = true, chapter = 3)
+        requests.last().let { uri ->
+            assertTrue(uri.startsWith("/generate/quizlet-questions.txt"), uri)
+            assertTrue("source=headings" in uri && "chapter=3" in uri, uri)
+        }
+
+        api.kahootQuestionsXlsx(round = Round.FACT_FINDER)
+        assertTrue(requests.last().startsWith("/generate/kahoot-questions.xlsx"), requests.last())
     }
 
     @Test

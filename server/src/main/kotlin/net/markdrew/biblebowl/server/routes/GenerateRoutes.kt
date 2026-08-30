@@ -68,8 +68,8 @@ import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.esv.EsvUpstreamException
 import net.markdrew.biblebowl.server.export.KahootQuestion
 import net.markdrew.biblebowl.server.export.kahootXlsx
-import net.markdrew.biblebowl.server.export.quizletCsv
 import net.markdrew.biblebowl.server.export.quizletTabbed
+import net.markdrew.biblebowl.server.export.quizletTsv
 import net.markdrew.biblebowl.server.export.spaceCsv
 import net.markdrew.biblebowl.server.export.tsvToCsv
 import net.markdrew.biblebowl.server.security.currentUser
@@ -394,19 +394,29 @@ fun Route.generateRoutes(
                 respondUniqueWordDeck(study, seasons, forSpace = false)
             }
 
-            // GET /generate/questions.csv?source=questions|headings&round=FACT_FINDER&chapter=2
-            // Comma-separated term/definition pairs, import-ready for Quizlet/Space/Anki. `source=questions`
-            // (default) exports the approved bank (prompt -> answer); `source=headings` exports the R5
-            // headings (title -> chapter), with `chapter` meaning "through chapter" as usual for headings.
-            get("/generate/questions.csv") {
-                respondExport(questions, seasons, study, format = ExportFormat.CSV)
+            // GET /generate/space-questions.csv?source=questions|headings&round=FACT_FINDER&chapter=2
+            // Term/definition pairs as a Space-importable CSV (getspace.app): the Front,Back header row
+            // its importer requires, RFC 4180 quoted. `source=questions` (default) exports the approved
+            // bank (prompt -> answer); `source=headings` exports the R5 headings (title -> chapter), with
+            // `chapter` meaning "through chapter" as usual for headings. The endpoints name their target
+            // app rather than trusting an extension: there is no one CSV every importer reads.
+            get("/generate/space-questions.csv") {
+                respondExport(questions, seasons, study, format = ExportFormat.SPACE_CSV)
             }
 
-            // GET /generate/questions.xlsx?source=questions|headings&round=FACT_FINDER&chapter=2
+            // GET /generate/quizlet-questions.txt?… (params as above) — the same pairs as a Quizlet paste
+            // file in its import screen's default shape: TAB between term and definition, one card per
+            // line. Unlike the unique-words deck there are no in-card line breaks to protect, so no
+            // custom between-cards separator to type in — the defaults read it as-is.
+            get("/generate/quizlet-questions.txt") {
+                respondExport(questions, seasons, study, format = ExportFormat.QUIZLET_TXT)
+            }
+
+            // GET /generate/kahoot-questions.xlsx?source=questions|headings&round=FACT_FINDER&chapter=2
             // A Kahoot-import spreadsheet (their template layout). Only multiple-choice material can go
             // to Kahoot, so `source=questions` keeps just questions whose choices contain the answer;
             // `source=headings` builds which-chapter questions with in-scope distractor chapters.
-            get("/generate/questions.xlsx") {
+            get("/generate/kahoot-questions.xlsx") {
                 respondExport(questions, seasons, study, format = ExportFormat.KAHOOT_XLSX)
             }
 
@@ -566,11 +576,11 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
 
 
 
-private enum class ExportFormat { CSV, KAHOOT_XLSX }
+private enum class ExportFormat { SPACE_CSV, QUIZLET_TXT, KAHOOT_XLSX }
 
 /**
  * Responds with an import-ready export of the question bank or the R5 headings (see the route
- * comments for parameter semantics). Both formats share source selection; only the rendering and
+ * comments for parameter semantics). All formats share source selection; only the rendering and
  * the multiple-choice requirement (Kahoot) differ.
  */
 private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
@@ -596,9 +606,9 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
             "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}${scope.chapterSuffix()}",
         )
         when (format) {
-            ExportFormat.CSV -> {
+            ExportFormat.SPACE_CSV, ExportFormat.QUIZLET_TXT -> {
                 if (pool.isEmpty()) return call.respond(HttpStatusCode.NotFound, ApiError("no_questions", "No approved questions match"))
-                respondAttachment(quizletCsv(pool.map { it.prompt to it.answer }).toByteArray(), "quizlet-$baseName.csv", CSV_CONTENT_TYPE)
+                respondCardFile(format, pool.map { it.prompt to it.answer }, baseName)
             }
             ExportFormat.KAHOOT_XLSX -> {
                 // Kahoot is multiple-choice only: the answer must be among 2+ choices.
@@ -642,10 +652,10 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
     call.advertiseCanonicalScope(scope)
     val baseName = PdfFileNames.withSet(scope.set.simpleName, "headings${scope.chapterSuffix(cumulative = true)}")
     when (format) {
-        ExportFormat.CSV -> respondAttachment(
-            quizletCsv(headings.map { it.title to chapterLabel(scope.set, it.chapterRange.start) }).toByteArray(),
-            "quizlet-$baseName.csv",
-            CSV_CONTENT_TYPE,
+        ExportFormat.SPACE_CSV, ExportFormat.QUIZLET_TXT -> respondCardFile(
+            format,
+            headings.map { it.title to chapterLabel(scope.set, it.chapterRange.start) },
+            baseName,
         )
         ExportFormat.KAHOOT_XLSX -> {
             val chaptersInScope = headings.map { it.chapterRange.start }.distinct()
@@ -665,6 +675,22 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
             respondAttachment(kahootXlsx(rows), "kahoot-$baseName.xlsx", XLSX_CONTENT_TYPE)
         }
     }
+}
+
+/**
+ * [cards] in [format]'s import file (see the route comments for the two shapes), named after the
+ * target app: `space-<base>.csv` or `quizlet-<base>.txt`.
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.respondCardFile(
+    format: ExportFormat,
+    cards: List<Pair<String, String>>,
+    baseName: String,
+) = when (format) {
+    ExportFormat.SPACE_CSV ->
+        respondAttachment(spaceCsv(cards).toByteArray(), "space-$baseName.csv", CSV_CONTENT_TYPE)
+    ExportFormat.QUIZLET_TXT ->
+        respondAttachment(quizletTsv(cards).toByteArray(), "quizlet-$baseName.txt", ContentType.Text.Plain)
+    ExportFormat.KAHOOT_XLSX -> error("Kahoot exports are spreadsheets, not card files")
 }
 
 /**

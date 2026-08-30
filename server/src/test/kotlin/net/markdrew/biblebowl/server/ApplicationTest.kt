@@ -128,7 +128,7 @@ class ApplicationTest {
     }
 
     @Test
-    fun questionBankExportsAsQuizletCsvAndKahootXlsx() = testApplication {
+    fun questionBankExportsForSpaceQuizletAndKahoot() = testApplication {
         val users = InMemoryUserRepository()
         val questions = InMemoryQuestionRepository()
         val jwt = JwtService(secret = "test-secret")
@@ -170,16 +170,22 @@ class ApplicationTest {
             setBody(ModerateQuestionRequest(QuestionStatus.APPROVED))
         }
 
-        // Quizlet CSV: anonymous, one prompt,answer line.
-        val csv = api.get("/generate/questions.csv?chapter=2")
+        // Space CSV (anonymous): the Front,Back header its importer requires, then one prompt,answer row.
+        val csv = api.get("/generate/space-questions.csv?chapter=2")
         assertEquals(HttpStatusCode.OK, csv.status)
-        assertEquals("Who preached at Pentecost?,Peter", csv.bodyAsText().trim())
+        assertEquals("Front,Back\nWho preached at Pentecost?,Peter", csv.bodyAsText().trim())
         // Set-prefixed so exports from different seasons never collide in a Downloads folder.
-        assertTrue(csv.headers[HttpHeaders.ContentDisposition]!!.contains("quizlet-acts-questions-ch2.csv"))
+        assertTrue(csv.headers[HttpHeaders.ContentDisposition]!!.contains("space-acts-questions-ch2.csv"))
+
+        // Quizlet paste file: TAB between prompt and answer, one card per line, no header.
+        val txt = api.get("/generate/quizlet-questions.txt?chapter=2")
+        assertEquals(HttpStatusCode.OK, txt.status)
+        assertEquals("Who preached at Pentecost?\tPeter", txt.bodyAsText().trim())
+        assertTrue(txt.headers[HttpHeaders.ContentDisposition]!!.contains("quizlet-acts-questions-ch2.txt"))
 
         // Kahoot xlsx: a zip (PK magic) whose sheet holds the question with at most 4 answers,
         // the correct one preserved.
-        val xlsx = api.get("/generate/questions.xlsx?round=FACT_FINDER")
+        val xlsx = api.get("/generate/kahoot-questions.xlsx?round=FACT_FINDER")
         assertEquals(HttpStatusCode.OK, xlsx.status)
         val bytes = xlsx.bodyAsBytes()
         assertEquals("PK", bytes.decodeToString(0, 2), "xlsx must be a zip")
@@ -189,9 +195,10 @@ class ApplicationTest {
         assertTrue("Silas" !in sheet, "5th choice is dropped (Kahoot allows 4)")
 
         // No approved matches -> 404.
-        assertEquals(HttpStatusCode.NotFound, api.get("/generate/questions.csv?chapter=27").status)
+        assertEquals(HttpStatusCode.NotFound, api.get("/generate/space-questions.csv?chapter=27").status)
+        assertEquals(HttpStatusCode.NotFound, api.get("/generate/quizlet-questions.txt?chapter=27").status)
         // Unknown source -> 400.
-        assertEquals(HttpStatusCode.BadRequest, api.get("/generate/questions.csv?source=nope").status)
+        assertEquals(HttpStatusCode.BadRequest, api.get("/generate/space-questions.csv?source=nope").status)
     }
 
     @Test

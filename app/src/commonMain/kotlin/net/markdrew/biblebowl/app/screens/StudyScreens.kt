@@ -62,8 +62,11 @@ private sealed interface Customize {
     data object QuestionFlashcards : Customize
     data object HeadingFlashcards : Customize
     data class PracticeTest(val round: Round) : Customize
-    data class Export(val kahoot: Boolean) : Customize
+    data class Export(val app: ExportApp) : Customize
 }
+
+/** The importer a questions/headings export card targets — each wants its own file shape. */
+private enum class ExportApp { KAHOOT, SPACE, QUIZLET }
 
 /** How chapter titles render: inline with the first verse, or as standalone headings (± divider lines). */
 private enum class ChapterStyle(val label: String, val headings: Boolean, val lines: Boolean) {
@@ -309,20 +312,22 @@ fun StudySectionScreen(
         }
     }
 
-    fun downloadExport(kahoot: Boolean) {
+    fun downloadExport(app: ExportApp) {
         val headings = exportHeadings
         val round = exportRound.takeIf { !headings }
         val base = withSet(
             if (headings) "headings${chSuffix(exportScope, cumulative = true)}"
             else "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}${chSuffix(exportScope)}",
         )
-        if (kahoot) {
-            download("Kahoot spreadsheet", "kahoot-$base.xlsx", Mime.XLSX) {
-                api.questionsXlsx(headings, round, exportScope.chapter, book = exportScope.book?.name)
+        when (app) {
+            ExportApp.KAHOOT -> download("Kahoot spreadsheet", "kahoot-$base.xlsx", Mime.XLSX) {
+                api.kahootQuestionsXlsx(headings, round, exportScope.chapter, book = exportScope.book?.name)
             }
-        } else {
-            download("Quizlet / Space CSV", "quizlet-$base.csv", Mime.CSV) {
-                api.questionsCsv(headings, round, exportScope.chapter, book = exportScope.book?.name)
+            ExportApp.SPACE -> download("Questions for the Space app", "space-$base.csv", Mime.CSV) {
+                api.spaceQuestionsCsv(headings, round, exportScope.chapter, book = exportScope.book?.name)
+            }
+            ExportApp.QUIZLET -> download("Questions for Quizlet", "quizlet-$base.txt", Mime.TEXT) {
+                api.quizletQuestionsTxt(headings, round, exportScope.chapter, book = exportScope.book?.name)
             }
         }
     }
@@ -550,16 +555,24 @@ fun StudySectionScreen(
                     subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout)." +
                         scopeNote(exportScope) + customizedNote(exportCustomized),
                     busyCard = busyCard,
-                    onClick = { downloadExport(kahoot = true) },
-                    onCustomize = { customize = Customize.Export(kahoot = true) },
+                    onClick = { downloadExport(ExportApp.KAHOOT) },
+                    onCustomize = { customize = Customize.Export(ExportApp.KAHOOT) },
                 )
                 DownloadCard(
-                    title = "Quizlet / Space CSV",
-                    subtitle = "Question-and-answer pairs as comma-separated text, import-ready for " +
-                        "Quizlet, Space, or Anki." + scopeNote(exportScope) + customizedNote(exportCustomized),
+                    title = "Questions for the Space app",
+                    subtitle = "Question-and-answer pairs as a CSV that imports straight into Space " +
+                        "(getspace.app)." + scopeNote(exportScope) + customizedNote(exportCustomized),
                     busyCard = busyCard,
-                    onClick = { downloadExport(kahoot = false) },
-                    onCustomize = { customize = Customize.Export(kahoot = false) },
+                    onClick = { downloadExport(ExportApp.SPACE) },
+                    onCustomize = { customize = Customize.Export(ExportApp.SPACE) },
+                )
+                DownloadCard(
+                    title = "Questions for Quizlet",
+                    subtitle = "The same pairs as paste-ready text for Quizlet's import screen — its default " +
+                        "settings read them as-is." + scopeNote(exportScope) + customizedNote(exportCustomized),
+                    busyCard = busyCard,
+                    onClick = { downloadExport(ExportApp.QUIZLET) },
+                    onCustomize = { customize = Customize.Export(ExportApp.QUIZLET) },
                 )
                 DownloadCard(
                     title = "Study guide (CSV)",
@@ -635,7 +648,7 @@ fun StudySectionScreen(
                             seedText = practiceSeed, onSeedText = { practiceSeed = it },
                         )
                         is Customize.Export -> ExportOptions(
-                            kahoot = target.kahoot,
+                            app = target.app,
                             selection = exportScope, onSelection = { exportScope = it },
                             headingsSource = exportHeadings, onHeadingsSource = { exportHeadings = it },
                             round = exportRound, onRound = { exportRound = it },
@@ -648,7 +661,7 @@ fun StudySectionScreen(
                         Customize.QuestionFlashcards -> downloadQuestionFlashcards()
                         Customize.HeadingFlashcards -> downloadHeadingFlashcards()
                         is Customize.PracticeTest -> downloadPracticeTest(target.round)
-                        is Customize.Export -> downloadExport(target.kahoot)
+                        is Customize.Export -> downloadExport(target.app)
                     }
                 }
             }
@@ -785,12 +798,18 @@ private fun PracticeTestOptions(
 
 @Composable
 private fun ExportOptions(
-    kahoot: Boolean,
+    app: ExportApp,
     selection: ScopeSelection, onSelection: (ScopeSelection) -> Unit,
     headingsSource: Boolean, onHeadingsSource: (Boolean) -> Unit,
     round: Round?, onRound: (Round?) -> Unit,
 ) {
-    SheetTitle(if (kahoot) "Customize Kahoot export" else "Customize Quizlet/Space export")
+    SheetTitle(
+        when (app) {
+            ExportApp.KAHOOT -> "Customize Kahoot export"
+            ExportApp.SPACE -> "Customize Space export"
+            ExportApp.QUIZLET -> "Customize Quizlet export"
+        },
+    )
     ChapterScope(selection, onSelection)
     Text("Source", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -814,7 +833,7 @@ private fun ExportOptions(
             }
         }
     }
-    if (kahoot) {
+    if (app == ExportApp.KAHOOT) {
         Text(
             "Kahoot needs multiple-choice material; open-answer questions are left out.",
             style = MaterialTheme.typography.bodySmall,

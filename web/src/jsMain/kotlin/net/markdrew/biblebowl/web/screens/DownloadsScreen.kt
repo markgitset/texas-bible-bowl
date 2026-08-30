@@ -107,8 +107,11 @@ private sealed interface Customize {
     data object QuestionFlashcards : Customize
     data object HeadingFlashcards : Customize
     data class PracticeTest(val round: Round) : Customize
-    data class Export(val kahoot: Boolean) : Customize
+    data class Export(val app: ExportApp) : Customize
 }
+
+/** The importer a questions/headings export card targets — each wants its own file shape. */
+private enum class ExportApp { KAHOOT, SPACE, QUIZLET }
 
 /** How chapter titles render: inline with the first verse, or as standalone headings (± divider lines). */
 private enum class ChapterStyle(val label: String, val headings: Boolean, val lines: Boolean) {
@@ -475,16 +478,24 @@ object DownloadsScreen {
             title = "Kahoot spreadsheet",
             subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout)." +
                 scopeNote(exportScope) + customizedNote(exportCustomized),
-            href = exportUrl(kahoot = true),
-            customize = Customize.Export(kahoot = true),
+            href = exportUrl(ExportApp.KAHOOT),
+            customize = Customize.Export(ExportApp.KAHOOT),
             buttonLabel = "Download",
         )
         downloadCard(
-            title = "Quizlet / Space CSV",
-            subtitle = "Question-and-answer pairs as comma-separated text, import-ready for " +
-                "Quizlet, Space, or Anki." + scopeNote(exportScope) + customizedNote(exportCustomized),
-            href = exportUrl(kahoot = false),
-            customize = Customize.Export(kahoot = false),
+            title = "Questions for the Space app",
+            subtitle = "Question-and-answer pairs as a CSV that imports straight into Space " +
+                "(getspace.app)." + scopeNote(exportScope) + customizedNote(exportCustomized),
+            href = exportUrl(ExportApp.SPACE),
+            customize = Customize.Export(ExportApp.SPACE),
+            buttonLabel = "Download",
+        )
+        downloadCard(
+            title = "Questions for Quizlet",
+            subtitle = "The same pairs as paste-ready text for Quizlet's import screen — its default " +
+                "settings read them as-is." + scopeNote(exportScope) + customizedNote(exportCustomized),
+            href = exportUrl(ExportApp.QUIZLET),
+            customize = Customize.Export(ExportApp.QUIZLET),
             buttonLabel = "Download",
         )
         downloadCard(
@@ -536,8 +547,12 @@ object DownloadsScreen {
         "seed" to practiceSeed.toIntOrNull().takeIf { !round.crowdSourced },
     )
 
-    private fun exportUrl(kahoot: Boolean): String = generateUrl(
-        if (kahoot) "/generate/questions.xlsx" else "/generate/questions.csv",
+    private fun exportUrl(app: ExportApp): String = generateUrl(
+        when (app) {
+            ExportApp.KAHOOT -> "/generate/kahoot-questions.xlsx"
+            ExportApp.SPACE -> "/generate/space-questions.csv"
+            ExportApp.QUIZLET -> "/generate/quizlet-questions.txt"
+        },
         "source" to "headings".takeIf { exportHeadings },
         "round" to exportRound?.name.takeIf { !exportHeadings },
         *scopedParams(exportScope),
@@ -720,7 +735,7 @@ object DownloadsScreen {
                     child("p", "fw-semibold mb-1", "Round")
                     chipRow(roundOptions(), exportRound) { exportRound = it; rerender() }
                 }
-                if (target.kahoot) {
+                if (target.app == ExportApp.KAHOOT) {
                     child("p", "form-text", "Kahoot needs multiple-choice material; open-answer questions are left out.")
                 }
             }
