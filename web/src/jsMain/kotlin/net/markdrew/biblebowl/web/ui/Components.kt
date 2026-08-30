@@ -38,17 +38,26 @@ fun <T> Element.chipRow(options: List<Pair<String, T>>, selected: T, onSelect: (
  * multi-book sets add a book row above it, with the chapter row showing only that book's in-set
  * chapters (partial sets have gaps — e.g. Life of Moses covers Exo 1-20 then 32-34). Clicking the
  * selected chip clears it.
+ *
+ * On a [cumulative] picker ("through chapter"), every chapter up to the chosen one lights up too, so
+ * the chips show the range the download will actually cover rather than just its endpoint. Only the
+ * endpoint chip toggles off; clicking a lower lit chip moves the endpoint back to it.
  */
-fun Element.chapterChips(selected: ScopeSelection, onSelect: (ScopeSelection) -> Unit) {
+fun Element.chapterChips(
+    selected: ScopeSelection,
+    cumulative: Boolean = false,
+    onSelect: (ScopeSelection) -> Unit,
+) {
     val set = Session.studySet
+    val endRef = selected.chapterRef
     if (set.isSingleBook) {
         val book = set.books.single()
         child("div", "d-flex flex-wrap gap-1 mb-3") {
             chip("All", selected.chapter == null) { onSelect(ScopeSelection()) }
             set.chapterRefs.forEach { ref ->
-                val on = selected.chapter == ref.chapter
-                chip("${ref.chapter}", on) {
-                    onSelect(if (on) ScopeSelection() else ScopeSelection(book, ref.chapter))
+                val end = selected.chapter == ref.chapter
+                chip("${ref.chapter}", end || (cumulative && endRef != null && ref <= endRef)) {
+                    onSelect(if (end) ScopeSelection() else ScopeSelection(book, ref.chapter))
                 }
             }
         }
@@ -66,8 +75,10 @@ fun Element.chapterChips(selected: ScopeSelection, onSelect: (ScopeSelection) ->
     child("div", "d-flex flex-wrap gap-1 mb-3") {
         chip("All of ${book.briefName}", selected.chapter == null) { onSelect(ScopeSelection(book)) }
         set.chapterRefs.filter { it.book == book }.forEach { ref ->
-            val on = selected.chapter == ref.chapter
-            chip("${ref.chapter}", on) { onSelect(ScopeSelection(book, if (on) null else ref.chapter)) }
+            val end = selected.chapter == ref.chapter
+            chip("${ref.chapter}", end || (cumulative && endRef != null && ref <= endRef)) {
+                onSelect(ScopeSelection(book, if (end) null else ref.chapter))
+            }
         }
     }
 }

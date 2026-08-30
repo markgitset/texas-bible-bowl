@@ -494,6 +494,51 @@ class StudyRoutesTest {
     }
 
     @Test
+    fun verseDeckTakesEitherChapterSpelling() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
+            )
+        }
+        val json = Json { ignoreUnknownKeys = true }
+        val api = createClient { install(ContentNegotiation) { json(json) } }
+        val token: String = json.decodeFromString<AuthResponse>(
+            api.post("/auth/register") {
+                contentType(ContentType.Application.Json)
+                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
+            }.bodyAsText()
+        ).token
+
+        suspend fun deck(query: String) =
+            api.get("/generate/space-verses.csv$query") { header(HttpHeaders.Authorization, "Bearer $token") }
+
+        // `chapter=2` is that chapter alone — the drill-one-chapter half of the picker.
+        val one = deck("?chapter=2")
+        assertEquals(HttpStatusCode.OK, one.status)
+        assertTrue("space-acts-verses-ch2.csv" in one.headers[HttpHeaders.ContentDisposition].orEmpty())
+        val oneBody = one.bodyAsText()
+        assertTrue("**Acts 2:1**" in oneBody && "**Acts 2:2**" in oneBody)
+        assertTrue("**Acts 1:" !in oneBody, "an exact chapter scope must not reach back:\n$oneBody")
+
+        // `throughChapter=2` is cumulative — everything learned so far, chapter 1 included.
+        val through = deck("?throughChapter=2")
+        assertEquals(HttpStatusCode.OK, through.status)
+        assertTrue("space-acts-verses-through-ch2.csv" in through.headers[HttpHeaders.ContentDisposition].orEmpty())
+        val throughBody = through.bodyAsText()
+        listOf("Acts 1:1", "Acts 1:2", "Acts 2:1", "Acts 2:2").forEach { ref ->
+            assertEquals(1, throughBody.split("**$ref**").size - 1, "expected exactly one card for $ref")
+        }
+
+        // The narrow end of the same picker, and the unscoped default still covers the whole set.
+        assertTrue("**Acts 2:" !in deck("?chapter=1").bodyAsText())
+        assertTrue("**Acts 1:1**" in deck("").bodyAsText())
+
+        // In the set but outside the studied text: an empty deck is a 404, not a zero-card file.
+        assertEquals(HttpStatusCode.NotFound, deck("?chapter=3").status)
+    }
+
+    @Test
     fun headingsExportForSpaceQuizletAndKahoot() = testApplication {
         application {
             module(

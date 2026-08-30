@@ -148,6 +148,10 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         if (chapter != null) parameter(chapterKey, chapter)
     }
 
+    /** The verse decks take either chapter spelling; which one is the caller's "cumulative" choice. */
+    private fun verseChapterKey(cumulative: Boolean): String =
+        if (cumulative) StudyScopeParams.THROUGH_CHAPTER else StudyScopeParams.CHAPTER
+
     private fun remember(auth: AuthResponse): AuthResponse = auth.also {
         token = it.token
         user = it.user
@@ -414,13 +418,32 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
      * Fetches the verse flashcard deck as a Space-importable CSV: one card per verse, its text up
      * front and its heading + reference behind it. Requires a signed-in user (401 otherwise) — the
      * deck carries the season's ESV text verse by verse.
+     *
+     * [cumulative] picks how [chapter] is spelled: `true` sends it as `throughChapter` (every verse
+     * from the start of the set through it), `false` as a plain `chapter` (that chapter alone).
      */
-    suspend fun spaceVersesCsv(set: String? = null): ByteArray =
-        client.get("$baseUrl/generate/space-verses.csv") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
+    suspend fun spaceVersesCsv(
+        chapter: Int? = null,
+        cumulative: Boolean = false,
+        set: String? = null,
+        book: String? = null,
+    ): ByteArray =
+        client.get("$baseUrl/generate/space-verses.csv") {
+            authorize()
+            scopeParams(set, book, chapter, chapterKey = verseChapterKey(cumulative))
+        }.bodyOrThrow()
 
     /** Fetches the same verse deck as a Quizlet paste-import file (Tab, blank line between cards). */
-    suspend fun quizletVersesTxt(set: String? = null): ByteArray =
-        client.get("$baseUrl/generate/quizlet-verses.txt") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
+    suspend fun quizletVersesTxt(
+        chapter: Int? = null,
+        cumulative: Boolean = false,
+        set: String? = null,
+        book: String? = null,
+    ): ByteArray =
+        client.get("$baseUrl/generate/quizlet-verses.txt") {
+            authorize()
+            scopeParams(set, book, chapter, chapterKey = verseChapterKey(cumulative))
+        }.bodyOrThrow()
 
     /** Fetches the multiple-choice study guide PDF (questions by chapter + answer key). */
     suspend fun studyGuidePdf(set: String? = null): ByteArray =

@@ -417,18 +417,19 @@ fun Route.generateRoutes(
                 respondUniqueWordDeck(study, seasons, forSpace = false)
             }
 
-            // GET /generate/space-verses.csv?set=acts — one card per verse in the set, as a
-            // Space-importable CSV: the verse text up front, its heading and reference behind it. Same
-            // Markdown shape as the unique-words deck (blank line after the heading, bold reference).
-            // Signed-in only — see [allowVerseDeck].
+            // GET /generate/space-verses.csv?set=acts&book=ACT&chapter=2 (or &throughChapter=2) — one
+            // card per verse in scope, as a Space-importable CSV: the verse text up front, its heading
+            // and reference behind it. Same Markdown shape as the unique-words deck (blank line after
+            // the heading, bold reference). Signed-in only — see [allowVerseDeck].
             get("/generate/space-verses.csv") {
                 if (!allowVerseDeck(users)) return@get
                 respondVerseDeck(study, seasons, forSpace = true)
             }
 
-            // GET /generate/quizlet-verses.txt?set=acts — the same deck as a Quizlet paste file. The back
-            // runs to two lines, so this is the tabbed/blank-line-between-cards shape (choose Tab and a
-            // custom "\n\n" between cards), not the default one-card-per-line one. Signed-in only.
+            // GET /generate/quizlet-verses.txt?… (scope params as above) — the same deck as a Quizlet
+            // paste file. The back runs to two lines, so this is the tabbed/blank-line-between-cards
+            // shape (choose Tab and a custom "\n\n" between cards), not the default one-card-per-line
+            // one. Signed-in only.
             get("/generate/quizlet-verses.txt") {
                 if (!allowVerseDeck(users)) return@get
                 respondVerseDeck(study, seasons, forSpace = false)
@@ -813,7 +814,13 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondVerseDeck(
     seasons: SeasonRepository,
     forSpace: Boolean,
 ) {
-    val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return
+    // Two spellings of the chapter scope, because memory work wants both: `throughChapter=N` is
+    // cumulative (everything learned so far), plain `chapter=N` is that chapter on its own. Which
+    // one the request used picks the filter, the filename suffix, and the canonical URL we advertise;
+    // `throughChapter` wins if a request somehow carries both.
+    val cumulative = call.request.queryParameters[StudyScopeParams.THROUGH_CHAPTER] != null
+    val chapterKey = if (cumulative) StudyScopeParams.THROUGH_CHAPTER else StudyScopeParams.CHAPTER
+    val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet(), chapterKey) ?: return
     val svc = study?.forSet(scope.set)
     if (svc == null || !svc.isConfigured) {
         return call.respond(
@@ -822,9 +829,24 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondVerseDeck(
         )
     }
     try {
-        call.advertiseCanonicalScope(scope)
+        call.advertiseCanonicalScope(scope, chapterKey)
         val sd = svc.studyData()
-        val cards = sd.verses.entries.map { (range, verseRef) ->
+        val endRef = scope.chapterRef
+        val book = scope.book
+        val inScope = sd.verses.entries.filter { (_, verseRef) ->
+            when {
+                // ChapterRef comparison is book-aware (absoluteChapter), so a cumulative scope reaches
+                // back through earlier books of a multi-book set, not just earlier chapters of this one.
+                endRef != null -> if (cumulative) verseRef.chapterRef <= endRef else verseRef.chapterRef == endRef
+                // A book with no chapter is that book's slice of the set — the picker's "All of Num".
+                book != null -> verseRef.book == book
+                else -> true
+            }
+        }
+        if (inScope.isEmpty()) {
+            return call.respond(HttpStatusCode.NotFound, ApiError("no_verses", "No verses in scope"))
+        }
+        val cards = inScope.map { (range, verseRef) ->
             // The full book name (unlike the PDFs' set-relative refs): the export leaves the app, so
             // each card has to name its verse completely on its own.
             val ref = verseRef.format(FULL_BOOK_FORMAT)
@@ -839,7 +861,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondVerseDeck(
             // The stored text keeps the layout's line breaks; a card front wants one flowing paragraph.
             sd.text.substring(range).normalizeWS() to back.joinToString("\n")
         }
-        val baseName = PdfFileNames.withSet(scope.set.simpleName, "verses")
+        val baseName = PdfFileNames.withSet(scope.set.simpleName, "verses${scope.chapterSuffix(cumulative)}")
         if (forSpace) respondAttachment(spaceCsv(cards).toByteArray(), "space-$baseName.csv", CSV_CONTENT_TYPE)
         else respondAttachment(quizletTabbed(cards).toByteArray(), "quizlet-$baseName.txt", ContentType.Text.Plain)
     } catch (e: EsvUpstreamException) {
