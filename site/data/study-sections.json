@@ -1,5 +1,5 @@
 {
-  "comment": "GENERATED from shared-api's StudySection enum — do not edit. Regenerate with: ./gradlew :shared-api:generateStudySectionsData",
+  "comment": "GENERATED from shared-api's StudySection enum — do not edit; builds regenerate it (task :shared-api:generateStudySectionsData)",
   "sections": [
     { "slug": "the-text", "title": "The Text" },
     { "slug": "general-knowledge", "title": "General Knowledge" },

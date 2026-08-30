@@ -145,9 +145,10 @@ canonifyURLs = true
 # Study & Practice is a dropdown like Event/Scholarships/About, but its pages live in the
 # app (hash routes into /app/), not in Hugo, so its children are NOT listed here: nav.html
 # (matching on this identifier) and the Site Map render them from data/study-sections.json,
-# which is generated from shared-api's StudySection enum
-# (./gradlew :shared-api:generateStudySectionsData; a jvmTest fails CI if it goes stale).
-# /study-resources/* pages are redirects into the app so old links keep working.
+# which is generated from shared-api's StudySection enum and kept fresh automatically
+# (:shared-api JVM builds and deploy-web.sh regenerate it; a jvmTest fails CI if the
+# committed copy is stale). /study-resources/* pages are redirects into the app so old
+# links keep working.
 [[menus.main]]
   name       = "Study & Practice"
   identifier = "study"

@@ -35,9 +35,10 @@ object Routes {
 /**
  * The Study & Practice section pages live under `#study/<slug>` — one per shared-api
  * [StudySection]. The navbar's Study & Practice dropdown (nav.html) and the Site Map
- * (sitemap.html) render the same list from the generated site/data/study-sections.json
- * (`./gradlew :shared-api:generateStudySectionsData` after changing the enum — a jvmTest fails
- * CI if it's stale). `#study` itself is the overview page whose cards link to these.
+ * (sitemap.html) render the same list from the generated site/data/study-sections.json, which
+ * regenerates automatically when the enum changes (:shared-api JVM builds and deploy-web.sh;
+ * a jvmTest fails CI while the committed copy is stale). `#study` itself is the overview page
+ * whose cards link to these.
  */
 val StudySection.route: String get() = "${Routes.STUDY}/$slug"
 

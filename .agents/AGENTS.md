@@ -83,9 +83,12 @@ study area (2026-07): `#study`, the same overview card grid, plus one page per s
 section at `#study/<slug>` (web's DownloadsScreen renders both). The `StudySection` enum is
 ONE shared class in `:shared-api` (slug-serialized; strict `bySlug`); each app adds its own
 `route` extension in its `Routes.kt`. The site's navbar dropdown (nav.html) and sitemap.html
-render their study lists from the generated `site/data/study-sections.json` — run
-`./gradlew :shared-api:generateStudySectionsData` after changing the enum (a `:shared-api`
-jvmTest fails CI while it's stale). Section pages also
+render their study lists from the generated `site/data/study-sections.json`, which regenerates
+itself — any build compiling `:shared-api`'s JVM target refreshes it, deploy-web.sh regenerates
+it before every Hugo build, and a `:shared-api` jvmTest self-heals it and fails CI while the
+committed copy is stale (so the only duty is committing the refreshed file alongside an enum
+change; the dev web shell needs nothing — Shell.kt fills its dropdown from the enum at boot).
+Section pages also
 render admin-curated **study materials** (uploaded documents served byte-exact + external
 links; `study_materials` table, public `GET /study-materials`) after the built-in cards;
 admins manage them at `admin/materials` (web only, SEASON_MANAGE, in the account menu). The web
