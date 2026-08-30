@@ -258,6 +258,8 @@ private fun AppNavHost(
             onOpenHeadings = { navController.navigate(Routes.STUDY_HEADINGS) },
             onOpenQuiz = { navController.navigateTopLevel(Routes.QUIZ) },
             onOpenQuestions = { navController.navigateTopLevel(Routes.QUESTIONS) },
+            signedIn = user != null,
+            onRequireSignIn = requireSignIn,
         )
     }
     NavHost(navController, startDestination = Routes.STUDY) {

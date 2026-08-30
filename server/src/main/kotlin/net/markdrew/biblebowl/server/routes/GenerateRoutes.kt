@@ -31,6 +31,7 @@ import net.markdrew.biblebowl.generate.practice.quotesTypst
 import net.markdrew.biblebowl.analysis.WordList
 import net.markdrew.biblebowl.analysis.fullIndex
 import net.markdrew.biblebowl.generate.LayoutRevisions
+import net.markdrew.biblebowl.generate.normalizeWS
 import net.markdrew.biblebowl.generate.stampLayoutRevision
 import net.markdrew.biblebowl.analysis.namesIndex
 import net.markdrew.biblebowl.analysis.oneTimeWordCards
@@ -132,6 +133,18 @@ private suspend fun io.ktor.server.routing.RoutingContext.allowStudyTextSource(u
     val user = currentUser(users) ?: return false
     return requirePermission(user, Permission.SEASON_MANAGE)
 }
+
+/**
+ * Gate for the verse flashcard decks. Unlike the other decks — word lists and short excerpts — a card
+ * per verse is the season's ESV text end to end in a plain-text file, the same concern that keeps the
+ * study text's Typst source restricted. Rather than lock students out of their own memory work, this
+ * one only requires *a* signed-in user (no permission): enough to keep the running text away from
+ * anonymous scrapers and bulk download, which is what our non-profit licence is protecting.
+ *
+ * Responds 401 itself and returns false when nobody is signed in.
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.allowVerseDeck(users: UserRepository): Boolean =
+    currentUser(users) != null
 
 fun Route.generateRoutes(
     users: UserRepository,
@@ -401,6 +414,23 @@ fun Route.generateRoutes(
             // 2026-08, _underline_ does not survive its importer.
             get("/generate/unique-word-flashcards.txt") {
                 respondUniqueWordDeck(study, seasons, forSpace = false)
+            }
+
+            // GET /generate/space-verses.csv?set=acts — one card per verse in the set, as a
+            // Space-importable CSV: the verse text up front, its heading and reference behind it. Same
+            // Markdown shape as the unique-words deck (blank line after the heading, bold reference).
+            // Signed-in only — see [allowVerseDeck].
+            get("/generate/space-verses.csv") {
+                if (!allowVerseDeck(users)) return@get
+                respondVerseDeck(study, seasons, forSpace = true)
+            }
+
+            // GET /generate/quizlet-verses.txt?set=acts — the same deck as a Quizlet paste file. The back
+            // runs to two lines, so this is the tabbed/blank-line-between-cards shape (choose Tab and a
+            // custom "\n\n" between cards), not the default one-card-per-line one. Signed-in only.
+            get("/generate/quizlet-verses.txt") {
+                if (!allowVerseDeck(users)) return@get
+                respondVerseDeck(study, seasons, forSpace = false)
             }
 
             // GET /generate/space-questions.csv?source=questions|headings&round=FACT_FINDER&chapter=2
@@ -752,6 +782,51 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondUniqueWordDeck(
             c.word to back.joinToString("\n")
         }
         val baseName = PdfFileNames.withSet(scope.set.simpleName, "unique-words")
+        if (forSpace) respondAttachment(spaceCsv(cards).toByteArray(), "space-$baseName.csv", CSV_CONTENT_TYPE)
+        else respondAttachment(quizletTabbed(cards).toByteArray(), "quizlet-$baseName.txt", ContentType.Text.Plain)
+    } catch (e: EsvUpstreamException) {
+        call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
+    }
+}
+
+/**
+ * The verse flashcard deck as a per-app import file, [forSpace]'s CSV or Quizlet's tabbed text — the
+ * verse text up front, its section heading and full reference behind it. The original bible-bowl Cram
+ * verses export (`PrintVersesForCram`), in each importer's own markup instead of its `<br/>`s, and
+ * laid out like the unique-words deck: heading for context, reference bold as the answer.
+ */
+private suspend fun io.ktor.server.routing.RoutingContext.respondVerseDeck(
+    study: StudyDataRegistry?,
+    seasons: SeasonRepository,
+    forSpace: Boolean,
+) {
+    val scope = call.resolveEsvScopeOrRespond(seasons.currentStudySet()) ?: return
+    val svc = study?.forSet(scope.set)
+    if (svc == null || !svc.isConfigured) {
+        return call.respond(
+            HttpStatusCode.ServiceUnavailable,
+            ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
+        )
+    }
+    try {
+        call.advertiseCanonicalScope(scope)
+        val sd = svc.studyData()
+        val cards = sd.verses.entries.map { (range, verseRef) ->
+            // The full book name (unlike the PDFs' set-relative refs): the export leaves the app, so
+            // each card has to name its verse completely on its own.
+            val ref = verseRef.format(FULL_BOOK_FORMAT)
+            // Null for a verse that straddles a heading boundary — the card then carries the reference
+            // alone rather than one arbitrary side's heading.
+            val heading = sd.headingCharRanges.valueEnclosing(range)
+            val back =
+                if (forSpace) listOfNotNull(
+                    heading?.let { "$it\n" }, // + the joiner's newline = the Markdown paragraph break
+                    "**$ref**",
+                ) else listOfNotNull(heading, "*$ref*")
+            // The stored text keeps the layout's line breaks; a card front wants one flowing paragraph.
+            sd.text.substring(range).normalizeWS() to back.joinToString("\n")
+        }
+        val baseName = PdfFileNames.withSet(scope.set.simpleName, "verses")
         if (forSpace) respondAttachment(spaceCsv(cards).toByteArray(), "space-$baseName.csv", CSV_CONTENT_TYPE)
         else respondAttachment(quizletTabbed(cards).toByteArray(), "quizlet-$baseName.txt", ContentType.Text.Plain)
     } catch (e: EsvUpstreamException) {

@@ -14,6 +14,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 enum class StudySection(val slug: String, val title: String) {
     @SerialName("the-text") TEXT("the-text", "The Text"),
+    @SerialName("verses") VERSES("verses", "Verses"),
     @SerialName("general-knowledge") GENERAL("general-knowledge", "General Knowledge"),
     @SerialName("chapter-headings") HEADINGS("chapter-headings", "Chapter Headings"),
     @SerialName("unique-words") UNIQUE_WORDS("unique-words", "Unique Words"),
