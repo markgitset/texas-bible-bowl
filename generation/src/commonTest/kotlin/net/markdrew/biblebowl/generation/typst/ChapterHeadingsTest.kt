@@ -46,14 +46,17 @@ class ChapterHeadingsTest {
     }
 
     @Test
-    fun chaptersAreShadedAsAGroupSoAChapterReadsAsOneBlock() {
+    fun chaptersAreOneBlockLabelledWithTheirNumber() {
         val source = chapterHeadingsTypst("Life of Moses", moses)
 
-        // A chapter's headings are one nested array, and the shade is chosen per chapter — a heading
-        // that runs on past its chapter (4:17 under chapter 3) shades with the chapter it starts in.
+        // A chapter's headings are one nested array under the number the block is labelled with, and a
+        // heading that runs on past its chapter (4:17 under chapter 3) belongs to the chapter it
+        // starts in.
         val exodus = source.substringAfter("""(book: "Exodus", chapters: (""").substringBefore("""(book: "Numbers"""")
-        val chapters = exodus.split(Regex("""(?m)^ +\($""")).drop(1)
+        val chapters = exodus.split("(chapter: ").drop(1)
         assertEquals(2, chapters.size, "one nested array per chapter, not per heading")
+        assertTrue(chapters[0].startsWith("2, headings: ("), "the chapter number reaches the markup")
+        assertTrue(chapters[1].startsWith("3, headings: ("), "the chapter number reaches the markup")
         assertContains(chapters[1], "The Burning Bush")
         assertContains(chapters[1], "Moses Given Powerful Signs")
     }
@@ -64,6 +67,16 @@ class ChapterHeadingsTest {
 
         assertContains(source, "(book: none, chapters: (")
         assertFalse(source.contains("""book: """"), "a null book must not emit a band label")
+    }
+
+    @Test
+    fun theSubtitleCountsTheHeadingsOnTheSheet() {
+        val source = chapterHeadingsTypst("Life of Moses", moses)
+
+        assertTrue(
+            "#upper[4 Chapter Headings]" in source,
+            "the count stands in for the dropped footer",
+        )
     }
 
     @Test
