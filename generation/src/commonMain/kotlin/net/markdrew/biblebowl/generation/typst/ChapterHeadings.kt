@@ -1,6 +1,12 @@
 package net.markdrew.biblebowl.generation.typst
 
-/** One line of the chapter-headings sheet: an ESV section [title] and the [reference] it covers. */
+/**
+ * One line of the chapter-headings sheet: an ESV section [title] and the [reference] it covers.
+ *
+ * The row is drawn under its chapter's number, so [reference] is expected to be verses only ("12-26")
+ * for a heading that stays inside its chapter, and to name both chapters ("21:37-22:21") only for one
+ * that runs on into the next.
+ */
 data class ChapterHeadingRow(val title: String, val reference: String)
 
 /**
@@ -40,11 +46,14 @@ private val COLUMN_TIERS: List<Pair<Int, IntRange>> = listOf(
  * How much taller than its one-line-per-heading ideal a layout may be before the search passes it
  * over. Fitting alone is a bad objective: a big face in a narrow column can fit a short set while
  * wrapping half its headings, and that reads worse than the same sheet a size or two smaller with
- * every heading on one line. 1.12 is roughly one heading in eight. If nothing meets it — a set can
- * be dense enough that some wrapping is unavoidable — the search falls back to the largest layout
- * that merely fits.
+ * every heading on one line. 1.03 leaves room for the odd unavoidably long title — Acts and the Life
+ * of Moses land on one wrapped heading each, Joshua/Judges/Ruth on two — while pulling the sets that
+ * were wrapping six or eight of them back onto one line, at a cost of about a point of type. Chasing
+ * zero costs two or three points, which is more than a wall chart can spare. If nothing meets the
+ * tolerance — a set can be dense enough that some wrapping is unavoidable — the search falls back to
+ * the largest layout that merely fits.
  */
-private const val WRAP_TOLERANCE = 1.12
+private const val WRAP_TOLERANCE = 1.03
 
 /**
  * The row padding, as a fraction of the text size, that a layout has to be able to afford. Below this
@@ -60,6 +69,13 @@ private const val MIN_ROW_PAD = 0.11
  * it than spread over the whole sheet.
  */
 private const val MAX_ROW_PAD = 0.75
+
+/**
+ * How far a wrapped heading's second and later lines are indented, in ems of the sheet's text size —
+ * about two characters, which reads as a continuation without starting the line so far in that it
+ * looks like a nested entry. [WRAP_TOLERANCE] keeps wrapping rare, so this is for the exceptions.
+ */
+private const val HANGING_INDENT = "1.6em"
 
 /**
  * Candidate (column count, text size) layouts, best first: biggest text wins, and at equal size the
@@ -174,7 +190,11 @@ fun chapterHeadingsTypst(
               rowspan: it.headings.len(),
               text(size: size * 1.35, weight: "bold", fill: accent)[#it.chapter],
             ),
-            ..it.headings.map(h => (h.title, text(fill: muted)[#h.reference])).flatten(),
+            // A heading the search couldn't keep on one line hangs its continuation, so a two-line
+            // title reads as one heading rather than as two short ones.
+            ..it.headings.map(h => (
+              par(hanging-indent: $HANGING_INDENT, h.title), text(fill: muted)[#h.reference],
+            )).flatten(),
           ),
         )
 

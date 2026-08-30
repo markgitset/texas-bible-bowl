@@ -12,19 +12,19 @@ class ChapterHeadingsTest {
         ChapterHeadingBook(
             "Exodus",
             listOf(
-                ChapterHeadingChapter(2, listOf(ChapterHeadingRow("The Birth of Moses", "2:1-10"))),
+                ChapterHeadingChapter(2, listOf(ChapterHeadingRow("The Birth of Moses", "1-10"))),
                 ChapterHeadingChapter(
                     3,
                     listOf(
-                        ChapterHeadingRow("The Burning Bush", "3:1-22"),
-                        ChapterHeadingRow("Moses Given Powerful Signs", "4:1-17"),
+                        ChapterHeadingRow("The Burning Bush", "1-22"),
+                        ChapterHeadingRow("Moses Given Powerful Signs", "3:23-4:17"),
                     ),
                 ),
             ),
         ),
         ChapterHeadingBook(
             "Numbers",
-            listOf(ChapterHeadingChapter(16, listOf(ChapterHeadingRow("Korah's Rebellion", "16:1-50")))),
+            listOf(ChapterHeadingChapter(16, listOf(ChapterHeadingRow("Korah's Rebellion", "1-50")))),
         ),
     )
 
@@ -33,7 +33,7 @@ class ChapterHeadingsTest {
         val source = chapterHeadingsTypst("Life of Moses", moses)
 
         assertContains(source, """(book: "Exodus", chapters: (""")
-        assertContains(source, """(title: "The Birth of Moses", reference: "2:1-10"),""")
+        assertContains(source, """(title: "The Birth of Moses", reference: "1-10"),""")
         assertContains(source, """(book: "Numbers", chapters: (""")
         assertTrue(
             source.indexOf("Korah's Rebellion") > source.indexOf("""book: "Numbers""""),
@@ -104,6 +104,15 @@ class ChapterHeadingsTest {
         assertContains(source, """(book: "The \"Big\" Book"""")
         assertContains(source, """(title: "He said \"no\"\\", reference: "1:1"),""")
         assertFalse(source.contains("""title: "He said "no""""), "raw quotes must not leak into markup")
+    }
+
+    @Test
+    fun aWrappedHeadingHangsItsContinuationLines() {
+        val source = chapterHeadingsTypst("Life of Moses", moses)
+
+        // The fit search buys one-line headings with text size and can't always afford them, so the
+        // rare wrapped title has to read as one heading rather than as two short ones.
+        assertContains(source, "par(hanging-indent: 1.6em, h.title)")
     }
 
     @Test

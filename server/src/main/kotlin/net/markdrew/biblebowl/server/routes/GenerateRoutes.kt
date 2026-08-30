@@ -63,6 +63,7 @@ import net.markdrew.biblebowl.model.FULL_BOOK_FORMAT
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.model.StudyScope
 import net.markdrew.biblebowl.model.StudySet
+import net.markdrew.biblebowl.model.VerseRange
 import net.markdrew.biblebowl.server.data.QuestionRepository
 import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.data.UserRepository
@@ -520,7 +521,7 @@ fun Route.generateRoutes(
                             chapters = headings.groupBy { it.verseRange.start.chapter }.map { (chapter, hs) ->
                                 ChapterHeadingChapter(
                                     chapter,
-                                    hs.map { ChapterHeadingRow(it.title, it.verseRange.format(NO_BOOK_FORMAT)) },
+                                    hs.map { ChapterHeadingRow(it.title, it.verseRange.headingReference()) },
                                 )
                             },
                         )
@@ -565,6 +566,18 @@ fun Route.generateRoutes(
             call.respond(ClearPdfCacheResponse(cleared))
         }
     }
+}
+
+/**
+ * A heading's reference as it reads on the chapter-headings sheet, where the chapter is already
+ * printed beside the row: verses only ("12-26", or "7" for a one-verse heading). A heading that runs
+ * on into the next chapter is the exception — there the chapter is the whole point, so both ends keep
+ * theirs ("21:37-22:21").
+ */
+internal fun VerseRange.headingReference(): String = when {
+    start.chapterRef != endInclusive.chapterRef -> format(NO_BOOK_FORMAT)
+    start == endInclusive -> start.verse.toString()
+    else -> "${start.verse}-${endInclusive.verse}"
 }
 
 /** "Chapter 14" for a single-book set, "Num 14" for a multi-book set (a bare number is ambiguous). */
