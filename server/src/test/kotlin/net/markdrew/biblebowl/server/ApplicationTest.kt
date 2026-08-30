@@ -203,7 +203,7 @@ class ApplicationTest {
     }
 
     @Test
-    fun cardExportsCarryTheWholeBankWhileKahootStopsAtItsOwnLimit() = testApplication {
+    fun onlyRealCeilingsCapTheQuestionBankDownloads() = testApplication {
         val questions = InMemoryQuestionRepository()
         // Bigger than any round-number cap: the bundled Acts study guide alone seeds 1,646 approved
         // questions, and a truncated export is invisible — the file just looks complete.
@@ -233,6 +233,11 @@ class ApplicationTest {
         // Kahoot keeps its cap — one kahoot holds 100 questions, so a bigger sheet wouldn't import.
         val sheet = readZipEntry(api.get("/generate/kahoot-questions.xlsx").bodyAsBytes(), "xl/worksheets/sheet1.xml")
         assertEquals(100, Regex("""Question \d+\?""").findAll(sheet).count())
+
+        // The flashcard deck stops at 400 — a paper limit (40 duplex sheets), stated on the web card.
+        // ?format=typ reads the deck without needing Typst on PATH: one "(question: ..." line per card.
+        val deck = api.get("/generate/flashcards.pdf?format=typ").bodyAsText()
+        assertEquals(400, Regex("""^\(question: """, RegexOption.MULTILINE).findAll(deck).count())
     }
 
     @Test

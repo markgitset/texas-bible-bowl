@@ -340,8 +340,9 @@ object DownloadsScreen {
         )
         downloadCard(
             title = "Question flashcards",
-            subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardScope) +
-                customizedNote(flashcardRound != null),
+            subtitle = "Duplex deck built from the approved community questions. The 400 top-voted " +
+                "questions in scope, which is 40 sheets to print and cut — scope it to a chapter for " +
+                "the rest." + scopeNote(flashcardScope) + customizedNote(flashcardRound != null),
             href = generateUrl(
                 "/generate/flashcards.pdf",
                 *scopedParams(flashcardScope),

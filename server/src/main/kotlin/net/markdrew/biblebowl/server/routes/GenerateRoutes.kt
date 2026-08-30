@@ -86,6 +86,14 @@ import kotlin.random.nextInt
 val GENERATE_RATE_LIMIT = RateLimitName("generate")
 
 /**
+ * Most cards one question-flashcard PDF carries — a paper limit, not a data one. The deck prints 10 cards
+ * to a page (2×5) with a mirrored backs page for duplex, so this is 40 sheets to print and cut; the whole
+ * Acts bank (1,646 approved questions) would be 165. The pool is the top-voted questions in scope, and the
+ * way to reach the rest is to narrow the scope to a chapter, which the UI says on the card.
+ */
+private const val FLASHCARD_DECK_MAX = 400
+
+/**
  * `?format=typ` on any generated-PDF endpoint serves the Typst source behind the document
  * instead of the document Typst compiled from it — same route, same params, same cache stamp, so the
  * source you get is exactly the source behind the PDF those params would hand you: the generator's
@@ -204,7 +212,8 @@ fun Route.generateRoutes(
                 }
 
                 val scope = call.resolveScopeOrRespond(seasons.currentStudySet()) ?: return@get
-                val pool = questions.list(QuestionStatus.APPROVED, scope.toQuestionScope(), roundType = round, limit = 200)
+                val pool =
+                    questions.list(QuestionStatus.APPROVED, scope.toQuestionScope(), roundType = round, limit = FLASHCARD_DECK_MAX)
                 if (pool.isEmpty()) {
                     return@get call.respond(
                         HttpStatusCode.NotFound,
