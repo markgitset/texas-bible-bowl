@@ -5,6 +5,10 @@ import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
+import io.ktor.client.request.header
+import io.ktor.client.request.post
+import io.ktor.client.request.setBody
+import io.ktor.http.contentType
 import io.ktor.client.statement.bodyAsBytes
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentDisposition
@@ -15,8 +19,10 @@ import io.ktor.http.headersOf
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
 import kotlinx.serialization.json.Json
+import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
+import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.generate.LayoutRevisions
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingBook
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingChapter
@@ -410,6 +416,61 @@ class StudyRoutesTest {
         assertTrue("$theophilusTxtCard\n\n" in txtBody, "unexpected Quizlet card shape in:\n$txtBody")
         assertTrue("\n\n\n" !in txtBody, "definitions must not contain blank lines — they'd split the card")
         assertTrue("_" !in txtBody, "no underline markup — Quizlet's importer drops it")
+    }
+
+    @Test
+    fun versesExportRequiresSignInAndCardsEveryVerse() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
+            )
+        }
+        val json = Json { ignoreUnknownKeys = true }
+        val api = createClient { install(ContentNegotiation) { json(json) } }
+
+        // Unlike every other deck (word lists and short excerpts), a card per verse is the season's ESV
+        // text end to end, so it is not served anonymously. Any account qualifies — no permission.
+        assertEquals(HttpStatusCode.Unauthorized, api.get("/generate/space-verses.csv").status)
+        assertEquals(HttpStatusCode.Unauthorized, api.get("/generate/quizlet-verses.txt").status)
+
+        val token: String = json.decodeFromString<AuthResponse>(
+            api.post("/auth/register") {
+                contentType(ContentType.Application.Json)
+                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
+            }.bodyAsText()
+        ).token
+
+        // Space CSV: the verse up front; behind it the heading, a blank line (a lone newline is only a
+        // Markdown soft break), then the bold reference — same shape as the unique-words deck.
+        val csv = api.get("/generate/space-verses.csv") { header(HttpHeaders.Authorization, "Bearer $token") }
+        assertEquals(HttpStatusCode.OK, csv.status)
+        assertTrue("space-acts-verses.csv" in csv.headers[HttpHeaders.ContentDisposition].orEmpty())
+        val csvBody = csv.bodyAsText()
+        assertTrue(csvBody.startsWith("Front,Back\n"), "Space requires the header row")
+        val acts11 = "\"In the first book, O Theophilus, I have dealt with all that Jesus began to do and " +
+            "teach,\",\"The Promise of the Holy Spirit\n\n**Acts 1:1**\""
+        assertTrue(acts11 in csvBody, "unexpected Space card shape in:\n$csvBody")
+        assertTrue("\"The Coming of the Holy Spirit\n\n**Acts 2:1**\"" in csvBody)
+        // Every verse in the fixture gets exactly one card, in scripture order. Counted by reference,
+        // not by line: an RFC 4180 row with a quoted multi-line field spans several physical lines.
+        listOf("Acts 1:1", "Acts 1:2", "Acts 2:1", "Acts 2:2").forEach { ref ->
+            assertEquals(1, csvBody.split("**$ref**").size - 1, "expected exactly one card for $ref")
+        }
+        assertTrue(csvBody.indexOf("**Acts 1:2**") < csvBody.indexOf("**Acts 2:1**"), "scripture order")
+
+        // Quizlet paste file: term TAB definition, blank line between cards (the back runs to two
+        // lines, so this is the tabbed shape, not the one-card-per-line default).
+        val txt = api.get("/generate/quizlet-verses.txt") { header(HttpHeaders.Authorization, "Bearer $token") }
+        assertEquals(HttpStatusCode.OK, txt.status)
+        assertTrue("quizlet-acts-verses.txt" in txt.headers[HttpHeaders.ContentDisposition].orEmpty())
+        val txtBody = txt.bodyAsText()
+        assertTrue(
+            "When the day of Pentecost arrived, they were all together in one place.\t" +
+                "The Coming of the Holy Spirit\n*Acts 2:1*" in txtBody,
+            "unexpected Quizlet card shape in:\n$txtBody",
+        )
+        assertTrue("\n\n\n" !in txtBody, "definitions must not contain blank lines — they'd split the card")
     }
 
     @Test

@@ -111,6 +111,9 @@ private object StudyChoices {
 private fun blurb(section: StudySection, scripture: String): String = when (section) {
     StudySection.TEXT ->
         "The complete text of $scripture — the highlighted study PDF, plus places to read or listen online."
+    StudySection.VERSES ->
+        "Every verse in $scripture as a flashcard — the verse up front, its reference on the back — " +
+            "ready to import into Space or Quizlet."
     StudySection.GENERAL ->
         "The official study guide and question flashcards, plus the interactive quiz and the " +
             "community question bank."
@@ -200,6 +203,9 @@ fun StudySectionScreen(
     onOpenHeadings: () -> Unit,
     onOpenQuiz: () -> Unit,
     onOpenQuestions: () -> Unit,
+    // Only the verse decks need these: they're the one study download that requires an account.
+    signedIn: Boolean = false,
+    onRequireSignIn: () -> Unit = {},
 ) {
     var busyCard by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -441,6 +447,39 @@ fun StudySectionScreen(
                         "twin of the flashcards. Quiz can also drill headings.",
                     actionLabel = "Open browser",
                     onClick = onOpenHeadings,
+                )
+            }
+
+            // Signed-in only, server-side too: a card per verse is the whole ESV text of the set in one
+            // plain-text file. The section stays public so anyone can see what's here — while anonymous
+            // the buttons say what they need and route to sign-in, matching every other gated action.
+            StudySection.VERSES -> {
+                val versesLabel = if (signedIn) "Download" else "Sign in to download"
+                DownloadCard(
+                    title = "Verse flashcards for the Space app",
+                    subtitle = "Every verse in ${season.eventScripture} as a CSV that imports straight into " +
+                        "Space (getspace.app) — the verse up front, its section heading and reference on the back.",
+                    busyCard = busyCard,
+                    buttonLabel = versesLabel,
+                    onClick = {
+                        if (!signedIn) onRequireSignIn()
+                        else download("Verse flashcards for the Space app", "space-${withSet("verses")}.csv", Mime.CSV) {
+                            api.spaceVersesCsv()
+                        }
+                    },
+                )
+                DownloadCard(
+                    title = "Verse flashcards for Quizlet",
+                    subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
+                        "between term and definition, and enter \\n\\n as the custom separator between cards.",
+                    busyCard = busyCard,
+                    buttonLabel = versesLabel,
+                    onClick = {
+                        if (!signedIn) onRequireSignIn()
+                        else download("Verse flashcards for Quizlet", "quizlet-${withSet("verses")}.txt", Mime.TEXT) {
+                            api.quizletVersesTxt()
+                        }
+                    },
                 )
             }
 

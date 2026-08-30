@@ -410,6 +410,18 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun uniqueWordFlashcardsTxt(set: String? = null): ByteArray =
         client.get("$baseUrl/generate/unique-word-flashcards.txt") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
+    /**
+     * Fetches the verse flashcard deck as a Space-importable CSV: one card per verse, its text up
+     * front and its heading + reference behind it. Requires a signed-in user (401 otherwise) — the
+     * deck carries the season's ESV text verse by verse.
+     */
+    suspend fun spaceVersesCsv(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/space-verses.csv") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
+
+    /** Fetches the same verse deck as a Quizlet paste-import file (Tab, blank line between cards). */
+    suspend fun quizletVersesTxt(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/quizlet-verses.txt") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
+
     /** Fetches the multiple-choice study guide PDF (questions by chapter + answer key). */
     suspend fun studyGuidePdf(set: String? = null): ByteArray =
         client.get("$baseUrl/generate/study-guide.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()

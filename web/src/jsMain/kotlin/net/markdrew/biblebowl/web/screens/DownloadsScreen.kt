@@ -15,6 +15,7 @@ import net.markdrew.biblebowl.api.filePath
 import net.markdrew.biblebowl.api.scopeQueryParams
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.StudySection
+import net.markdrew.biblebowl.web.Routes
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
@@ -57,14 +58,16 @@ private val showTypstSource: Boolean
     get() = Session.user?.let { Permission.SEASON_MANAGE in it.permissions } == true
 
 /**
- * Fetches [href] with the signed-in user's bearer token and saves the response as a file.
+ * Fetches [href] with the signed-in user's bearer token and saves the response as a file. [what] names
+ * the download in any failure alert; [fallbackFileName] is used only if the response arrives without a
+ * `Content-Disposition`.
  *
  * A plain `<a href download>` is how every other download here works, but it can't carry an
  * `Authorization` header, and our JWT lives in localStorage rather than a cookie — so a gated download
  * has to come through `fetch` and a blob URL. The filename comes from the server's `Content-Disposition`
  * (CORS-exposed for exactly this), so the saved file keeps its set-prefixed, param-encoded name.
  */
-private fun downloadWithAuth(href: String) {
+private fun downloadWithAuth(href: String, what: String, fallbackFileName: String) {
     Shell.scope.launch {
         val response = runCatching {
             window.fetch(
@@ -74,14 +77,17 @@ private fun downloadWithAuth(href: String) {
         }.getOrNull()
         if (response == null || !response.ok) {
             window.alert(
-                if (response?.status?.toInt() == 403) "Your account can't download Typst source."
-                else "Couldn't download the Typst source. Please try again.",
+                when (response?.status?.toInt()) {
+                    401 -> "Please sign in to download $what."
+                    403 -> "Your account can't download $what."
+                    else -> "Couldn't download $what. Please try again."
+                },
             )
             return@launch
         }
         val fileName = FILENAME_PARAM.find(response.headers.get("Content-Disposition").orEmpty())
             ?.groupValues?.get(1)
-            ?: href.substringAfterLast('/').substringBefore('?').removeSuffix(".pdf") + ".typ"
+            ?: fallbackFileName
         val blobUrl = URL.createObjectURL(response.blob().await())
         try {
             (document.createElement("a") as HTMLAnchorElement).apply {
@@ -231,6 +237,9 @@ object DownloadsScreen {
         return when (section) {
             StudySection.TEXT ->
                 "The complete text of $scripture — the highlighted study PDF, plus places to read or listen online."
+            StudySection.VERSES ->
+                "Every verse in $scripture as a flashcard — the verse up front, its reference on the " +
+                    "back — ready to import into Space or Quizlet."
             StudySection.GENERAL ->
                 "The official study guide and question flashcards, plus the interactive quiz and the " +
                     "community question bank."
@@ -257,6 +266,7 @@ object DownloadsScreen {
         grid = root.child("div", "row g-4")
         when (section) {
             StudySection.TEXT -> textCards()
+            StudySection.VERSES -> versesCards()
             StudySection.GENERAL -> generalKnowledgeCards()
             StudySection.HEADINGS -> headingsCards()
             StudySection.UNIQUE_WORDS -> uniqueWordsCards()
@@ -385,6 +395,30 @@ object DownloadsScreen {
             subtitle = "Browse every ESV section heading online, or flip to self-check mode — the " +
                 "interactive twin of the flashcards. Quiz Me can also drill headings.",
             links = listOf("Open browser" to "#study/headings", "Quiz headings" to "#quiz"),
+        )
+    }
+
+    /**
+     * The verse decks. Both need a signed-in user: a card per verse is the whole ESV text of the set in
+     * one plain-text file, so it isn't offered anonymously the way the word-list decks are.
+     */
+    private fun versesCards() {
+        val season = Session.season
+        downloadCard(
+            title = "Verse flashcards for the Space app",
+            subtitle = "Every verse in ${season.eventScripture} as a CSV that imports straight into " +
+                "Space (getspace.app) — the verse up front, its section heading and reference on the back.",
+            href = generateUrl("/generate/space-verses.csv"),
+            buttonLabel = "Download",
+            requiresAuth = true,
+        )
+        downloadCard(
+            title = "Verse flashcards for Quizlet",
+            subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
+                "between term and definition, and enter \\n\\n as the custom separator between cards.",
+            href = generateUrl("/generate/quizlet-verses.txt"),
+            buttonLabel = "Download",
+            requiresAuth = true,
         )
     }
 
@@ -613,16 +647,40 @@ object DownloadsScreen {
         href: String,
         customize: Customize? = null,
         buttonLabel: String = "Download PDF",
+        /**
+         * A signed-in-only download: it can't ride a plain `<a href>` (our JWT isn't a cookie), so it
+         * goes through [downloadWithAuth]. The card itself stays public — anonymous visitors see what
+         * the deck is, and its button offers the sign-in it needs.
+         */
+        requiresAuth: Boolean = false,
     ) {
         val open = customize != null && DownloadsScreen.customize == customize
         tile(expanded = open) {
             child("h5", "card-title", title)
             child("p", "card-text text-muted small", subtitle)
             child("div", "d-flex align-items-center gap-2 mt-auto") {
-                child("a", "btn btn-primary btn-sm", buttonLabel) {
-                    setAttribute("href", href)
-                    setAttribute("target", "_blank")
-                    setAttribute("rel", "noopener")
+                when {
+                    !requiresAuth -> child("a", "btn btn-primary btn-sm", buttonLabel) {
+                        setAttribute("href", href)
+                        setAttribute("target", "_blank")
+                        setAttribute("rel", "noopener")
+                    }
+                    // The card stays public — anonymous visitors see what the deck is, and the button
+                    // says what it needs and goes there, rather than 401ing or sitting inert.
+                    Session.user == null -> child("button", "btn btn-primary btn-sm", "Sign in to download") {
+                        setAttribute("type", "button")
+                        onClick { Shell.navigate(Routes.SIGN_IN) }
+                    }
+                    else -> child("button", "btn btn-primary btn-sm", buttonLabel) {
+                        setAttribute("type", "button")
+                        onClick {
+                            downloadWithAuth(
+                                href,
+                                what = title.replaceFirstChar { it.lowercase() },
+                                fallbackFileName = href.substringAfterLast('/').substringBefore('?'),
+                            )
+                        }
+                    }
                 }
                 if (customize != null) {
                     child("button", "btn btn-link btn-sm", if (open) "Hide options" else "Customize") {
@@ -639,7 +697,14 @@ object DownloadsScreen {
                     child("button", "btn btn-link btn-sm text-muted ms-auto p-0", ".typ") {
                         setAttribute("type", "button")
                         setAttribute("title", "Download the Typst source this PDF is compiled from")
-                        onClick { downloadWithAuth(sourceHref) }
+                        onClick {
+                            downloadWithAuth(
+                                sourceHref,
+                                what = "the Typst source",
+                                fallbackFileName = sourceHref.substringAfterLast('/').substringBefore('?')
+                                    .removeSuffix(".pdf") + ".typ",
+                            )
+                        }
                     }
                 }
             }
