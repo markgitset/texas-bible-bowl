@@ -24,8 +24,10 @@ import net.markdrew.biblebowl.generation.typst.ChapterHeadingRow
 import net.markdrew.biblebowl.generation.typst.chapterHeadingsTypst
 import kotlinx.coroutines.runBlocking
 import net.markdrew.biblebowl.model.Book
+import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.model.StudySet
+import net.markdrew.biblebowl.model.VerseRef
 import kotlin.time.Duration.Companion.milliseconds
 import net.markdrew.biblebowl.server.data.DEFAULT_SEASON
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
@@ -36,9 +38,12 @@ import net.markdrew.biblebowl.server.esv.InMemoryEsvCache
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.study.StudyDataRegistry
 import net.markdrew.biblebowl.server.study.StudyDataService
+import net.markdrew.biblebowl.server.routes.headingReference
 import net.markdrew.biblebowl.server.typst.TypstCompiler
 import kotlin.test.Test
+import kotlin.test.assertContains
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -253,6 +258,21 @@ class StudyRoutesTest {
 
         // Whole-set only: unknown sets are rejected before any ESV/Typst work.
         assertEquals(HttpStatusCode.BadRequest, api.get("/generate/chapter-headings.pdf?set=zzz").status)
+
+        // The chapter is printed beside the row, so the rows themselves carry verses only.
+        val source = api.get("/generate/chapter-headings.pdf?format=typ").bodyAsText()
+        assertContains(source, """(title: "The Promise of the Holy Spirit", reference: "1-2"),""")
+        assertFalse("""reference: "1:1-2"""" in source, "the chapter must not repeat on the row")
+    }
+
+    @Test
+    fun headingReferencesDropTheChapterExceptWhenTheHeadingCrossesOne() {
+        fun ref(chapter: Int, verse: Int) = VerseRef(ChapterRef(Book.ACT, chapter), verse)
+
+        assertEquals("1-2", (ref(1, 1)..ref(1, 2)).headingReference())
+        assertEquals("7", (ref(1, 7)..ref(1, 7)).headingReference(), "a one-verse heading is a bare verse")
+        // A heading that runs on into the next chapter is the one place the chapter still earns its space.
+        assertEquals("21:37-22:21", (ref(21, 37)..ref(22, 21)).headingReference())
     }
 
     /**

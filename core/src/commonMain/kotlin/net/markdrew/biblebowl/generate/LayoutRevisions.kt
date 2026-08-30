@@ -34,9 +34,11 @@ object LayoutRevisions {
     /**
      * `chapterHeadingsTypst`. 1 = grouped and shaded by chapter, tighter rows, larger candidate
      * sizes; 2 = the corner revision mark; 3 = a chapter drawn as one labelled block, balanced
-     * columns, row padding grown to fill the page, narrower margins, count in the subtitle.
+     * columns, row padding grown to fill the page, narrower margins, count in the subtitle;
+     * 4 = verse-only references under the chapter block, hanging indent on a wrapped heading, and a
+     * fit search that spends type size to avoid wrapping in the first place.
      */
-    const val CHAPTER_HEADINGS = 3
+    const val CHAPTER_HEADINGS = 4
 
     /**
      * `indexTypst` / `numbersIndexTypst` / `oneTimeWordsIndexTypst` — the printable word indices.
