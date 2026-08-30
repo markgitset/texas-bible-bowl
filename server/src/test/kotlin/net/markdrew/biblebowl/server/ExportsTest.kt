@@ -2,7 +2,8 @@ package net.markdrew.biblebowl.server
 
 import net.markdrew.biblebowl.server.export.KahootQuestion
 import net.markdrew.biblebowl.server.export.kahootXlsx
-import net.markdrew.biblebowl.server.export.quizletCsv
+import net.markdrew.biblebowl.server.export.quizletTsv
+import net.markdrew.biblebowl.server.export.spaceCsv
 import net.markdrew.biblebowl.server.export.tsvToCsv
 import java.io.ByteArrayInputStream
 import java.util.zip.ZipInputStream
@@ -14,18 +15,29 @@ import kotlin.test.assertTrue
 class ExportsTest {
 
     @Test
-    fun csvQuotesSpecialsAndKeepsOneCardPerLine() {
-        val csv = quizletCsv(
+    fun spaceCsvQuotesSpecialsBelowItsHeaderRow() {
+        // A field with a comma or quote gets quoted (inner quotes doubled) under the Front,Back
+        // header row Space's importer requires.
+        val csv = spaceCsv(listOf("Who said \"Repent\"?" to "Peter, the apostle"))
+        assertEquals(
+            listOf("Front,Back", "\"Who said \"\"Repent\"\"?\",\"Peter, the apostle\""),
+            csv.lines(),
+        )
+    }
+
+    @Test
+    fun quizletTsvCollapsesBreaksAndJoinsWithTabs() {
+        val txt = quizletTsv(
             listOf(
-                // A field with a comma or quote gets quoted (inner quotes doubled); tabs/newlines
-                // would break the one-card-per-line contract importers rely on, so they collapse.
-                "Who\tsaid\n\"Repent\"?" to "Peter, the apostle",
+                // Tabs/newlines in a field would break the tab-and-line-per-card contract, so they
+                // collapse; a ";" passes through — nothing splits on it in the default import shape.
+                "Who\tsaid\n\"Repent\"?" to "Peter; the apostle",
                 "Plain term" to "Plain definition",
             )
         )
         assertEquals(
-            listOf("\"Who said \"\"Repent\"\"?\",\"Peter, the apostle\"", "Plain term,Plain definition"),
-            csv.lines(),
+            listOf("Who said \"Repent\"?\tPeter; the apostle", "Plain term\tPlain definition"),
+            txt.lines(),
         )
     }
 

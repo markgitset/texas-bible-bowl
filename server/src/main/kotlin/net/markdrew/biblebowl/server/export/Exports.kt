@@ -5,19 +5,15 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * Import-ready study exports (docs/gui-redesign.md §5B "Exports"): a Quizlet/Space CSV and a
- * Kahoot spreadsheet. Both are tiny formats, so they're hand-rolled here rather than pulling in a
- * spreadsheet library.
+ * Import-ready study exports (docs/gui-redesign.md §5B "Exports"): per-app flashcard files (each
+ * importer wants its own delimiters — import-tested 2026-08) and a Kahoot spreadsheet. All are tiny
+ * formats, so they're hand-rolled here rather than pulling in a spreadsheet library.
  */
-
-/** One term/definition pair per row for flashcard import (Quizlet, Space, Anki…). */
-fun quizletCsv(cards: List<Pair<String, String>>): String =
-    cards.joinToString("\n") { (term, definition) -> csvRow(listOf(term, definition)) }
 
 /**
  * A Space-importable CSV (getspace.app): the `Front,Back` header row its importer requires, then one
- * card per row. Unlike [quizletCsv], a definition's real line breaks are kept (RFC 4180 quoted) —
- * Space renders them, along with Markdown emphasis, inside a card.
+ * card per row. A definition's real line breaks are kept (RFC 4180 quoted) — Space renders them,
+ * along with Markdown emphasis, inside a card.
  */
 fun spaceCsv(cards: List<Pair<String, String>>): String =
     "Front,Back\n" + cards.joinToString("\n") { (front, back) ->
@@ -32,6 +28,15 @@ fun spaceCsv(cards: List<Pair<String, String>>): String =
  */
 fun quizletTabbed(cards: List<Pair<String, String>>): String =
     cards.joinToString("\n\n") { (term, definition) -> "$term\t$definition" }
+
+/**
+ * A Quizlet paste file in the import screen's *default* shape: TAB between term and definition, one
+ * card per line, no custom separator to type in. For single-line material only — a field's stray
+ * tabs/newlines collapse to spaces. (Multi-line definitions need [quizletTabbed]'s blank-line shape
+ * instead.)
+ */
+fun quizletTsv(cards: List<Pair<String, String>>): String =
+    cards.joinToString("\n") { (term, definition) -> "${term.oneLine()}\t${definition.oneLine()}" }
 
 /**
  * Re-emits a tab-separated file as CSV, dropping the trailing empty column a trailing tab leaves.
@@ -51,11 +56,13 @@ private fun csvRow(fields: List<String>, keepLineBreaks: Boolean = false): Strin
     fields.joinToString(",") { field ->
         val value =
             if (keepLineBreaks) field.replace("\r\n", "\n").replace(IN_LINE_BREAKERS, " ").trim()
-            else field.replace(ROW_BREAKERS, " ").trim()
+            else field.oneLine()
         if (',' in value || '"' in value || '\n' in value) "\"" + value.replace("\"", "\"\"") + "\"" else value
     }
 
 /** Importers read one card/question per line, so tabs and newlines collapse to spaces in a field. */
+private fun String.oneLine(): String = replace(ROW_BREAKERS, " ").trim()
+
 private val ROW_BREAKERS = Regex("[\\t\\n\\r]+")
 
 /** What still collapses when line breaks are kept: tabs and stray carriage returns. */

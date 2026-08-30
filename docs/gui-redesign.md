@@ -253,8 +253,9 @@ role-gated destinations are reached from the navbar user menu, not from this pag
 - **New domain tables** (schema only, for E/F): `congregations`, `teams`, `team_members` (with
   owner-account id + claim code), `registrations`, `events`, `scores` — extending
   `server/.../data/`; DTOs in `shared-api/.../Dtos.kt`. Role/permission enums need **no changes**.
-- **Exports:** new `/generate/questions.xlsx` (Kahoot template) + `.csv` (Quizlet/Space) endpoints
-  reusing the question repo + headings.
+- **Exports:** new question/heading export endpoints reusing the question repo + headings — since
+  2026-08 one per importer: `/generate/kahoot-questions.xlsx` (Kahoot template),
+  `/generate/space-questions.csv` (Front,Back CSV), `/generate/quizlet-questions.txt` (paste file).
 - **CI/deploy:** one Pages workflow — curl `/seasons/current` → `site/data/params.json` →
   `hugo build` → `wasmJsBrowserDistribution` → copy into `public/app/` → single artifact.
   `window.TBB_BACKEND_URL` injection stays.

@@ -413,7 +413,7 @@ class StudyRoutesTest {
     }
 
     @Test
-    fun headingsExportAsQuizletCsvAndKahootXlsx() = testApplication {
+    fun headingsExportForSpaceQuizletAndKahoot() = testApplication {
         application {
             module(
                 InMemoryUserRepository(), InMemoryQuestionRepository(),
@@ -422,21 +422,37 @@ class StudyRoutesTest {
         }
         val api = createClient { }
 
-        // Quizlet CSV: title,chapter, anonymous; `chapter` scopes cumulatively.
-        val csv = api.get("/generate/questions.csv?source=headings")
+        // Space CSV: the Front,Back header its importer requires, then title,chapter rows, anonymous;
+        // `chapter` scopes cumulatively.
+        val csv = api.get("/generate/space-questions.csv?source=headings")
         assertEquals(HttpStatusCode.OK, csv.status)
+        assertTrue("space-acts-headings.csv" in csv.headers[HttpHeaders.ContentDisposition].orEmpty())
         assertEquals(
             listOf(
+                "Front,Back",
                 "The Promise of the Holy Spirit,Chapter 1",
                 "The Coming of the Holy Spirit,Chapter 2",
             ),
             csv.bodyAsText().trim().lines(),
         )
-        val filtered = api.get("/generate/questions.csv?source=headings&chapter=1")
-        assertEquals("The Promise of the Holy Spirit,Chapter 1", filtered.bodyAsText().trim())
+        val filtered = api.get("/generate/space-questions.csv?source=headings&chapter=1")
+        assertEquals("Front,Back\nThe Promise of the Holy Spirit,Chapter 1", filtered.bodyAsText().trim())
+
+        // Quizlet paste file: TAB between title and chapter, one card per line — the importer's
+        // default shape (single-line material needs no custom between-cards separator), no header.
+        val txt = api.get("/generate/quizlet-questions.txt?source=headings")
+        assertEquals(HttpStatusCode.OK, txt.status)
+        assertTrue("quizlet-acts-headings.txt" in txt.headers[HttpHeaders.ContentDisposition].orEmpty())
+        assertEquals(
+            listOf(
+                "The Promise of the Holy Spirit\tChapter 1",
+                "The Coming of the Holy Spirit\tChapter 2",
+            ),
+            txt.bodyAsText().trim().lines(),
+        )
 
         // Kahoot xlsx: which-chapter questions, distractors only from in-scope chapters.
-        val xlsx = api.get("/generate/questions.xlsx?source=headings")
+        val xlsx = api.get("/generate/kahoot-questions.xlsx?source=headings")
         assertEquals(HttpStatusCode.OK, xlsx.status)
         val bytes = xlsx.bodyAsBytes()
         assertEquals("PK", bytes.decodeToString(0, 2), "xlsx must be a zip")

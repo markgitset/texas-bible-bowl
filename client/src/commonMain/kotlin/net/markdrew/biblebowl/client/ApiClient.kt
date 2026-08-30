@@ -423,32 +423,51 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         client.get("$baseUrl/generate/study-guide.csv") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
     /**
-     * Fetches a Quizlet/Space-importable CSV: the approved question bank (prompt -> answer) or,
-     * with [headingsSource], the R5 headings (title -> chapter; [chapter] scopes cumulatively).
+     * Fetches a Space-importable CSV (Front,Back header, RFC 4180): the approved question bank
+     * (prompt -> answer) or, with [headingsSource], the R5 headings (title -> chapter; [chapter]
+     * scopes cumulatively).
      */
-    suspend fun questionsCsv(
+    suspend fun spaceQuestionsCsv(
         headingsSource: Boolean = false,
         round: Round? = null,
         chapter: Int? = null,
         set: String? = null,
         book: String? = null,
     ): ByteArray =
-        client.get("$baseUrl/generate/questions.csv") {
+        client.get("$baseUrl/generate/space-questions.csv") {
             authorize()
             if (headingsSource) parameter("source", "headings")
             if (round != null) parameter("round", round.name)
             scopeParams(set, book, chapter)
         }.bodyOrThrow()
 
-    /** Fetches a Kahoot-importable .xlsx (multiple-choice material only; params as [questionsCsv]). */
-    suspend fun questionsXlsx(
+    /**
+     * Fetches the same material as a Quizlet paste file in its importer's default shape (TAB between
+     * term and definition, one card per line; params as [spaceQuestionsCsv]).
+     */
+    suspend fun quizletQuestionsTxt(
         headingsSource: Boolean = false,
         round: Round? = null,
         chapter: Int? = null,
         set: String? = null,
         book: String? = null,
     ): ByteArray =
-        client.get("$baseUrl/generate/questions.xlsx") {
+        client.get("$baseUrl/generate/quizlet-questions.txt") {
+            authorize()
+            if (headingsSource) parameter("source", "headings")
+            if (round != null) parameter("round", round.name)
+            scopeParams(set, book, chapter)
+        }.bodyOrThrow()
+
+    /** Fetches a Kahoot-importable .xlsx (multiple-choice material only; params as [spaceQuestionsCsv]). */
+    suspend fun kahootQuestionsXlsx(
+        headingsSource: Boolean = false,
+        round: Round? = null,
+        chapter: Int? = null,
+        set: String? = null,
+        book: String? = null,
+    ): ByteArray =
+        client.get("$baseUrl/generate/kahoot-questions.xlsx") {
             authorize()
             if (headingsSource) parameter("source", "headings")
             if (round != null) parameter("round", round.name)
