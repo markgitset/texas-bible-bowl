@@ -340,8 +340,9 @@ object DownloadsScreen {
         )
         downloadCard(
             title = "Question flashcards",
-            subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardScope) +
-                customizedNote(flashcardRound != null),
+            subtitle = "Duplex deck built from the approved community questions. The 400 top-voted " +
+                "questions in scope, which is 40 sheets to print and cut — scope it to a chapter for " +
+                "the rest." + scopeNote(flashcardScope) + customizedNote(flashcardRound != null),
             href = generateUrl(
                 "/generate/flashcards.pdf",
                 *scopedParams(flashcardScope),
@@ -476,8 +477,9 @@ object DownloadsScreen {
         val exportCustomized = exportHeadings || exportRound != null
         downloadCard(
             title = "Kahoot spreadsheet",
-            subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout)." +
-                scopeNote(exportScope) + customizedNote(exportCustomized),
+            subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout). " +
+                "One kahoot holds 100 questions, so that's the most a sheet carries — narrow the scope " +
+                "to choose which 100." + scopeNote(exportScope) + customizedNote(exportCustomized),
             href = exportUrl(ExportApp.KAHOOT),
             customize = Customize.Export(ExportApp.KAHOOT),
             buttonLabel = "Download",

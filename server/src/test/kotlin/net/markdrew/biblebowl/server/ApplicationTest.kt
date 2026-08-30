@@ -30,6 +30,7 @@ import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.SubmitQuestionRequest
 import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.UserDto
+import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
@@ -199,6 +200,44 @@ class ApplicationTest {
         assertEquals(HttpStatusCode.NotFound, api.get("/generate/quizlet-questions.txt?chapter=27").status)
         // Unknown source -> 400.
         assertEquals(HttpStatusCode.BadRequest, api.get("/generate/space-questions.csv?source=nope").status)
+    }
+
+    @Test
+    fun onlyRealCeilingsCapTheQuestionBankDownloads() = testApplication {
+        val questions = InMemoryQuestionRepository()
+        // Bigger than any round-number cap: the bundled Acts study guide alone seeds 1,646 approved
+        // questions, and a truncated export is invisible — the file just looks complete.
+        repeat(600) { i ->
+            val q = questions.submit(
+                "author-1", "Author",
+                SubmitQuestionRequest(
+                    roundType = Round.FACT_FINDER,
+                    prompt = "Question $i?",
+                    answer = "yes",
+                    choices = listOf("yes", "no"),
+                    chapter = 1,
+                ),
+                book = Book.ACT,
+            )
+            questions.setStatus(q.id, QuestionStatus.APPROVED)
+        }
+        application { module(InMemoryUserRepository(), questions, JwtService(secret = "test-secret")) }
+        val api = createClient { }
+
+        // Space and Quizlet have no import ceiling, so neither export drops a card.
+        val csv = api.get("/generate/space-questions.csv")
+        assertEquals(HttpStatusCode.OK, csv.status)
+        assertEquals(601, csv.bodyAsText().trim().lines().size, "600 cards under the Front,Back header")
+        assertEquals(600, api.get("/generate/quizlet-questions.txt").bodyAsText().trim().lines().size)
+
+        // Kahoot keeps its cap — one kahoot holds 100 questions, so a bigger sheet wouldn't import.
+        val sheet = readZipEntry(api.get("/generate/kahoot-questions.xlsx").bodyAsBytes(), "xl/worksheets/sheet1.xml")
+        assertEquals(100, Regex("""Question \d+\?""").findAll(sheet).count())
+
+        // The flashcard deck stops at 400 — a paper limit (40 duplex sheets), stated on the web card.
+        // ?format=typ reads the deck without needing Typst on PATH: one "(question: ..." line per card.
+        val deck = api.get("/generate/flashcards.pdf?format=typ").bodyAsText()
+        assertEquals(400, Regex("""^\(question: """, RegexOption.MULTILINE).findAll(deck).count())
     }
 
     @Test

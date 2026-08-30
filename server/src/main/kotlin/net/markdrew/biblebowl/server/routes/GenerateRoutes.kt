@@ -86,6 +86,14 @@ import kotlin.random.nextInt
 val GENERATE_RATE_LIMIT = RateLimitName("generate")
 
 /**
+ * Most cards one question-flashcard PDF carries — a paper limit, not a data one. The deck prints 10 cards
+ * to a page (2×5) with a mirrored backs page for duplex, so this is 40 sheets to print and cut; the whole
+ * Acts bank (1,646 approved questions) would be 165. The pool is the top-voted questions in scope, and the
+ * way to reach the rest is to narrow the scope to a chapter, which the UI says on the card.
+ */
+private const val FLASHCARD_DECK_MAX = 400
+
+/**
  * `?format=typ` on any generated-PDF endpoint serves the Typst source behind the document
  * instead of the document Typst compiled from it — same route, same params, same cache stamp, so the
  * source you get is exactly the source behind the PDF those params would hand you: the generator's
@@ -204,7 +212,8 @@ fun Route.generateRoutes(
                 }
 
                 val scope = call.resolveScopeOrRespond(seasons.currentStudySet()) ?: return@get
-                val pool = questions.list(QuestionStatus.APPROVED, scope.toQuestionScope(), roundType = round, limit = 200)
+                val pool =
+                    questions.list(QuestionStatus.APPROVED, scope.toQuestionScope(), roundType = round, limit = FLASHCARD_DECK_MAX)
                 if (pool.isEmpty()) {
                     return@get call.respond(
                         HttpStatusCode.NotFound,
@@ -579,6 +588,12 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
 private enum class ExportFormat { SPACE_CSV, QUIZLET_TXT, KAHOOT_XLSX }
 
 /**
+ * Kahoot's own ceiling: one kahoot holds at most this many questions, so a bigger sheet would be
+ * rejected by their importer. Space and Quizlet have no comparable limit — their exports are whole.
+ */
+private const val KAHOOT_MAX_QUESTIONS = 100
+
+/**
  * Responds with an import-ready export of the question bank or the R5 headings (see the route
  * comments for parameter semantics). All formats share source selection; only the rendering and
  * the multiple-choice requirement (Kahoot) differ.
@@ -599,7 +614,12 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
 
     if (source == "questions") {
         val scope = call.resolveScopeOrRespond(seasonSet) ?: return
-        val pool = questions.list(QuestionStatus.APPROVED, scope.toQuestionScope(), roundType = round, limit = 500)
+        // Uncapped on purpose: an export is the one caller that wants the whole bank. The bundled Acts
+        // study guide alone seeds 1,646 approved questions, so any round number here silently truncates
+        // — and since seeded questions all have zero votes, list()'s `votes DESC, id ASC` would hand out
+        // an arbitrary UUID-ordered slice, not a readable prefix. APPROVED + scope already bounds this
+        // to one season's material (a few thousand prompt/answer rows).
+        val pool = questions.list(QuestionStatus.APPROVED, scope.toQuestionScope(), roundType = round)
         call.advertiseCanonicalScope(scope)
         val baseName = PdfFileNames.withSet(
             scope.set.simpleName,
@@ -619,7 +639,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
                         ApiError("no_questions", "No approved multiple-choice questions match (Kahoot needs choices)"),
                     )
                 }
-                val rows = mc.take(100).map { q ->
+                val rows = mc.take(KAHOOT_MAX_QUESTIONS).map { q ->
                     // Kahoot allows at most 4 answers: keep the correct one plus the first 3 others.
                     val answers =
                         if (q.choices.size <= 4) q.choices
@@ -659,7 +679,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
         )
         ExportFormat.KAHOOT_XLSX -> {
             val chaptersInScope = headings.map { it.chapterRange.start }.distinct()
-            val rows = headings.take(100).mapIndexed { i, h ->
+            val rows = headings.take(KAHOOT_MAX_QUESTIONS).mapIndexed { i, h ->
                 val own = h.chapterRange.start
                 // Seeded per row so the same export is reproducible; distractors never leak
                 // chapters beyond the requested scope.
