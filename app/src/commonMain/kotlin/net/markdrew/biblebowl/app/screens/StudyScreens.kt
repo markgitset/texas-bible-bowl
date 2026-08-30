@@ -48,6 +48,7 @@ import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.StudyMaterialDto
 import net.markdrew.biblebowl.api.StudyMaterialType
 import net.markdrew.biblebowl.api.resolvedStudySet
+import net.markdrew.biblebowl.api.scopeFileSuffix
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.api.StudySection
@@ -252,12 +253,10 @@ fun StudySectionScreen(
 
     val studySet = LocalSeason.current.resolvedStudySet
 
-    // File names mirror the server's set-prefixed, book-qualified names (single-book sets keep -chN).
-    fun chSuffix(sel: ScopeSelection, cumulative: Boolean = false): String {
-        val ref = sel.chapterRef ?: return ""
-        val core = if (studySet.isSingleBook) "ch${ref.chapter}" else ref.serialize().lowercase()
-        return (if (cumulative) "-through-" else "-") + core
-    }
+    // The save-as name is the server's own name for the same scope, from one shared definition, so the
+    // two can't drift — the server uses it as its PDF cache key as well as the attachment name.
+    fun chSuffix(sel: ScopeSelection, cumulative: Boolean = false): String =
+        scopeFileSuffix(studySet, sel, cumulative)
 
     fun withSet(name: String) = PdfFileNames.withSet(studySet.simpleName, name)
 

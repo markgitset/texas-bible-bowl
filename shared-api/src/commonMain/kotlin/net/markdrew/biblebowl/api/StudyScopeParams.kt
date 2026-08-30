@@ -88,6 +88,32 @@ fun scopeQueryParams(
     StudyScopeParams.write(StudyScope(set, selection.book ?: set.books.singleOrNull(), selection.chapter), chapterKey)
 
 /**
+ * Filename fragment pinning the material [scope] selects: `-ch2` on a single-book set, book-qualified
+ * `-num14` on a multi-book one (a bare number would be ambiguous), `-num` for a whole book of a
+ * multi-book set, and empty for a whole-set scope. [cumulative] spells a chapter as `-through-ch2`,
+ * for the documents that mean "everything studied so far".
+ *
+ * The fragment reaches the server's PDF cache key as well as the download name, so two scopes that
+ * select different material must never share one — which is why a book alone has to be named on a
+ * multi-book set, where it is a real narrowing rather than the whole set spelled out.
+ */
+fun scopeFileSuffix(scope: StudyScope, cumulative: Boolean = false): String {
+    val ref = scope.chapterRef
+    val book = scope.book
+    return when {
+        ref != null ->
+            (if (cumulative) "-through-" else "-") +
+                (if (scope.set.isSingleBook) "ch${ref.chapter}" else ref.serialize().lowercase())
+        book != null && !scope.set.isSingleBook -> "-${book.name.lowercase()}"
+        else -> ""
+    }
+}
+
+/** [scopeFileSuffix] for a picker's [selection] within [set] (see [scopeQueryParams] for the pairing). */
+fun scopeFileSuffix(set: StudySet, selection: ScopeSelection, cumulative: Boolean = false): String =
+    scopeFileSuffix(StudyScope(set, selection.book ?: set.books.singleOrNull(), selection.chapter), cumulative)
+
+/**
  * A question's scripture badge: "Acts 2" (brief book name + book-relative chapter), just the book
  * for book-wide questions, or [seasonLabel] + chapter when an old server omitted the bookCode.
  */

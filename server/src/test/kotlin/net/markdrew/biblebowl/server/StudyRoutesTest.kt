@@ -69,6 +69,19 @@ private val CHAPTER_TEXTS = mapOf(
     """.trimIndent(),
 )
 
+/**
+ * A two-book fixture, small but inside the Life of Moses set's real ranges (Exo 1-20, Num 1-3) so that
+ * `?set=moses` resolves scopes against it. Single-book Acts can't show the difference between "this
+ * book" and "the whole set" — that's why the book-scoping gaps only bite on sets shaped like this one.
+ */
+private val MULTI_BOOK_SET =
+    StudySet("Multi-book test", "multi-test", Book.EXO.chapterRange(1, 2), Book.NUM.chapterRange(1, 2))
+
+/** The fixture's chapters, keyed by the packed absolute-verse query EsvPassageService asks for. */
+private val MULTI_BOOK_CHAPTERS: Map<String, ChapterRef> = MULTI_BOOK_SET.chapterRefs.associateBy { ref ->
+    with(ref.verseRange()) { "${start.absoluteVerse}-${endInclusive.absoluteVerse}" }
+}
+
 /** A generated PDF reduced to what's deterministic about it: its name and its render. */
 private data class RenderedPdf(val fileName: String, val render: String)
 
@@ -117,6 +130,40 @@ class StudyRoutesTest {
             headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
         )
     })
+
+    /** Serves every chapter of [MULTI_BOOK_SET] a one-heading chapter titled after its own reference. */
+    private fun mockMultiBookEsvClient(): HttpClient = HttpClient(MockEngine { request ->
+        val query = request.url.parameters["q"] ?: ""
+        val ref = MULTI_BOOK_CHAPTERS[query] ?: fail("unexpected ESV query '$query'")
+        val text = """
+            _______________________________________________________
+            Heading in ${ref.book.name}${ref.chapter}
+
+              [1] Some verse text. [2] And some more of it.
+        """.trimIndent()
+        respond(
+            content = """
+                {
+                  "query": "$query",
+                  "canonical": "${ref.book.fullName} ${ref.chapter}",
+                  "passages": [${Json.encodeToString(text)}]
+                }
+            """.trimIndent(),
+            status = HttpStatusCode.OK,
+            headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+        )
+    })
+
+    private fun multiBookStudyService() = StudyDataService(
+        esv = EsvPassageService(
+            client = mockMultiBookEsvClient(),
+            cache = InMemoryEsvCache(),
+            token = "test-esv-token",
+            baseUrl = "https://fake.esv",
+            minFetchInterval = 0.milliseconds,
+        ),
+        studySet = MULTI_BOOK_SET,
+    )
 
     private fun studyService() = StudyDataService(
         esv = EsvPassageService(
@@ -586,6 +633,51 @@ class StudyRoutesTest {
         assertTrue("Which chapter has the heading" in sheet)
         assertTrue("The Coming of the Holy Spirit" in sheet)
         assertTrue("Chapter 3" !in sheet, "distractors must stay within the two-chapter fixture scope")
+    }
+
+    @Test
+    fun headingScopesNarrowToOneBookOfAMultiBookSet() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null,
+                study = StudyDataRegistry.fixed(multiBookStudyService()),
+            )
+        }
+        val api = createClient { }
+
+        suspend fun export(scope: String) = api.get("/generate/space-questions.csv?source=headings&set=moses$scope")
+
+        // Unscoped is still the whole set, both books.
+        val all = export("").bodyAsText()
+        listOf("EXO1", "EXO2", "NUM1", "NUM2").forEach {
+            assertTrue("Heading in $it" in all, "the whole-set export should list $it:\n$all")
+        }
+
+        // A book with no chapter is the picker's "All of Num": on a multi-book set that's a real
+        // narrowing, not a whole-set scope spelled out, so the export must stop at the book.
+        val num = export("&book=NUM")
+        assertEquals(HttpStatusCode.OK, num.status)
+        val numBody = num.bodyAsText()
+        assertTrue("Heading in NUM1" in numBody && "Heading in NUM2" in numBody, numBody)
+        assertFalse("EXO" in numBody, "a book scope must not reach into the set's other books:\n$numBody")
+        // And its name has to say which book — the server keys its generated-PDF cache on that name,
+        // so a book-scoped document sharing the whole set's name would be served in its place.
+        assertTrue("space-moses-headings-num.csv" in num.headers[HttpHeaders.ContentDisposition].orEmpty())
+
+        // A chapter scope stays cumulative, reaching back through the set's earlier book.
+        val throughNum1 = export("&book=NUM&chapter=1").bodyAsText()
+        assertTrue("Heading in EXO2" in throughNum1 && "Heading in NUM1" in throughNum1, throughNum1)
+        assertFalse("Heading in NUM2" in throughNum1, "cumulative means through Num 1, not past it")
+
+        // The Round 5 deck scopes by the same rule. Its Typst source stands in for the PDF here: same
+        // route, same filter and same (cache-keying) name, minus the compile.
+        val deck = api.get("/generate/heading-flashcards.pdf?set=moses&book=NUM&format=typ")
+        assertEquals(HttpStatusCode.OK, deck.status)
+        assertTrue("moses-heading-flashcards-num.typ" in deck.headers[HttpHeaders.ContentDisposition].orEmpty())
+        val deckSource = deck.bodyAsText()
+        assertTrue("Heading in NUM1" in deckSource && "Heading in NUM2" in deckSource, deckSource)
+        assertFalse("EXO" in deckSource, "the deck must not reach into the set's other books:\n$deckSource")
     }
 
     @Test

@@ -9,6 +9,7 @@ import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.StudyScopeParams
+import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.ScopeResolution
 import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.model.StudyScope
@@ -88,11 +89,21 @@ fun StudyScope.toQuestionScope(): QuestionScope =
     chapterRef?.let { QuestionScope.Chapter(it) } ?: QuestionScope.Ranges(ranges())
 
 /**
- * Filename fragment pinning this scope's chapter: today's `-ch2` for single-book sets, book-qualified
- * `-num14` for multi-book sets (a bare number would be ambiguous); empty for whole-set scopes.
+ * Whether [ref] is material this scope selects: the scoped chapter, else anywhere in the scoped book,
+ * else anywhere in the set. [cumulative] widens the chapter case to "everything studied so far" —
+ * through that chapter rather than that chapter alone — which is what the headings material and the
+ * `throughChapter` endpoints mean by a chapter.
+ *
+ * The chapter comparison is book-aware ([ChapterRef] orders by absolute chapter), so a cumulative scope
+ * reaches back through earlier books of a multi-book set. The book-only case is the picker's "All of
+ * Num": on a multi-book set it must narrow to that book, not fall through to the whole set.
  */
-fun StudyScope.chapterSuffix(cumulative: Boolean = false): String {
-    val ref = chapterRef ?: return ""
-    val core = if (set.isSingleBook) "ch${ref.chapter}" else ref.serialize().lowercase()
-    return (if (cumulative) "-through-" else "-") + core
+fun StudyScope.covers(ref: ChapterRef, cumulative: Boolean = false): Boolean {
+    val scopedRef = chapterRef
+    val scopedBook = book
+    return when {
+        scopedRef != null -> if (cumulative) ref <= scopedRef else ref == scopedRef
+        scopedBook != null -> ref.book == scopedBook
+        else -> true
+    }
 }

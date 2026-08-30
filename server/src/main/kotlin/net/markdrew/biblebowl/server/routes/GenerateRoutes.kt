@@ -57,6 +57,7 @@ import net.markdrew.biblebowl.generation.typst.markdownEscape
 import net.markdrew.biblebowl.generation.typst.practiceTestTypst
 import net.markdrew.biblebowl.generation.typst.toFlashcards
 import net.markdrew.biblebowl.api.StudyScopeParams
+import net.markdrew.biblebowl.api.scopeFileSuffix
 import net.markdrew.biblebowl.model.BRIEF_BOOK_FORMAT
 import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.FULL_BOOK_FORMAT
@@ -203,7 +204,7 @@ fun Route.generateRoutes(
 
                 call.advertiseCanonicalScope(scope)
                 val typstSource = practiceTestTypst(round, pool)
-                val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix()}.pdf"
+                val fileName = "practice-${round.name.lowercase()}${scopeFileSuffix(scope)}.pdf"
                 respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName), LayoutRevisions.PRACTICE_TEST)
             }
 
@@ -236,7 +237,7 @@ fun Route.generateRoutes(
                     )
                 }
                 call.advertiseCanonicalScope(scope)
-                val fileName = PdfFileNames.withSet(scope.set.simpleName, "flashcards${scope.chapterSuffix()}.pdf")
+                val fileName = PdfFileNames.withSet(scope.set.simpleName, "flashcards${scopeFileSuffix(scope)}.pdf")
                 respondPdf(flashcardsTypst(pool.toFlashcards()), fileName, LayoutRevisions.FLASHCARDS)
             }
 
@@ -462,7 +463,8 @@ fun Route.generateRoutes(
             }
 
             // GET /generate/heading-flashcards.pdf?set=acts&book=ACT&throughChapter=5 — Round 5 deck,
-            // cumulatively scoped (headings whose chapter starts at or before the through-chapter).
+            // cumulatively scoped (headings whose chapter starts at or before the through-chapter), or
+            // narrowed to one book of a multi-book set when the scope names a book and no chapter.
             get("/generate/heading-flashcards.pdf") {
                 val scope = call.resolveEsvScopeOrRespond(
                     seasons.currentStudySet(), chapterKey = StudyScopeParams.THROUGH_CHAPTER,
@@ -474,18 +476,14 @@ fun Route.generateRoutes(
                         ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
                     )
                 }
-                val throughRef = scope.chapterRef
-
                 try {
                     call.advertiseCanonicalScope(scope, chapterKey = StudyScopeParams.THROUGH_CHAPTER)
                     val fileName = PdfFileNames.withSet(
-                        scope.set.simpleName, "heading-flashcards${scope.chapterSuffix(cumulative = true)}.pdf",
+                        scope.set.simpleName, "heading-flashcards${scopeFileSuffix(scope, cumulative = true)}.pdf",
                     )
                     respondCachedPdf(svc, pdfCache, fileName, LayoutRevisions.FLASHCARDS) {
-                        // ChapterRef comparison is book-aware (absoluteChapter), so cumulative scoping is
-                        // correct for multi-book sets too.
                         val headings = svc.studyData().headings
-                            .filter { throughRef == null || it.chapterRange.start <= throughRef }
+                            .filter { scope.covers(it.chapterRange.start, cumulative = true) }
                         val cards = headings.map { h ->
                             Flashcard(
                                 front = h.title,
@@ -623,7 +621,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondTextPracticeTes
         )
     }
     call.advertiseCanonicalScope(scope)
-    val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix(cumulative = true)}.pdf"
+    val fileName = "practice-${round.name.lowercase()}${scopeFileSuffix(scope, cumulative = true)}.pdf"
     respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName), layoutRevision)
 }
 
@@ -667,7 +665,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
         call.advertiseCanonicalScope(scope)
         val baseName = PdfFileNames.withSet(
             scope.set.simpleName,
-            "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}${scope.chapterSuffix()}",
+            "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}${scopeFileSuffix(scope)}",
         )
         when (format) {
             ExportFormat.SPACE_CSV, ExportFormat.QUIZLET_TXT -> {
@@ -705,16 +703,14 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
             ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
         )
     }
-    val throughRef = scope.chapterRef
     val headings = try {
-        // Book-aware cumulative filter (ChapterRef compares by absoluteChapter across books).
-        svc.studyData().headings.filter { throughRef == null || it.chapterRange.start <= throughRef }
+        svc.studyData().headings.filter { scope.covers(it.chapterRange.start, cumulative = true) }
     } catch (e: EsvUpstreamException) {
         return call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
     }
     if (headings.isEmpty()) return call.respond(HttpStatusCode.NotFound, ApiError("no_headings", "No headings in scope"))
     call.advertiseCanonicalScope(scope)
-    val baseName = PdfFileNames.withSet(scope.set.simpleName, "headings${scope.chapterSuffix(cumulative = true)}")
+    val baseName = PdfFileNames.withSet(scope.set.simpleName, "headings${scopeFileSuffix(scope, cumulative = true)}")
     when (format) {
         ExportFormat.SPACE_CSV, ExportFormat.QUIZLET_TXT -> respondCardFile(
             format,
@@ -831,18 +827,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondVerseDeck(
     try {
         call.advertiseCanonicalScope(scope, chapterKey)
         val sd = svc.studyData()
-        val endRef = scope.chapterRef
-        val book = scope.book
-        val inScope = sd.verses.entries.filter { (_, verseRef) ->
-            when {
-                // ChapterRef comparison is book-aware (absoluteChapter), so a cumulative scope reaches
-                // back through earlier books of a multi-book set, not just earlier chapters of this one.
-                endRef != null -> if (cumulative) verseRef.chapterRef <= endRef else verseRef.chapterRef == endRef
-                // A book with no chapter is that book's slice of the set — the picker's "All of Num".
-                book != null -> verseRef.book == book
-                else -> true
-            }
-        }
+        val inScope = sd.verses.entries.filter { (_, verseRef) -> scope.covers(verseRef.chapterRef, cumulative) }
         if (inScope.isEmpty()) {
             return call.respond(HttpStatusCode.NotFound, ApiError("no_verses", "No verses in scope"))
         }
@@ -861,7 +846,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondVerseDeck(
             // The stored text keeps the layout's line breaks; a card front wants one flowing paragraph.
             sd.text.substring(range).normalizeWS() to back.joinToString("\n")
         }
-        val baseName = PdfFileNames.withSet(scope.set.simpleName, "verses${scope.chapterSuffix(cumulative)}")
+        val baseName = PdfFileNames.withSet(scope.set.simpleName, "verses${scopeFileSuffix(scope, cumulative)}")
         if (forSpace) respondAttachment(spaceCsv(cards).toByteArray(), "space-$baseName.csv", CSV_CONTENT_TYPE)
         else respondAttachment(quizletTabbed(cards).toByteArray(), "quizlet-$baseName.txt", ContentType.Text.Plain)
     } catch (e: EsvUpstreamException) {
