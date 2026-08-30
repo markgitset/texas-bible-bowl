@@ -61,6 +61,7 @@ private sealed interface Customize {
     data object StudyText : Customize
     data object QuestionFlashcards : Customize
     data object HeadingFlashcards : Customize
+    data class VerseDeck(val forSpace: Boolean) : Customize
     data class PracticeTest(val round: Round) : Customize
     data class Export(val app: ExportApp) : Customize
 }
@@ -105,6 +106,12 @@ private object StudyChoices {
     var exportScope by mutableStateOf(ScopeSelection())
     var exportHeadings by mutableStateOf(false)
     var exportRound by mutableStateOf<Round?>(null)
+    var verseScope by mutableStateOf(ScopeSelection())
+
+    // Which chapter spelling the verse decks use: cumulative "through chapter" (review everything
+    // learned so far) or the chapter on its own (drill just this one). Only meaningful once a
+    // chapter is picked, so the toggle stays hidden until then.
+    var verseCumulative by mutableStateOf(false)
 }
 
 /** One-sentence description of [section] — its overview card and the intro line atop its screen. */
@@ -150,7 +157,7 @@ fun StudyOverviewScreen(onOpenSection: (StudySection) -> Unit) {
         )
         Text(
             "${season.schoolYear} · all ${season.chapterCount} chapters (ESV) — everything you need, " +
-                "organized by what you're studying. Free, no sign-in needed.",
+                "organized by what you're studying. All free; only the verse decks ask you to sign in.",
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.secondary,
         )
@@ -222,6 +229,8 @@ fun StudySectionScreen(
     var exportScope by StudyChoices::exportScope
     var exportHeadings by StudyChoices::exportHeadings
     var exportRound by StudyChoices::exportRound
+    var verseScope by StudyChoices::verseScope
+    var verseCumulative by StudyChoices::verseCumulative
     val scope = rememberCoroutineScope()
 
     fun download(cardTitle: String, fileName: String, mime: String = Mime.PDF, fetch: suspend () -> ByteArray) {
@@ -315,6 +324,31 @@ fun StudySectionScreen(
     fun downloadHeadingFlashcards() {
         download("Chapter-heading flashcards", withSet("heading-flashcards${chSuffix(headingScope, cumulative = true)}.pdf")) {
             api.headingFlashcardsPdf(headingScope.chapter, book = headingScope.book?.name)
+        }
+    }
+
+    /**
+     * A verse deck, gated on sign-in wherever it's triggered from — the card button and the sheet's
+     * Download button both land here, so neither can slip past the account check the server enforces.
+     */
+    fun downloadVerses(forSpace: Boolean) {
+        // Closing the sheet matters on the sheet's own Download button: sign-in navigates away, and
+        // an open sheet would still be sitting there on the way back.
+        if (!signedIn) {
+            customize = null
+            return onRequireSignIn()
+        }
+        val base = withSet("verses${chSuffix(verseScope, cumulative = verseCumulative)}")
+        val chapter = verseScope.chapter
+        val book = verseScope.book?.name
+        if (forSpace) {
+            download("Verse flashcards for the Space app", "space-$base.csv", Mime.CSV) {
+                api.spaceVersesCsv(chapter, verseCumulative, book = book)
+            }
+        } else {
+            download("Verse flashcards for Quizlet", "quizlet-$base.txt", Mime.TEXT) {
+                api.quizletVersesTxt(chapter, verseCumulative, book = book)
+            }
         }
     }
 
@@ -458,28 +492,22 @@ fun StudySectionScreen(
                 DownloadCard(
                     title = "Verse flashcards for the Space app",
                     subtitle = "Every verse in ${season.eventScripture} as a CSV that imports straight into " +
-                        "Space (getspace.app) — the verse up front, its section heading and reference on the back.",
+                        "Space (getspace.app) — the verse up front, its section heading and reference on the back." +
+                        verseScopeNote(verseScope, verseCumulative),
                     busyCard = busyCard,
                     buttonLabel = versesLabel,
-                    onClick = {
-                        if (!signedIn) onRequireSignIn()
-                        else download("Verse flashcards for the Space app", "space-${withSet("verses")}.csv", Mime.CSV) {
-                            api.spaceVersesCsv()
-                        }
-                    },
+                    onClick = { downloadVerses(forSpace = true) },
+                    onCustomize = { customize = Customize.VerseDeck(forSpace = true) },
                 )
                 DownloadCard(
                     title = "Verse flashcards for Quizlet",
                     subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
-                        "between term and definition, and enter \\n\\n as the custom separator between cards.",
+                        "between term and definition, and enter \\n\\n as the custom separator between cards." +
+                        verseScopeNote(verseScope, verseCumulative),
                     busyCard = busyCard,
                     buttonLabel = versesLabel,
-                    onClick = {
-                        if (!signedIn) onRequireSignIn()
-                        else download("Verse flashcards for Quizlet", "quizlet-${withSet("verses")}.txt", Mime.TEXT) {
-                            api.quizletVersesTxt()
-                        }
-                    },
+                    onClick = { downloadVerses(forSpace = false) },
+                    onCustomize = { customize = Customize.VerseDeck(forSpace = false) },
                 )
             }
 
@@ -680,6 +708,11 @@ fun StudySectionScreen(
                         Customize.HeadingFlashcards -> HeadingFlashcardOptions(
                             selection = headingScope, onSelection = { headingScope = it },
                         )
+                        is Customize.VerseDeck -> VerseDeckOptions(
+                            forSpace = target.forSpace,
+                            selection = verseScope, onSelection = { verseScope = it },
+                            cumulative = verseCumulative, onCumulative = { verseCumulative = it },
+                        )
                         is Customize.PracticeTest -> PracticeTestOptions(
                             round = target.round,
                             selection = practiceScope, onSelection = { practiceScope = it },
@@ -699,6 +732,7 @@ fun StudySectionScreen(
                         Customize.StudyText -> downloadStudyText()
                         Customize.QuestionFlashcards -> downloadQuestionFlashcards()
                         Customize.HeadingFlashcards -> downloadHeadingFlashcards()
+                        is Customize.VerseDeck -> downloadVerses(target.forSpace)
                         is Customize.PracticeTest -> downloadPracticeTest(target.round)
                         is Customize.Export -> downloadExport(target.app)
                     }
@@ -798,7 +832,34 @@ private fun QuestionFlashcardOptions(
 @Composable
 private fun HeadingFlashcardOptions(selection: ScopeSelection, onSelection: (ScopeSelection) -> Unit) {
     SheetTitle("Customize chapter-heading flashcards")
-    ChapterScope(selection, onSelection, label = "Through chapter")
+    ChapterScope(selection, onSelection, label = "Through chapter", cumulative = true)
+}
+
+@Composable
+private fun VerseDeckOptions(
+    forSpace: Boolean,
+    selection: ScopeSelection, onSelection: (ScopeSelection) -> Unit,
+    cumulative: Boolean, onCumulative: (Boolean) -> Unit,
+) {
+    SheetTitle(if (forSpace) "Customize Space verse deck" else "Customize Quizlet verse deck")
+    ChapterScope(selection, onSelection, cumulative = cumulative)
+    // Only/through is meaningless for the whole set, so the toggle appears with the choice it
+    // qualifies rather than sitting there as a third mode to decode.
+    if (selection.chapter != null) {
+        Text("Include", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            FilterChip(
+                selected = !cumulative,
+                onClick = { onCumulative(false) },
+                label = { Text("Only this chapter") },
+            )
+            FilterChip(
+                selected = cumulative,
+                onClick = { onCumulative(true) },
+                label = { Text("Through this chapter") },
+            )
+        }
+    }
 }
 
 @Composable
@@ -887,9 +948,10 @@ private fun ChapterScope(
     selection: ScopeSelection,
     onSelection: (ScopeSelection) -> Unit,
     label: String = "Chapter scope",
+    cumulative: Boolean = false,
 ) {
     Text(label, style = MaterialTheme.typography.labelLarge)
-    ChapterChips(selected = selection, onSelect = onSelection)
+    ChapterChips(selected = selection, cumulative = cumulative, onSelect = onSelection)
 }
 
 @Composable
@@ -914,6 +976,12 @@ private fun SheetDownloadButton(onClick: () -> Unit) {
 
 private fun scopeNote(selection: ScopeSelection): String =
     selection.label()?.let { " Scoped to $it." } ?: ""
+
+/** "Through Acts 5." / "Scoped to Acts 5." — the cards echo which half of the Include toggle is live. */
+private fun verseScopeNote(selection: ScopeSelection, cumulative: Boolean): String {
+    val label = selection.label() ?: return ""
+    return if (cumulative && selection.chapter != null) " Through $label." else " Scoped to $label."
+}
 
 private fun customizedNote(customized: Boolean): String =
     if (customized) " Using your customized settings." else ""

@@ -22,11 +22,20 @@ import net.markdrew.biblebowl.api.resolvedStudySet
  * Single-book sets render the familiar "All + chapters" row; multi-book sets add a book row above
  * it, with the chapter row showing only that book's in-set chapters (partial sets have gaps —
  * e.g. Life of Moses covers Exo 1-20 then 32-34). Clicking the selected chip clears it.
+ *
+ * On a [cumulative] picker ("through chapter"), every chapter up to the chosen one is selected too,
+ * so the chips show the range the request will actually cover rather than just its endpoint. Only the
+ * endpoint chip toggles off; clicking a lower selected chip moves the endpoint back to it.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun ChapterChips(selected: ScopeSelection, onSelect: (ScopeSelection) -> Unit) {
+fun ChapterChips(
+    selected: ScopeSelection,
+    cumulative: Boolean = false,
+    onSelect: (ScopeSelection) -> Unit,
+) {
     val set = LocalSeason.current.resolvedStudySet
+    val endRef = selected.chapterRef
     if (set.isSingleBook) {
         val book = set.books.single()
         ChipFlow {
@@ -36,10 +45,10 @@ fun ChapterChips(selected: ScopeSelection, onSelect: (ScopeSelection) -> Unit) {
                 label = { Text("All") },
             )
             set.chapterRefs.forEach { ref ->
-                val on = selected.chapter == ref.chapter
+                val end = selected.chapter == ref.chapter
                 FilterChip(
-                    selected = on,
-                    onClick = { onSelect(if (on) ScopeSelection() else ScopeSelection(book, ref.chapter)) },
+                    selected = end || (cumulative && endRef != null && ref <= endRef),
+                    onClick = { onSelect(if (end) ScopeSelection() else ScopeSelection(book, ref.chapter)) },
                     label = { Text("${ref.chapter}") },
                 )
             }
@@ -68,10 +77,10 @@ fun ChapterChips(selected: ScopeSelection, onSelect: (ScopeSelection) -> Unit) {
             label = { Text("All of ${book.briefName}") },
         )
         set.chapterRefs.filter { it.book == book }.forEach { ref ->
-            val on = selected.chapter == ref.chapter
+            val end = selected.chapter == ref.chapter
             FilterChip(
-                selected = on,
-                onClick = { onSelect(ScopeSelection(book, if (on) null else ref.chapter)) },
+                selected = end || (cumulative && endRef != null && ref <= endRef),
+                onClick = { onSelect(ScopeSelection(book, if (end) null else ref.chapter)) },
                 label = { Text("${ref.chapter}") },
             )
         }

@@ -112,6 +112,9 @@ private sealed interface Customize {
     data object StudyText : Customize
     data object QuestionFlashcards : Customize
     data object HeadingFlashcards : Customize
+    // Per-deck, like Export: the panel is keyed by identity, so two cards sharing one value would
+    // expand together. The scope choice behind them is still shared — it's one card group.
+    data class VerseDeck(val forSpace: Boolean) : Customize
     data class PracticeTest(val round: Round) : Customize
     data class Export(val app: ExportApp) : Customize
 }
@@ -149,9 +152,10 @@ private data class StudyTextChoices(
  * subject lives anywhere else. The section pages lay their cards out in the same tile grid as
  * the overview, so a section reads as a continuation of the grid that led to it. Public.
  *
- * Every download is a plain link to the backend (the generate endpoints are public and send
- * Content-Disposition: attachment), opened in a new tab so a generation error shows its message
- * there instead of navigating the app away; on success the tab closes into a normal download.
+ * Every download is a plain link to the backend (the generate endpoints send Content-Disposition:
+ * attachment), opened in a new tab so a generation error shows its message there instead of
+ * navigating the app away; on success the tab closes into a normal download. They are public bar the
+ * verse decks, which take `requiresAuth` — see [versesCards].
  */
 object DownloadsScreen {
 
@@ -163,6 +167,12 @@ object DownloadsScreen {
     private var headingScope = ScopeSelection()
     private var practiceScope = ScopeSelection()
     private var exportScope = ScopeSelection()
+    private var verseScope = ScopeSelection()
+
+    // Which chapter spelling the verse decks use: cumulative "through chapter" (review everything
+    // learned so far) or the chapter on its own (drill just this one). Only meaningful once a
+    // chapter is picked, so the toggle stays hidden until then.
+    private var verseCumulative = false
     private var customize: Customize? = null
     private var textChoices = StudyTextChoices()
     private var flashcardRound: Round? = null
@@ -204,7 +214,8 @@ object DownloadsScreen {
         root.child(
             "p", "text-muted mb-4",
             "Everything you need to prepare for ${Session.season.eventScripture}, organized by what " +
-                "you're studying. Every resource is free — no sign-in needed.",
+                "you're studying. Every resource is free, and almost all of it downloads without an " +
+                "account — only the verse decks ask you to sign in.",
         )
         root.child("div", "row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4") {
             StudySection.entries.forEach { sec ->
@@ -407,18 +418,22 @@ object DownloadsScreen {
         downloadCard(
             title = "Verse flashcards for the Space app",
             subtitle = "Every verse in ${season.eventScripture} as a CSV that imports straight into " +
-                "Space (getspace.app) — the verse up front, its section heading and reference on the back.",
-            href = generateUrl("/generate/space-verses.csv"),
+                "Space (getspace.app) — the verse up front, its section heading and reference on the back." +
+                verseScopeNote(),
+            href = verseDeckUrl("/generate/space-verses.csv"),
             buttonLabel = "Download",
             requiresAuth = true,
+            customize = Customize.VerseDeck(forSpace = true),
         )
         downloadCard(
             title = "Verse flashcards for Quizlet",
             subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
-                "between term and definition, and enter \\n\\n as the custom separator between cards.",
-            href = generateUrl("/generate/quizlet-verses.txt"),
+                "between term and definition, and enter \\n\\n as the custom separator between cards." +
+                verseScopeNote(),
+            href = verseDeckUrl("/generate/quizlet-verses.txt"),
             buttonLabel = "Download",
             requiresAuth = true,
+            customize = Customize.VerseDeck(forSpace = false),
         )
     }
 
@@ -582,6 +597,19 @@ object DownloadsScreen {
         "limit" to practiceLimit.takeIf { round.crowdSourced },
         "seed" to practiceSeed.toIntOrNull().takeIf { !round.crowdSourced },
     )
+
+    /** A verse deck at [path], scoped under whichever chapter key the "Include" toggle selected. */
+    private fun verseDeckUrl(path: String): String =
+        generateUrl(path, *scopedParams(verseScope, chapterKey = verseChapterKey()))
+
+    private fun verseChapterKey(): String =
+        if (verseCumulative) StudyScopeParams.THROUGH_CHAPTER else StudyScopeParams.CHAPTER
+
+    /** "Through Acts 5." / "Scoped to Acts 5." — the cards echo which half of the toggle is live. */
+    private fun verseScopeNote(): String {
+        val label = scopeLabel(verseScope) ?: return ""
+        return if (verseCumulative && verseScope.chapter != null) " Through $label." else " Scoped to $label."
+    }
 
     private fun exportUrl(app: ExportApp): String = generateUrl(
         when (app) {
@@ -763,7 +791,19 @@ object DownloadsScreen {
                 chipRow(roundOptions(), flashcardRound) { flashcardRound = it; rerender() }
             }
             Customize.HeadingFlashcards ->
-                chapterScope(headingScope, "Through chapter") { headingScope = it }
+                chapterScope(headingScope, "Through chapter", cumulative = true) { headingScope = it }
+            is Customize.VerseDeck -> {
+                chapterScope(verseScope, cumulative = verseCumulative) { verseScope = it }
+                // Only/through is meaningless for the whole set, so the toggle appears with the choice
+                // it qualifies rather than sitting there as a third mode to decode.
+                if (verseScope.chapter != null) {
+                    child("p", "fw-semibold mb-1", "Include")
+                    chipRow(
+                        listOf("Only this chapter" to false, "Through this chapter" to true),
+                        verseCumulative,
+                    ) { verseCumulative = it; rerender() }
+                }
+            }
             is Customize.PracticeTest -> {
                 chapterScope(practiceScope) { practiceScope = it }
                 if (target.round.crowdSourced) {
@@ -813,10 +853,11 @@ object DownloadsScreen {
     private fun Element.chapterScope(
         selected: ScopeSelection,
         label: String = "Chapter scope",
+        cumulative: Boolean = false,
         onSelect: (ScopeSelection) -> Unit,
     ) {
         child("p", "fw-semibold mb-1", label)
-        chapterChips(selected) { onSelect(it); rerender() }
+        chapterChips(selected, cumulative) { onSelect(it); rerender() }
     }
 
     /** Human label for a selection: "Acts 2", or just the book for a whole-book slice. */
