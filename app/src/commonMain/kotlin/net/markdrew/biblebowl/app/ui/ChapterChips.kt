@@ -5,11 +5,13 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import net.markdrew.biblebowl.api.ScopeSelection
+import net.markdrew.biblebowl.api.lights
 import net.markdrew.biblebowl.api.resolvedStudySet
 
 /**
@@ -23,64 +25,80 @@ import net.markdrew.biblebowl.api.resolvedStudySet
  * it, with the chapter row showing only that book's in-set chapters (partial sets have gaps —
  * e.g. Life of Moses covers Exo 1-20 then 32-34). Clicking the selected chip clears it.
  *
- * On a [cumulative] picker ("through chapter"), every chapter up to the chosen one is selected too,
- * so the chips show the range the request will actually cover rather than just its endpoint. Only the
- * endpoint chip toggles off; clicking a lower selected chip moves the endpoint back to it.
+ * Every chapter the selection covers is selected, not just the end the user last tapped — on a
+ * [cumulative] picker that's the reach-back to the set's first chapter, and on a [range] picker it's
+ * everything between the two rows. Only the endpoint chip toggles off; tapping a lower selected chip
+ * moves the endpoint back to it.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ChapterChips(
     selected: ScopeSelection,
     cumulative: Boolean = false,
+    range: Boolean = false,
     onSelect: (ScopeSelection) -> Unit,
 ) {
     val set = LocalSeason.current.resolvedStudySet
-    val endRef = selected.chapterRef
-    if (set.isSingleBook) {
-        val book = set.books.single()
+    val book = if (set.isSingleBook) set.books.single() else {
         ChipFlow {
             FilterChip(
-                selected = selected.chapter == null,
+                selected = selected.book == null,
                 onClick = { onSelect(ScopeSelection()) },
                 label = { Text("All") },
             )
-            set.chapterRefs.forEach { ref ->
-                val end = selected.chapter == ref.chapter
+            set.books.forEach { b ->
                 FilterChip(
-                    selected = end || (cumulative && endRef != null && ref <= endRef),
-                    onClick = { onSelect(if (end) ScopeSelection() else ScopeSelection(book, ref.chapter)) },
+                    selected = selected.book == b,
+                    onClick = { onSelect(if (selected.book == b) ScopeSelection() else ScopeSelection(b)) },
+                    label = { Text(b.briefName) },
+                )
+            }
+        }
+        selected.book ?: return
+    }
+    val chapters = set.chapterRefs.filter { it.book == book }
+
+    // The start row exists only on range pickers; elsewhere a scope still has just the one end, and a
+    // second row of 28 chips would be noise on every sheet that can't use it.
+    if (range) {
+        Text("From chapter", style = MaterialTheme.typography.labelLarge)
+        ChipFlow {
+            FilterChip(
+                selected = selected.fromChapter == null,
+                onClick = { onSelect(selected.copy(fromChapter = null)) },
+                label = { Text("Start") },
+            )
+            chapters.forEach { ref ->
+                val on = selected.fromChapter == ref.chapter
+                FilterChip(
+                    selected = on,
+                    onClick = { onSelect(selected.copy(book = book, fromChapter = if (on) null else ref.chapter)) },
                     label = { Text("${ref.chapter}") },
                 )
             }
         }
-        return
+        Text("Through chapter", style = MaterialTheme.typography.labelLarge)
     }
     ChipFlow {
-        FilterChip(
-            selected = selected.book == null,
-            onClick = { onSelect(ScopeSelection()) },
-            label = { Text("All") },
-        )
-        set.books.forEach { book ->
-            FilterChip(
-                selected = selected.book == book,
-                onClick = { onSelect(if (selected.book == book) ScopeSelection() else ScopeSelection(book)) },
-                label = { Text(book.briefName) },
-            )
-        }
-    }
-    val book = selected.book ?: return
-    ChipFlow {
+        val allLabel = if (set.isSingleBook) "All" else "All of ${book.briefName}"
         FilterChip(
             selected = selected.chapter == null,
-            onClick = { onSelect(ScopeSelection(book)) },
-            label = { Text("All of ${book.briefName}") },
+            onClick = {
+                onSelect(
+                    when {
+                        range -> selected.copy(chapter = null)
+                        set.isSingleBook -> ScopeSelection()
+                        else -> ScopeSelection(book)
+                    },
+                )
+            },
+            label = { Text(if (range) "End" else allLabel) },
         )
-        set.chapterRefs.filter { it.book == book }.forEach { ref ->
+        chapters.forEach { ref ->
             val end = selected.chapter == ref.chapter
             FilterChip(
-                selected = end || (cumulative && endRef != null && ref <= endRef),
-                onClick = { onSelect(ScopeSelection(book, if (end) null else ref.chapter)) },
+                selected = selected.lights(ref, cumulative, set),
+                onClick = { onSelect(selected.copy(book = book, chapter = if (end) null else ref.chapter)) },
                 label = { Text("${ref.chapter}") },
             )
         }

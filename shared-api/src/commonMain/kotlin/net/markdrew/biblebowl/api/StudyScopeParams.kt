@@ -130,6 +130,19 @@ data class ScopeSelection(
 }
 
 /**
+ * Whether the chapter chip for [ref] should read as selected — the whole span this selection covers,
+ * not just the end the user last clicked. On a [cumulative] picker an endpoint alone reaches back to
+ * the start of [set]; with both ends given it is the range between them. Shared by both pickers so the
+ * chips can't disagree with what the emitted URL asks for.
+ */
+fun ScopeSelection.lights(ref: ChapterRef, cumulative: Boolean, set: StudySet): Boolean {
+    if (chapter == null && fromChapter == null) return false
+    val start = fromChapterRef ?: if (cumulative) set.chapterRanges.first().start else chapterRef
+    val end = chapterRef ?: set.chapterRanges.last().endInclusive
+    return start != null && ref in start..end
+}
+
+/**
  * The canonical scope of [selection] within [set] as query parameters (see [StudyScopeParams.write]):
  * durable — never season-relative — so emitted links keep meaning the same material in any season.
  * [chapterKey] decides what a lone endpoint means, exactly as it does server-side.
