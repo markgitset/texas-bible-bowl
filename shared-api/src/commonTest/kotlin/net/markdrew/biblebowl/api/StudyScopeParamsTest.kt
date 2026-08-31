@@ -165,65 +165,64 @@ class StudyScopeParamsTest {
 
     @Test
     fun tapTogglesASingleSelectPicker() {
-        assertEquals(ScopeSelection(Book.ACT, 5), ScopeSelection(Book.ACT).tap(Book.ACT, 5))
-        assertEquals(ScopeSelection(Book.ACT), ScopeSelection(Book.ACT, 5).tap(Book.ACT, 5))
+        val acts = StandardStudySet.ACTS.set
+        assertEquals(ScopeSelection(Book.ACT, 5), ScopeSelection(Book.ACT).tap(acts, Book.ACT, 5))
+        assertEquals(ScopeSelection(Book.ACT), ScopeSelection(Book.ACT, 5).tap(acts, Book.ACT, 5))
         // A stale range start (say, restored from a shared URL) never survives a single-select tap.
         assertEquals(
             ScopeSelection(Book.ACT, 7),
-            ScopeSelection(Book.ACT, 5, fromChapter = 3).tap(Book.ACT, 7),
+            ScopeSelection(Book.ACT, 5, fromChapter = 3).tap(acts, Book.ACT, 7),
         )
     }
 
     @Test
-    fun tapSpansARangeFromTwoTapsInEitherOrder() {
-        val first = ScopeSelection(Book.ACT).tap(Book.ACT, 5, range = true)
-        assertEquals(ScopeSelection(Book.ACT, 5), first)
-        assertEquals(ScopeSelection(Book.ACT, 7, fromChapter = 5), first.tap(Book.ACT, 7, range = true))
-        assertEquals(ScopeSelection(Book.ACT, 5, fromChapter = 3), first.tap(Book.ACT, 3, range = true))
-        // Tapping the lone selected chapter clears it.
-        assertEquals(ScopeSelection(Book.ACT), first.tap(Book.ACT, 5, range = true))
+    fun tapPairsEveryTapWithThePreviousOne() {
+        // 3, 7, 9 reads 1-3, 3-7, 7-9 — the first tap reaches back to the start, and each later tap
+        // spans from the tap before it.
+        val acts = StandardStudySet.ACTS.set
+        var sel = ScopeSelection(Book.ACT).tap(acts, Book.ACT, 3, range = true)
+        assertEquals(ScopeSelection(Book.ACT, 3, fromChapter = 1), sel)
+        sel = sel.tap(acts, Book.ACT, 7, range = true)
+        assertEquals(ScopeSelection(Book.ACT, 7, fromChapter = 3), sel)
+        sel = sel.tap(acts, Book.ACT, 9, range = true)
+        assertEquals(ScopeSelection(Book.ACT, 9, fromChapter = 7), sel)
+        // Descending works the same — the anchor is simply the most recent tap. The raw pair may run
+        // backwards; normalized() puts it in span order for labels, chips, and URLs.
+        sel = sel.tap(acts, Book.ACT, 2, range = true)
+        assertEquals(ScopeSelection(Book.ACT, 2, fromChapter = 9), sel)
+        assertEquals(ScopeSelection(Book.ACT, 9, fromChapter = 2), sel.normalized())
     }
 
     @Test
-    fun tapStartsOverOnceARangeIsComplete() {
-        val range = ScopeSelection(Book.ACT, 7, fromChapter = 3)
-        assertEquals(ScopeSelection(Book.ACT, 5), range.tap(Book.ACT, 5, range = true))
-        // Even on one of its own ends — the third tap always begins a fresh selection.
-        assertEquals(ScopeSelection(Book.ACT, 3), range.tap(Book.ACT, 3, range = true))
-    }
-
-    @Test
-    fun tapKeepsTheImpliedStartOfACumulativeEndpoint() {
-        // "Through 5" plus a tap past it means "through 7"; a tap before it narrows the start into
-        // an explicit span, exactly as fromChapter does on the cumulative endpoints themselves.
-        val through5 = ScopeSelection(Book.ACT, 5)
-        assertEquals(
-            ScopeSelection(Book.ACT, 7),
-            through5.tap(Book.ACT, 7, range = true, cumulative = true),
-        )
-        assertEquals(
-            ScopeSelection(Book.ACT, 5, fromChapter = 3),
-            through5.tap(Book.ACT, 3, range = true, cumulative = true),
-        )
-    }
-
-    @Test
-    fun tapStepsACumulativeEndpointDownToJustThatChapterThenClears() {
-        // The only way a cumulative picker can say "chapter 5 alone": through 5 -> just 5 -> cleared.
-        val through5 = ScopeSelection(Book.ACT).tap(Book.ACT, 5, range = true, cumulative = true)
-        assertEquals(ScopeSelection(Book.ACT, 5), through5)
-        val just5 = through5.tap(Book.ACT, 5, range = true, cumulative = true)
+    fun tapStepsDownToJustThatChapterThenClears() {
+        val acts = StandardStudySet.ACTS.set
+        val through5 = ScopeSelection(Book.ACT).tap(acts, Book.ACT, 5, range = true)
+        assertEquals(ScopeSelection(Book.ACT, 5, fromChapter = 1), through5)
+        val just5 = through5.tap(acts, Book.ACT, 5, range = true)
         assertEquals(ScopeSelection(Book.ACT, 5, fromChapter = 5), just5)
-        assertEquals(ScopeSelection(Book.ACT), just5.tap(Book.ACT, 5, range = true, cumulative = true))
-        // A tap elsewhere starts over from the pinned chapter, like any other completed selection.
-        assertEquals(ScopeSelection(Book.ACT, 8), just5.tap(Book.ACT, 8, range = true, cumulative = true))
+        // Clears to the same state as the All chip — no book either, on a single-book set.
+        assertEquals(ScopeSelection(), just5.tap(acts, Book.ACT, 5, range = true))
     }
 
     @Test
     fun tapOnAnotherBookStartsFresh() {
+        val moses = StandardStudySet.LIFE_OF_MOSES.set
+        val numStart = moses.chapterRefs.first { it.book == Book.NUM }.chapter
         assertEquals(
-            ScopeSelection(Book.NUM, 3),
-            ScopeSelection(Book.EXO, 5).tap(Book.NUM, 3, range = true),
+            ScopeSelection(Book.NUM, 3, fromChapter = numStart),
+            ScopeSelection(Book.EXO, 5).tap(moses, Book.NUM, 3, range = true),
+        )
+    }
+
+    @Test
+    fun labelsAndQueryParamsNormalizeTapOrder() {
+        assertEquals("Acts 3-7", ScopeSelection(Book.ACT, 3, fromChapter = 7).label())
+        assertEquals("Acts 1-5", ScopeSelection(Book.ACT, 5, fromChapter = 1).label())
+        assertEquals("Acts 5", ScopeSelection(Book.ACT, 5, fromChapter = 5).label())
+        val acts = StandardStudySet.ACTS.set
+        assertEquals(
+            listOf("book" to "ACT", "fromChapter" to "3", "chapter" to "7"),
+            scopeQueryParams(acts, ScopeSelection(Book.ACT, 3, fromChapter = 7)),
         )
     }
 }

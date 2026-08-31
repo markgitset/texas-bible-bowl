@@ -40,15 +40,14 @@ fun <T> Element.chipRow(options: List<Pair<String, T>>, selected: T, onSelect: (
  * multi-book sets add a book row above it, with the chapter row showing only that book's in-set
  * chapters (partial sets have gaps — e.g. Life of Moses covers Exo 1-20 then 32-34).
  *
- * One chip row serves every mode. A plain picker toggles a single chapter; a [range] picker spans
- * two taps and a third tap starts over (the shared [tap] gesture); a [cumulative] endpoint reaches
- * back to the set's first chapter. Every chapter the selection covers lights up, not just the ends
- * ([lights]) — with one row the lit span can't disagree with itself, which the old two-row
+ * One chip row serves both modes. A plain picker toggles a single chapter; a [range] picker pairs
+ * every tap with the one before it — first tap = through that chapter, later taps span from the
+ * previous tap (the shared [tap] gesture). Every chapter the selection covers lights up, not just
+ * the ends ([lights]) — with one row the lit span can't disagree with itself, which the old two-row
  * from/through layout did.
  */
 fun Element.chapterChips(
     selected: ScopeSelection,
-    cumulative: Boolean = false,
     range: Boolean = false,
     onSelect: (ScopeSelection) -> Unit,
 ) {
@@ -71,17 +70,16 @@ fun Element.chapterChips(
             onSelect(if (set.isSingleBook) ScopeSelection() else ScopeSelection(book))
         }
         chapters.forEach { ref ->
-            chip("${ref.chapter}", selected.lights(ref, cumulative, set)) {
-                onSelect(selected.tap(book, ref.chapter, range, cumulative))
+            chip("${ref.chapter}", selected.lights(ref, set)) {
+                onSelect(selected.tap(set, book, ref.chapter, range))
             }
         }
     }
     if (range) {
         child(
             "p", "form-text mt-0 mb-2",
-            if (cumulative) "Tap a chapter for everything through it, tap it again for just that chapter, " +
-                "or tap a second chapter to span a range."
-            else "Tap a chapter, then a second one to span a range.",
+            "Tap a chapter for everything through it, tap it again for just that chapter, " +
+                "or tap a second chapter to span a range.",
         )
     }
 }

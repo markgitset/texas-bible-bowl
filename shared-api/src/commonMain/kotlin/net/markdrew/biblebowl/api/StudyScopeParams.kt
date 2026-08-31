@@ -100,15 +100,14 @@ val SeasonDto.resolvedStudySet: StudySet
 
 /**
  * A partial canonical scope selection for study filters: null book = the whole study set; a book
- * alone = that whole book's slice of the set; book + [chapter] = through that chapter, narrowed at the
- * front by an optional [fromChapter]. Chapter numbers are always book-relative (never a season-relative
- * index), which is what keeps stored questions and emitted URLs valid across the 10-year study
- * rotation. Shared by the web and Compose pickers.
+ * alone = that whole book's slice of the set; both chapters set = that explicit span. Chapter numbers
+ * are always book-relative (never a season-relative index), which is what keeps stored questions and
+ * emitted URLs valid across the 10-year study rotation. Shared by the web and Compose pickers.
  *
- * The picker holds the two ends the user actually clicked and leaves the rest to [resolveStudyScope]:
- * a null [fromChapter] means "wherever this scope naturally starts", which the exact and cumulative
- * endpoints then read differently. That keeps the selection honest about what was chosen — filling in
- * a start here would make "through chapter 5" and "chapters 1-5" indistinguishable.
+ * On a range picker both ends are always explicit (the first [tap] fills the start in), and [chapter]
+ * holds the most recent tap — the anchor the next tap pairs with — so it may sit *below*
+ * [fromChapter]; everything that interprets the selection reads it through [normalized]. On a
+ * single-select picker [fromChapter] stays null and [chapter] means exactly that chapter.
  */
 data class ScopeSelection(
     val book: Book? = null,
@@ -117,37 +116,48 @@ data class ScopeSelection(
 ) {
     val chapterRef: ChapterRef? get() = if (book != null && chapter != null) book.chapterRef(chapter) else null
 
-    /** The start the user picked, if any — the other end of [chapterRef]. */
+    /** The other end the user picked, if any — the tap before the one [chapterRef] holds. */
     val fromChapterRef: ChapterRef?
         get() = if (book != null && fromChapter != null) book.chapterRef(fromChapter) else null
 
-    /** True when this selection names a span rather than a single chapter or a whole book/set. */
-    val isRange: Boolean get() = fromChapter != null && fromChapter != chapter
+    /**
+     * The same selection with its ends in ascending order — the only span order labels, chips, and
+     * URLs may spell, while the raw field order keeps the tap anchor (see the class doc).
+     */
+    fun normalized(): ScopeSelection =
+        if (chapter != null && fromChapter != null && fromChapter > chapter) {
+            copy(chapter = fromChapter, fromChapter = chapter)
+        } else this
 
     /**
-     * Human label: "Acts 2", "Acts 3-7" for a span, just the book for a whole-book slice, null for all.
-     * The dash form matches [ChapterRange.format], which is what the server labels ranges with.
+     * Human label: "Acts 2", "Acts 1-5"/"Acts 3-7" for a span, just the book for a whole-book slice,
+     * null for all. The dash form matches [ChapterRange.format], which is what the server labels
+     * ranges with.
      */
-    fun label(): String? = book?.let { b ->
-        when {
-            chapter != null && fromChapter != null && fromChapter != chapter -> "${b.briefName} $fromChapter-$chapter"
-            chapter != null -> "${b.briefName} $chapter"
-            fromChapter != null -> "${b.briefName} $fromChapter-"
-            else -> b.briefName
+    fun label(): String? {
+        val n = normalized()
+        return n.book?.let { b ->
+            when {
+                n.chapter != null && n.fromChapter != null && n.fromChapter != n.chapter ->
+                    "${b.briefName} ${n.fromChapter}-${n.chapter}"
+                n.chapter != null -> "${b.briefName} ${n.chapter}"
+                n.fromChapter != null -> "${b.briefName} ${n.fromChapter}-"
+                else -> b.briefName
+            }
         }
     }
 }
 
 /**
  * Whether the chapter chip for [ref] should read as selected — the whole span this selection covers,
- * not just the end the user last clicked. On a [cumulative] picker an endpoint alone reaches back to
- * the start of [set]; with both ends given it is the range between them. Shared by both pickers so the
- * chips can't disagree with what the emitted URL asks for.
+ * not just the end the user last tapped. Shared by both pickers so the chips can't disagree with
+ * what the emitted URL asks for.
  */
-fun ScopeSelection.lights(ref: ChapterRef, cumulative: Boolean, set: StudySet): Boolean {
-    if (chapter == null && fromChapter == null) return false
-    val start = fromChapterRef ?: if (cumulative) set.chapterRanges.first().start else chapterRef
-    val end = chapterRef ?: set.chapterRanges.last().endInclusive
+fun ScopeSelection.lights(ref: ChapterRef, set: StudySet): Boolean {
+    val n = normalized()
+    if (n.chapter == null && n.fromChapter == null) return false
+    val start = n.fromChapterRef ?: n.chapterRef
+    val end = n.chapterRef ?: set.chapterRanges.last().endInclusive
     return start != null && ref in start..end
 }
 
@@ -156,31 +166,26 @@ fun ScopeSelection.lights(ref: ChapterRef, cumulative: Boolean, set: StudySet): 
  * both pickers (Compose and web), so their behavior can't drift.
  *
  * A single-select picker ([range] = false) just toggles: tapping selects the chapter, tapping the
- * selected chapter clears it. A range picker builds a span from two taps: the first tap picks one
- * chapter, a tap on a second chip spans between them (in either order), and any further tap starts
- * over at the tapped chapter. Tapping a lone selected chapter clears it. On a [cumulative] picker a
- * lone endpoint already reads as "through N", so a tap past it extends that reach — keeping the
- * implied start — and re-tapping the endpoint steps down to just that chapter (pinned as the span
- * N..N, the only way a cumulative endpoint can say "chapter N alone") before a third tap clears.
+ * selected chapter clears it.
  *
- * The result always keeps fromChapter <= chapter, which is the only span order resolveStudyScope
- * accepts.
+ * A range picker pairs every tap with the tap before it. The first tap reaches back to the book's
+ * first in-set chapter (tap 5 = chapters 1-5), and each later tap spans from the previous tap to the
+ * tapped chapter in whichever order they come — 3, 7, 9 reads 1-3, 3-7, 7-9. Re-tapping the
+ * last-tapped chapter steps down to just that chapter, and one more tap clears. The anchor lives in
+ * [ScopeSelection.chapter], possibly below fromChapter — see [ScopeSelection.normalized].
  */
-fun ScopeSelection.tap(book: Book, chapter: Int, range: Boolean = false, cumulative: Boolean = false): ScopeSelection {
+fun ScopeSelection.tap(set: StudySet, book: Book, chapter: Int, range: Boolean = false): ScopeSelection {
     val sameBook = this.book == book
-    val start = fromChapter.takeIf { sameBook }
-    val end = this.chapter.takeIf { sameBook }
+    if (!range) return ScopeSelection(book, chapter.takeIf { !sameBook || it != this.chapter })
+    val previous = this.chapter.takeIf { sameBook }
     return when {
-        !range -> ScopeSelection(book, chapter.takeIf { it != end })
-        // A completed span starts over at the tapped chip — except re-tapping a pinned single
-        // chapter, the last step of the cumulative through-N -> just-N -> cleared cycle.
-        start != null -> if (start == end && chapter == end) ScopeSelection(book) else ScopeSelection(book, chapter)
-        end == null -> ScopeSelection(book, chapter)
-        chapter == end ->
-            if (cumulative) ScopeSelection(book, chapter, fromChapter = chapter) else ScopeSelection(book)
-        chapter < end -> ScopeSelection(book, end, fromChapter = chapter)
-        cumulative -> ScopeSelection(book, chapter)
-        else -> ScopeSelection(book, chapter, fromChapter = end)
+        previous == null ->
+            ScopeSelection(book, chapter, fromChapter = set.chapterRefs.first { it.book == book }.chapter)
+        // Re-tapping a lone selected chapter clears it (the end of the through-N -> just-N cycle) —
+        // to the same state as the All chip, so a single-book set's label goes fully quiet.
+        chapter == previous && chapter == fromChapter ->
+            if (set.isSingleBook) ScopeSelection() else ScopeSelection(book)
+        else -> ScopeSelection(book, chapter, fromChapter = previous)
     }
 }
 
@@ -192,16 +197,17 @@ fun ScopeSelection.tap(book: Book, chapter: Int, range: Boolean = false, cumulat
  * reject the bad half anyway, with a message the client can't improve on).
  */
 fun ScopeSelection.resolveWithin(set: StudySet, chapterKey: String = StudyScopeParams.CHAPTER): StudyScope {
+    val n = normalized()
     val resolution = resolveStudyScope(
         setParam = set.simpleName,
-        bookParam = (book ?: set.books.singleOrNull())?.name,
-        chapter = chapter,
+        bookParam = (n.book ?: set.books.singleOrNull())?.name,
+        chapter = n.chapter,
         currentSeasonSet = set,
-        fromChapter = fromChapter,
+        fromChapter = n.fromChapter,
         cumulative = chapterKey == StudyScopeParams.THROUGH_CHAPTER,
     )
     return (resolution as? ScopeResolution.Resolved)?.scope
-        ?: StudyScope(set, book ?: set.books.singleOrNull(), chapters = null)
+        ?: StudyScope(set, n.book ?: set.books.singleOrNull(), chapters = null)
 }
 
 /**
