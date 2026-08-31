@@ -9,7 +9,6 @@ import io.ktor.server.response.header
 import io.ktor.server.response.respond
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.StudyScopeParams
-import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.ScopeResolution
 import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.model.StudyScope
@@ -91,19 +90,3 @@ fun ApplicationCall.advertiseCanonicalScope(scope: StudyScope, chapterKey: Strin
 /** This scope as a question-bank query: one exact chapter, or the OR of the scope's ranges. */
 fun StudyScope.toQuestionScope(): QuestionScope =
     singleChapterRef?.let { QuestionScope.Chapter(it) } ?: QuestionScope.Ranges(ranges())
-
-/**
- * Filename fragment pinning this scope's chapters: today's `-ch2` for single-book sets, book-qualified
- * `-num14` for multi-book sets (a bare number would be ambiguous); empty for whole-set scopes. A span
- * spells both ends — `-ch3-7`, or `-through-ch5` when it reaches back to the set's first chapter, which
- * is the name cumulative downloads already had.
- */
-fun StudyScope.chapterSuffix(): String {
-    val span = chapters ?: return ""
-    fun core(ref: ChapterRef) = if (set.isSingleBook) "ch${ref.chapter}" else ref.serialize().lowercase()
-    return when {
-        span.start == span.endInclusive -> "-${core(span.endInclusive)}"
-        span.start == set.chapterRanges.first().start -> "-through-${core(span.endInclusive)}"
-        else -> "-${core(span.start)}-${span.endInclusive.chapter}"
-    }
-}

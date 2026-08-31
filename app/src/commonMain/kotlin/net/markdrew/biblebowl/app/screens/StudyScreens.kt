@@ -43,6 +43,9 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.PdfFileNames
+import net.markdrew.biblebowl.api.StudyScopeParams
+import net.markdrew.biblebowl.api.chapterSuffix
+import net.markdrew.biblebowl.api.resolveWithin
 import net.markdrew.biblebowl.api.schoolYear
 import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.StudyMaterialDto
@@ -246,12 +249,12 @@ fun StudySectionScreen(
 
     val studySet = LocalSeason.current.resolvedStudySet
 
-    // File names mirror the server's set-prefixed, book-qualified names (single-book sets keep -chN).
-    fun chSuffix(sel: ScopeSelection, cumulative: Boolean = false): String {
-        val ref = sel.chapterRef ?: return ""
-        val core = if (studySet.isSingleBook) "ch${ref.chapter}" else ref.serialize().lowercase()
-        return (if (cumulative) "-through-" else "-") + core
-    }
+    // File names mirror the server's set-prefixed, book-qualified names via the shared suffix logic,
+    // so a ranged download saves under the same name the server caches it as.
+    fun chSuffix(sel: ScopeSelection, cumulative: Boolean = false): String = sel.resolveWithin(
+        studySet,
+        if (cumulative) StudyScopeParams.THROUGH_CHAPTER else StudyScopeParams.CHAPTER,
+    ).chapterSuffix()
 
     fun withSet(name: String) = PdfFileNames.withSet(studySet.simpleName, name)
 
@@ -295,7 +298,10 @@ fun StudySectionScreen(
         val round = flashcardRound
         val name = withSet("flashcards${round?.let { "-${it.name.lowercase()}" } ?: ""}${chSuffix(flashcardScope)}.pdf")
         download("Question flashcards", name) {
-            api.flashcardsPdf(flashcardScope.chapter, round, book = flashcardScope.book?.name)
+            api.flashcardsPdf(
+                flashcardScope.chapter, round,
+                book = flashcardScope.book?.name, fromChapter = flashcardScope.fromChapter,
+            )
         }
     }
 
@@ -310,14 +316,18 @@ fun StudySectionScreen(
             ),
         ) {
             api.practiceTestPdf(
-                round, practiceScope.chapter, limit = limit, seed = seed, book = practiceScope.book?.name,
+                round, practiceScope.chapter, limit = limit, seed = seed,
+                book = practiceScope.book?.name, fromChapter = practiceScope.fromChapter,
             )
         }
     }
 
     fun downloadHeadingFlashcards() {
         download("Chapter-heading flashcards", withSet("heading-flashcards${chSuffix(headingScope, cumulative = true)}.pdf")) {
-            api.headingFlashcardsPdf(headingScope.chapter, book = headingScope.book?.name)
+            api.headingFlashcardsPdf(
+                headingScope.chapter,
+                book = headingScope.book?.name, fromChapter = headingScope.fromChapter,
+            )
         }
     }
 
@@ -332,7 +342,7 @@ fun StudySectionScreen(
             customize = null
             return onRequireSignIn()
         }
-        val base = withSet("verses${chSuffix(verseScope)}")
+        val base = withSet("verses${chSuffix(verseScope, cumulative = true)}")
         val chapter = verseScope.chapter
         val from = verseScope.fromChapter
         val book = verseScope.book?.name
@@ -354,15 +364,17 @@ fun StudySectionScreen(
             if (headings) "headings${chSuffix(exportScope, cumulative = true)}"
             else "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}${chSuffix(exportScope)}",
         )
+        val book = exportScope.book?.name
+        val from = exportScope.fromChapter
         when (app) {
             ExportApp.KAHOOT -> download("Kahoot spreadsheet", "kahoot-$base.xlsx", Mime.XLSX) {
-                api.kahootQuestionsXlsx(headings, round, exportScope.chapter, book = exportScope.book?.name)
+                api.kahootQuestionsXlsx(headings, round, exportScope.chapter, book = book, fromChapter = from)
             }
             ExportApp.SPACE -> download("Questions for the Space app", "space-$base.csv", Mime.CSV) {
-                api.spaceQuestionsCsv(headings, round, exportScope.chapter, book = exportScope.book?.name)
+                api.spaceQuestionsCsv(headings, round, exportScope.chapter, book = book, fromChapter = from)
             }
             ExportApp.QUIZLET -> download("Questions for Quizlet", "quizlet-$base.txt", Mime.TEXT) {
-                api.quizletQuestionsTxt(headings, round, exportScope.chapter, book = exportScope.book?.name)
+                api.quizletQuestionsTxt(headings, round, exportScope.chapter, book = book, fromChapter = from)
             }
         }
     }
@@ -465,7 +477,7 @@ fun StudySectionScreen(
                 DownloadCard(
                     title = "Chapter-heading flashcards",
                     subtitle = "One card per ESV section heading (Round 5 material)." +
-                        (headingScope.label()?.let { " Through $it." } ?: ""),
+                        headingScopeNote(headingScope),
                     busyCard = busyCard,
                     onClick = ::downloadHeadingFlashcards,
                     onCustomize = { customize = Customize.HeadingFlashcards },
@@ -813,7 +825,7 @@ private fun QuestionFlashcardOptions(
     round: Round?, onChange: (Round?) -> Unit,
 ) {
     SheetTitle("Customize question flashcards")
-    ChapterScope(selection, onSelection)
+    ChapterScope(selection, onSelection, range = true)
     Text("Round", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(selected = round == null, onClick = { onChange(null) }, label = { Text("All") })
@@ -826,7 +838,7 @@ private fun QuestionFlashcardOptions(
 @Composable
 private fun HeadingFlashcardOptions(selection: ScopeSelection, onSelection: (ScopeSelection) -> Unit) {
     SheetTitle("Customize chapter-heading flashcards")
-    ChapterScope(selection, onSelection, label = "Through chapter", cumulative = true)
+    ChapterScope(selection, onSelection, label = "Chapters", cumulative = true, range = true)
 }
 
 @Composable
@@ -835,7 +847,9 @@ private fun VerseDeckOptions(
     selection: ScopeSelection, onSelection: (ScopeSelection) -> Unit,
 ) {
     SheetTitle(if (forSpace) "Customize Space verse deck" else "Customize Quizlet verse deck")
-    ChapterScope(selection, onSelection, label = "Chapters", range = true)
+    // Cumulative because that's what the deck endpoint generates for a lone endpoint ("through
+    // chapter N") — the chips must light the verses that will actually be in the file.
+    ChapterScope(selection, onSelection, label = "Chapters", cumulative = true, range = true)
 }
 
 @Composable
@@ -846,7 +860,9 @@ private fun PracticeTestOptions(
     seedText: String, onSeedText: (String) -> Unit,
 ) {
     SheetTitle("Customize: ${round.displayName}")
-    ChapterScope(selection, onSelection)
+    // Text-generated rounds scope cumulatively server-side (`chapter` means "through chapter"), so
+    // their chips reach back; bank rounds scope to exactly the chapters picked.
+    ChapterScope(selection, onSelection, cumulative = round.textGenerated, range = true)
     if (round.crowdSourced) {
         Text("Number of questions", style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -886,7 +902,8 @@ private fun ExportOptions(
             ExportApp.QUIZLET -> "Customize Quizlet export"
         },
     )
-    ChapterScope(selection, onSelection)
+    // The headings source scopes cumulatively (like the heading flashcards); the question bank exactly.
+    ChapterScope(selection, onSelection, cumulative = headingsSource, range = true)
     Text("Source", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         FilterChip(
@@ -954,9 +971,15 @@ private fun SheetDownloadButton(onClick: () -> Unit) {
 private fun scopeNote(selection: ScopeSelection): String =
     selection.label()?.let { " Scoped to $it." } ?: ""
 
-/** "Scoped to Acts 3-7." — the cards echo whatever span the two chapter rows add up to. */
+/** "Scoped to Acts 3-7." — the cards echo whatever span the chapter chips add up to. */
 private fun verseScopeNote(selection: ScopeSelection): String =
     selection.label()?.let { " Scoped to $it." } ?: ""
+
+/** A cumulative endpoint reads "Through Acts 5."; an explicit span reads "Scoped to Acts 3-7." */
+private fun headingScopeNote(selection: ScopeSelection): String = when {
+    selection.isRange -> scopeNote(selection)
+    else -> selection.label()?.let { " Through $it." } ?: ""
+}
 
 private fun customizedNote(customized: Boolean): String =
     if (customized) " Using your customized settings." else ""

@@ -389,7 +389,11 @@ object DownloadsScreen {
         downloadCard(
             title = "Chapter-heading flashcards",
             subtitle = "One card per ESV section heading (Round 5 material)." +
-                (headingScope.chapter?.let { " Through ${scopeLabel(headingScope)}." } ?: ""),
+                // A cumulative endpoint reads "Through Acts 5."; an explicit span "Scoped to Acts 3-7."
+                when {
+                    headingScope.isRange -> scopeNote(headingScope)
+                    else -> headingScope.label()?.let { " Through $it." } ?: ""
+                },
             href = generateUrl(
                 "/generate/heading-flashcards.pdf",
                 *scopedParams(headingScope, chapterKey = StudyScopeParams.THROUGH_CHAPTER),
@@ -778,16 +782,22 @@ object DownloadsScreen {
                 }*/
             }
             Customize.QuestionFlashcards -> {
-                chapterScope(flashcardScope) { flashcardScope = it }
+                chapterScope(flashcardScope, range = true) { flashcardScope = it }
                 child("p", "fw-semibold mb-1", "Round")
                 chipRow(roundOptions(), flashcardRound) { flashcardRound = it; rerender() }
             }
             Customize.HeadingFlashcards ->
-                chapterScope(headingScope, "Through chapter", cumulative = true) { headingScope = it }
+                chapterScope(headingScope, "Chapters", cumulative = true, range = true) { headingScope = it }
             is Customize.VerseDeck ->
-                chapterScope(verseScope, "Chapters", range = true) { verseScope = it }
+                // Cumulative because that's what the deck endpoint generates for a lone endpoint
+                // ("through chapter N") — the chips must light the verses actually in the file.
+                chapterScope(verseScope, "Chapters", cumulative = true, range = true) { verseScope = it }
             is Customize.PracticeTest -> {
-                chapterScope(practiceScope) { practiceScope = it }
+                // Text-generated rounds scope cumulatively server-side (`chapter` means "through
+                // chapter"), so their chips reach back; bank rounds scope to exactly what's picked.
+                chapterScope(practiceScope, cumulative = target.round.textGenerated, range = true) {
+                    practiceScope = it
+                }
                 if (target.round.crowdSourced) {
                     child("p", "fw-semibold mb-1", "Number of questions")
                     chipRow(
@@ -814,7 +824,8 @@ object DownloadsScreen {
                 }
             }
             is Customize.Export -> {
-                chapterScope(exportScope) { exportScope = it }
+                // The headings source scopes cumulatively (like the heading flashcards); the bank exactly.
+                chapterScope(exportScope, cumulative = exportHeadings, range = true) { exportScope = it }
                 child("p", "fw-semibold mb-1", "Source")
                 chipRow(
                     listOf("Question bank" to false, "Chapter headings" to true),
@@ -840,14 +851,11 @@ object DownloadsScreen {
         onSelect: (ScopeSelection) -> Unit,
     ) {
         child("p", "fw-semibold mb-1", label)
-        // A range picker labels its own two rows; the outer label would just repeat the first one.
         chapterChips(selected, cumulative, range) { onSelect(it); rerender() }
     }
 
-    /** Human label for a selection: "Acts 2", or just the book for a whole-book slice. */
-    private fun scopeLabel(selection: ScopeSelection): String? = selection.book?.let { book ->
-        selection.chapter?.let { "${book.briefName} $it" } ?: book.briefName
-    }
+    /** Human label for a selection: "Acts 2", "Acts 3-7" for a span, just the book for a whole-book slice. */
+    private fun scopeLabel(selection: ScopeSelection): String? = selection.label()
 
     private fun roundOptions(): List<Pair<String, Round?>> =
         listOf<Pair<String, Round?>>("All" to null) + Round.crowdSourcedRounds.map { it.displayName to it }

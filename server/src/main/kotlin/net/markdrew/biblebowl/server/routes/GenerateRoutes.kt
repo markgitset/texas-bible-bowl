@@ -18,6 +18,7 @@ import io.ktor.server.routing.get
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import net.markdrew.biblebowl.api.ApiError
+import net.markdrew.biblebowl.api.chapterSuffix
 import net.markdrew.biblebowl.api.ClearPdfCacheResponse
 import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.PdfFileNames

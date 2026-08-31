@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.lights
 import net.markdrew.biblebowl.api.resolvedStudySet
+import net.markdrew.biblebowl.api.tap
 
 /**
  * The chapter filter as a wrapping chip flow, driven by the season's study set. Wrapping (not a
@@ -23,12 +24,13 @@ import net.markdrew.biblebowl.api.resolvedStudySet
  * question filters and generated-material requests valid across the 10-year study rotation.
  * Single-book sets render the familiar "All + chapters" row; multi-book sets add a book row above
  * it, with the chapter row showing only that book's in-set chapters (partial sets have gaps —
- * e.g. Life of Moses covers Exo 1-20 then 32-34). Clicking the selected chip clears it.
+ * e.g. Life of Moses covers Exo 1-20 then 32-34).
  *
- * Every chapter the selection covers is selected, not just the end the user last tapped — on a
- * [cumulative] picker that's the reach-back to the set's first chapter, and on a [range] picker it's
- * everything between the two rows. Only the endpoint chip toggles off; tapping a lower selected chip
- * moves the endpoint back to it.
+ * One chip row serves every mode. A plain picker toggles a single chapter; a [range] picker spans
+ * two taps and a third tap starts over (the shared [tap] gesture); a [cumulative] endpoint reaches
+ * back to the set's first chapter. Every chapter the selection covers lights up, not just the ends
+ * ([lights]) — with one row the lit span can't disagree with itself, which the old two-row
+ * from/through layout did.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -57,51 +59,27 @@ fun ChapterChips(
         selected.book ?: return
     }
     val chapters = set.chapterRefs.filter { it.book == book }
-
-    // The start row exists only on range pickers; elsewhere a scope still has just the one end, and a
-    // second row of 28 chips would be noise on every sheet that can't use it.
-    if (range) {
-        Text("From chapter", style = MaterialTheme.typography.labelLarge)
-        ChipFlow {
-            FilterChip(
-                selected = selected.fromChapter == null,
-                onClick = { onSelect(selected.copy(fromChapter = null)) },
-                label = { Text("Start") },
-            )
-            chapters.forEach { ref ->
-                val on = selected.fromChapter == ref.chapter
-                FilterChip(
-                    selected = on,
-                    onClick = { onSelect(selected.copy(book = book, fromChapter = if (on) null else ref.chapter)) },
-                    label = { Text("${ref.chapter}") },
-                )
-            }
-        }
-        Text("Through chapter", style = MaterialTheme.typography.labelLarge)
-    }
     ChipFlow {
         val allLabel = if (set.isSingleBook) "All" else "All of ${book.briefName}"
         FilterChip(
-            selected = selected.chapter == null,
-            onClick = {
-                onSelect(
-                    when {
-                        range -> selected.copy(chapter = null)
-                        set.isSingleBook -> ScopeSelection()
-                        else -> ScopeSelection(book)
-                    },
-                )
-            },
-            label = { Text(if (range) "End" else allLabel) },
+            selected = selected.chapter == null && selected.fromChapter == null,
+            onClick = { onSelect(if (set.isSingleBook) ScopeSelection() else ScopeSelection(book)) },
+            label = { Text(allLabel) },
         )
         chapters.forEach { ref ->
-            val end = selected.chapter == ref.chapter
             FilterChip(
                 selected = selected.lights(ref, cumulative, set),
-                onClick = { onSelect(selected.copy(book = book, chapter = if (end) null else ref.chapter)) },
+                onClick = { onSelect(selected.tap(book, ref.chapter, range, cumulative)) },
                 label = { Text("${ref.chapter}") },
             )
         }
+    }
+    if (range) {
+        Text(
+            "Tap a chapter, then a second one to span a range.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

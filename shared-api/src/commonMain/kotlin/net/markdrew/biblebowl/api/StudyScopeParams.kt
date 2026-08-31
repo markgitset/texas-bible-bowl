@@ -70,7 +70,15 @@ object StudyScopeParams {
         if (!bookOnly) add(SET to scope.set.simpleName)
         if (book != null && (bookOnly || !scope.set.isSingleBook)) add(BOOK to book.name)
         val span = scope.chapters ?: return@buildList
-        if (span.start != scope.set.chapterRanges.first().start && span.start != span.endInclusive) {
+        val runsToSetEnd = span.endInclusive == scope.set.chapterRanges.last().endInclusive
+        // A start is only dropped where the spelling re-derives it: a cumulative endpoint reaches
+        // back to the set's first chapter, and a span running to the set's end reads a missing start
+        // the same way (so the whole set still spells as nothing at all). On an exact-chapter key
+        // with a named endpoint it must be spelled out — `chapter=5` alone reads back as chapter 5.
+        val startRederived = chapterKey == THROUGH_CHAPTER || runsToSetEnd
+        if (span.start != span.endInclusive &&
+            !(startRederived && span.start == scope.set.chapterRanges.first().start)
+        ) {
             add(FROM_CHAPTER to span.start.chapter.toString())
         }
         // A span running to the set's end has no endpoint of its own to name — `fromChapter` alone
@@ -143,6 +151,54 @@ fun ScopeSelection.lights(ref: ChapterRef, cumulative: Boolean, set: StudySet): 
 }
 
 /**
+ * The next selection after tapping the chip for [chapter] of [book] — the one shared gesture behind
+ * both pickers (Compose and web), so their behavior can't drift.
+ *
+ * A single-select picker ([range] = false) just toggles: tapping selects the chapter, tapping the
+ * selected chapter clears it. A range picker builds a span from two taps: the first tap picks one
+ * chapter, a tap on a second chip spans between them (in either order), and any further tap starts
+ * over at the tapped chapter. Tapping a lone selected chapter still clears it. On a [cumulative]
+ * picker a lone endpoint already reads as "through N", so a tap past it extends that reach — keeping
+ * the implied start — rather than anchoring a two-chapter span.
+ *
+ * The result always keeps fromChapter <= chapter, which is the only span order resolveStudyScope
+ * accepts.
+ */
+fun ScopeSelection.tap(book: Book, chapter: Int, range: Boolean = false, cumulative: Boolean = false): ScopeSelection {
+    val sameBook = this.book == book
+    val start = fromChapter.takeIf { sameBook }
+    val end = this.chapter.takeIf { sameBook }
+    return when {
+        !range -> ScopeSelection(book, chapter.takeIf { it != end })
+        start != null || end == null -> ScopeSelection(book, chapter)
+        chapter == end -> ScopeSelection(book)
+        chapter < end -> ScopeSelection(book, end, fromChapter = chapter)
+        cumulative -> ScopeSelection(book, chapter)
+        else -> ScopeSelection(book, chapter, fromChapter = end)
+    }
+}
+
+/**
+ * [this] selection resolved to the canonical scope it names within [set] — the same resolution the
+ * server performs on the emitted parameters, so a client-side file name or label always matches what
+ * the server will actually generate. [chapterKey] decides what a lone endpoint means, exactly as it
+ * does server-side. An unresolvable selection falls back to the unchaptered scope (the server would
+ * reject the bad half anyway, with a message the client can't improve on).
+ */
+fun ScopeSelection.resolveWithin(set: StudySet, chapterKey: String = StudyScopeParams.CHAPTER): StudyScope {
+    val resolution = resolveStudyScope(
+        setParam = set.simpleName,
+        bookParam = (book ?: set.books.singleOrNull())?.name,
+        chapter = chapter,
+        currentSeasonSet = set,
+        fromChapter = fromChapter,
+        cumulative = chapterKey == StudyScopeParams.THROUGH_CHAPTER,
+    )
+    return (resolution as? ScopeResolution.Resolved)?.scope
+        ?: StudyScope(set, book ?: set.books.singleOrNull(), chapters = null)
+}
+
+/**
  * The canonical scope of [selection] within [set] as query parameters (see [StudyScopeParams.write]):
  * durable — never season-relative — so emitted links keep meaning the same material in any season.
  * [chapterKey] decides what a lone endpoint means, exactly as it does server-side.
@@ -151,21 +207,7 @@ fun scopeQueryParams(
     set: StudySet,
     selection: ScopeSelection,
     chapterKey: String = StudyScopeParams.CHAPTER,
-): List<Pair<String, String>> {
-    val resolution = resolveStudyScope(
-        setParam = set.simpleName,
-        bookParam = (selection.book ?: set.books.singleOrNull())?.name,
-        chapter = selection.chapter,
-        currentSeasonSet = set,
-        fromChapter = selection.fromChapter,
-        cumulative = chapterKey == StudyScopeParams.THROUGH_CHAPTER,
-    )
-    val scope = (resolution as? ScopeResolution.Resolved)?.scope
-    // An unresolvable selection can't be spelled canonically; emitting the set alone is the honest
-    // fallback (the server would reject the bad half anyway, with a message the picker can't improve on).
-        ?: StudyScope(set, selection.book ?: set.books.singleOrNull(), chapters = null)
-    return StudyScopeParams.write(scope, chapterKey)
-}
+): List<Pair<String, String>> = StudyScopeParams.write(selection.resolveWithin(set, chapterKey), chapterKey)
 
 /**
  * A question's scripture badge: "Acts 2" (brief book name + book-relative chapter), just the book
