@@ -15,12 +15,14 @@ URLs: https://texas-bible-bowl-staging-web.fly.dev (frontend, sends
 
 ## Deploying
 
-**Staging (automatic):** every merge to `main` runs `deploy-staging.yml` — `:server:test`,
-backend deploy, then the frontend rebuilt at the staging URLs, then a smoke check. The same
+**Staging (automatic):** every merge to `main` runs `deploy-staging.yml` — `:server:test`
+plus `:server:installDist` (the Docker image just COPYs the prebuilt dist; the in-image
+Gradle build used to OOM/wedge Fly's depot builder — see `server/Dockerfile`), backend
+deploy, then the frontend rebuilt at the staging URLs, then a smoke check. The same
 steps still run by hand from any branch when you want to try something pre-merge:
 
 ```bash
-tools/deploy-staging.sh backend   # :server:test, then fly deploy -c fly.staging.toml
+tools/deploy-staging.sh backend   # :server:test + :server:installDist, then fly deploy -c fly.staging.toml
 tools/deploy-staging.sh web       # web dist + Hugo (staging baseURL/backend) → deploy staging-web
 tools/deploy-staging.sh all
 ```

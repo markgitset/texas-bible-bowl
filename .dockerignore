@@ -1,9 +1,4 @@
-.git
-.gradle
-.kotlin
-**/build
-node_modules
-kotlin-js-store
-.idea
-local.properties
-.claude
+# server/Dockerfile only COPYs the prebuilt :server:installDist output, so ignore
+# everything and un-ignore exactly that tree — the deploy uploads ~the dist, not the repo.
+*
+!server/build/install/server

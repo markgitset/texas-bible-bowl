@@ -47,8 +47,10 @@ jobs:
       - name: Set up Gradle (with caching)
         uses: gradle/actions/setup-gradle@v5
 
-      - name: Server tests
-        run: ./gradlew :server:test
+      - name: Server tests + build the server dist
+        # installDist on the runner: server/Dockerfile just COPYs the dist (the in-image
+        # Gradle build OOM'd Fly's depot builder — see the Dockerfile header).
+        run: ./gradlew :server:test :server:installDist
 
       - name: Set up flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
