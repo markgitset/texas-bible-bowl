@@ -91,6 +91,26 @@ class StudyScopeParamsTest {
                 chapterKey = StudyScopeParams.THROUGH_CHAPTER,
             ),
         )
+        // A single chapter under a cumulative key must spell its start — `throughChapter=7` alone
+        // would read back as chapters 1-7 rather than just 7.
+        assertEquals(
+            listOf("book" to "ACT", "fromChapter" to "7", "throughChapter" to "7"),
+            StudyScopeParams.write(
+                StudyScope(acts, Book.ACT, Book.ACT.chapterRange(7, 7)),
+                chapterKey = StudyScopeParams.THROUGH_CHAPTER,
+            ),
+        )
+    }
+
+    @Test
+    fun keepsARangeStartOnExactChapterEndpoints() {
+        // Only a cumulative key re-derives a dropped start; on an exact-chapter key `chapter=5`
+        // alone reads back as chapter 5 on its own, so chapters 1-5 must keep its fromChapter.
+        val acts = StandardStudySet.ACTS.set
+        assertEquals(
+            listOf("book" to "ACT", "fromChapter" to "1", "chapter" to "5"),
+            StudyScopeParams.write(StudyScope(acts, Book.ACT, Book.ACT.chapterRange(1, 5))),
+        )
     }
 
     @Test
@@ -120,10 +140,15 @@ class StudyScopeParamsTest {
         val acts = StandardStudySet.ACTS.set
         listOf(
             Book.ACT.chapterRange(22, 22) to StudyScopeParams.CHAPTER,
+            Book.ACT.chapterRange(22, 22) to StudyScopeParams.THROUGH_CHAPTER,
+            Book.ACT.chapterRange(1, 1) to StudyScopeParams.THROUGH_CHAPTER,
+            Book.ACT.chapterRange(28, 28) to StudyScopeParams.THROUGH_CHAPTER,
             Book.ACT.chapterRange(1, 5) to StudyScopeParams.THROUGH_CHAPTER,
+            Book.ACT.chapterRange(1, 5) to StudyScopeParams.CHAPTER,
             Book.ACT.chapterRange(3, 7) to StudyScopeParams.CHAPTER,
             Book.ACT.chapterRange(3, 7) to StudyScopeParams.THROUGH_CHAPTER,
             Book.ACT.chapterRange(26, 28) to StudyScopeParams.CHAPTER,
+            Book.ACT.chapterRange(26, 28) to StudyScopeParams.THROUGH_CHAPTER,
         ).forEach { (span, key) ->
             val scope = StudyScope(acts, Book.ACT, span)
             val written = StudyScopeParams.write(scope, key).toMap()
@@ -136,5 +161,68 @@ class StudyScopeParamsTest {
             ).scope
             assertEquals(scope.chapters, round.chapters, "round trip of $span under $key")
         }
+    }
+
+    @Test
+    fun tapTogglesASingleSelectPicker() {
+        val acts = StandardStudySet.ACTS.set
+        assertEquals(ScopeSelection(Book.ACT, 5), ScopeSelection(Book.ACT).tap(acts, Book.ACT, 5))
+        assertEquals(ScopeSelection(Book.ACT), ScopeSelection(Book.ACT, 5).tap(acts, Book.ACT, 5))
+        // A stale range start (say, restored from a shared URL) never survives a single-select tap.
+        assertEquals(
+            ScopeSelection(Book.ACT, 7),
+            ScopeSelection(Book.ACT, 5, fromChapter = 3).tap(acts, Book.ACT, 7),
+        )
+    }
+
+    @Test
+    fun tapPairsEveryTapWithThePreviousOne() {
+        // 3, 7, 9 reads 1-3, 3-7, 7-9 — the first tap reaches back to the start, and each later tap
+        // spans from the tap before it.
+        val acts = StandardStudySet.ACTS.set
+        var sel = ScopeSelection(Book.ACT).tap(acts, Book.ACT, 3, range = true)
+        assertEquals(ScopeSelection(Book.ACT, 3, fromChapter = 1), sel)
+        sel = sel.tap(acts, Book.ACT, 7, range = true)
+        assertEquals(ScopeSelection(Book.ACT, 7, fromChapter = 3), sel)
+        sel = sel.tap(acts, Book.ACT, 9, range = true)
+        assertEquals(ScopeSelection(Book.ACT, 9, fromChapter = 7), sel)
+        // Descending works the same — the anchor is simply the most recent tap. The raw pair may run
+        // backwards; normalized() puts it in span order for labels, chips, and URLs.
+        sel = sel.tap(acts, Book.ACT, 2, range = true)
+        assertEquals(ScopeSelection(Book.ACT, 2, fromChapter = 9), sel)
+        assertEquals(ScopeSelection(Book.ACT, 9, fromChapter = 2), sel.normalized())
+    }
+
+    @Test
+    fun tapStepsDownToJustThatChapterThenClears() {
+        val acts = StandardStudySet.ACTS.set
+        val through5 = ScopeSelection(Book.ACT).tap(acts, Book.ACT, 5, range = true)
+        assertEquals(ScopeSelection(Book.ACT, 5, fromChapter = 1), through5)
+        val just5 = through5.tap(acts, Book.ACT, 5, range = true)
+        assertEquals(ScopeSelection(Book.ACT, 5, fromChapter = 5), just5)
+        // Clears to the same state as the All chip — no book either, on a single-book set.
+        assertEquals(ScopeSelection(), just5.tap(acts, Book.ACT, 5, range = true))
+    }
+
+    @Test
+    fun tapOnAnotherBookStartsFresh() {
+        val moses = StandardStudySet.LIFE_OF_MOSES.set
+        val numStart = moses.chapterRefs.first { it.book == Book.NUM }.chapter
+        assertEquals(
+            ScopeSelection(Book.NUM, 3, fromChapter = numStart),
+            ScopeSelection(Book.EXO, 5).tap(moses, Book.NUM, 3, range = true),
+        )
+    }
+
+    @Test
+    fun labelsAndQueryParamsNormalizeTapOrder() {
+        assertEquals("Acts 3-7", ScopeSelection(Book.ACT, 3, fromChapter = 7).label())
+        assertEquals("Acts 1-5", ScopeSelection(Book.ACT, 5, fromChapter = 1).label())
+        assertEquals("Acts 5", ScopeSelection(Book.ACT, 5, fromChapter = 5).label())
+        val acts = StandardStudySet.ACTS.set
+        assertEquals(
+            listOf("book" to "ACT", "fromChapter" to "3", "chapter" to "7"),
+            scopeQueryParams(acts, ScopeSelection(Book.ACT, 3, fromChapter = 7)),
+        )
     }
 }

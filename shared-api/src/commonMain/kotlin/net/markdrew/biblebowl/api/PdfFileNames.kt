@@ -1,5 +1,8 @@
 package net.markdrew.biblebowl.api
 
+import net.markdrew.biblebowl.model.ChapterRef
+import net.markdrew.biblebowl.model.StudyScope
+
 /**
  * Canonical, param-encoded filenames for the season-text-deterministic PDFs. Shared by the app
  * (save-as name) and the server (Content-Disposition name AND the generated-PDF cache key), so the
@@ -78,4 +81,21 @@ object PdfFileNames {
     /** The Round 5 headings deck, cumulatively scoped, e.g. `heading-flashcards-through-ch5.pdf`. */
     fun headingFlashcards(throughChapter: Int? = null): String =
         "heading-flashcards${throughChapter?.let { "-through-ch$it" } ?: ""}.pdf"
+}
+
+/**
+ * Filename fragment pinning this scope's chapters: today's `-ch2` for single-book sets, book-qualified
+ * `-num14` for multi-book sets (a bare number would be ambiguous); empty for whole-set scopes. A span
+ * spells both ends — `-ch3-7`, or `-through-ch5` when it reaches back to the set's first chapter, which
+ * is the name cumulative downloads already had. Shared by the server (attachment name and cache key)
+ * and the app's save-as names, so the two can never drift.
+ */
+fun StudyScope.chapterSuffix(): String {
+    val span = chapters ?: return ""
+    fun core(ref: ChapterRef) = if (set.isSingleBook) "ch${ref.chapter}" else ref.serialize().lowercase()
+    return when {
+        span.start == span.endInclusive -> "-${core(span.endInclusive)}"
+        span.start == set.chapterRanges.first().start -> "-through-${core(span.endInclusive)}"
+        else -> "-${core(span.start)}-${span.endInclusive.chapter}"
+    }
 }

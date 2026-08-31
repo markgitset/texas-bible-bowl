@@ -358,7 +358,8 @@ object DownloadsScreen {
             title = "Question flashcards",
             subtitle = "Duplex deck built from the approved community questions. The 400 top-voted " +
                 "questions in scope, which is 40 sheets to print and cut — scope it to a chapter for " +
-                "the rest." + scopeNote(flashcardScope) + customizedNote(flashcardRound != null),
+                "the rest." + customizedNote(flashcardRound != null),
+            scope = scopeLine(flashcardScope),
             href = generateUrl(
                 "/generate/flashcards.pdf",
                 *scopedParams(flashcardScope),
@@ -388,8 +389,8 @@ object DownloadsScreen {
         )
         downloadCard(
             title = "Chapter-heading flashcards",
-            subtitle = "One card per ESV section heading (Round 5 material)." +
-                (headingScope.chapter?.let { " Through ${scopeLabel(headingScope)}." } ?: ""),
+            subtitle = "One card per ESV section heading (Round 5 material).",
+            scope = scopeLine(headingScope),
             href = generateUrl(
                 "/generate/heading-flashcards.pdf",
                 *scopedParams(headingScope, chapterKey = StudyScopeParams.THROUGH_CHAPTER),
@@ -413,8 +414,8 @@ object DownloadsScreen {
         downloadCard(
             title = "Verse flashcards for the Space app",
             subtitle = "Every verse in ${season.eventScripture} as a CSV that imports straight into " +
-                "Space (getspace.app) — the verse up front, its section heading and reference on the back." +
-                verseScopeNote(),
+                "Space (getspace.app) — the verse up front, its section heading and reference on the back.",
+            scope = scopeLine(verseScope),
             href = verseDeckUrl("/generate/space-verses.csv"),
             buttonLabel = "Download",
             requiresAuth = true,
@@ -423,8 +424,8 @@ object DownloadsScreen {
         downloadCard(
             title = "Verse flashcards for Quizlet",
             subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
-                "between term and definition, and enter \\n\\n as the custom separator between cards." +
-                verseScopeNote(),
+                "between term and definition, and enter \\n\\n as the custom separator between cards.",
+            scope = scopeLine(verseScope),
             href = verseDeckUrl("/generate/quizlet-verses.txt"),
             buttonLabel = "Download",
             requiresAuth = true,
@@ -470,7 +471,8 @@ object DownloadsScreen {
             downloadCard(
                 title = "Round ${round.number}: ${round.displayName}",
                 subtitle = (if (round.crowdSourced) "Built from the approved community questions."
-                else "Generated from the ESV text.") + scopeNote(practiceScope) + customizedNote(roundCustomized),
+                else "Generated from the ESV text.") + customizedNote(roundCustomized),
+                scope = scopeLine(practiceScope),
                 href = practiceTestUrl(round),
                 customize = Customize.PracticeTest(round),
             )
@@ -523,7 +525,8 @@ object DownloadsScreen {
             title = "Kahoot spreadsheet",
             subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout). " +
                 "One kahoot holds 100 questions, so that's the most a sheet carries — narrow the scope " +
-                "to choose which 100." + scopeNote(exportScope) + customizedNote(exportCustomized),
+                "to choose which 100." + customizedNote(exportCustomized),
+            scope = scopeLine(exportScope),
             href = exportUrl(ExportApp.KAHOOT),
             customize = Customize.Export(ExportApp.KAHOOT),
             buttonLabel = "Download",
@@ -531,7 +534,8 @@ object DownloadsScreen {
         downloadCard(
             title = "Questions for the Space app",
             subtitle = "Question-and-answer pairs as a CSV that imports straight into Space " +
-                "(getspace.app)." + scopeNote(exportScope) + customizedNote(exportCustomized),
+                "(getspace.app)." + customizedNote(exportCustomized),
+            scope = scopeLine(exportScope),
             href = exportUrl(ExportApp.SPACE),
             customize = Customize.Export(ExportApp.SPACE),
             buttonLabel = "Download",
@@ -539,7 +543,8 @@ object DownloadsScreen {
         downloadCard(
             title = "Questions for Quizlet",
             subtitle = "The same pairs as paste-ready text for Quizlet's import screen — its default " +
-                "settings read them as-is." + scopeNote(exportScope) + customizedNote(exportCustomized),
+                "settings read them as-is." + customizedNote(exportCustomized),
+            scope = scopeLine(exportScope),
             href = exportUrl(ExportApp.QUIZLET),
             customize = Customize.Export(ExportApp.QUIZLET),
             buttonLabel = "Download",
@@ -593,15 +598,9 @@ object DownloadsScreen {
         "seed" to practiceSeed.toIntOrNull().takeIf { !round.crowdSourced },
     )
 
-    /**
-     * A verse deck at [path]. The picker names both ends, so the endpoint is spelled exactly — a lone
-     * "through chapter 5" is what the user gets by leaving the From row on "Start".
-     */
+    /** A verse deck at [path]; the picker names both ends, so the span is spelled exactly. */
     private fun verseDeckUrl(path: String): String =
         generateUrl(path, *scopedParams(verseScope, chapterKey = StudyScopeParams.THROUGH_CHAPTER))
-
-    /** "Scoped to Acts 3-7." — the cards echo whatever span the two rows add up to. */
-    private fun verseScopeNote(): String = verseScope.label()?.let { " Scoped to $it." } ?: ""
 
     private fun exportUrl(app: ExportApp): String = generateUrl(
         when (app) {
@@ -673,11 +672,15 @@ object DownloadsScreen {
          * the deck is, and its button offers the sign-in it needs.
          */
         requiresAuth: Boolean = false,
+        // The customized chapter scope, e.g. "Scoped to Acts 1-5" — its own emphasized line rather
+        // than a sentence buried at the end of the subtitle, so a narrowed download can't be missed.
+        scope: String? = null,
     ) {
         val open = customize != null && DownloadsScreen.customize == customize
         tile(expanded = open) {
             child("h5", "card-title", title)
             child("p", "card-text text-muted small", subtitle)
+            if (scope != null) child("p", "card-text small fw-semibold text-primary", scope)
             child("div", "d-flex align-items-center gap-2 mt-auto") {
                 when {
                     !requiresAuth -> child("a", "btn btn-primary btn-sm", buttonLabel) {
@@ -783,9 +786,9 @@ object DownloadsScreen {
                 chipRow(roundOptions(), flashcardRound) { flashcardRound = it; rerender() }
             }
             Customize.HeadingFlashcards ->
-                chapterScope(headingScope, "Through chapter", cumulative = true) { headingScope = it }
+                chapterScope(headingScope) { headingScope = it }
             is Customize.VerseDeck ->
-                chapterScope(verseScope, "Chapters", range = true) { verseScope = it }
+                chapterScope(verseScope) { verseScope = it }
             is Customize.PracticeTest -> {
                 chapterScope(practiceScope) { practiceScope = it }
                 if (target.round.crowdSourced) {
@@ -831,29 +834,21 @@ object DownloadsScreen {
         }
     }
 
-    /** Chapter chips for one card group's downloads; the cards' subtitles echo the choice. */
+    /** Chapter chips for one card group's downloads; the cards echo the choice as their scope line. */
     private fun Element.chapterScope(
         selected: ScopeSelection,
-        label: String = "Chapter scope",
-        cumulative: Boolean = false,
-        range: Boolean = false,
         onSelect: (ScopeSelection) -> Unit,
     ) {
-        child("p", "fw-semibold mb-1", label)
-        // A range picker labels its own two rows; the outer label would just repeat the first one.
-        chapterChips(selected, cumulative, range) { onSelect(it); rerender() }
-    }
-
-    /** Human label for a selection: "Acts 2", or just the book for a whole-book slice. */
-    private fun scopeLabel(selection: ScopeSelection): String? = selection.book?.let { book ->
-        selection.chapter?.let { "${book.briefName} $it" } ?: book.briefName
+        child("p", "fw-semibold mb-1", "Chapters")
+        chapterChips(selected, range = true) { onSelect(it); rerender() }
     }
 
     private fun roundOptions(): List<Pair<String, Round?>> =
         listOf<Pair<String, Round?>>("All" to null) + Round.crowdSourcedRounds.map { it.displayName to it }
 
-    private fun scopeNote(selection: ScopeSelection): String =
-        scopeLabel(selection)?.let { " Scoped to $it." } ?: ""
+    /** The card's emphasized scope line, "Scoped to Acts 1-5" — null (no line) when nothing is narrowed. */
+    private fun scopeLine(selection: ScopeSelection): String? =
+        selection.label()?.let { "Scoped to $it" }
 
     private fun customizedNote(customized: Boolean): String =
         if (customized) " Using your customized settings." else ""

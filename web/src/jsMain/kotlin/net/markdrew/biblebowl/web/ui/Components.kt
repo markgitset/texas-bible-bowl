@@ -4,6 +4,7 @@ import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.lights
 import net.markdrew.biblebowl.api.scopeLabel
+import net.markdrew.biblebowl.api.tap
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.onClick
@@ -37,17 +38,16 @@ fun <T> Element.chipRow(options: List<Pair<String, T>>, selected: T, onSelect: (
  * The chapter filter, driven by the season's study set (wraps instead of scrolling, same rationale
  * as the Compose ChapterChips). Single-book sets render the familiar single row of chapter chips;
  * multi-book sets add a book row above it, with the chapter row showing only that book's in-set
- * chapters (partial sets have gaps — e.g. Life of Moses covers Exo 1-20 then 32-34). Clicking the
- * selected chip clears it.
+ * chapters (partial sets have gaps — e.g. Life of Moses covers Exo 1-20 then 32-34).
  *
- * Every chapter the selection covers lights up, not just the end the user last clicked — on a
- * [cumulative] picker that's the reach-back to the set's first chapter, and on a range it's everything
- * between the two rows. Only the endpoint chip toggles off; clicking a lower lit chip moves the
- * endpoint back to it.
+ * One chip row serves both modes. A plain picker toggles a single chapter; a [range] picker pairs
+ * every tap with the one before it — first tap = through that chapter, later taps span from the
+ * previous tap (the shared [tap] gesture). Every chapter the selection covers lights up, not just
+ * the ends ([lights]) — with one row the lit span can't disagree with itself, which the old two-row
+ * from/through layout did.
  */
 fun Element.chapterChips(
     selected: ScopeSelection,
-    cumulative: Boolean = false,
     range: Boolean = false,
     onSelect: (ScopeSelection) -> Unit,
 ) {
@@ -64,39 +64,23 @@ fun Element.chapterChips(
         selected.book ?: return
     }
     val chapters = set.chapterRefs.filter { it.book == book }
-
-    // The start row exists only on range pickers; elsewhere a scope still has just the one end, and a
-    // second row of 28 chips would be noise on every card that can't use it.
-    if (range) {
-        child("p", "fw-semibold mb-1", "From chapter")
-        child("div", "d-flex flex-wrap gap-1 mb-2") {
-            chip("Start", selected.fromChapter == null) { onSelect(selected.copy(fromChapter = null)) }
-            chapters.forEach { ref ->
-                val on = selected.fromChapter == ref.chapter
-                chip("${ref.chapter}", on) {
-                    onSelect(selected.copy(book = book, fromChapter = if (on) null else ref.chapter))
-                }
-            }
-        }
-        child("p", "fw-semibold mb-1", "Through chapter")
-    }
-    child("div", "d-flex flex-wrap gap-1 mb-3") {
+    child("div", "d-flex flex-wrap gap-1 mb-2") {
         val allLabel = if (set.isSingleBook) "All" else "All of ${book.briefName}"
-        chip(if (range) "End" else allLabel, selected.chapter == null) {
-            onSelect(
-                when {
-                    range -> selected.copy(chapter = null)
-                    set.isSingleBook -> ScopeSelection()
-                    else -> ScopeSelection(book)
-                },
-            )
+        chip(allLabel, selected.chapter == null && selected.fromChapter == null) {
+            onSelect(if (set.isSingleBook) ScopeSelection() else ScopeSelection(book))
         }
         chapters.forEach { ref ->
-            val end = selected.chapter == ref.chapter
-            chip("${ref.chapter}", selected.lights(ref, cumulative, set)) {
-                onSelect(selected.copy(book = book, chapter = if (end) null else ref.chapter))
+            chip("${ref.chapter}", selected.lights(ref, set)) {
+                onSelect(selected.tap(set, book, ref.chapter, range))
             }
         }
+    }
+    if (range) {
+        child(
+            "p", "form-text mt-0 mb-2",
+            "Tap a chapter for everything through it, tap it again for just that chapter, " +
+                "or tap a second chapter to span a range.",
+        )
     }
 }
 

@@ -43,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.PdfFileNames
+import net.markdrew.biblebowl.api.chapterSuffix
+import net.markdrew.biblebowl.api.resolveWithin
 import net.markdrew.biblebowl.api.schoolYear
 import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.StudyMaterialDto
@@ -246,12 +248,9 @@ fun StudySectionScreen(
 
     val studySet = LocalSeason.current.resolvedStudySet
 
-    // File names mirror the server's set-prefixed, book-qualified names (single-book sets keep -chN).
-    fun chSuffix(sel: ScopeSelection, cumulative: Boolean = false): String {
-        val ref = sel.chapterRef ?: return ""
-        val core = if (studySet.isSingleBook) "ch${ref.chapter}" else ref.serialize().lowercase()
-        return (if (cumulative) "-through-" else "-") + core
-    }
+    // File names mirror the server's set-prefixed, book-qualified names via the shared suffix logic,
+    // so a ranged download saves under the same name the server caches it as.
+    fun chSuffix(sel: ScopeSelection): String = sel.resolveWithin(studySet).chapterSuffix()
 
     fun withSet(name: String) = PdfFileNames.withSet(studySet.simpleName, name)
 
@@ -293,31 +292,34 @@ fun StudySectionScreen(
 
     fun downloadQuestionFlashcards() {
         val round = flashcardRound
-        val name = withSet("flashcards${round?.let { "-${it.name.lowercase()}" } ?: ""}${chSuffix(flashcardScope)}.pdf")
+        val scope = flashcardScope.normalized()
+        val name = withSet("flashcards${round?.let { "-${it.name.lowercase()}" } ?: ""}${chSuffix(scope)}.pdf")
         download("Question flashcards", name) {
-            api.flashcardsPdf(flashcardScope.chapter, round, book = flashcardScope.book?.name)
+            api.flashcardsPdf(scope.chapter, round, book = scope.book?.name, fromChapter = scope.fromChapter)
         }
     }
 
     fun downloadPracticeTest(round: Round) {
         val limit = practiceLimit.takeIf { round.crowdSourced }
         val seed = practiceSeed.toIntOrNull().takeIf { !round.crowdSourced }
+        val scope = practiceScope.normalized()
         download(
             "Round ${round.number}: ${round.displayName}",
             withSet(
-                "practice-${round.name.lowercase()}${chSuffix(practiceScope, cumulative = round.textGenerated)}" +
-                    "${seed?.let { "-seed$it" } ?: ""}.pdf",
+                "practice-${round.name.lowercase()}${chSuffix(scope)}${seed?.let { "-seed$it" } ?: ""}.pdf",
             ),
         ) {
             api.practiceTestPdf(
-                round, practiceScope.chapter, limit = limit, seed = seed, book = practiceScope.book?.name,
+                round, scope.chapter, limit = limit, seed = seed,
+                book = scope.book?.name, fromChapter = scope.fromChapter,
             )
         }
     }
 
     fun downloadHeadingFlashcards() {
-        download("Chapter-heading flashcards", withSet("heading-flashcards${chSuffix(headingScope, cumulative = true)}.pdf")) {
-            api.headingFlashcardsPdf(headingScope.chapter, book = headingScope.book?.name)
+        val scope = headingScope.normalized()
+        download("Chapter-heading flashcards", withSet("heading-flashcards${chSuffix(scope)}.pdf")) {
+            api.headingFlashcardsPdf(scope.chapter, book = scope.book?.name, fromChapter = scope.fromChapter)
         }
     }
 
@@ -332,10 +334,11 @@ fun StudySectionScreen(
             customize = null
             return onRequireSignIn()
         }
-        val base = withSet("verses${chSuffix(verseScope)}")
-        val chapter = verseScope.chapter
-        val from = verseScope.fromChapter
-        val book = verseScope.book?.name
+        val scope = verseScope.normalized()
+        val base = withSet("verses${chSuffix(scope)}")
+        val chapter = scope.chapter
+        val from = scope.fromChapter
+        val book = scope.book?.name
         if (forSpace) {
             download("Verse flashcards for the Space app", "space-$base.csv", Mime.CSV) {
                 api.spaceVersesCsv(chapter, cumulative = true, book = book, fromChapter = from)
@@ -350,19 +353,22 @@ fun StudySectionScreen(
     fun downloadExport(app: ExportApp) {
         val headings = exportHeadings
         val round = exportRound.takeIf { !headings }
+        val scope = exportScope.normalized()
         val base = withSet(
-            if (headings) "headings${chSuffix(exportScope, cumulative = true)}"
-            else "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}${chSuffix(exportScope)}",
+            if (headings) "headings${chSuffix(scope)}"
+            else "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}${chSuffix(scope)}",
         )
+        val book = scope.book?.name
+        val from = scope.fromChapter
         when (app) {
             ExportApp.KAHOOT -> download("Kahoot spreadsheet", "kahoot-$base.xlsx", Mime.XLSX) {
-                api.kahootQuestionsXlsx(headings, round, exportScope.chapter, book = exportScope.book?.name)
+                api.kahootQuestionsXlsx(headings, round, scope.chapter, book = book, fromChapter = from)
             }
             ExportApp.SPACE -> download("Questions for the Space app", "space-$base.csv", Mime.CSV) {
-                api.spaceQuestionsCsv(headings, round, exportScope.chapter, book = exportScope.book?.name)
+                api.spaceQuestionsCsv(headings, round, scope.chapter, book = book, fromChapter = from)
             }
             ExportApp.QUIZLET -> download("Questions for Quizlet", "quizlet-$base.txt", Mime.TEXT) {
-                api.quizletQuestionsTxt(headings, round, exportScope.chapter, book = exportScope.book?.name)
+                api.quizletQuestionsTxt(headings, round, scope.chapter, book = book, fromChapter = from)
             }
         }
     }
@@ -429,8 +435,9 @@ fun StudySectionScreen(
                 )
                 DownloadCard(
                     title = "Question flashcards",
-                    subtitle = "Duplex deck built from the approved community questions." + scopeNote(flashcardScope) +
+                    subtitle = "Duplex deck built from the approved community questions." +
                         customizedNote(flashcardRound != null),
+                    scope = scopeLine(flashcardScope),
                     busyCard = busyCard,
                     onClick = ::downloadQuestionFlashcards,
                     onCustomize = { customize = Customize.QuestionFlashcards },
@@ -464,8 +471,8 @@ fun StudySectionScreen(
                 )
                 DownloadCard(
                     title = "Chapter-heading flashcards",
-                    subtitle = "One card per ESV section heading (Round 5 material)." +
-                        (headingScope.label()?.let { " Through $it." } ?: ""),
+                    subtitle = "One card per ESV section heading (Round 5 material).",
+                    scope = scopeLine(headingScope),
                     busyCard = busyCard,
                     onClick = ::downloadHeadingFlashcards,
                     onCustomize = { customize = Customize.HeadingFlashcards },
@@ -487,8 +494,8 @@ fun StudySectionScreen(
                 DownloadCard(
                     title = "Verse flashcards for the Space app",
                     subtitle = "Every verse in ${season.eventScripture} as a CSV that imports straight into " +
-                        "Space (getspace.app) — the verse up front, its section heading and reference on the back." +
-                        verseScopeNote(verseScope),
+                        "Space (getspace.app) — the verse up front, its section heading and reference on the back.",
+                    scope = scopeLine(verseScope),
                     busyCard = busyCard,
                     buttonLabel = versesLabel,
                     onClick = { downloadVerses(forSpace = true) },
@@ -497,8 +504,8 @@ fun StudySectionScreen(
                 DownloadCard(
                     title = "Verse flashcards for Quizlet",
                     subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
-                        "between term and definition, and enter \\n\\n as the custom separator between cards." +
-                        verseScopeNote(verseScope),
+                        "between term and definition, and enter \\n\\n as the custom separator between cards.",
+                    scope = scopeLine(verseScope),
                     busyCard = busyCard,
                     buttonLabel = versesLabel,
                     onClick = { downloadVerses(forSpace = false) },
@@ -557,7 +564,8 @@ fun StudySectionScreen(
                     DownloadCard(
                         title = "Round ${round.number}: ${round.displayName}",
                         subtitle = (if (round.crowdSourced) "Built from the approved community questions."
-                        else "Generated from the ESV text.") + scopeNote(practiceScope) + customizedNote(roundCustomized),
+                        else "Generated from the ESV text.") + customizedNote(roundCustomized),
+                        scope = scopeLine(practiceScope),
                         busyCard = busyCard,
                         onClick = { downloadPracticeTest(round) },
                         onCustomize = { customize = Customize.PracticeTest(round) },
@@ -615,7 +623,8 @@ fun StudySectionScreen(
                 DownloadCard(
                     title = "Kahoot spreadsheet",
                     subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout)." +
-                        scopeNote(exportScope) + customizedNote(exportCustomized),
+                        customizedNote(exportCustomized),
+                    scope = scopeLine(exportScope),
                     busyCard = busyCard,
                     onClick = { downloadExport(ExportApp.KAHOOT) },
                     onCustomize = { customize = Customize.Export(ExportApp.KAHOOT) },
@@ -623,7 +632,8 @@ fun StudySectionScreen(
                 DownloadCard(
                     title = "Questions for the Space app",
                     subtitle = "Question-and-answer pairs as a CSV that imports straight into Space " +
-                        "(getspace.app)." + scopeNote(exportScope) + customizedNote(exportCustomized),
+                        "(getspace.app)." + customizedNote(exportCustomized),
+                    scope = scopeLine(exportScope),
                     busyCard = busyCard,
                     onClick = { downloadExport(ExportApp.SPACE) },
                     onCustomize = { customize = Customize.Export(ExportApp.SPACE) },
@@ -631,7 +641,8 @@ fun StudySectionScreen(
                 DownloadCard(
                     title = "Questions for Quizlet",
                     subtitle = "The same pairs as paste-ready text for Quizlet's import screen — its default " +
-                        "settings read them as-is." + scopeNote(exportScope) + customizedNote(exportCustomized),
+                        "settings read them as-is." + customizedNote(exportCustomized),
+                    scope = scopeLine(exportScope),
                     busyCard = busyCard,
                     onClick = { downloadExport(ExportApp.QUIZLET) },
                     onCustomize = { customize = Customize.Export(ExportApp.QUIZLET) },
@@ -826,7 +837,7 @@ private fun QuestionFlashcardOptions(
 @Composable
 private fun HeadingFlashcardOptions(selection: ScopeSelection, onSelection: (ScopeSelection) -> Unit) {
     SheetTitle("Customize chapter-heading flashcards")
-    ChapterScope(selection, onSelection, label = "Through chapter", cumulative = true)
+    ChapterScope(selection, onSelection)
 }
 
 @Composable
@@ -835,7 +846,7 @@ private fun VerseDeckOptions(
     selection: ScopeSelection, onSelection: (ScopeSelection) -> Unit,
 ) {
     SheetTitle(if (forSpace) "Customize Space verse deck" else "Customize Quizlet verse deck")
-    ChapterScope(selection, onSelection, label = "Chapters", range = true)
+    ChapterScope(selection, onSelection)
 }
 
 @Composable
@@ -918,17 +929,14 @@ private fun ExportOptions(
     }
 }
 
-/** Chapter chips for one card group's downloads; the cards' subtitles echo the choice. */
+/** Chapter chips for one card group's downloads; the cards echo the choice as their scope line. */
 @Composable
 private fun ChapterScope(
     selection: ScopeSelection,
     onSelection: (ScopeSelection) -> Unit,
-    label: String = "Chapter scope",
-    cumulative: Boolean = false,
-    range: Boolean = false,
 ) {
-    Text(label, style = MaterialTheme.typography.labelLarge)
-    ChapterChips(selected = selection, cumulative = cumulative, range = range, onSelect = onSelection)
+    Text("Chapters", style = MaterialTheme.typography.labelLarge)
+    ChapterChips(selected = selection, range = true, onSelect = onSelection)
 }
 
 @Composable
@@ -951,12 +959,9 @@ private fun SheetDownloadButton(onClick: () -> Unit) {
     }
 }
 
-private fun scopeNote(selection: ScopeSelection): String =
-    selection.label()?.let { " Scoped to $it." } ?: ""
-
-/** "Scoped to Acts 3-7." — the cards echo whatever span the two chapter rows add up to. */
-private fun verseScopeNote(selection: ScopeSelection): String =
-    selection.label()?.let { " Scoped to $it." } ?: ""
+/** The card's emphasized scope line, "Scoped to Acts 1-5" — null (no line) when nothing is narrowed. */
+private fun scopeLine(selection: ScopeSelection): String? =
+    selection.label()?.let { "Scoped to $it" }
 
 private fun customizedNote(customized: Boolean): String =
     if (customized) " Using your customized settings." else ""
@@ -1020,6 +1025,9 @@ private fun DownloadCard(
     onClick: () -> Unit,
     onCustomize: (() -> Unit)? = null,
     buttonLabel: String? = null,
+    // The customized chapter scope, e.g. "Scoped to Acts 1-5" — its own emphasized line rather than
+    // a sentence buried at the end of the subtitle, so a narrowed download can't be missed.
+    scope: String? = null,
 ) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1029,6 +1037,14 @@ private fun DownloadCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (scope != null) {
+                Text(
+                    scope,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 FilledTonalButton(onClick = onClick, enabled = busyCard == null) {
                     if (busyCard == title) CircularProgressIndicator(Modifier.height(16.dp))
