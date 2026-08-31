@@ -42,7 +42,7 @@ jobs:
       - name: Set up flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
 
-      - name: Deploy backend (runs :server:test first)
+      - name: Deploy backend (runs :server:test + :server:installDist first)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_BACKEND_DEPLOY_TOKEN }}
         run: tools/deploy-staging.sh backend

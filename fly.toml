@@ -1,6 +1,7 @@
 # Fly.io deployment for the Texas Bible Bowl backend (Ktor + embedded Typst binary).
-# Build context is the repo root because server/Dockerfile does `COPY . .` and the
-# server module depends on :core, :shared-api, and :generation.
+# Build context is the repo root; server/Dockerfile COPYs the PREBUILT application
+# distribution, so run `./gradlew :server:installDist` before `fly deploy` (the deploy
+# workflows and tools/deploy-staging.sh already do).
 #
 # App name is globally unique across Fly; if "texas-bible-bowl" is taken, change it
 # here and update ALLOWED_ORIGINS / the Pages backend URL to match the new *.fly.dev host.

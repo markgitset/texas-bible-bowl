@@ -93,8 +93,10 @@ texasbiblebowl.org got here.
 ### Backend → Fly.io
 
 The server ships as a container ([server/Dockerfile](server/Dockerfile)) bundling
-the JRE, the app fat jar, and the static **Typst** binary (release binaries embed
-their default fonts). [fly.toml](fly.toml) wraps it with scale-to-zero.
+the JRE, the prebuilt application distribution (`:server:installDist`), and the
+static **Typst** binary (release binaries embed their default fonts).
+[fly.toml](fly.toml) wraps it with scale-to-zero. The Gradle build runs on the
+deploying machine, not inside Docker — build the dist before deploying.
 
 ```bash
 # One-time: install flyctl, then authenticate (opens a browser)
@@ -109,6 +111,7 @@ fly secrets set \
   ALLOWED_ORIGINS='https://texasbiblebowl.org' \
   ADMIN_EMAIL='you@example.com' ADMIN_PASSWORD='<strong password>'
 
+./gradlew :server:installDist   # the image COPYs this dist
 fly deploy   # builds server/Dockerfile, ships to https://texas-bible-bowl.fly.dev
 ```
 
