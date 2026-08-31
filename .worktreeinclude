@@ -1,0 +1,14 @@
+# Gitignored files copied into each new worktree (.gitignore syntax).
+# Only files that match AND are gitignored are copied — tracked files never are.
+
+# Android SDK location; :app Gradle builds fail without it.
+local.properties
+
+# Local permission allowlist, so worktree sessions don't re-prompt for the same commands.
+.claude/settings.local.json
+
+# Server secrets/config if they ever land in a dotenv file (ESV_API_TOKEN, DATABASE_URL,
+# JWT_SECRET, SMTP_*). Today these come from the shell / fly secrets, so these usually
+# match nothing — harmless, and it means a new worktree keeps working if that changes.
+.env
+.env.local
