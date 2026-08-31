@@ -62,4 +62,7 @@ rsync -a --exclude=index.html "$dist"/ "$out/app/"
 cp "$out/app/index.html" "$out/app/404.html"
 
 # Passing the directory makes it both the config source and the (tiny) build context.
-"$FLY" deploy "$app_dir"
+# --local-only: build the nginx image with the local Docker daemon and push it — Fly's
+# remote depot builder wedges and then deploys time out waiting to connect to it (see
+# tools/deploy-staging.sh); drop the flag if Docker is ever unavailable.
+"$FLY" deploy --local-only "$app_dir"
