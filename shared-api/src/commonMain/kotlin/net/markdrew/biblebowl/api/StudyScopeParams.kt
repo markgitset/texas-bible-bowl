@@ -70,17 +70,18 @@ object StudyScopeParams {
         if (!bookOnly) add(SET to scope.set.simpleName)
         if (book != null && (bookOnly || !scope.set.isSingleBook)) add(BOOK to book.name)
         val span = scope.chapters ?: return@buildList
+        val setStart = scope.set.chapterRanges.first().start
         val runsToSetEnd = span.endInclusive == scope.set.chapterRanges.last().endInclusive
-        // A start is only dropped where the spelling re-derives it: a cumulative endpoint reaches
-        // back to the set's first chapter, and a span running to the set's end reads a missing start
-        // the same way (so the whole set still spells as nothing at all). On an exact-chapter key
-        // with a named endpoint it must be spelled out — `chapter=5` alone reads back as chapter 5.
-        val startRederived = chapterKey == THROUGH_CHAPTER || runsToSetEnd
-        if (span.start != span.endInclusive &&
-            !(startRederived && span.start == scope.set.chapterRanges.first().start)
-        ) {
-            add(FROM_CHAPTER to span.start.chapter.toString())
-        }
+        // A start is only dropped where the spelling re-derives it. On a cumulative key a missing
+        // start always means the set's first chapter — so anything else must be spelled, including a
+        // single chapter (`throughChapter=7` alone reads back as 1-7, so "just 7" needs its start).
+        // On an exact key a single chapter or a span running to the set's end re-derives its own
+        // start (so the whole set still spells as nothing at all); a named endpoint doesn't —
+        // `chapter=5` alone reads back as chapter 5.
+        val needsStart =
+            if (chapterKey == THROUGH_CHAPTER) span.start != setStart
+            else span.start != span.endInclusive && !(runsToSetEnd && span.start == setStart)
+        if (needsStart) add(FROM_CHAPTER to span.start.chapter.toString())
         // A span running to the set's end has no endpoint of its own to name — `fromChapter` alone
         // already says "from here on", and naming the last chapter would only go stale if the set grew.
         if (span.endInclusive != scope.set.chapterRanges.last().endInclusive || span.start == span.endInclusive) {
@@ -157,9 +158,10 @@ fun ScopeSelection.lights(ref: ChapterRef, cumulative: Boolean, set: StudySet): 
  * A single-select picker ([range] = false) just toggles: tapping selects the chapter, tapping the
  * selected chapter clears it. A range picker builds a span from two taps: the first tap picks one
  * chapter, a tap on a second chip spans between them (in either order), and any further tap starts
- * over at the tapped chapter. Tapping a lone selected chapter still clears it. On a [cumulative]
- * picker a lone endpoint already reads as "through N", so a tap past it extends that reach — keeping
- * the implied start — rather than anchoring a two-chapter span.
+ * over at the tapped chapter. Tapping a lone selected chapter clears it. On a [cumulative] picker a
+ * lone endpoint already reads as "through N", so a tap past it extends that reach — keeping the
+ * implied start — and re-tapping the endpoint steps down to just that chapter (pinned as the span
+ * N..N, the only way a cumulative endpoint can say "chapter N alone") before a third tap clears.
  *
  * The result always keeps fromChapter <= chapter, which is the only span order resolveStudyScope
  * accepts.
@@ -170,8 +172,12 @@ fun ScopeSelection.tap(book: Book, chapter: Int, range: Boolean = false, cumulat
     val end = this.chapter.takeIf { sameBook }
     return when {
         !range -> ScopeSelection(book, chapter.takeIf { it != end })
-        start != null || end == null -> ScopeSelection(book, chapter)
-        chapter == end -> ScopeSelection(book)
+        // A completed span starts over at the tapped chip — except re-tapping a pinned single
+        // chapter, the last step of the cumulative through-N -> just-N -> cleared cycle.
+        start != null -> if (start == end && chapter == end) ScopeSelection(book) else ScopeSelection(book, chapter)
+        end == null -> ScopeSelection(book, chapter)
+        chapter == end ->
+            if (cumulative) ScopeSelection(book, chapter, fromChapter = chapter) else ScopeSelection(book)
         chapter < end -> ScopeSelection(book, end, fromChapter = chapter)
         cumulative -> ScopeSelection(book, chapter)
         else -> ScopeSelection(book, chapter, fromChapter = end)

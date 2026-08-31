@@ -975,9 +975,12 @@ private fun scopeNote(selection: ScopeSelection): String =
 private fun verseScopeNote(selection: ScopeSelection): String =
     selection.label()?.let { " Scoped to $it." } ?: ""
 
-/** A cumulative endpoint reads "Through Acts 5."; an explicit span reads "Scoped to Acts 3-7." */
+/**
+ * A cumulative endpoint reads "Through Acts 5."; an explicit start — a span or a pinned single
+ * chapter — reads "Scoped to Acts 3-7." / "Scoped to Acts 7."
+ */
 private fun headingScopeNote(selection: ScopeSelection): String = when {
-    selection.isRange -> scopeNote(selection)
+    selection.fromChapter != null -> scopeNote(selection)
     else -> selection.label()?.let { " Through $it." } ?: ""
 }
 

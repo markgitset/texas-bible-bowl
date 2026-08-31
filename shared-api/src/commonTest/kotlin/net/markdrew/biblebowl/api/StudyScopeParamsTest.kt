@@ -91,6 +91,15 @@ class StudyScopeParamsTest {
                 chapterKey = StudyScopeParams.THROUGH_CHAPTER,
             ),
         )
+        // A single chapter under a cumulative key must spell its start — `throughChapter=7` alone
+        // would read back as chapters 1-7 rather than just 7.
+        assertEquals(
+            listOf("book" to "ACT", "fromChapter" to "7", "throughChapter" to "7"),
+            StudyScopeParams.write(
+                StudyScope(acts, Book.ACT, Book.ACT.chapterRange(7, 7)),
+                chapterKey = StudyScopeParams.THROUGH_CHAPTER,
+            ),
+        )
     }
 
     @Test
@@ -131,11 +140,15 @@ class StudyScopeParamsTest {
         val acts = StandardStudySet.ACTS.set
         listOf(
             Book.ACT.chapterRange(22, 22) to StudyScopeParams.CHAPTER,
+            Book.ACT.chapterRange(22, 22) to StudyScopeParams.THROUGH_CHAPTER,
+            Book.ACT.chapterRange(1, 1) to StudyScopeParams.THROUGH_CHAPTER,
+            Book.ACT.chapterRange(28, 28) to StudyScopeParams.THROUGH_CHAPTER,
             Book.ACT.chapterRange(1, 5) to StudyScopeParams.THROUGH_CHAPTER,
             Book.ACT.chapterRange(1, 5) to StudyScopeParams.CHAPTER,
             Book.ACT.chapterRange(3, 7) to StudyScopeParams.CHAPTER,
             Book.ACT.chapterRange(3, 7) to StudyScopeParams.THROUGH_CHAPTER,
             Book.ACT.chapterRange(26, 28) to StudyScopeParams.CHAPTER,
+            Book.ACT.chapterRange(26, 28) to StudyScopeParams.THROUGH_CHAPTER,
         ).forEach { (span, key) ->
             val scope = StudyScope(acts, Book.ACT, span)
             val written = StudyScopeParams.write(scope, key).toMap()
@@ -192,6 +205,18 @@ class StudyScopeParamsTest {
             ScopeSelection(Book.ACT, 5, fromChapter = 3),
             through5.tap(Book.ACT, 3, range = true, cumulative = true),
         )
+    }
+
+    @Test
+    fun tapStepsACumulativeEndpointDownToJustThatChapterThenClears() {
+        // The only way a cumulative picker can say "chapter 5 alone": through 5 -> just 5 -> cleared.
+        val through5 = ScopeSelection(Book.ACT).tap(Book.ACT, 5, range = true, cumulative = true)
+        assertEquals(ScopeSelection(Book.ACT, 5), through5)
+        val just5 = through5.tap(Book.ACT, 5, range = true, cumulative = true)
+        assertEquals(ScopeSelection(Book.ACT, 5, fromChapter = 5), just5)
+        assertEquals(ScopeSelection(Book.ACT), just5.tap(Book.ACT, 5, range = true, cumulative = true))
+        // A tap elsewhere starts over from the pinned chapter, like any other completed selection.
+        assertEquals(ScopeSelection(Book.ACT, 8), just5.tap(Book.ACT, 8, range = true, cumulative = true))
     }
 
     @Test

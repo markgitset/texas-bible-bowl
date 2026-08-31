@@ -76,7 +76,9 @@ fun ChapterChips(
     }
     if (range) {
         Text(
-            "Tap a chapter, then a second one to span a range.",
+            if (cumulative) "Tap a chapter for everything through it, tap it again for just that chapter, " +
+                "or tap a second chapter to span a range."
+            else "Tap a chapter, then a second one to span a range.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )

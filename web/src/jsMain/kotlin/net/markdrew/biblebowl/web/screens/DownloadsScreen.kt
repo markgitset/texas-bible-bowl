@@ -389,9 +389,10 @@ object DownloadsScreen {
         downloadCard(
             title = "Chapter-heading flashcards",
             subtitle = "One card per ESV section heading (Round 5 material)." +
-                // A cumulative endpoint reads "Through Acts 5."; an explicit span "Scoped to Acts 3-7."
+                // A cumulative endpoint reads "Through Acts 5."; an explicit start (a span or a
+                // pinned single chapter) reads "Scoped to Acts 3-7." / "Scoped to Acts 7."
                 when {
-                    headingScope.isRange -> scopeNote(headingScope)
+                    headingScope.fromChapter != null -> scopeNote(headingScope)
                     else -> headingScope.label()?.let { " Through $it." } ?: ""
                 },
             href = generateUrl(

@@ -76,7 +76,14 @@ fun Element.chapterChips(
             }
         }
     }
-    if (range) child("p", "form-text mt-0 mb-2", "Tap a chapter, then a second one to span a range.")
+    if (range) {
+        child(
+            "p", "form-text mt-0 mb-2",
+            if (cumulative) "Tap a chapter for everything through it, tap it again for just that chapter, " +
+                "or tap a second chapter to span a range."
+            else "Tap a chapter, then a second one to span a range.",
+        )
+    }
 }
 
 /** A question's scripture badge (see [scopeLabel]); the season label covers legacy rows. */
