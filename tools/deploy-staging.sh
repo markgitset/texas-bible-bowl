@@ -15,7 +15,11 @@ deploy_backend() {
   # installDist here, not in the Dockerfile: the image just COPYs the dist (see
   # server/Dockerfile for why the in-image Gradle build was removed).
   ./gradlew :server:test :server:installDist
-  "$FLY" deploy -c fly.staging.toml
+  # --local-only: build the copy-only image with the local Docker daemon and push it —
+  # Fly's remote depot builder wedges and then deploys time out waiting to connect to it.
+  # Needs Docker running (CI runners and the dev machine both have it); if Docker is ever
+  # unavailable, drop the flag to fall back to Fly's remote builder.
+  "$FLY" deploy --local-only -c fly.staging.toml
 }
 
 case "${1:-all}" in
