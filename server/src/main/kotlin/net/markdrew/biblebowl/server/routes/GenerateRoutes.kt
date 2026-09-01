@@ -23,6 +23,7 @@ import net.markdrew.biblebowl.api.ClearPdfCacheResponse
 import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.PdfFileNames
 import net.markdrew.biblebowl.api.Permission
+import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.generate.practice.PracticeTest
@@ -63,7 +64,9 @@ import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.format
 import net.markdrew.biblebowl.model.FULL_BOOK_FORMAT
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
+import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.model.StudyScope
+import net.markdrew.biblebowl.model.VerseRef
 import net.markdrew.biblebowl.model.StudySet
 import net.markdrew.biblebowl.model.VerseRange
 import net.markdrew.biblebowl.server.data.QuestionRepository
@@ -206,7 +209,12 @@ fun Route.generateRoutes(
                 }
 
                 call.advertiseCanonicalScope(scope)
-                val typstSource = practiceTestTypst(round, pool)
+                val typstSource = practiceTestTypst(
+                    round,
+                    pool,
+                    seasonBook = scope.set.name,
+                    headingsByReference = answerKeyHeadings(pool, scope, study),
+                )
                 val fileName = "practice-${round.name.lowercase()}${scope.chapterSuffix()}.pdf"
                 respondPdf(typstSource, PdfFileNames.withSet(scope.set.simpleName, fileName), LayoutRevisions.PRACTICE_TEST)
             }
@@ -586,6 +594,36 @@ internal fun VerseRange.headingReference(): String = when {
 /** "Chapter 14" for a single-book set, "Num 14" for a multi-book set (a bare number is ambiguous). */
 private fun chapterLabel(set: StudySet, ref: ChapterRef): String =
     if (set.isSingleBook) "Chapter ${ref.chapter}" else ref.format(BRIEF_BOOK_FORMAT)
+
+/**
+ * Chapter heading title(s) for each of [questions]' verse references, for the question-bank practice
+ * test's answer key — keyed by the reference string exactly as the question carries it. Best-effort
+ * garnish: it returns an empty map (rather than failing the test) when the scope's set isn't an
+ * allowlisted ESV set (heading lookups need the indexed study text, and an arbitrary set must not
+ * spend the ESV licence budget), when the ESV service is unconfigured or upstream fails, or for any
+ * reference that doesn't parse or fall inside the set.
+ */
+private suspend fun answerKeyHeadings(
+    questions: List<QuestionDto>,
+    scope: StudyScope,
+    study: StudyDataRegistry?,
+): Map<String, String> {
+    if (StandardStudySet.bySlug(scope.set.simpleName) != scope.set) return emptyMap()
+    val svc = study?.forSet(scope.set) ?: return emptyMap()
+    if (!svc.isConfigured) return emptyMap()
+    val studyData = try {
+        svc.studyData()
+    } catch (e: EsvUpstreamException) {
+        return emptyMap()
+    }
+    return buildMap {
+        questions.flatMap { it.references }.distinct().forEach { refString ->
+            val headings = runCatching { studyData.headingsIntersecting(VerseRef.parse(refString)) }
+                .getOrDefault(emptyList())
+            if (headings.isNotEmpty()) put(refString, headings.joinToString(" AND "))
+        }
+    }
+}
 
 /**
  * Generates a text-based practice test (R1 Find-the-Verse, R4 Quotations, or R5 Events) from the indexed

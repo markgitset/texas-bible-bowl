@@ -60,17 +60,33 @@ object LayoutRevisions {
      */
     const val STUDY_GUIDE = 2
 
-    /** `practiceTestTypst` — the question-bank R2/R3 practice tests. 1 = the corner revision mark. */
-    const val PRACTICE_TEST = 1
+    /**
+     * `practiceTestTypst` — the question-bank R2/R3 practice tests. 1 = the corner revision mark;
+     * 2 = two-page fit search with unbreakable questions, the competition-style header the other
+     * rounds use, inline choices, and the R4-style answer key (letter + reference + chapter heading).
+     */
+    const val PRACTICE_TEST = 2
 
-    /** `findTheVerseTypst` — the R1 text-generated practice test. 1 = the corner revision mark. */
-    const val FIND_THE_VERSE = 1
+    /**
+     * `findTheVerseTypst` — the R1 text-generated practice test. 1 = the corner revision mark;
+     * 2 = the answer-column header repeats on the second page, the sheet title shows its "#" before
+     * the seed like the key does, and the clue size grows to fill the sheet's two sides.
+     */
+    const val FIND_THE_VERSE = 2
 
-    /** `quotesTypst` — the R4 text-generated practice test. 1 = the corner revision mark. */
-    const val QUOTES = 1
+    /**
+     * `quotesTypst` — the R4 text-generated practice test. 1 = the corner revision mark; 2 = two-page
+     * fit search with unbreakable questions (choices tight under their question) and chapter headings
+     * in the answer key.
+     */
+    const val QUOTES = 2
 
-    /** `eventsTypst` — the R5 text-generated practice test. 1 = the corner revision mark. */
-    const val EVENTS = 1
+    /**
+     * `eventsTypst` — the R5 text-generated practice test. 1 = the corner revision mark; 2 = two-page
+     * fit search with unbreakable questions (choices tight under their question); the key keeps the
+     * classic letter + chapter format.
+     */
+    const val EVENTS = 2
 
     /** `nametagsTypst` — the event nametag sheets. 1 = the corner revision mark. */
     const val NAMETAGS = 1

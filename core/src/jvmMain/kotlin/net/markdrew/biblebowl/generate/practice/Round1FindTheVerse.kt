@@ -75,6 +75,17 @@ private fun Appendable.appendFindTheVerse(versesToFind: List<ReferencedVerse>, p
         "chapter and verse from ${practiceTest.studySet.name}"
     }
 
+    // Answer columns and cell padding are in em so they scale with the fitted clue size below.
+    val cols = if (multiBook) "2em, 1fr, 4.5em, 4.5em, 4.5em" else "2em, 1fr, 4.5em, 4.5em"
+    val colAligns = if (multiBook) {
+        "center + horizon, left + horizon, center + horizon, center + horizon, center + horizon"
+    } else {
+        "center + horizon, left + horizon, center + horizon, center + horizon"
+    }
+    val colspan = if (multiBook) 3 else 2
+    val headings = if (multiBook) "[*Book*], [*Chapter*], [*Verse*]" else "[*Chapter*], [*Verse*]"
+    val emptyCells = if (multiBook) "[], [], []" else "[], []"
+
     appendLine(
         """
         #set page(
@@ -83,52 +94,83 @@ private fun Appendable.appendFindTheVerse(versesToFind: List<ReferencedVerse>, p
         )
         #set text(size: 10pt, font: "Libertinus Serif")
 
-        Number #box(width: 1in, stroke: (bottom: 0.5pt)) #h(1fr) Name #box(width: 3in, stroke: (bottom: 0.5pt)) #h(1fr) Score #box(width: 1in, stroke: (bottom: 0.5pt))
+        #let sheet_top = [
+          Number #box(width: 1in, stroke: (bottom: 0.5pt)) #h(1fr) Name #box(width: 3in, stroke: (bottom: 0.5pt)) #h(1fr) Score #box(width: 1in, stroke: (bottom: 0.5pt))
 
-        #v(0.1in)
-        #align(center)[
-          #text(size: 15pt, weight: "bold")[#$seedString Find The Verse (Open Bible, $minutes minutes) #h(1fr) Round 1]
+          #v(0.1in)
+          #align(center)[
+            #text(size: 15pt, weight: "bold")[\#$seedString Find The Verse (Open Bible, $minutes minutes) #h(1fr) Round 1]
+          ]
+          #v(0.05in)
+          Using your Bible, write the ${escapeTypst(answerDesc)}${escapeTypst(coverage)} of each quotation in its matching box.
+          #v(0.06in)
         ]
-        #v(0.05in)
-        Using your Bible, write the ${escapeTypst(answerDesc)}${escapeTypst(coverage)} of each quotation in its matching box.
 
-        #v(0.1in)
-        #align(center)[
+        #let clues = (
     """.trimIndent()
     )
 
-    val cols = if (multiBook) "auto, 1fr, 45pt, 45pt, 45pt" else "auto, 1fr, 45pt, 45pt"
-    val colAligns = if (multiBook) {
-        "center + horizon, left + horizon, center + horizon, center + horizon, center + horizon"
-    } else {
-        "center + horizon, left + horizon, center + horizon, center + horizon"
-    }
-    val colspan = if (multiBook) 3 else 2
-    val headings = if (multiBook) "[*Book*], [*Chapter*], [*Verse*]" else "[*Chapter*], [*Verse*]"
-
-    appendLine(
-        """
-        #table(
-          columns: ($cols),
-          align: ($colAligns),
-          stroke: 0.5pt + black,
-          table.cell(colspan: 2)[], table.cell(colspan: $colspan)[*ANSWER*],
-          [], [], $headings,
-    """.trimIndent()
-    )
-
-    versesToFind.forEachIndexed { i, refVerse ->
+    versesToFind.forEach { refVerse ->
         val clue = removeUnmatchedCharPairs(refVerse.verse.normalizeWS())
-        val escapedClue = escapeTypst(clue)
-        val rowNum = "${i + 1}."
-        val emptyCells = if (multiBook) "[], [], []" else "[], []"
-        appendLine("    [$rowNum], [$escapedClue], $emptyCells,")
+        appendLine("  [${escapeTypst(clue)}],")
     }
 
     appendLine(
         """
         )
-        ]
+
+        #let content_width = 8.5in - 2 * 0.7in
+        #let content_height = 11in - 2 * 0.7in
+        #let header_cells = (
+          table.cell(colspan: 2)[], table.cell(colspan: $colspan)[*ANSWER*],
+          [], [], $headings,
+        )
+        #let clue_row(i, clue) = ([#(i + 1).], clue, $emptyCells)
+        #let clue_table(s, ..cells) = {
+          set text(size: s)
+          table(
+            columns: ($cols),
+            align: ($colAligns),
+            stroke: 0.5pt + black,
+            inset: 0.55em,
+            ..cells,
+          )
+        }
+
+        // The clue size grows to fill the sheet: the largest size (up to 13pt) whose rows still pack
+        // onto the front and back of one page, simulated row by row the way Typst itself fills the
+        // table — each side repeats the header (table.header), and a row that doesn't fit the room
+        // left on the front moves whole to the back.
+        #block(width: 100%, above: 0pt, below: 0pt, sheet_top)
+        #context {
+          let avail1 = content_height - measure(block(width: content_width, sheet_top)).height - 2pt
+          let fits(s) = {
+            let hh = measure(block(width: content_width, clue_table(s, ..header_cells))).height
+            let pages = 1
+            let room = avail1 - hh
+            for (i, clue) in clues.enumerate() {
+              let h = measure(block(width: content_width, clue_table(s, ..clue_row(i, clue)))).height
+              if h > room {
+                pages += 1
+                room = content_height - hh - 2pt
+              }
+              room -= h
+            }
+            pages <= 2
+          }
+          let sizes = (13pt, 12.5pt, 12pt, 11.5pt, 11pt, 10.5pt, 10pt, 9.5pt, 9pt)
+          let chosen = none
+          for s in sizes {
+            if chosen == none and fits(s) { chosen = s }
+          }
+          let s = if chosen == none { sizes.last() } else { chosen }
+          clue_table(
+            s,
+            // table.header repeats on the second side of the sheet, so the answer columns stay labeled.
+            table.header(..header_cells),
+            ..clues.enumerate().map(((i, clue)) => clue_row(i, clue)).flatten(),
+          )
+        }
 
         #pagebreak()
         #align(center)[

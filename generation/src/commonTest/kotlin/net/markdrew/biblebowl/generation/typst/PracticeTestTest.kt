@@ -47,11 +47,25 @@ class PracticeTestTypstTest {
             listOf(question("Who replaced Judas?", "Matthias", choices = listOf("Barsabbas", "Matthias", "Silas"))),
         )
         assertContains(typ, "Fact Finder")
-        assertContains(typ, "A. Barsabbas")
-        assertContains(typ, "B. Matthias")
-        assertContains(typ, "Answer Key")
-        assertContains(typ, "*1.* B. Matthias") // key resolves the correct letter
+        assertContains(typ, "*A.* Barsabbas")
+        assertContains(typ, "*B.* Matthias")
+        assertContains(typ, "ANSWER KEY")
+        assertContains(typ, "+ *B*") // key resolves the correct letter, without the answer's text
+        assertFalse(
+            typ.substringAfter("ANSWER KEY").contains("Matthias"),
+            "the key shows the letter only, like the R4 key",
+        )
         assertContains(typ, "Open Bible")
+    }
+
+    @Test
+    fun questionsAreUnbreakableBlocksFittedToTwoPages() {
+        val typ = practiceTestTypst(
+            Round.FACT_FINDER,
+            listOf(question("Who replaced Judas?", "Matthias", choices = listOf("Barsabbas", "Matthias"))),
+        )
+        assertContains(typ, "breakable: false", message = "choices must stay on the same page as their question")
+        assertContains(typ, "pages_for", message = "the sheet must carry the two-page fit search")
     }
 
     @Test
@@ -60,9 +74,26 @@ class PracticeTestTypstTest {
             Round.FIND_THE_VERSE,
             listOf(question("\"Repent and be baptized\"", "Acts 2:38", refs = listOf("Acts 2:38"))),
         )
-        assertContains(typ, "Answer: #box")
-        assertFalse(typ.contains("A. "), "short-answer rounds must not render choice letters")
+        assertContains(typ, "#box(width: 1.6in, repeat[.])")
+        assertFalse(typ.contains("*A.*"), "short-answer rounds must not render choice letters")
         assertContains(typ, "Acts 2:38")
+    }
+
+    @Test
+    fun answerKeyNamesChapterHeadingsWhenProvided() {
+        val typ = practiceTestTypst(
+            Round.FACT_FINDER,
+            listOf(
+                question(
+                    "Who replaced Judas?", "Matthias",
+                    choices = listOf("Barsabbas", "Matthias"),
+                    refs = listOf("Acts 1:26"),
+                ),
+            ),
+            headingsByReference = mapOf("Acts 1:26" to "Matthias Chosen to Replace Judas"),
+        )
+        assertContains(typ, "(Acts 1:26)")
+        assertContains(typ, "Matthias Chosen to Replace Judas")
     }
 
     @Test

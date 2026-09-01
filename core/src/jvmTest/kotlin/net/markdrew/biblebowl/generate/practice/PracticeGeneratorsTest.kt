@@ -7,6 +7,7 @@ import net.markdrew.biblebowl.ws.EsvIndexer
 import net.markdrew.biblebowl.ws.Passage
 import net.markdrew.biblebowl.ws.PassageMeta
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -39,6 +40,65 @@ class PracticeGeneratorsTest {
         return EsvIndexer(StandardStudySet.GENESIS.set).indexBook(sequenceOf(passage))
     }
 
+    /** A four-chapter Genesis fixture: enough chapters for the R4 (≥4) and R5 (≥3) generators. */
+    private fun genesisChapters(): StudyData {
+        val ordinals = listOf("One", "Two", "Three", "Four")
+        val passages = (1..4).asSequence().map { c ->
+            val firstVerse = 1_000_000 + c * 1_000 + 1
+            val lastVerse = 1_000_000 + c * 1_000 + 3
+            val meta = PassageMeta(
+                canonical = "Genesis $c:1–3",
+                chapterStart = listOf(firstVerse, lastVerse),
+                chapterEnd = listOf(firstVerse, lastVerse),
+                prevVerse = null, nextVerse = null, prevChapter = null, nextChapter = null,
+            )
+            Passage(
+                canonical = "Genesis $c:1–3",
+                range = firstVerse..lastVerse,
+                meta = meta,
+                text = """
+                    _______________________________________________________
+                    The Heading of Chapter ${ordinals[c - 1]}
+
+                    [1] And God said, “This is the story told in chapter ${ordinals[c - 1].lowercase()} of the book.” [2] The people of the land listened carefully to every word that was spoken to them that day. [3] And there was evening and there was morning in chapter ${ordinals[c - 1].lowercase()}.
+                """.trimIndent(),
+            )
+        }
+        return EsvIndexer(StandardStudySet.GENESIS.set).indexBook(passages)
+    }
+
+    @Test
+    fun quotesKeyNamesChapterHeadingAndVerseReference() {
+        val studyData = genesisChapters()
+        val typst = quotesTypst(
+            PracticeTest(Round.QUOTES, studyData.practice(), numQuestions = 3, randomSeed = 5),
+        )
+        assertTrue(typst != null, "four chapters should be enough for a quotes test")
+        assertTrue(typst.contains("ANSWER KEY"), "has an answer key page")
+        assertTrue(typst.contains("breakable: false"), "choices must stay on the question's page")
+        assertTrue(typst.contains("pages_for"), "carries the two-page fit search")
+        // The key names the heading over each quoted verse, not just the chapter letter.
+        assertTrue(Regex("""ANSWER KEY[\s\S]*The Heading of Chapter""").containsMatchIn(typst))
+    }
+
+    @Test
+    fun eventsKeyKeepsClassicLetterAndChapterFormat() {
+        val studyData = genesisChapters()
+        val typst = eventsTypst(
+            PracticeTest(Round.EVENTS, studyData.practice(), numQuestions = 3, randomSeed = 5),
+        )
+        assertTrue(typst != null, "three chapters should be enough for an events test")
+        // The bible-bowl key format: letter + chapter, no heading line — the question IS the heading.
+        assertTrue(
+            Regex("""ANSWER KEY[\s\S]*\+ \*[A-E]\* \(chapter \d\)""").containsMatchIn(typst),
+            "key should show letter + chapter",
+        )
+        assertFalse(
+            typst.substringAfter("ANSWER KEY").contains("The Heading of Chapter"),
+            "key entries should not repeat the heading",
+        )
+    }
+
     @Test
     fun findTheVerseRendersSheetAndAnswerKey() {
         val studyData = genesisChapter1()
@@ -52,7 +112,8 @@ class PracticeGeneratorsTest {
 
         assertTrue(typst.contains("Find The Verse"), "has the R1 title")
         assertTrue(typst.contains("ANSWER KEY"), "has an answer key page")
-        assertTrue(typst.contains("#table("), "renders the answer-entry table")
+        assertTrue(typst.contains("table("), "renders the answer-entry table")
+        assertTrue(typst.contains("table.header("), "the answer-column header repeats on the sheet's back side")
         // The answer key formats verse references like "Genesis 1:2".
         assertTrue(Regex("""Genesis 1:\d""").containsMatchIn(typst), "answer key cites verse references")
     }
