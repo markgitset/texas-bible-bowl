@@ -7,6 +7,7 @@ import net.markdrew.biblebowl.ws.EsvIndexer
 import net.markdrew.biblebowl.ws.Passage
 import net.markdrew.biblebowl.ws.PassageMeta
 import kotlin.test.Test
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -81,16 +82,20 @@ class PracticeGeneratorsTest {
     }
 
     @Test
-    fun eventsKeyNamesHeadingVerseSpan() {
+    fun eventsKeyKeepsClassicLetterAndChapterFormat() {
         val studyData = genesisChapters()
         val typst = eventsTypst(
             PracticeTest(Round.EVENTS, studyData.practice(), numQuestions = 3, randomSeed = 5),
         )
         assertTrue(typst != null, "three chapters should be enough for an events test")
-        // The key carries the heading with its verse span, e.g. "The Heading of Chapter Two (2:1-3)".
+        // The bible-bowl key format: letter + chapter, no heading line — the question IS the heading.
         assertTrue(
-            Regex("""ANSWER KEY[\s\S]*The Heading of Chapter \w+ \(\d:1-3\)""").containsMatchIn(typst),
-            "key should name the heading and its verse span",
+            Regex("""ANSWER KEY[\s\S]*\+ \*[A-E]\* \(chapter \d\)""").containsMatchIn(typst),
+            "key should show letter + chapter",
+        )
+        assertFalse(
+            typst.substringAfter("ANSWER KEY").contains("The Heading of Chapter"),
+            "key entries should not repeat the heading",
         )
     }
 

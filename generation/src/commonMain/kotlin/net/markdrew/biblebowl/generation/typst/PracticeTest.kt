@@ -66,8 +66,10 @@ fun practiceTestTypst(
 
     append(fittedQuestionSheetTypst(header, items))
 
-    // Answer key on its own page: the correct answer plus, when known, the verse reference(s) and
-    // the chapter heading(s) they fall under.
+    // Answer key on its own page, in the R4 key's format: the correct letter (not the answer's
+    // text — the letters are what the answer sheet is graded against), the verse reference(s), and
+    // the chapter heading(s) they fall under on the line below. Short-answer rounds have no letter,
+    // so they show the answer itself instead.
     appendLine(
         """
 
@@ -80,20 +82,19 @@ fun practiceTestTypst(
         ]
         #v(0.25in)
         #columns(2)[
+          #set enum(indent: 0pt, body-indent: 6pt)
         """.trimIndent()
     )
-    questions.forEachIndexed { i, q ->
-        val answer = if (roundType.multipleChoice && q.choices.isNotEmpty()) {
-            val letter = q.choices.indexOfFirst { it.trim() == q.answer.trim() }
-                .takeIf { it >= 0 }?.let { "${'A' + it}. " } ?: ""
-            "$letter${q.answer}"
-        } else q.answer
+    questions.forEach { q ->
+        val letter = q.choices.indexOfFirst { it.trim() == q.answer.trim() }
+            .takeIf { it >= 0 }?.let { "${'A' + it}" }
+        val answer = if (roundType.multipleChoice && letter != null) letter else q.answer
         val refs = q.references.takeIf { it.isNotEmpty() }
-            ?.joinToString("; ", prefix = "  #text(size: 9pt)[(", postfix = ")]") { escapeTypst(it) } ?: ""
-        append("*${i + 1}.* ${escapeTypst(answer)}$refs")
+            ?.joinToString("; ", prefix = " (", postfix = ")") { escapeTypst(it) } ?: ""
+        append("  + *${escapeTypst(answer)}*$refs")
         val headings = q.references.mapNotNull { headingsByReference[it] }.distinct()
-        if (headings.isEmpty()) appendLine(" \\")
-        else appendLine(" \\\n  #text(size: 9pt, style: \"italic\")[${headings.joinToString(" AND ") { escapeTypst(it) }}] \\")
+        if (headings.isEmpty()) appendLine()
+        else appendLine(" \\\n    " + headings.joinToString(" AND \\\n    ") { escapeTypst(it) })
     }
     appendLine("]")
 }

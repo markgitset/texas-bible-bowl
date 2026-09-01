@@ -4,7 +4,6 @@ import net.markdrew.biblebowl.generate.fittedQuestionSheetTypst
 import net.markdrew.biblebowl.generate.questionItemTypst
 import net.markdrew.biblebowl.model.BRIEF_BOOK_FORMAT
 import net.markdrew.biblebowl.model.BookFormat
-import net.markdrew.biblebowl.model.Heading
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.model.VerseRef
 
@@ -87,7 +86,6 @@ private fun appendAnswerKey(
           #set enum(indent: 0pt, body-indent: 6pt)
     """.trimIndent()
     )
-    val headingsByTitle: Map<String, List<Heading>> = practiceTest.content.headings().groupBy { it.title }
     questions.forEach { multiChoice ->
         val q = multiChoice.question
         val prefix = if (bookFormat == NO_BOOK_FORMAT) "chapter " else ""
@@ -95,21 +93,12 @@ private fun appendAnswerKey(
             if (q.answerRefs != null) q.answerRefs.first().format(bookFormat)
             else prefix + q.answers.joinToString(" and ") { it.format(bookFormat) }
         val label = ('A' + multiChoice.correctChoice).toString()
-        // Each key entry carries its chapter heading(s) and verse reference under the letter, so the
-        // key reads on its own: for R4 the heading(s) the quoted verse falls under, for R5 the verse
-        // span of the heading the question quoted.
-        val headingLines: List<String> = when {
-            q.answerRefs != null -> q.answerRefs.flatMap { verseRef: VerseRef ->
-                practiceTest.content.studyData.headingsIntersecting(verseRef).map { escapeTypst(it) }
-            }.distinct()
-            else -> q.answers.flatMap { chapter ->
-                headingsByTitle[q.question].orEmpty()
-                    .filter { it.chapterRange.start == chapter }
-                    .map { heading ->
-                        "${escapeTypst(heading.title)} (${escapeTypst(heading.verseRange.format(bookFormat))})"
-                    }
-            }
-        }
+        // A quotes (R4) entry carries the chapter heading(s) the quoted verse falls under, so the key
+        // reads on its own. An events (R5) entry stays the classic letter + chapter — its question IS
+        // a chapter heading, so repeating it here would say nothing.
+        val headingLines: List<String> = q.answerRefs.orEmpty().flatMap { verseRef: VerseRef ->
+            practiceTest.content.studyData.headingsIntersecting(verseRef).map { escapeTypst(it) }
+        }.distinct()
         appendable.append("  + *$label* (${escapeTypst(ref)})")
         if (headingLines.isEmpty()) appendable.appendLine()
         else appendable.appendLine(" \\\n    " + headingLines.joinToString(" AND \\\n    "))

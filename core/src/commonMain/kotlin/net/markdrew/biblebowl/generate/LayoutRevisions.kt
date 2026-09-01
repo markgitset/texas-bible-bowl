@@ -63,7 +63,7 @@ object LayoutRevisions {
     /**
      * `practiceTestTypst` — the question-bank R2/R3 practice tests. 1 = the corner revision mark;
      * 2 = two-page fit search with unbreakable questions, the competition-style header the other
-     * rounds use, inline choices, and chapter headings in the answer key.
+     * rounds use, inline choices, and the R4-style answer key (letter + reference + chapter heading).
      */
     const val PRACTICE_TEST = 2
 
@@ -83,8 +83,8 @@ object LayoutRevisions {
 
     /**
      * `eventsTypst` — the R5 text-generated practice test. 1 = the corner revision mark; 2 = two-page
-     * fit search with unbreakable questions (choices tight under their question) and heading verse
-     * spans in the answer key.
+     * fit search with unbreakable questions (choices tight under their question); the key keeps the
+     * classic letter + chapter format.
      */
     const val EVENTS = 2
 

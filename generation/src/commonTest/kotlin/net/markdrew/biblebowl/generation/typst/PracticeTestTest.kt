@@ -50,7 +50,11 @@ class PracticeTestTypstTest {
         assertContains(typ, "*A.* Barsabbas")
         assertContains(typ, "*B.* Matthias")
         assertContains(typ, "ANSWER KEY")
-        assertContains(typ, "*1.* B. Matthias") // key resolves the correct letter
+        assertContains(typ, "+ *B*") // key resolves the correct letter, without the answer's text
+        assertFalse(
+            typ.substringAfter("ANSWER KEY").contains("Matthias"),
+            "the key shows the letter only, like the R4 key",
+        )
         assertContains(typ, "Open Bible")
     }
 
