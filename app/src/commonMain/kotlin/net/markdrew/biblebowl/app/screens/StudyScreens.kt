@@ -116,8 +116,8 @@ private fun blurb(section: StudySection, scripture: String): String = when (sect
     StudySection.TEXT ->
         "The complete text of $scripture — the highlighted study PDF, plus places to read or listen online."
     StudySection.VERSES ->
-        "Every verse in $scripture as a flashcard — the verse up front, its reference on the back — " +
-            "ready to import into Space or Quizlet."
+        "Verse-by-verse memory work for $scripture — the importable verse decks live under " +
+            "Data & Source Files."
     StudySection.GENERAL ->
         "The official study guide and question flashcards, plus the interactive quiz and the " +
             "community question bank."
@@ -131,7 +131,8 @@ private fun blurb(section: StudySection, scripture: String): String = when (sect
     StudySection.REFERENCE ->
         "Printable indices — names, numbers, men, women, places, and a full concordance."
     StudySection.DATA ->
-        "For coaches and question writers — reusable source files for building your own study material."
+        "Source files rather than finished study material — spreadsheets and decks to import into " +
+            "Kahoot, Space, or Quizlet, and raw question banks to build your own from."
 }
 
 /**
@@ -486,32 +487,10 @@ fun StudySectionScreen(
                 )
             }
 
-            // Signed-in only, server-side too: a card per verse is the whole ESV text of the set in one
-            // plain-text file. The section stays public so anyone can see what's here — while anonymous
-            // the buttons say what they need and route to sign-in, matching every other gated action.
-            StudySection.VERSES -> {
-                val versesLabel = if (signedIn) "Download" else "Sign in to download"
-                DownloadCard(
-                    title = "Verse flashcards for the Space app",
-                    subtitle = "Every verse in ${season.eventScripture} as a CSV that imports straight into " +
-                        "Space (getspace.app) — the verse up front, its section heading and reference on the back.",
-                    scope = scopeLine(verseScope),
-                    busyCard = busyCard,
-                    buttonLabel = versesLabel,
-                    onClick = { downloadVerses(forSpace = true) },
-                    onCustomize = { customize = Customize.VerseDeck(forSpace = true) },
-                )
-                DownloadCard(
-                    title = "Verse flashcards for Quizlet",
-                    subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
-                        "between term and definition, and enter \\n\\n as the custom separator between cards.",
-                    scope = scopeLine(verseScope),
-                    busyCard = busyCard,
-                    buttonLabel = versesLabel,
-                    onClick = { downloadVerses(forSpace = false) },
-                    onCustomize = { customize = Customize.VerseDeck(forSpace = false) },
-                )
-            }
+            // No built-in cards: the importable verse decks sit with the other source files under
+            // Data & Source Files. The section stays for its admin-curated extras (and whatever
+            // verse-by-verse tools land here later).
+            StudySection.VERSES -> {}
 
             StudySection.UNIQUE_WORDS -> {
                 DownloadCard(
@@ -531,28 +510,6 @@ fun StudySectionScreen(
                         "in order of appearance.",
                     busyCard = busyCard,
                     onClick = { download("Unique words index", withSet(PdfFileNames.uniqueWordsIndex())) { api.uniqueWordsIndexPdf() } },
-                )
-                DownloadCard(
-                    title = "Flashcards for the Space app",
-                    subtitle = "The flashcard deck as a CSV that imports straight into Space (getspace.app) — " +
-                        "each unique word up front, its verse with the word bolded on the back.",
-                    busyCard = busyCard,
-                    onClick = {
-                        download("Flashcards for the Space app", "space-${withSet("unique-words")}.csv", Mime.CSV) {
-                            api.uniqueWordFlashcardsCsv()
-                        }
-                    },
-                )
-                DownloadCard(
-                    title = "Flashcards for Quizlet",
-                    subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
-                        "between term and definition, and enter \\n\\n as the custom separator between cards.",
-                    busyCard = busyCard,
-                    onClick = {
-                        download("Flashcards for Quizlet", "quizlet-${withSet("unique-words")}.txt", Mime.TEXT) {
-                            api.uniqueWordFlashcardsTxt()
-                        }
-                    },
                 )
             }
 
@@ -653,6 +610,59 @@ fun StudySectionScreen(
                         "choices, answer, and reference — for building your own materials.",
                     busyCard = busyCard,
                     onClick = { download("Study guide (CSV)", "study-guide.csv", Mime.CSV) { api.studyGuideCsv() } },
+                )
+                // The importable twins of the printed decks. They live here rather than with the PDFs
+                // they mirror: a CSV or a paste blob is a file you feed to another app, not study
+                // material you can use as-is. Both verse decks are signed-in only, server-side too — a
+                // card per verse is the whole ESV text of the set in one plain-text file. The cards
+                // stay visible while anonymous; the buttons say what they need and route to sign-in,
+                // matching every other gated action.
+                val versesLabel = if (signedIn) "Download" else "Sign in to download"
+                DownloadCard(
+                    title = "Verse flashcards for the Space app",
+                    subtitle = "Every verse in ${season.eventScripture} as a CSV that imports straight into " +
+                        "Space (getspace.app) — the verse up front, its section heading and reference on the back.",
+                    scope = scopeLine(verseScope),
+                    busyCard = busyCard,
+                    buttonLabel = versesLabel,
+                    onClick = { downloadVerses(forSpace = true) },
+                    onCustomize = { customize = Customize.VerseDeck(forSpace = true) },
+                )
+                DownloadCard(
+                    title = "Verse flashcards for Quizlet",
+                    subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
+                        "between term and definition, and enter \\n\\n as the custom separator between cards.",
+                    scope = scopeLine(verseScope),
+                    busyCard = busyCard,
+                    buttonLabel = versesLabel,
+                    onClick = { downloadVerses(forSpace = false) },
+                    onCustomize = { customize = Customize.VerseDeck(forSpace = false) },
+                )
+                DownloadCard(
+                    title = "Unique-word flashcards for the Space app",
+                    subtitle = "The unique-word deck as a CSV that imports straight into Space (getspace.app) — " +
+                        "each unique word up front, its verse with the word bolded on the back.",
+                    busyCard = busyCard,
+                    onClick = {
+                        download(
+                            "Unique-word flashcards for the Space app",
+                            "space-${withSet("unique-words")}.csv",
+                            Mime.CSV,
+                        ) { api.uniqueWordFlashcardsCsv() }
+                    },
+                )
+                DownloadCard(
+                    title = "Unique-word flashcards for Quizlet",
+                    subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
+                        "between term and definition, and enter \\n\\n as the custom separator between cards.",
+                    busyCard = busyCard,
+                    onClick = {
+                        download(
+                            "Unique-word flashcards for Quizlet",
+                            "quizlet-${withSet("unique-words")}.txt",
+                            Mime.TEXT,
+                        ) { api.uniqueWordFlashcardsTxt() }
+                    },
                 )
             }
         }
