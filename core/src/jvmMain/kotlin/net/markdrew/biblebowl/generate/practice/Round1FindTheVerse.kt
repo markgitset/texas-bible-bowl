@@ -87,7 +87,7 @@ private fun Appendable.appendFindTheVerse(versesToFind: List<ReferencedVerse>, p
 
         #v(0.1in)
         #align(center)[
-          #text(size: 15pt, weight: "bold")[#$seedString Find The Verse (Open Bible, $minutes minutes) #h(1fr) Round 1]
+          #text(size: 15pt, weight: "bold")[\#$seedString Find The Verse (Open Bible, $minutes minutes) #h(1fr) Round 1]
         ]
         #v(0.05in)
         Using your Bible, write the ${escapeTypst(answerDesc)}${escapeTypst(coverage)} of each quotation in its matching box.
@@ -112,8 +112,11 @@ private fun Appendable.appendFindTheVerse(versesToFind: List<ReferencedVerse>, p
           columns: ($cols),
           align: ($colAligns),
           stroke: 0.5pt + black,
-          table.cell(colspan: 2)[], table.cell(colspan: $colspan)[*ANSWER*],
-          [], [], $headings,
+          // table.header repeats on the second side of the sheet, so the answer columns stay labeled.
+          table.header(
+            table.cell(colspan: 2)[], table.cell(colspan: $colspan)[*ANSWER*],
+            [], [], $headings,
+          ),
     """.trimIndent()
     )
 
