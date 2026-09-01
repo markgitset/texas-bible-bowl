@@ -1,14 +1,24 @@
 # Gitignored files copied into each new worktree (.gitignore syntax).
 # Only files that match AND are gitignored are copied — tracked files never are.
+#
+# ALWAYS anchor a pattern with a leading `/`. Unanchored gitignore patterns match at
+# any depth, and the copier tests them against `git ls-files --others --ignored`, which
+# descends into an orphaned `.claude/worktrees/<name>` (a stray dir is not a repo
+# boundary the way a registered worktree's `.git` file is). So bare `local.properties`
+# also matched `.claude/worktrees/<name>/local.properties` and replicated the orphan's
+# tree inside every new worktree, one level deeper each time. Negation does NOT fix
+# this — `!.claude/worktrees/` has a trailing slash, so it matches directories only and
+# never wins last-match against a file path. Anchoring does: a rooted pattern cannot
+# match anything under `.claude/worktrees/`. See "Worktrees" in .agents/AGENTS.md.
 
 # Android SDK location; :app Gradle builds fail without it.
-local.properties
+/local.properties
 
 # Local permission allowlist, so worktree sessions don't re-prompt for the same commands.
-.claude/settings.local.json
+/.claude/settings.local.json
 
 # Server secrets/config if they ever land in a dotenv file (ESV_API_TOKEN, DATABASE_URL,
 # JWT_SECRET, SMTP_*). Today these come from the shell / fly secrets, so these usually
 # match nothing — harmless, and it means a new worktree keeps working if that changes.
-.env
-.env.local
+/.env
+/.env.local

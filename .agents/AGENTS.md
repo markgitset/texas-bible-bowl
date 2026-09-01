@@ -79,10 +79,21 @@ build with "Lock file was changed" — run `./gradlew kotlinUpgradeYarnLock` and
 ## Worktrees — orphaned dirs silently break a session
 `.worktreeinclude` lists the gitignored files Claude Code copies into each new worktree
 (see #164). Worktree directory *names* are reused across sessions, and cleanup sometimes
-removes the git registration while leaving the directory on disk — usually because
-gitignored build state (`.gradle/`) survived. `git worktree add` refuses a target that
-exists and is non-empty (an existing *empty* dir is fine), so the next session handed that
-name gets no checkout, no error, and silently runs in the primary checkout instead.
+removes the git registration while leaving the directory on disk. `git worktree add`
+refuses a target that exists and is non-empty (an existing *empty* dir is fine), so the
+next session handed that name gets no checkout, no error, and silently runs in the primary
+checkout instead.
+
+What leaves a directory non-empty is **the copy step itself** — the files it copies are
+gitignored by definition, so removing the checkout leaves them behind. Worse, until the
+patterns were anchored the leftovers *bred*: an unanchored `local.properties` matches at
+any depth, and the copier's `git ls-files --others --ignored` descends into an orphaned
+`.claude/worktrees/<name>` (a stray dir is not a repo boundary the way a registered
+worktree's `.git` file is), so every new worktree got a nested copy of the orphan's tree,
+one level deeper each time — and became the next orphan. `.worktreeinclude`'s patterns are
+now rooted with a leading `/`, which can't match under `.claude/worktrees/`; keep them that
+way. Surviving build state (`.gradle/`) can also hold a directory open, but it is not the
+usual cause and was absent in the case that prompted this.
 
 Symptom: you're in `.claude/worktrees/<name>` but `ls` shows almost nothing and
 `git ls-files | wc -l` is 0. Confirm and fix:
