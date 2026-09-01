@@ -155,7 +155,7 @@ private data class StudyTextChoices(
  * Every download is a plain link to the backend (the generate endpoints send Content-Disposition:
  * attachment), opened in a new tab so a generation error shows its message there instead of
  * navigating the app away; on success the tab closes into a normal download. They are public bar the
- * verse decks, which take `requiresAuth` — see [versesCards].
+ * verse decks, which take `requiresAuth` — see [dataCards].
  */
 object DownloadsScreen {
 
@@ -244,8 +244,8 @@ object DownloadsScreen {
             StudySection.TEXT ->
                 "The complete text of $scripture — the highlighted study PDF, plus places to read or listen online."
             StudySection.VERSES ->
-                "Every verse in $scripture as a flashcard — the verse up front, its reference on the " +
-                    "back — ready to import into Space or Quizlet."
+                "Verse-by-verse memory work for $scripture — the importable verse decks live under " +
+                    "Data & Source Files."
             StudySection.GENERAL ->
                 "The official study guide and question flashcards, plus the interactive quiz and the " +
                     "community question bank."
@@ -259,7 +259,8 @@ object DownloadsScreen {
             StudySection.REFERENCE ->
                 "Printable indices — names, numbers, men, women, places, and a full concordance."
             StudySection.DATA ->
-                "For coaches and question writers — reusable source files for building your own study material."
+                "Source files rather than finished study material — spreadsheets and decks to import " +
+                    "into Kahoot, Space, or Quizlet, and raw question banks to build your own from."
         }
     }
 
@@ -272,7 +273,10 @@ object DownloadsScreen {
         grid = root.child("div", "row g-4")
         when (section) {
             StudySection.TEXT -> textCards()
-            StudySection.VERSES -> versesCards()
+            // No built-in cards: the importable verse decks sit with the other source files under
+            // Data & Source Files. The section stays for its admin-curated extras (and whatever
+            // verse-by-verse tools land here later).
+            StudySection.VERSES -> {}
             StudySection.GENERAL -> generalKnowledgeCards()
             StudySection.HEADINGS -> headingsCards()
             StudySection.UNIQUE_WORDS -> uniqueWordsCards()
@@ -405,34 +409,6 @@ object DownloadsScreen {
         )
     }
 
-    /**
-     * The verse decks. Both need a signed-in user: a card per verse is the whole ESV text of the set in
-     * one plain-text file, so it isn't offered anonymously the way the word-list decks are.
-     */
-    private fun versesCards() {
-        val season = Session.season
-        downloadCard(
-            title = "Verse flashcards for the Space app",
-            subtitle = "Every verse in ${season.eventScripture} as a CSV that imports straight into " +
-                "Space (getspace.app) — the verse up front, its section heading and reference on the back.",
-            scope = scopeLine(verseScope),
-            href = verseDeckUrl("/generate/space-verses.csv"),
-            buttonLabel = "Download",
-            requiresAuth = true,
-            customize = Customize.VerseDeck(forSpace = true),
-        )
-        downloadCard(
-            title = "Verse flashcards for Quizlet",
-            subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
-                "between term and definition, and enter \\n\\n as the custom separator between cards.",
-            scope = scopeLine(verseScope),
-            href = verseDeckUrl("/generate/quizlet-verses.txt"),
-            buttonLabel = "Download",
-            requiresAuth = true,
-            customize = Customize.VerseDeck(forSpace = false),
-        )
-    }
-
     private fun uniqueWordsCards() {
         val season = Session.season
         downloadCard(
@@ -446,20 +422,6 @@ object DownloadsScreen {
             subtitle = "Every word that appears only once in ${season.eventScripture} — alphabetical and " +
                 "in order of appearance.",
             href = generateUrl("/generate/unique-words-index.pdf"),
-        )
-        downloadCard(
-            title = "Flashcards for the Space app",
-            subtitle = "The flashcard deck as a CSV that imports straight into Space (getspace.app) — " +
-                "each unique word up front, its verse with the word bolded on the back.",
-            href = generateUrl("/generate/unique-word-flashcards.csv"),
-            buttonLabel = "Download",
-        )
-        downloadCard(
-            title = "Flashcards for Quizlet",
-            subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
-                "between term and definition, and enter \\n\\n as the custom separator between cards.",
-            href = generateUrl("/generate/unique-word-flashcards.txt"),
-            buttonLabel = "Download",
         )
     }
 
@@ -518,7 +480,8 @@ object DownloadsScreen {
         )
     }
 
-    // The creators' commons — a different audience: builders, not studiers (docs/study-materials-organization.md).
+    // Everything that's a file for another program rather than something you study from directly:
+    // the question exports for builders, and the importable twins of the printed decks.
     private fun dataCards() {
         val exportCustomized = exportHeadings || exportRound != null
         downloadCard(
@@ -554,6 +517,45 @@ object DownloadsScreen {
             subtitle = "The full study-guide question bank as comma-separated text — every question, its " +
                 "choices, answer, and reference — for building your own materials.",
             href = generateUrl("/generate/study-guide.csv"),
+            buttonLabel = "Download",
+        )
+        // The importable twins of the printed decks. They live here rather than with the PDFs they
+        // mirror: a CSV or a paste blob is a file you feed to another app, not study material you can
+        // use as-is. Both verse decks need a signed-in user — a card per verse is the whole ESV text
+        // of the set in one plain-text file, so it isn't offered anonymously the way the word-list
+        // decks are.
+        downloadCard(
+            title = "Verse flashcards for the Space app",
+            subtitle = "Every verse in ${Session.season.eventScripture} as a CSV that imports straight into " +
+                "Space (getspace.app) — the verse up front, its section heading and reference on the back.",
+            scope = scopeLine(verseScope),
+            href = verseDeckUrl("/generate/space-verses.csv"),
+            buttonLabel = "Download",
+            requiresAuth = true,
+            customize = Customize.VerseDeck(forSpace = true),
+        )
+        downloadCard(
+            title = "Verse flashcards for Quizlet",
+            subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
+                "between term and definition, and enter \\n\\n as the custom separator between cards.",
+            scope = scopeLine(verseScope),
+            href = verseDeckUrl("/generate/quizlet-verses.txt"),
+            buttonLabel = "Download",
+            requiresAuth = true,
+            customize = Customize.VerseDeck(forSpace = false),
+        )
+        downloadCard(
+            title = "Unique-word flashcards for the Space app",
+            subtitle = "The unique-word deck as a CSV that imports straight into Space (getspace.app) — " +
+                "each unique word up front, its verse with the word bolded on the back.",
+            href = generateUrl("/generate/unique-word-flashcards.csv"),
+            buttonLabel = "Download",
+        )
+        downloadCard(
+            title = "Unique-word flashcards for Quizlet",
+            subtitle = "The same deck as paste-ready text for Quizlet's import screen — choose Tab " +
+                "between term and definition, and enter \\n\\n as the custom separator between cards.",
+            href = generateUrl("/generate/unique-word-flashcards.txt"),
             buttonLabel = "Download",
         )
     }
