@@ -76,6 +76,24 @@ Gradle task names are **not** uniform across modules. Use these:
 build with "Lock file was changed" — run `./gradlew kotlinUpgradeYarnLock` and commit
 `kotlin-js-store/yarn.lock`.
 
+## Worktrees — orphaned dirs silently break a session
+`.worktreeinclude` lists the gitignored files Claude Code copies into each new worktree
+(see #164). Worktree directory *names* are reused across sessions, and cleanup sometimes
+removes the git registration while leaving the directory on disk — usually because
+gitignored build state (`.gradle/`) survived. `git worktree add` refuses a target that
+exists and is non-empty (an existing *empty* dir is fine), so the next session handed that
+name gets no checkout, no error, and silently runs in the primary checkout instead.
+
+Symptom: you're in `.claude/worktrees/<name>` but `ls` shows almost nothing and
+`git ls-files | wc -l` is 0. Confirm and fix:
+```sh
+git worktree list          # does your cwd appear? if not, it's an orphan
+git worktree prune         # drop registrations whose dir is already gone
+ls -a .claude/worktrees/   # anything here not in `git worktree list` is an orphan
+rm -rf .claude/worktrees/<name>   # safe once you've checked it holds no uncommitted work
+```
+Emptying the directory is enough — it doesn't have to be deleted.
+
 ## App navigation (Compose apps + web app)
 Top-level destinations (`Routes.kt` per app): the Compose app has four — study, quiz,
 questions, event — where the Study tab is the Study & Practice OVERVIEW: one card per
