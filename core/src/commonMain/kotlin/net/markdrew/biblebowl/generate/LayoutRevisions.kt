@@ -62,27 +62,29 @@ object LayoutRevisions {
 
     /**
      * `practiceTestTypst` — the question-bank R2/R3 practice tests. 1 = the corner revision mark;
-     * 2 = two-page fit search with unbreakable questions, inline choices, and chapter headings in
-     * the answer key.
+     * 2 = two-page fit search with unbreakable questions, the competition-style header the other
+     * rounds use, inline choices, and chapter headings in the answer key.
      */
     const val PRACTICE_TEST = 2
 
     /**
      * `findTheVerseTypst` — the R1 text-generated practice test. 1 = the corner revision mark;
-     * 2 = the answer-column header repeats on the second page and the sheet title shows its "#"
-     * before the seed like the key does.
+     * 2 = the answer-column header repeats on the second page, the sheet title shows its "#" before
+     * the seed like the key does, and the clue size grows to fill the sheet's two sides.
      */
     const val FIND_THE_VERSE = 2
 
     /**
      * `quotesTypst` — the R4 text-generated practice test. 1 = the corner revision mark; 2 = two-page
-     * fit search with unbreakable questions and chapter headings in the answer key.
+     * fit search with unbreakable questions (choices tight under their question) and chapter headings
+     * in the answer key.
      */
     const val QUOTES = 2
 
     /**
      * `eventsTypst` — the R5 text-generated practice test. 1 = the corner revision mark; 2 = two-page
-     * fit search with unbreakable questions and heading verse spans in the answer key.
+     * fit search with unbreakable questions (choices tight under their question) and heading verse
+     * spans in the answer key.
      */
     const val EVENTS = 2
 

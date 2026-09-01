@@ -29,6 +29,24 @@ private val SIZE_CANDIDATES_PT: List<Double> = generateSequence(10.5) { it - 0.5
  * spacing so they scale with the chosen size; [headerMarkup] keeps its own fixed sizes and is only
  * measured so page 1's remaining room is known.
  */
+/**
+ * One numbered question for [fittedQuestionSheetTypst]: the number in its own right-aligned column
+ * (so wrapped prompts hang cleanly), the prompt beside it, and — for multiple-choice rounds — the
+ * choices row directly under the prompt. The row gutter is deliberately small: a question sits tight
+ * against its own choices, while the larger between-question gap comes from the sheet's `qblock`
+ * inset, so each item reads as one unit.
+ */
+fun questionItemTypst(number: Int, promptMarkup: String, choicesMarkup: String? = null): String = buildString {
+    appendLine("#grid(")
+    appendLine("  columns: (1.6em, 1fr),")
+    appendLine("  column-gutter: 0.5em,")
+    appendLine("  row-gutter: 0.4em,")
+    appendLine("  align: (top + right, top + left),")
+    appendLine("  [*$number.*], [$promptMarkup],")
+    if (choicesMarkup != null) appendLine("  [], [$choicesMarkup],")
+    append(")")
+}
+
 fun fittedQuestionSheetTypst(headerMarkup: String, itemsMarkup: List<String>): String = buildString {
     appendLine(
         """
@@ -55,9 +73,11 @@ fun fittedQuestionSheetTypst(headerMarkup: String, itemsMarkup: List<String>): S
         #let content_height = $PAGE_HEIGHT - 2 * $MARGIN_Y
 
         // above/below stay 0 so nothing collapses or stretches between blocks — the render's heights
-        // are exactly the measured ones, which is what keeps the page-fill simulation honest.
+        // are exactly the measured ones, which is what keeps the page-fill simulation honest. The
+        // bottom inset is the space between one question and the next: deliberately larger than the
+        // gap between a question and its own choices (see questionItemTypst), so items read as units.
         #let qblock(it) = block(
-          breakable: false, width: 100%, above: 0pt, below: 0pt, inset: (bottom: 0.8em), it,
+          breakable: false, width: 100%, above: 0pt, below: 0pt, inset: (bottom: 1.1em), it,
         )
 
         // Typst's own fill rule: a block that doesn't fit the room left on a page moves whole to the

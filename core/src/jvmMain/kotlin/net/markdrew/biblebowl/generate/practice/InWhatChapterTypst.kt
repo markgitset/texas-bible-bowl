@@ -1,6 +1,7 @@
 package net.markdrew.biblebowl.generate.practice
 
 import net.markdrew.biblebowl.generate.fittedQuestionSheetTypst
+import net.markdrew.biblebowl.generate.questionItemTypst
 import net.markdrew.biblebowl.model.BRIEF_BOOK_FORMAT
 import net.markdrew.biblebowl.model.BookFormat
 import net.markdrew.biblebowl.model.Heading
@@ -55,15 +56,8 @@ fun inWhatChapterTypst(practiceTest: PracticeTest, questions: List<MultiChoiceQu
             val text = choice?.format(bookFormat) ?: "none of these"
             "[*$label.* ${escapeTypst(text)}]"
         }.joinToString(", ")
-        """
-        *${i + 1}.* $qText
-        #v(0.3em)
-        #pad(left: 1.2em, grid(
-          columns: (1fr,) * ${multiChoice.choices.size},
-          align: left,
-          $choicesStr
-        ))
-        """.trimIndent()
+        val choicesRow = "#grid(columns: (1fr,) * ${multiChoice.choices.size}, align: left, $choicesStr)"
+        questionItemTypst(i + 1, qText, choicesRow)
     }
 
     val sb = StringBuilder(fittedQuestionSheetTypst(header, items))

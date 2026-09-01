@@ -107,7 +107,8 @@ class PracticeGeneratorsTest {
 
         assertTrue(typst.contains("Find The Verse"), "has the R1 title")
         assertTrue(typst.contains("ANSWER KEY"), "has an answer key page")
-        assertTrue(typst.contains("#table("), "renders the answer-entry table")
+        assertTrue(typst.contains("table("), "renders the answer-entry table")
+        assertTrue(typst.contains("table.header("), "the answer-column header repeats on the sheet's back side")
         // The answer key formats verse references like "Genesis 1:2".
         assertTrue(Regex("""Genesis 1:\d""").containsMatchIn(typst), "answer key cites verse references")
     }

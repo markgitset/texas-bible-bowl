@@ -2,18 +2,20 @@ package net.markdrew.biblebowl.generation.typst
 
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.generate.fittedQuestionSheetTypst
+import net.markdrew.biblebowl.generate.questionItemTypst
 import net.markdrew.biblebowl.model.Round
 
 /**
  * Builds a Typst document for a printable practice test in Texas Bible Bowl round formats.
  *
  * Pure Kotlin string building (runs on any platform); compilation to PDF happens server-side.
- * Layout follows the competition's written-test style: numbered items, A–E choices for the
- * multiple-choice rounds (scantron-friendly), blanks for short-answer rounds, and an answer key
- * on its own page. The question sheet fits on one physical page front and back — a fit search
- * picks the largest text size that packs the questions into two pages, and each question is an
- * unbreakable block so its answer choices can never land on a different page than the question
- * (see [fittedQuestionSheetTypst]).
+ * Layout matches the competition's written-test style used by the text-generated rounds (R1/R4/R5):
+ * a bold "Round N" title line, an instruction sentence, numbered items with A–E choices for the
+ * multiple-choice rounds (scantron-friendly) or blanks for short-answer rounds, and an answer key on
+ * its own page. The question sheet fits on one physical page front and back — a fit search picks the
+ * largest text size that packs the questions into two pages, and each question is an unbreakable
+ * block so its answer choices can never land on a different page than the question (see
+ * [fittedQuestionSheetTypst]).
  *
  * @param headingsByReference chapter heading title(s) keyed by each question's serialized verse
  *   reference (joined with " AND " when a verse spans headings); shown in the answer key under the
@@ -23,21 +25,27 @@ fun practiceTestTypst(
     roundType: Round,
     questions: List<QuestionDto>,
     seasonBook: String = "Acts",
-    title: String = "Texas Bible Bowl Practice Test",
     headingsByReference: Map<String, String> = emptyMap(),
 ): String = buildString {
+    val minutes = roundType.minutesAtPaceFor(questions.size)
+    val titleLeft = "${roundType.displayName} (${roundType.bibleUse} Bible, $minutes min)"
+    val titleRight = if (roundType.number > 0) "Round ${roundType.number}" else "Practice"
+    val bibleUse = if (roundType.openBible) "Using your Bible" else "Without using your Bible"
+    val instructions =
+        if (roundType.multipleChoice) {
+            "$bibleUse, answer each of the following multiple-choice questions by marking the letter " +
+                "corresponding to the correct response on your answer sheet."
+        } else {
+            "$bibleUse, write the answer to each of the following questions in the blank beside it."
+        } + " Questions are from ${escapeTypst(seasonBook)}."
+
     val header = """
         #align(center)[
-          #text(size: 15pt, weight: "bold")[${escapeTypst(title)}]
-
-          #text(size: 12pt)[${escapeTypst(roundType.displayName)} · ${escapeTypst(seasonBook)}]
-
-          #text(size: 10pt, style: "italic")[${if (roundType.openBible) "Open Bible" else "Closed Bible"} · ${questions.size} questions · ${roundType.maxPoints} points maximum]
+          #text(size: 14pt, weight: "bold")[${escapeTypst(titleLeft)} #h(1fr) ${escapeTypst(titleRight)}]
         ]
-        #v(0.35em)
-        Name: #box(width: 2.6in, repeat[.]) #h(1fr) Date: #box(width: 1.6in, repeat[.])
-        #v(0.5em)
-        #line(length: 100%, stroke: 0.5pt)
+        #v(0.06in)
+        $instructions
+        #v(0.04in)
     """.trimIndent()
 
     val items = questions.mapIndexed { i, q ->
@@ -47,9 +55,12 @@ fun practiceTestTypst(
             val choices = q.choices.mapIndexed { c, choice ->
                 "*${'A' + c}.* ${escapeTypst(choice)}"
             }.joinToString(" #h(1.4em, weak: true) ")
-            "*${i + 1}.* ${escapeTypst(q.prompt)}\n#v(0.3em)\n#pad(left: 1.2em)[$choices]"
+            questionItemTypst(i + 1, escapeTypst(q.prompt), choices)
         } else {
-            "*${i + 1}.* ${escapeTypst(q.prompt)} #h(0.6em) #box(width: ${answerBlankWidth(roundType)}, repeat[.])"
+            questionItemTypst(
+                i + 1,
+                "${escapeTypst(q.prompt)} #h(0.6em) #box(width: ${answerBlankWidth(roundType)}, repeat[.])",
+            )
         }
     }
 
@@ -62,11 +73,12 @@ fun practiceTestTypst(
 
         #pagebreak()
         #align(center)[
-          #text(size: 15pt, weight: "bold")[Answer Key]
-
-          #text(size: 11pt)[${escapeTypst(roundType.displayName)} · ${escapeTypst(seasonBook)}]
+          #text(size: 14pt, weight: "bold")[
+            ANSWER KEY \ \
+            ${escapeTypst(titleLeft)} #h(1fr) ${escapeTypst(titleRight)}
+          ]
         ]
-        #v(1em)
+        #v(0.25in)
         #columns(2)[
         """.trimIndent()
     )

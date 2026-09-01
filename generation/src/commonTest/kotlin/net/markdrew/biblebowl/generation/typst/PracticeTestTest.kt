@@ -49,7 +49,7 @@ class PracticeTestTypstTest {
         assertContains(typ, "Fact Finder")
         assertContains(typ, "*A.* Barsabbas")
         assertContains(typ, "*B.* Matthias")
-        assertContains(typ, "Answer Key")
+        assertContains(typ, "ANSWER KEY")
         assertContains(typ, "*1.* B. Matthias") // key resolves the correct letter
         assertContains(typ, "Open Bible")
     }
