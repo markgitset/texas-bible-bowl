@@ -56,12 +56,44 @@ Staging's `DATABASE_URL` points at a Neon **branch** of the prod database — an
 copy-on-write snapshot with its own compute endpoint. Writes on either side never affect
 the other; the branch does NOT stay in sync with prod (it's a snapshot, not a replica).
 
-- **Create** (Neon console → project → Branches → New branch, from the production branch's
-  head, with a read-write compute endpoint). Copy the branch's pooled connection string and:
-  `fly secrets set DATABASE_URL='<branch connection string>' -a texas-bible-bowl-staging`
-- **Reset from prod** (refresh staging data / start a migration rehearsal): Branches →
-  the staging branch → *Reset from parent*. This DISCARDS all staging-only data. Then
-  `fly apps restart texas-bible-bowl-staging` so the server drops old connections.
+Either the Neon console or `neonctl` (`brew install neonctl`, then `neonctl auth` once)
+drives this. The CLI is scriptable and is the only way to get a schema diff, so it leads
+below. Every command needs the project — pass `--project-id flat-base-74274585`, or run
+`neonctl set-context --project-id flat-base-74274585` once and drop the flag. With neither,
+the CLI *prompts* for an org (`org-raspy-shadow-87968984`) and a scripted call just hangs.
+
+```bash
+neonctl branches list --project-id flat-base-74274585   # production (default) + staging
+```
+
+- **Create** — from the production branch's head, with a read-write compute endpoint:
+  ```bash
+  neonctl branches create --project-id flat-base-74274585 --name staging \
+    --parent production --compute
+  neonctl connection-string staging --project-id flat-base-74274585 --pooled
+  ```
+  Then `fly secrets set DATABASE_URL='<pooled connection string>' -a texas-bible-bowl-staging`.
+  Console: Branches → New branch.
+- **Diff before you reset** — the useful pre-reset check, and CLI-only (the console has no
+  equivalent):
+  ```bash
+  neonctl branches schema-diff production staging --project-id flat-base-74274585
+  ```
+  Empty output means staging is schema-identical to prod, so a reset discards no schema
+  work. Non-empty is the normal state after a migration merges to `main` — and what it
+  prints is exactly the DDL a prod promotion will apply, which makes it worth reading on
+  its own, not just before a reset.
+- **Reset from prod** (refresh staging data / start a migration rehearsal). This DISCARDS
+  all staging-only data:
+  ```bash
+  neonctl branches reset staging --parent --project-id flat-base-74274585 \
+    --preserve-under-name staging-pre-reset-$(date +%Y%m%d)
+  fly apps restart texas-bible-bowl-staging   # so the server drops old connections
+  ```
+  `--preserve-under-name` keeps the pre-reset branch as an undo. Drop the flag if you don't
+  want one, because what it leaves behind is a second full copy of prod data — delete it
+  with `neonctl branches delete <name> --project-id flat-base-74274585` once the reset looks
+  good. Console: Branches → the staging branch → *Reset from parent*.
 - **Migration rehearsal** (the reason for branch-only): reset the branch from prod, deploy
   the candidate code to staging — Flyway applies the new migrations to the branch against
   real prod-shaped data (the branch copies `flyway_schema_history`, so only the new
@@ -72,7 +104,11 @@ the other; the branch does NOT stay in sync with prod (it's a snapshot, not a re
   from the feature branch).
 
 Because the branch is a prod copy it contains real registration PII and prod user
-accounts — treat staging access accordingly.
+accounts — treat staging access accordingly, and keep the branch count down: each extra
+branch is another full copy of that data. Note the flip side when deleting one — the
+project's history retention is 6 hours (`neonctl projects get flat-base-74274585 -o json`,
+`history_retention_seconds`), so a preserved branch is often the only copy of prod older
+than that window.
 
 ## Secrets (staging app)
 
