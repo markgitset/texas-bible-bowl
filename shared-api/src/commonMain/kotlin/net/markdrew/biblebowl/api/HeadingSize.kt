@@ -18,7 +18,7 @@ package net.markdrew.biblebowl.api
  * are correctly ordered and track the body size at every size.
  */
 enum class HeadingSize(val label: String, val slug: String, val scale: Double) {
-    SAME_AS_TEXT("Same as text", "same", 1.0),
+    SAME_AS_TEXT("Same as text (smallest)", "same", 1.0),
     SMALL("Small", "small", 1.2),
     MEDIUM("Medium", "medium", 1.4),
     LARGE("Large", "large", 1.7);

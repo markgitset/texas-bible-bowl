@@ -742,15 +742,25 @@ object DownloadsScreen {
     private fun Element.renderOptions(target: Customize) {
         when (target) {
             Customize.StudyText -> {
-                child("p", "fw-semibold mb-1", "Main font size")
-                chipRow(listOf(9, 10, 11, 12, 13, 14, 15).map { "$it pt" to it }, textChoices.fontSize) {
-                    textChoices = textChoices.copy(fontSize = it); rerender()
-                }
+                child("p", "fw-semibold mb-1", "Basic formatting options")
                 optionSwitch("Underline words that appear only once", textChoices.underlineUniqueWords) {
                     textChoices = textChoices.copy(underlineUniqueWords = it); rerender()
                 }
                 optionSwitch("Highlight names & numbers by category", textChoices.highlight) {
                     textChoices = textChoices.copy(highlight = it); rerender()
+                }
+                optionSwitch("Two columns", textChoices.twoColumns) {
+                    textChoices = textChoices.copy(twoColumns = it); rerender()
+                }
+                optionSwitch("Justified text", textChoices.justified) {
+                    textChoices = textChoices.copy(justified = it); rerender()
+                }
+                optionSwitch("Each verse starts on a new line", textChoices.verseOnNewLine) {
+                    textChoices = textChoices.copy(verseOnNewLine = it); rerender()
+                }
+                child("p", "fw-semibold mb-1", "Text font size")
+                chipRow(listOf(9, 10, 11, 12, 13, 14, 15).map { "$it pt" to it }, textChoices.fontSize) {
+                    textChoices = textChoices.copy(fontSize = it); rerender()
                 }
                 child("p", "fw-semibold mb-1", "Chapter numbers style")
                 chipRow(ChapterStyle.entries.map { it.label to it }, textChoices.chapterStyle) {
@@ -767,16 +777,6 @@ object DownloadsScreen {
                 child("p", "fw-semibold mb-1", "Subject heading font size")
                 chipRow(HeadingSize.entries.map { it.label to it }, textChoices.sectionHeading) {
                     textChoices = textChoices.copy(sectionHeading = it); rerender()
-                }
-                child("p", "fw-semibold mb-1", "Other formatting options")
-                optionSwitch("Two columns", textChoices.twoColumns) {
-                    textChoices = textChoices.copy(twoColumns = it); rerender()
-                }
-                optionSwitch("Justified text", textChoices.justified) {
-                    textChoices = textChoices.copy(justified = it); rerender()
-                }
-                optionSwitch("Each verse starts on a new line", textChoices.verseOnNewLine) {
-                    textChoices = textChoices.copy(verseOnNewLine = it); rerender()
                 }
                 /* This is not a legal option, so don't encourage it
                 optionSwitch("Each chapter starts a new page", textChoices.chapterBreaksPage) {

@@ -763,7 +763,19 @@ private fun StudyTextOptions(
     onChange: (StudyTextChoices) -> Unit,
 ) {
     SheetTitle("Customize study text")
-    Text("Main font size", style = MaterialTheme.typography.labelLarge)
+    Text("Basic formatting options", style = MaterialTheme.typography.labelLarge)
+    OptionSwitch("Underline words that appear only once", choices.underlineUniqueWords) {
+        onChange(choices.copy(underlineUniqueWords = it))
+    }
+    OptionSwitch("Highlight names & numbers by category", choices.highlight) {
+        onChange(choices.copy(highlight = it))
+    }
+    OptionSwitch("Two columns", choices.twoColumns) { onChange(choices.copy(twoColumns = it)) }
+    OptionSwitch("Justified text", choices.justified) { onChange(choices.copy(justified = it)) }
+    OptionSwitch("Each verse starts on a new line", choices.verseOnNewLine) {
+        onChange(choices.copy(verseOnNewLine = it))
+    }
+    Text("Text font size", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(9, 10, 11, 12, 13, 14, 15).forEach { size ->
             FilterChip(
@@ -772,12 +784,6 @@ private fun StudyTextOptions(
                 label = { Text("$size pt") },
             )
         }
-    }
-    OptionSwitch("Underline words that appear only once", choices.underlineUniqueWords) {
-        onChange(choices.copy(underlineUniqueWords = it))
-    }
-    OptionSwitch("Highlight names & numbers by category", choices.highlight) {
-        onChange(choices.copy(highlight = it))
     }
     Text("Chapter numbers style", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -797,12 +803,6 @@ private fun StudyTextOptions(
     }
     Text("Subject heading font size", style = MaterialTheme.typography.labelLarge)
     HeadingSizeChips(choices.sectionHeading) { onChange(choices.copy(sectionHeading = it)) }
-    Text("Other formatting options", style = MaterialTheme.typography.labelLarge)
-    OptionSwitch("Two columns", choices.twoColumns) { onChange(choices.copy(twoColumns = it)) }
-    OptionSwitch("Justified text", choices.justified) { onChange(choices.copy(justified = it)) }
-    OptionSwitch("Each verse starts on a new line", choices.verseOnNewLine) {
-        onChange(choices.copy(verseOnNewLine = it))
-    }
     /* This is not a legal option, so don't encourage it
     OptionSwitch("Each chapter starts a new page", choices.chapterBreaksPage) {
         onChange(choices.copy(chapterBreaksPage = it))
