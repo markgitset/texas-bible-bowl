@@ -797,6 +797,7 @@ private fun StudyTextOptions(
     }
     Text("Subject heading font size", style = MaterialTheme.typography.labelLarge)
     HeadingSizeChips(choices.sectionHeading) { onChange(choices.copy(sectionHeading = it)) }
+    Text("Other formatting options", style = MaterialTheme.typography.labelLarge)
     OptionSwitch("Two columns", choices.twoColumns) { onChange(choices.copy(twoColumns = it)) }
     OptionSwitch("Justified text", choices.justified) { onChange(choices.copy(justified = it)) }
     OptionSwitch("Each verse starts on a new line", choices.verseOnNewLine) {

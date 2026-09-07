@@ -768,6 +768,7 @@ object DownloadsScreen {
                 chipRow(HeadingSize.entries.map { it.label to it }, textChoices.sectionHeading) {
                     textChoices = textChoices.copy(sectionHeading = it); rerender()
                 }
+                child("p", "fw-semibold mb-1", "Other formatting options")
                 optionSwitch("Two columns", textChoices.twoColumns) {
                     textChoices = textChoices.copy(twoColumns = it); rerender()
                 }
