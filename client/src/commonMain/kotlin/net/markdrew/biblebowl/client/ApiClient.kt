@@ -341,7 +341,7 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
      * Fetches a formatted PDF of the covered text (verse numbers, headings, poetry, footnotes) with
      * categorized name/number highlighting ([highlight], on by default server-side); set
      * [underlineUniqueWords] to also underline hapax words (those occurring exactly once in the
-     * season book) and [chapterBreaksPage] to start each chapter on a new page. Chapter titles render
+     * season book) and [chapterBreaksPage] to start each chapter on a new page. Chapter numbers render
      * inline with the first verse unless [useHeadingsForChapters] puts them on their own line
      * ([chapterEndLines] adds divider lines beside them); [verseOnNewLine] starts every prose verse
      * on a fresh line. [chapterHeading]/[sectionHeading] size each heading relative to the body text

@@ -124,9 +124,9 @@ private enum class ExportApp { KAHOOT, SPACE, QUIZLET }
 
 /** How chapter titles render: inline with the first verse, or as standalone headings (± divider lines). */
 private enum class ChapterStyle(val label: String, val headings: Boolean, val lines: Boolean) {
-    HEADING_LINES("Heading with divider line", headings = true, lines = true),
-    HEADING("Heading without divider line", headings = true, lines = false),
-    INLINE("Same line as first verse", headings = false, lines = false),
+    HEADING_LINES("Chapter number as heading with divider", headings = true, lines = true),
+    HEADING("Chapter number as heading without divider", headings = true, lines = false),
+    INLINE("Chapter number on same line as first verse", headings = false, lines = false),
 }
 
 /** Study-text options, hoisted so choices stick for the whole visit (§7.6 "remember everything cheap"). */
@@ -742,7 +742,7 @@ object DownloadsScreen {
     private fun Element.renderOptions(target: Customize) {
         when (target) {
             Customize.StudyText -> {
-                child("p", "fw-semibold mb-1", "Font size")
+                child("p", "fw-semibold mb-1", "Main font size")
                 chipRow(listOf(9, 10, 11, 12, 13, 14, 15).map { "$it pt" to it }, textChoices.fontSize) {
                     textChoices = textChoices.copy(fontSize = it); rerender()
                 }
@@ -752,19 +752,19 @@ object DownloadsScreen {
                 optionSwitch("Highlight names & numbers by category", textChoices.highlight) {
                     textChoices = textChoices.copy(highlight = it); rerender()
                 }
-                child("p", "fw-semibold mb-1", "Chapter titles")
+                child("p", "fw-semibold mb-1", "Chapter numbers style")
                 chipRow(ChapterStyle.entries.map { it.label to it }, textChoices.chapterStyle) {
                     textChoices = textChoices.copy(chapterStyle = it); rerender()
                 }
                 // Only meaningful when chapters actually render as headings; inline chapter labels
                 // take the body size, so the chips would be a control that does nothing.
                 if (textChoices.chapterStyle.headings) {
-                    child("p", "fw-semibold mb-1", "Chapter heading size")
+                    child("p", "fw-semibold mb-1", "Chapter numbers font size")
                     chipRow(HeadingSize.entries.map { it.label to it }, textChoices.chapterHeading) {
                         textChoices = textChoices.copy(chapterHeading = it); rerender()
                     }
                 }
-                child("p", "fw-semibold mb-1", "Section heading size")
+                child("p", "fw-semibold mb-1", "Subject heading font size")
                 chipRow(HeadingSize.entries.map { it.label to it }, textChoices.sectionHeading) {
                     textChoices = textChoices.copy(sectionHeading = it); rerender()
                 }

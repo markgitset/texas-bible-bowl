@@ -73,9 +73,9 @@ private enum class ExportApp { KAHOOT, SPACE, QUIZLET }
 
 /** How chapter titles render: inline with the first verse, or as standalone headings (± divider lines). */
 private enum class ChapterStyle(val label: String, val headings: Boolean, val lines: Boolean) {
-    HEADING_LINES("Heading with divider line", headings = true, lines = true),
-    HEADING("Heading without divider line", headings = true, lines = false),
-    INLINE("Same line as first verse", headings = false, lines = false),
+    HEADING_LINES("Chapter number as heading with divider", headings = true, lines = true),
+    HEADING("Chapter number as heading without divider", headings = true, lines = false),
+    INLINE("Chapter number on same line as first verse", headings = false, lines = false),
 }
 
 /** Study-text options, hoisted so choices stick for the whole visit (§7.6 "remember everything cheap"). */
@@ -763,7 +763,7 @@ private fun StudyTextOptions(
     onChange: (StudyTextChoices) -> Unit,
 ) {
     SheetTitle("Customize study text")
-    Text("Font size", style = MaterialTheme.typography.labelLarge)
+    Text("Main font size", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         listOf(9, 10, 11, 12, 13, 14, 15).forEach { size ->
             FilterChip(
@@ -779,7 +779,7 @@ private fun StudyTextOptions(
     OptionSwitch("Highlight names & numbers by category", choices.highlight) {
         onChange(choices.copy(highlight = it))
     }
-    Text("Chapter titles", style = MaterialTheme.typography.labelLarge)
+    Text("Chapter numbers style", style = MaterialTheme.typography.labelLarge)
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
         ChapterStyle.entries.forEach { style ->
             FilterChip(
@@ -792,10 +792,10 @@ private fun StudyTextOptions(
     // Only meaningful when chapters actually render as headings; inline chapter labels take the
     // body size, so the chips would be a control that does nothing.
     if (choices.chapterStyle.headings) {
-        Text("Chapter heading size", style = MaterialTheme.typography.labelLarge)
+        Text("Chapter numbers font size", style = MaterialTheme.typography.labelLarge)
         HeadingSizeChips(choices.chapterHeading) { onChange(choices.copy(chapterHeading = it)) }
     }
-    Text("Section heading size", style = MaterialTheme.typography.labelLarge)
+    Text("Subject heading font size", style = MaterialTheme.typography.labelLarge)
     HeadingSizeChips(choices.sectionHeading) { onChange(choices.copy(sectionHeading = it)) }
     OptionSwitch("Two columns", choices.twoColumns) { onChange(choices.copy(twoColumns = it)) }
     OptionSwitch("Justified text", choices.justified) { onChange(choices.copy(justified = it)) }
