@@ -31,8 +31,16 @@ FLY=$(command -v fly || command -v flyctl || echo /home/linuxbrew/.linuxbrew/bin
 HUGO=$(command -v hugo || echo "$HOME/bin/hugo")
 
 # The web dist, plus a fresh site/data/study-sections.json (nav/sitemap study links) so the
-# deployed site can never render a stale section list even if a regeneration wasn't committed.
-./gradlew :web:jsBrowserDistribution :shared-api:generateStudySectionsData
+# deployed site can never render a stale section list even if a regeneration wasn't committed,
+# plus build/version.txt (the `git describe` build version, stamped into the footer).
+./gradlew :web:jsBrowserDistribution :shared-api:generateStudySectionsData :writeVersionFile
+
+# Footer build stamp. $TBB_VERSION, if set, already won inside :writeVersionFile — the
+# production promotion passes the prod-* tag it is about to apply. A shallow CI checkout with
+# no tags degrades to a bare commit hash, which is why both deploy workflows check out with
+# fetch-depth: 0.
+site_version=$(tr -d '\n' < build/version.txt)
+echo "Site version: $site_version"
 
 # Bake current season params from this environment's backend, restoring the committed
 # fallback afterward so the working tree stays clean. The backup must live OUTSIDE
@@ -51,7 +59,8 @@ fi
 
 out="$PWD/$app_dir/public"
 rm -rf "$out"
-HUGO_PARAMS_BACKENDURL="$backend_url" "$HUGO" -s site --gc --minify "${hugo_args[@]}" -d "$out"
+HUGO_PARAMS_BACKENDURL="$backend_url" HUGO_PARAMS_SITEVERSION="$site_version" \
+  "$HUGO" -s site --gc --minify "${hugo_args[@]}" -d "$out"
 cp "$params_bak" "$params" && rm -f "$params_bak" && trap - EXIT
 
 # /app/ assembly: Hugo renders the shared-chrome shell at app/index.html; copy the JS

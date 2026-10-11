@@ -65,7 +65,11 @@ class ApplicationTest {
 
         val res = client.get("/health")
         assertEquals(HttpStatusCode.OK, res.status)
-        assertTrue(res.bodyAsText().contains("Acts"))
+        val body = res.bodyAsText()
+        assertTrue(body.contains("Acts"))
+        // The deployed build, which the production promotion health-checks against the tag it
+        // just applied. Unset in tests, so it reads "unknown" — the point is that it's there.
+        assertTrue(body.contains("\"version\":\"${BuildVersion.current}\""), body)
     }
 
     @Test
