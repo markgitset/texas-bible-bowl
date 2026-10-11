@@ -413,6 +413,10 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun uniqueWordsIndexPdf(set: String? = null): ByteArray =
         client.get("$baseUrl/generate/unique-words-index.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
 
+    /** Fetches the unique-words-by-chapter homework PDF (alphabetical per chapter, no references). */
+    suspend fun uniqueWordsByChapterPdf(set: String? = null): ByteArray =
+        client.get("$baseUrl/generate/unique-words-by-chapter.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()
+
     /** Fetches the unique-word flashcard deck PDF (word on the front, its verse on the back). */
     suspend fun uniqueWordFlashcardsPdf(set: String? = null): ByteArray =
         client.get("$baseUrl/generate/unique-word-flashcards.pdf") { authorize(); scopeParams(set, book = null, chapter = null) }.bodyOrThrow()

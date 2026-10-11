@@ -323,7 +323,7 @@ class StudyRoutesTest {
         // Covers the category/full indices plus the one-time-words index and its flashcard deck.
         listOf(
             "men-index", "women-index", "places-index", "full-index", "unique-words-index",
-            "unique-word-flashcards",
+            "unique-words-by-chapter", "unique-word-flashcards",
         ).forEach { name ->
             val res = api.get("/generate/$name.pdf")
             assertEquals(HttpStatusCode.OK, res.status, "$name should return 200")

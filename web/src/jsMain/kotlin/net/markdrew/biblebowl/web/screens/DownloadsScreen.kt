@@ -253,7 +253,8 @@ object DownloadsScreen {
                 "Every ESV section heading (Round 5 material) — a one-page list, flashcards, a browser, " +
                     "and self-check mode."
             StudySection.UNIQUE_WORDS ->
-                "Words that appear only once in $scripture — flashcards and a printable index."
+                "Words that appear only once in $scripture — flashcards, a printable index, and a " +
+                    "by-chapter homework sheet."
             StudySection.PRACTICE_TESTS ->
                 "Printable practice tests for Rounds 1–5, built like the real thing."
             StudySection.REFERENCE ->
@@ -422,6 +423,12 @@ object DownloadsScreen {
             subtitle = "Every word that appears only once in ${season.eventScripture} — alphabetical and " +
                 "in order of appearance.",
             href = generateUrl("/generate/unique-words-index.pdf"),
+        )
+        downloadCard(
+            title = "Unique words by chapter (homework)",
+            subtitle = "The same words grouped by the chapter they appear in, alphabetical within each " +
+                "chapter and with no verse reference — finding each one in the text is the homework.",
+            href = generateUrl("/generate/unique-words-by-chapter.pdf"),
         )
     }
 

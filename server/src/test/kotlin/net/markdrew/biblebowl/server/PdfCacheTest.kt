@@ -204,6 +204,8 @@ class PdfCacheTest {
         val expected = mapOf(
             "acts-names-index.pdf" to ("/generate/names-index.pdf" to LayoutRevisions.INDEX),
             "acts-unique-words-index.pdf" to ("/generate/unique-words-index.pdf" to LayoutRevisions.INDEX),
+            "acts-unique-words-by-chapter.pdf" to
+                ("/generate/unique-words-by-chapter.pdf" to LayoutRevisions.UNIQUE_WORDS_BY_CHAPTER),
             "acts-heading-flashcards.pdf" to ("/generate/heading-flashcards.pdf" to LayoutRevisions.FLASHCARDS),
             "acts-unique-word-flashcards.pdf" to
                 ("/generate/unique-word-flashcards.pdf" to LayoutRevisions.FLASHCARDS),

@@ -220,6 +220,7 @@ class TbbApiRequestTest {
             suspend { api.placesIndexPdf() } to "/generate/places-index.pdf",
             suspend { api.fullIndexPdf() } to "/generate/full-index.pdf",
             suspend { api.uniqueWordsIndexPdf() } to "/generate/unique-words-index.pdf",
+            suspend { api.uniqueWordsByChapterPdf() } to "/generate/unique-words-by-chapter.pdf",
             suspend { api.uniqueWordFlashcardsPdf() } to "/generate/unique-word-flashcards.pdf",
             suspend { api.studyGuidePdf() } to "/generate/study-guide.pdf",
             suspend { api.studyGuideAnswersPdf() } to "/generate/study-guide-answers.pdf",

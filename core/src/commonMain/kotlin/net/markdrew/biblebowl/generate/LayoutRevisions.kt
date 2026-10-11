@@ -47,6 +47,13 @@ object LayoutRevisions {
     const val INDEX = 2
 
     /**
+     * `oneTimeWordsByChapterTypst` — the unique-words-by-chapter homework sheet. Shares the index
+     * helpers with [INDEX] but revises separately, so a tweak here doesn't recompile every index.
+     * 1 = chapter-grouped, alphabetical within a chapter, references withheld.
+     */
+    const val UNIQUE_WORDS_BY_CHAPTER = 1
+
+    /**
      * `flashcardsTypst`, shared by the question-bank, unique-word, and chapter-heading decks.
      * 1 = Markdown rich text with the unique word underlined, which only the unique-word deck was
      * salted for at the time — the heading deck served the pre-Markdown rendering until 2 retired
