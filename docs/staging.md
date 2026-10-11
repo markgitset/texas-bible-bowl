@@ -43,6 +43,19 @@ writes `build/version.txt` for `tools/deploy-web.sh` to bake into `params.siteVe
 deploy workflows check out with `fetch-depth: 0` because `git describe` needs tags and history;
 a shallow checkout silently degrades the footer to a bare commit hash.
 
+The backend answers the same question at `GET /health`:
+
+```json
+{"status":"ok","service":"texas-bible-bowl","season":"Acts","version":"prod-20261011-1159"}
+```
+
+A promotion deploys both halves from one commit, so the footer and `/health` should agree —
+when they don't, someone deployed a half directly. The value is baked into the image as the
+`TBB_VERSION` build arg (`server/Dockerfile`), and the prod promotion's health check *gates* on
+it: `/health` must report the tag that run is applying, which is also what proves the new image
+actually rolled rather than the old machine still answering. `unknown` means nothing passed the
+build arg — local `:server:run`, the tests, or a hand-rolled `fly deploy` that skipped it.
+
 Two environments back this, and the split is deliberate:
 
 | Environment | Holds | Reviewers | Branches |

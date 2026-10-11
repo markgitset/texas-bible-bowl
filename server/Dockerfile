@@ -32,6 +32,15 @@ COPY --from=typst /usr/local/bin/typst /usr/local/bin/typst
 # .dockerignore un-ignores exactly this path (build context is the repo root).
 COPY server/build/install/server /app
 
+# Which build this image is, reported by GET /health (see BuildVersion.kt). Passed as
+# --build-arg by the deploy paths: tools/deploy-staging.sh (from the root :writeVersionFile
+# task) and deploy-production.yml (the prod-YYYYMMDD-HHMM tag it is about to apply). Declared
+# here, AFTER the COPY above: it changes on every deploy, and an ARG earlier in the file would
+# invalidate the cached JRE and typst layers along with it. Defaults to "unknown" so a plain
+# `docker build`, or an emergency hand-rolled `fly deploy`, still builds — /health just says so.
+ARG TBB_VERSION=unknown
+ENV TBB_VERSION=$TBB_VERSION
+
 ENV PORT=8080
 EXPOSE 8080
 # Cloud Run / Fly set $PORT; the app reads it (Application.kt). JVM args (MaxRAMPercentage) are

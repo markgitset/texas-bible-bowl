@@ -13,13 +13,17 @@ FLY=$(command -v fly || command -v flyctl || echo /home/linuxbrew/.linuxbrew/bin
 
 deploy_backend() {
   # installDist here, not in the Dockerfile: the image just COPYs the dist (see
-  # server/Dockerfile for why the in-image Gradle build was removed).
-  ./gradlew :server:test :server:installDist
+  # server/Dockerfile for why the in-image Gradle build was removed). :writeVersionFile stamps
+  # the build into the image, where GET /health reports it (BuildVersion.kt) — the backend's
+  # counterpart to the site footer's version.
+  ./gradlew :server:test :server:installDist :writeVersionFile
+  local version; version=$(tr -d '\n' < build/version.txt)
+  echo "Backend version: $version"
   # --local-only: build the copy-only image with the local Docker daemon and push it —
   # Fly's remote depot builder wedges and then deploys time out waiting to connect to it.
   # Needs Docker running (CI runners and the dev machine both have it); if Docker is ever
   # unavailable, drop the flag to fall back to Fly's remote builder.
-  "$FLY" deploy --local-only -c fly.staging.toml
+  "$FLY" deploy --local-only --build-arg "TBB_VERSION=$version" -c fly.staging.toml
 }
 
 case "${1:-all}" in

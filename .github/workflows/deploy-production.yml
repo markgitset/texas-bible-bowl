@@ -69,14 +69,25 @@ jobs:
       - name: Deploy backend to Fly
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_BACKEND_DEPLOY_TOKEN }}
+          # Baked into the image and reported by GET /health (BuildVersion.kt) — the same tag
+          # the frontend stamps in the footer and the `tag` job applies, so all three agree.
+          TAG: ${{ steps.ident.outputs.tag }}
         # --local-only: build the (trivial, copy-only) image with the runner's Docker and
         # push it to Fly's registry. Fly's remote depot builder gets wedged and then every
         # deploy times out in "Waiting for depot builder..." (2026-08-31 promotion) — with
         # no remote builder in the path, a builder outage can't block a deploy.
-        run: flyctl deploy --local-only
+        run: flyctl deploy --local-only --build-arg "TBB_VERSION=$TAG"
 
       - name: Backend health check
-        run: curl -fsS --retry 3 --retry-delay 10 --max-time 90 https://texas-bible-bowl.fly.dev/health
+        # Also proves the deploy actually rolled: /health must report THIS promotion's version,
+        # not whatever the machine was serving before.
+        env:
+          TAG: ${{ steps.ident.outputs.tag }}
+        run: |
+          curl -fsS --retry 3 --retry-delay 10 --max-time 90 https://texas-bible-bowl.fly.dev/health -o health.json
+          cat health.json; echo
+          jq -e --arg v "$TAG" '.version == $v' health.json > /dev/null \
+            || { echo "::error::/health reports version $(jq -r .version health.json), expected $TAG"; exit 1; }
 
   frontend:
     needs: backend

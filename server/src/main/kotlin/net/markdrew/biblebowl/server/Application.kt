@@ -238,7 +238,13 @@ fun Application.module(
     routing {
         get("/health") {
             call.respond(
-                mapOf("status" to "ok", "service" to "texas-bible-bowl", "season" to seasons.current().eventScripture),
+                mapOf(
+                    "status" to "ok",
+                    "service" to "texas-bible-bowl",
+                    "season" to seasons.current().eventScripture,
+                    // Which backend build answered — the site footer's counterpart. See BuildVersion.
+                    "version" to BuildVersion.current,
+                ),
             )
         }
         authRoutes(users, jwt, resets, email)
