@@ -229,9 +229,12 @@ class TypstSourceDownloadTest {
 
         listOf(
             "names-index", "numbers-index", "men-index", "women-index", "places-index", "full-index",
-            "unique-words-index", "unique-word-flashcards", "heading-flashcards", "chapter-headings",
-        ).forEach { name ->
-            val res = api.get("/generate/$name.pdf?format=typ")
+            "unique-words-index", "unique-words-by-chapter", "unique-word-flashcards",
+            "heading-flashcards", "chapter-headings",
+        ).forEachIndexed { i, name ->
+            // One visitor per generator: /generate/* allows 10 requests a minute per client IP, and
+            // this list is longer than that — a shared IP would 429 the tail and say nothing about auth.
+            val res = api.get("/generate/$name.pdf?format=typ") { header("Fly-Client-IP", "10.0.0.$i") }
             assertEquals(HttpStatusCode.OK, res.status, "$name markup should not require sign-in")
             assertTrue(
                 "$name.typ" in res.headers[HttpHeaders.ContentDisposition].orEmpty(),

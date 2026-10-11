@@ -125,7 +125,8 @@ private fun blurb(section: StudySection, scripture: String): String = when (sect
         "Every ESV section heading (Round 5 material) — a one-page list, flashcards, a browser, " +
             "and self-check mode."
     StudySection.UNIQUE_WORDS ->
-        "Words that appear only once in $scripture — flashcards and a printable index."
+        "Words that appear only once in $scripture — flashcards, a printable index, and a by-chapter " +
+            "homework sheet."
     StudySection.PRACTICE_TESTS ->
         "Printable practice tests for Rounds 1–5, built like the real thing."
     StudySection.REFERENCE ->
@@ -510,6 +511,17 @@ fun StudySectionScreen(
                         "in order of appearance.",
                     busyCard = busyCard,
                     onClick = { download("Unique words index", withSet(PdfFileNames.uniqueWordsIndex())) { api.uniqueWordsIndexPdf() } },
+                )
+                DownloadCard(
+                    title = "Unique words by chapter (homework)",
+                    subtitle = "The same words grouped by the chapter they appear in, alphabetical within " +
+                        "each chapter and with no verse reference — finding each one in the text is the homework.",
+                    busyCard = busyCard,
+                    onClick = {
+                        download("Unique words by chapter", withSet(PdfFileNames.uniqueWordsByChapter())) {
+                            api.uniqueWordsByChapterPdf()
+                        }
+                    },
                 )
             }
 

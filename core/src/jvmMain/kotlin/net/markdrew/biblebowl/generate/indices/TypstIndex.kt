@@ -2,8 +2,10 @@ package net.markdrew.biblebowl.generate.indices
 
 import net.markdrew.biblebowl.analysis.WordIndexEntryC
 import net.markdrew.biblebowl.analysis.numbersIndex
+import net.markdrew.biblebowl.analysis.oneTimeWordsIndexByChapter
 import net.markdrew.biblebowl.analysis.oneTimeWordsIndexByVerse
 import net.markdrew.biblebowl.analysis.oneTimeWordsIndexByWord
+import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.IndexEntry
 import net.markdrew.biblebowl.model.StudyData
 
@@ -48,6 +50,13 @@ private fun <K, V> StringBuilder.appendIndex(
     columns: Int = 2,
     formatKey: (K) -> String = { it.toString() },
     formatValues: (List<V>) -> String = { it.joinToString() },
+    /**
+     * Sets each entry as its own paragraph rather than a line break inside one long paragraph, so
+     * paragraph spacing separates the entries and the hanging indent tucks every wrapped line under
+     * its key. Right when one entry is a block (a chapter's worth of words); the default keeps the
+     * tight line-per-entry form the reference indices use.
+     */
+    paragraphPerEntry: Boolean = false,
 ) {
     if (indexTitle != null) {
         appendLine("== ${escapeTypst(indexTitle)}")
@@ -59,8 +68,10 @@ private fun <K, V> StringBuilder.appendIndex(
     }
     appendLine("#columns($columns)[")
     appendLine("  #set par(hanging-indent: 0.25in, justify: false)")
+    // A trailing backslash breaks the line but stays in one paragraph; a blank line ends the paragraph.
+    val entryEnd = if (paragraphPerEntry) "\n" else " \\"
     entries.forEach {
-        appendLine("  *${escapeTypst(formatKey(it.key))}*, ${formatValues(it.values)} \\")
+        appendLine("  *${escapeTypst(formatKey(it.key))}*, ${formatValues(it.values)}$entryEnd")
     }
     appendLine("]")
     appendLine()
@@ -132,6 +143,36 @@ fun oneTimeWordsIndexTypst(studyData: StudyData): String {
                 columns = 4,
                 formatKey = studyData.verseRefFormat,
                 formatValues = { it.joinToString(", ") },
+            )
+        }
+    }
+}
+
+/**
+ * The season's unique-words homework sheet as a Typst document: every chapter of the set in order, its
+ * once-only words alphabetical beside it, and no verse reference anywhere — finding each word in the
+ * text is the exercise. [oneTimeWordsIndexTypst] is the answer copy; this one withholds the references
+ * on purpose. Ported from bible-bowl's `writeOneTimeWordsHomework`.
+ */
+fun oneTimeWordsByChapterTypst(studyData: StudyData): String {
+    val name = studyData.studySet.name
+    val longName = studyData.studySet.longName
+    // A multi-book set's "Act 1" already names its book; a single-book set's bare "1" needs the word.
+    val chapterLabel: (ChapterRef) -> String =
+        if (studyData.isMultiBook) studyData.chapterRefFormat
+        else ({ ref: ChapterRef -> "Chapter ${ref.chapter}" }).noBreak()
+    return buildString {
+        appendDoc(
+            "$name Unique Words by Chapter",
+            "The following words appear only once in $longName. Each chapter lists its own " +
+                "unique words alphabetically — the verse is yours to find.",
+        ) {
+            appendIndex(
+                oneTimeWordsIndexByChapter(studyData),
+                columns = 3,
+                formatKey = chapterLabel,
+                formatValues = { it.joinToString(", ") },
+                paragraphPerEntry = true,
             )
         }
     }

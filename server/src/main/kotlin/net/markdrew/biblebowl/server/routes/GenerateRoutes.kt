@@ -40,6 +40,7 @@ import net.markdrew.biblebowl.analysis.oneTimeWordCards
 import net.markdrew.biblebowl.analysis.wordListIndex
 import net.markdrew.biblebowl.generate.indices.indexTypst
 import net.markdrew.biblebowl.generate.indices.numbersIndexTypst
+import net.markdrew.biblebowl.generate.indices.oneTimeWordsByChapterTypst
 import net.markdrew.biblebowl.generate.indices.oneTimeWordsIndexTypst
 import net.markdrew.biblebowl.generate.studyguide.STUDY_GUIDE_LOGO_FILE
 import net.markdrew.biblebowl.generate.studyguide.studyGuideTypst
@@ -383,6 +384,17 @@ fun Route.generateRoutes(
             get("/generate/unique-words-index.pdf") {
                 respondIndexPdf(study, seasons, pdfCache, PdfFileNames.uniqueWordsIndex(), LayoutRevisions.INDEX) { s ->
                     oneTimeWordsIndexTypst(s.studyData())
+                }
+            }
+
+            // GET /generate/unique-words-by-chapter.pdf?set=acts — the homework sheet: each chapter's
+            // one-time words, alphabetical, with the verse references withheld
+            get("/generate/unique-words-by-chapter.pdf") {
+                respondIndexPdf(
+                    study, seasons, pdfCache, PdfFileNames.uniqueWordsByChapter(),
+                    LayoutRevisions.UNIQUE_WORDS_BY_CHAPTER,
+                ) { s ->
+                    oneTimeWordsByChapterTypst(s.studyData())
                 }
             }
 

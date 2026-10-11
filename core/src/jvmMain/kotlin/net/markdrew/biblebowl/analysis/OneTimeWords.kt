@@ -1,5 +1,6 @@
 package net.markdrew.biblebowl.analysis
 
+import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.IndexEntry
 import net.markdrew.biblebowl.model.StudyData
 import net.markdrew.biblebowl.model.VerseRef
@@ -59,6 +60,21 @@ fun oneTimeWordsIndexByVerse(
 ): List<IndexEntry<VerseRef, String>> = ranges
     .groupBy { studyData.verseEnclosing(it) ?: error("No verse for range $it") }
     .map { (ref, wordRanges) -> IndexEntry(ref, wordRanges.map { studyData.excerpt(it).excerptText }) }
+
+/**
+ * One-time words grouped by chapter → that chapter's once-only words, alphabetical (case-insensitive),
+ * chapters in canonical order. The source for the homework sheet: a chapter's words with no verse
+ * reference attached, so finding each one in the text is the exercise.
+ */
+fun oneTimeWordsIndexByChapter(
+    studyData: StudyData,
+    ranges: List<IntRange> = oneTimeWords(studyData),
+): List<IndexEntry<ChapterRef, String>> = ranges
+    .groupBy { studyData.chapterEnclosing(it) ?: error("No chapter for range $it") }
+    .map { (ref, wordRanges) ->
+        IndexEntry(ref, wordRanges.map { studyData.excerpt(it).excerptText }.sortedBy { it.lowercase() })
+    }
+    .sortedBy { it.key }
 
 /**
  * A word that appears multiple times but only within one section (e.g. one chapter or one heading)

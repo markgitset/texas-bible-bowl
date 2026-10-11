@@ -66,6 +66,9 @@ object PdfFileNames {
     /** The one-time-words (hapax) index — alphabetical + in order of appearance. */
     fun uniqueWordsIndex(): String = "unique-words-index.pdf"
 
+    /** The unique-words homework sheet — each chapter's one-time words, alphabetical, no references. */
+    fun uniqueWordsByChapter(): String = "unique-words-by-chapter.pdf"
+
     /** The one-time-words flashcard deck (word on the front, its verse on the back). */
     fun uniqueWordFlashcards(): String = "unique-word-flashcards.pdf"
 
