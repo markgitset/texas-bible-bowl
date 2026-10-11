@@ -42,5 +42,13 @@
     <p class="text-center small mb-0" style="color:rgba(255,255,255,0.4);">
       &copy; {{ now.Year }} Texas Bible Bowl. All rights reserved.
     </p>
+    {{/* Which build you're looking at. Set per deploy from git (tools/deploy-web.sh reads
+         build/version.txt, written by the root :writeVersionFile task); empty on a plain
+         local `hugo` build, which renders nothing rather than a misleading version. */}}
+    {{ with .Site.Params.siteVersion }}
+    <p class="text-center mb-0 mt-1" style="color:rgba(255,255,255,0.3);font-size:.7rem;">
+      <span title="Deployed build version">{{ . }}</span>
+    </p>
+    {{ end }}
   </div>
 </footer>

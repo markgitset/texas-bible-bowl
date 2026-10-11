@@ -31,7 +31,17 @@ tools/deploy-staging.sh all
 (optionally pinning a SHA in the `ref` input; default is `main`'s HEAD) → approve the
 `production` gate **once**. That one run re-tests, deploys the Fly backend AND the Fly
 static frontend from the same commit, health-checks both, and tags the commit
-`prod-YYYYMMDD-HHMM` — `git tag -l 'prod-*'` is the deploy history.
+`prod-YYYYMMDD-HHMM` (an **annotated** tag) — `git tag -l 'prod-*'` is the deploy history.
+
+**Which build am I looking at?** Every deployed page shows its version small and muted at the
+bottom of the footer. On prod it's the `prod-YYYYMMDD-HHMM` tag of that promotion (the
+workflow fixes the name up front and passes it as `$TBB_VERSION`, so the footer is right even
+though the tag is pushed last). On staging it's `git describe` — e.g.
+`prod-20261011-1159-3-gabc1234`, meaning "3 commits past the last production deploy". The
+string comes from the root `:writeVersionFile` Gradle task (`com.palantir.git-version`), which
+writes `build/version.txt` for `tools/deploy-web.sh` to bake into `params.siteVersion`. Both
+deploy workflows check out with `fetch-depth: 0` because `git describe` needs tags and history;
+a shallow checkout silently degrades the footer to a bare commit hash.
 
 Two environments back this, and the split is deliberate:
 
