@@ -217,6 +217,10 @@ object QuizScreen {
                             b.setAttribute("disabled", "")
                         }
                     }
+                    // Where to find the answer, right away rather than only in the end-of-quiz review.
+                    if (item.question.references.isNotEmpty()) {
+                        footer.child("p", "small text-muted mb-2", item.question.references.joinToString("; "))
+                    }
                     footer.child("button", "btn btn-primary w-100", "Next") {
                         setAttribute("type", "button")
                         onClick { quiz.next(); rerender() }

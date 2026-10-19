@@ -246,6 +246,10 @@ private fun QuizStepper(quiz: QuizEngine, tick: Int, onTick: () -> Unit, onEnd: 
                 }
             }
             if (picked != null) {
+                // Where to find the answer, right away rather than only in the end-of-quiz review.
+                if (item.question.references.isNotEmpty()) {
+                    Text(item.question.references.joinToString("; "), style = MaterialTheme.typography.bodySmall)
+                }
                 Button(onClick = { quiz.next(); onTick() }, modifier = Modifier.fillMaxWidth()) { Text("Next") }
             }
         } else {
