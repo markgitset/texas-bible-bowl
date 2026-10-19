@@ -55,6 +55,11 @@ canonifyURLs = true
   # app falls back to localhost; deploys override via HUGO_PARAMS_BACKENDURL
   # (tools/deploy-web.sh, from the BACKEND_URL repo variable).
   backendURL    = ""
+  # Deployed build version, rendered small and muted at the bottom of the footer so any page
+  # says which build it is. Empty here on purpose: a plain local `hugo` build shows nothing
+  # rather than a stale string. Deploys override via HUGO_PARAMS_SITEVERSION
+  # (tools/deploy-web.sh, from the root :writeVersionFile task's `git describe` output).
+  siteVersion   = ""
 
 # Homepage hero slideshow. Image files live in static/images/hero/ (cropped to the
 # 2.26:1 banner ratio, e.g. 1100x486). To refresh photos for a new year: drop new

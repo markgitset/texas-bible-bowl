@@ -176,8 +176,8 @@ This renders the real pipeline without hitting Crossway.
   manual dispatch **from `main`** (optionally pinning a SHA in the `ref` input; default `main`
   HEAD), gated on Mark approving the `production` environment **once**, `:server:test` re-run,
   then Fly backend + Fly frontend deploy from that exact commit, health-checked and tagged
-  `prod-YYYYMMDD-HHMM` — so `git tag -l 'prod-*'` is the deploy history and the latest tag is
-  what's live. Promote only commits staging already ran. Fly deploy tokens live as
+  `prod-YYYYMMDD-HHMM` (**annotated**, so plain `git describe` sees it) — so
+  `git tag -l 'prod-*'` is the deploy history and the latest tag is what's live. Promote only commits staging already ran. Fly deploy tokens live as
   environment-scoped GitHub secrets — **`production` holds `FLY_BACKEND_DEPLOY_TOKEN` and is
   the only reviewer-gated environment; `production-web` holds `FLY_WEB_DEPLOY_TOKEN` with no
   reviewers** (GitHub gates per gated job, so a second gated environment would mean a second
@@ -185,6 +185,32 @@ This renders the real pipeline without hitting Crossway.
   Both are restricted to the `main` branch. Don't "simplify" this by moving a Fly token to a
   repo-level secret: the repo is public and has none, and the web token can publish anything
   to texasbiblebowl.org. See `docs/staging.md`.
+- **Which build is live:** every deployed page stamps its version small and muted under the
+  footer copyright (`params.siteVersion`, rendered in `site/layouts/partials/footer.html`), so
+  the site and the app under `/app/` both say what they are. The string comes from the root
+  `:writeVersionFile` task (`com.palantir.git-version`), which writes `build/version.txt` for
+  `tools/deploy-web.sh` to pass to Hugo as `HUGO_PARAMS_SITEVERSION`: `git describe` semantics,
+  so prod reads `prod-20261011-1159` and staging reads `prod-20261011-1159-3-gabc1234` ("3
+  commits past the last prod deploy"); `.dirty` means uncommitted changes. `$TBB_VERSION`
+  overrides it — the production promotion fixes its tag name up front and passes it, so the
+  footer names the tag even though the tag is pushed only after both halves deploy. Two
+  gotchas: both deploy workflows need `fetch-depth: 0` (a shallow checkout has no tags and the
+  footer degrades to a bare hash), and `gitVersion()` is called *inside* the task's
+  configuration block on purpose — the plugin registers git's output as a configuration-cache
+  input, so hoisting the call to the top of the root build (or into `version = …`) would make
+  every commit invalidate the config cache of every build in the repo.
+- **The backend reports its own build at `GET /health`** (`"version"`, from `BuildVersion.kt`),
+  so a backend and a frontend that drifted apart are visible without guessing. It reads the
+  `TBB_VERSION` env var, baked into the image by `server/Dockerfile`'s `ARG`/`ENV`; the deploy
+  paths pass `--build-arg TBB_VERSION=…` (`tools/deploy-staging.sh` from `:writeVersionFile`,
+  `deploy-production.yml` from the tag it is about to apply — and its health check now *gates*
+  on `/health` reporting that tag, which is also what proves the new image actually rolled).
+  Env var, NOT a generated Kotlin constant: generating one would wire `git describe` into the
+  configuration cache of every `:server:test` run, so every commit would force a full
+  reconfiguration. A hand-rolled emergency `fly deploy` should pass the build arg too —
+  `./gradlew :writeVersionFile && fly deploy --local-only --build-arg "TBB_VERSION=$(cat
+  build/version.txt)"` — or `/health` will just say `unknown` (which is also what local
+  `:server:run` and the tests report).
 - **Web (prod frontend):** static Fly app **`texas-bible-bowl-web`** (nginx, one always-warm
   machine, www→apex 301; same pattern as staging-web so staging rehearses prod), deployed
   ONLY by the production promotion above via `tools/deploy-web.sh prod` — ONE tree: the

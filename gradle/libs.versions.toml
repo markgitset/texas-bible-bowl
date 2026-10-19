@@ -15,6 +15,7 @@ koin = "4.1.1"
 activityCompose = "1.9.3"
 navigationCompose = "2.9.2"
 chupacabra = "v0.3.1"
+gitVersion = "5.0.0"
 
 [libraries]
 # Shared / KMP
@@ -78,3 +79,5 @@ compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "
 ktor = { id = "io.ktor.plugin", version.ref = "ktor" }
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+# Derives the build version from git (`git describe`) — stamped into the site footer.
+git-version = { id = "com.palantir.git-version", version.ref = "gitVersion" }
