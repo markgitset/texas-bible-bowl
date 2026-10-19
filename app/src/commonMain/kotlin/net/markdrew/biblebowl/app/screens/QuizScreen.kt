@@ -20,6 +20,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -39,6 +40,7 @@ import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.ui.ChapterChips
 import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.api.ScopeSelection
+import net.markdrew.biblebowl.api.resolveWithin
 import net.markdrew.biblebowl.api.resolvedStudySet
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 import net.markdrew.biblebowl.model.Book
@@ -51,7 +53,7 @@ private enum class QuizSource(val displayName: String) {
 
 /**
  * Turns the season's headings into multiple-choice "which chapter?" items. Distractors are other
- * chapters in scope, so cumulative practice (through chapter N) never leaks future chapters.
+ * chapters in scope, so a drill over a chapter span never offers chapters outside it.
  * Chapter labels stay "Chapter N" for single-book sets and gain the book ("Num 14") for multi-book
  * sets, where a bare number would be ambiguous.
  */
@@ -108,14 +110,19 @@ fun QuizScreen(api: TbbApi) {
                 loading = true; error = null
                 scope.launch {
                     try {
+                        // Both sources ask for exactly the span the chips light, ends spelled out explicitly.
+                        val set = season.resolvedStudySet
+                        val scoped = selection.resolveWithin(set)
+                        val book = scoped.book?.name
+                        val from = scoped.chapters?.start?.chapter
+                        val through = scoped.chapters?.endInclusive?.chapter
                         val pool = when (source) {
                             QuizSource.QUESTIONS ->
-                                api.questions(chapter = selection.chapter, book = selection.book?.name)
+                                api.questions(book = book, fromChapter = from, chapter = through)
                                     .filter { round == null || it.roundType == round }
-                            // Chapter chip means "through chapter N" here so drills stay cumulative.
                             QuizSource.HEADINGS -> headingQuestions(
-                                api.headings(throughChapter = selection.chapter, book = selection.book?.name),
-                                multiBook = !season.resolvedStudySet.isSingleBook,
+                                api.headings(book = book, fromChapter = from, throughChapter = through),
+                                multiBook = !set.isSingleBook,
                             )
                         }
                         val e = QuizEngine(pool)
@@ -136,7 +143,7 @@ fun QuizScreen(api: TbbApi) {
 
         quiz.isFinished -> QuizResults(quiz, onRestart = { engine = null })
 
-        else -> QuizStepper(quiz, tick, onTick = { tick++ })
+        else -> QuizStepper(quiz, tick, onTick = { tick++ }, onEnd = { engine = null })
     }
 }
 
@@ -176,18 +183,15 @@ private fun QuizSetup(
                 }
             }
         }
-        Text(
-            if (source == QuizSource.HEADINGS) "Through chapter" else "Chapter",
-            style = MaterialTheme.typography.labelLarge,
-        )
-        ChapterChips(selected = selection, onSelect = onSelection)
+        Text("Chapters", style = MaterialTheme.typography.labelLarge)
+        ChapterChips(selected = selection, range = true, onSelect = onSelection)
         Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) { Text("Start quiz") }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
     }
 }
 
 @Composable
-private fun QuizStepper(quiz: QuizEngine, tick: Int, onTick: () -> Unit) {
+private fun QuizStepper(quiz: QuizEngine, tick: Int, onTick: () -> Unit, onEnd: () -> Unit) {
     // tick is read so answering/advancing recomposes this screen.
     @Suppress("UNUSED_EXPRESSION") tick
     val item = quiz.current ?: return
@@ -199,11 +203,14 @@ private fun QuizStepper(quiz: QuizEngine, tick: Int, onTick: () -> Unit) {
             progress = { (quiz.position - 1).toFloat() / quiz.total },
             modifier = Modifier.fillMaxWidth(),
         )
-        Row {
+        Row(verticalAlignment = Alignment.CenterVertically) {
             Text("${quiz.position} of ${quiz.total}", style = MaterialTheme.typography.labelLarge)
             Spacer(Modifier.weight(1f))
             Text("Score: ${quiz.scoreSoFar}", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.secondary)
+            Spacer(Modifier.weight(1f))
+            // The way out short of finishing — back to setup with the filters kept.
+            TextButton(onClick = onEnd) { Text("End quiz") }
         }
 
         ElevatedCard(Modifier.fillMaxWidth()) {

@@ -81,6 +81,32 @@ class ScopeRoutesTest {
     }
 
     @Test
+    fun fromChapterNarrowsTheListToAChapterSpan() = testApplication {
+        val questions = seededQuestions()
+        listOf(5, 9).forEach { ch ->
+            val q = questions.submit(
+                "author-1", "Author",
+                SubmitQuestionRequest(Round.FACT_FINDER, "Acts $ch question?", "yes", chapter = ch),
+                book = Book.ACT,
+            )
+            questions.setStatus(q.id, QuestionStatus.APPROVED)
+        }
+        application { module(InMemoryUserRepository(), questions, JwtService(secret = "test-secret")) }
+        val api = createClient { install(ContentNegotiation) { json(json) } }
+
+        // The range pickers' spellings: an explicit span, and a span running to the set's end.
+        assertEquals(
+            setOf("This season's question?", "Acts 5 question?"),
+            api.prompts("/questions?book=ACT&fromChapter=2&chapter=5").toSet(),
+        )
+        assertEquals(listOf("Acts 5 question?"), api.prompts("/questions?fromChapter=3&chapter=8"))
+        assertEquals(
+            setOf("Acts 5 question?", "Acts 9 question?"),
+            api.prompts("/questions?fromChapter=4").toSet(),
+        )
+    }
+
+    @Test
     fun legacyChapterParamStillResolvesAgainstTheSeasonAndAdvertisesTheCanonicalForm() = testApplication {
         application {
             module(InMemoryUserRepository(), seededQuestions(), JwtService(secret = "test-secret"))
@@ -145,6 +171,7 @@ class ScopeRoutesTest {
         // Strict slugs: no prefix matching ("jos" must not silently mean Joshua/Judges/Ruth).
         assertEquals("unknown_set", errorCode("/questions?set=jos"))
         assertEquals("unknown_book", errorCode("/questions?book=zzz"))
+        assertEquals("backwards_chapter_range", errorCode("/questions?fromChapter=5&chapter=2"))
     }
 
     @Test
