@@ -86,13 +86,17 @@ class QuizEngine(
     val total: Int get() = items.size
     val scoreSoFar: Int get() = answered.count { it.correct }
 
+    /** True once [current] has a recorded answer (and is waiting on [next]). */
+    val isCurrentAnswered: Boolean get() = answered.size > index
+
     /**
      * Answers the current multiple-choice item with the tapped [choiceIndex]; returns whether it
-     * was correct. No-op (returns false) when finished or on a self-graded item.
+     * was correct. No-op (returns false) when finished, on a self-graded item, or when the item was
+     * already answered.
      */
     fun answerChoice(choiceIndex: Int): Boolean {
         val item = current ?: return false
-        if (!item.isMultipleChoice) return false
+        if (!item.isMultipleChoice || isCurrentAnswered) return false
         val correct = choiceIndex == item.correctIndex
         answered += QuizAnswer(item, correct)
         return correct
@@ -104,6 +108,7 @@ class QuizEngine(
      */
     fun answerSelf(gotIt: Boolean) {
         val item = current ?: return
+        if (isCurrentAnswered) return
         answered += QuizAnswer(item, gotIt)
     }
 

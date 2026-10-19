@@ -144,4 +144,19 @@ class QuizEngineTest {
         assertEquals(3, retry.total)
         assertTrue(retry.items.all { it.choices.last() == QuizEngine.NONE_OF_THE_ABOVE }) // options carry over
     }
+
+    @Test
+    fun anItemIsAnsweredOnlyOnce() {
+        val engine = QuizEngine(listOf(mc("q1"), shortAnswer("2")), random = Random(2))
+        repeat(2) {
+            val item = engine.current!!
+            assertFalse(engine.isCurrentAnswered)
+            if (item.isMultipleChoice) engine.answerChoice(item.correctIndex) else engine.answerSelf(true)
+            assertTrue(engine.isCurrentAnswered)
+            if (item.isMultipleChoice) engine.answerChoice(item.correctIndex) else engine.answerSelf(false)
+            engine.next()
+        }
+        assertEquals(2, engine.result().total)
+        assertEquals(2, engine.result().score)
+    }
 }

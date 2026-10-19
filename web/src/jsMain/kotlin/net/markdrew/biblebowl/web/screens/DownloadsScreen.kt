@@ -251,7 +251,7 @@ object DownloadsScreen {
                     "community question bank."
             StudySection.HEADINGS ->
                 "Every ESV section heading (Round 5 material) — a one-page list, flashcards, a browser, " +
-                    "and self-check mode."
+                    "and a quiz."
             StudySection.UNIQUE_WORDS ->
                 "Words that appear only once in $scripture — flashcards, a printable index, and a " +
                     "by-chapter homework sheet."
@@ -376,7 +376,7 @@ object DownloadsScreen {
             title = "Quiz me",
             subtitle = "Drill the community question bank online with instant feedback — the interactive " +
                 "twin of the flashcards and practice tests.",
-            links = listOf("Open Quiz Me" to "#quiz"),
+            links = listOf("Open Quiz Me" to "#quiz?source=questions"),
         )
         linkCard(
             title = "Community questions",
@@ -403,10 +403,15 @@ object DownloadsScreen {
             customize = Customize.HeadingFlashcards,
         )
         linkCard(
-            title = "Headings browser & self-check",
-            subtitle = "Browse every ESV section heading online, or flip to self-check mode — the " +
-                "interactive twin of the flashcards. Quiz Me can also drill headings.",
-            links = listOf("Open browser" to "#study/headings", "Quiz headings" to "#quiz"),
+            title = "Headings browser",
+            subtitle = "Every ESV section heading online, in order, with its chapter and the verses it covers.",
+            links = listOf("Open browser" to "#study/headings"),
+        )
+        linkCard(
+            title = "Quiz headings",
+            subtitle = "Name the chapter for each heading — multiple choice, multiple choice with \"none " +
+                "of the above,\" or type it in. Instant feedback, then retry the ones you missed.",
+            links = listOf("Start quiz" to "#quiz?source=headings"),
         )
     }
 
