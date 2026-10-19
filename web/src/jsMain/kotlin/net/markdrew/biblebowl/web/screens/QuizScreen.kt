@@ -6,6 +6,7 @@ import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.StudyScopeParams
+import net.markdrew.biblebowl.api.resolveWithin
 import net.markdrew.biblebowl.api.scopeQueryParams
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 import net.markdrew.biblebowl.model.Book
@@ -31,7 +32,7 @@ private enum class QuizSource(val displayName: String) {
 
 /**
  * Turns the season's headings into multiple-choice "which chapter?" items. Distractors are other
- * chapters in scope, so cumulative practice (through chapter N) never leaks future chapters.
+ * chapters in scope, so a drill over a chapter span never offers chapters outside it.
  * Chapter labels stay "Chapter N" for single-book sets and gain the book ("Num 14") for multi-book
  * sets, where a bare number would be ambiguous.
  */
@@ -72,11 +73,14 @@ object QuizScreen {
     private lateinit var root: HTMLElement
 
     fun render(container: HTMLElement, params: Map<String, String> = emptyMap()) {
-        // A scoped deep link (#quiz?book=ACT&chapter=22) seeds the setup filters.
+        // A scoped deep link (#quiz?book=ACT&fromChapter=3&chapter=7) seeds the setup filters. A
+        // single-book set's links omit the book, so it's filled back in for the chips to light.
         if (params.isNotEmpty()) {
             selection = ScopeSelection(
-                book = params[StudyScopeParams.BOOK]?.let { bookByCode(it) },
+                book = params[StudyScopeParams.BOOK]?.let { bookByCode(it) }
+                    ?: Session.studySet.books.singleOrNull(),
                 chapter = params[StudyScopeParams.CHAPTER]?.toIntOrNull(),
+                fromChapter = params[StudyScopeParams.FROM_CHAPTER]?.toIntOrNull(),
             )
         }
         root = container
@@ -111,8 +115,8 @@ object QuizScreen {
             ) { round = it; rerender() }
         }
 
-        root.child("p", "fw-semibold mb-1", if (source == QuizSource.HEADINGS) "Through chapter" else "Chapter")
-        root.chapterChips(selection) {
+        root.child("p", "fw-semibold mb-1", "Chapters")
+        root.chapterChips(selection, range = true) {
             selection = it
             Shell.replaceParams(scopeQueryParams(Session.studySet, it))
             rerender()
@@ -131,13 +135,17 @@ object QuizScreen {
         error = null
         Shell.scope.launch {
             try {
+                // Both sources ask for exactly the span the chips light, ends spelled out explicitly.
+                val scope = selection.resolveWithin(Session.studySet)
+                val book = scope.book?.name
+                val from = scope.chapters?.start?.chapter
+                val through = scope.chapters?.endInclusive?.chapter
                 val pool = when (source) {
                     QuizSource.QUESTIONS ->
-                        Session.api.questions(chapter = selection.chapter, book = selection.book?.name)
+                        Session.api.questions(book = book, fromChapter = from, chapter = through)
                             .filter { round == null || it.roundType == round }
-                    // Chapter chip means "through chapter N" here so drills stay cumulative.
                     QuizSource.HEADINGS -> headingQuestions(
-                        Session.api.headings(throughChapter = selection.chapter, book = selection.book?.name),
+                        Session.api.headings(book = book, fromChapter = from, throughChapter = through),
                     )
                 }
                 val e = QuizEngine(pool)
@@ -167,9 +175,15 @@ object QuizScreen {
                 setAttribute("style", "width: ${(quiz.position - 1) * 100 / quiz.total}%; background-color:var(--tbb-navy);")
             }
         }
-        root.child("div", "d-flex justify-content-between mb-3") {
+        root.child("div", "d-flex justify-content-between align-items-center mb-3") {
             child("span", "fw-semibold small", "${quiz.position} of ${quiz.total}")
             child("span", "fw-semibold small tbb-gold", "Score: ${quiz.scoreSoFar}")
+            // The quiz is sticky across navigation, so this is the way out short of finishing —
+            // back to setup with the filters kept, to pick other chapters or another source.
+            child("button", "btn btn-sm btn-outline-secondary", "End quiz") {
+                setAttribute("type", "button")
+                onClick { engine = null; rerender() }
+            }
         }
 
         root.child("div", "card section-card mb-3") {

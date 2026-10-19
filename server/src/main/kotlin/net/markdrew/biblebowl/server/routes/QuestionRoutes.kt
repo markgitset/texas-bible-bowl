@@ -33,7 +33,8 @@ fun Route.questionRoutes(users: UserRepository, questions: QuestionRepository, s
         // Browse — public. Anonymous visitors always see the approved list (the community bank is
         // study material); signed-in users may also request other statuses (the moderation queue).
         //
-        // Scope: ?set=<slug>&book=<code>&chapter=<n> in canonical scripture coordinates. No scope
+        // Scope: ?set=<slug>&book=<code>&chapter=<n> in canonical scripture coordinates, with an
+        // optional &fromChapter=<m> making it the span m..n (or m to the set's end). No scope
         // params = the current season's study set (the browser is a study tool, not an archive);
         // ?set=all is the explicit whole-archive escape hatch. Legacy ?chapter=N still resolves
         // against the season. The moderation queue (a non-APPROVED status with no explicit scope) is
@@ -46,13 +47,14 @@ fun Route.questionRoutes(users: UserRepository, questions: QuestionRepository, s
                 val status = if (signedIn) requested ?: QuestionStatus.APPROVED else QuestionStatus.APPROVED
                 val raw = StudyScopeParams.read(get = { call.request.queryParameters[it] })
                 val scope: QuestionScope = when {
-                    raw.set == StudyScopeParams.ALL && raw.book == null && raw.chapter == null ->
+                    raw.set == StudyScopeParams.ALL && raw.book == null && raw.chapter == null &&
+                        raw.fromChapter == null ->
                         QuestionScope.All
                     raw.isEmpty && status != QuestionStatus.APPROVED -> QuestionScope.All
                     else -> {
                         val setParam = raw.set.takeUnless { it == StudyScopeParams.ALL }
                         val seasonSet = seasons.currentStudySet()
-                        when (val res = resolveStudyScope(setParam, raw.book, raw.chapter, seasonSet)) {
+                        when (val res = resolveStudyScope(setParam, raw.book, raw.chapter, seasonSet, fromChapter = raw.fromChapter)) {
                             is ScopeResolution.Resolved -> {
                                 if (!raw.isEmpty) call.advertiseCanonicalScope(res.scope)
                                 res.scope.toQuestionScope()
