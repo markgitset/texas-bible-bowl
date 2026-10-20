@@ -2,25 +2,21 @@ package net.markdrew.biblebowl.web.screens
 
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.HeadingDto
-import net.markdrew.biblebowl.model.Book
+import net.markdrew.biblebowl.generation.quiz.headingChapterLabel
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.clear
 import net.markdrew.biblebowl.web.errorLine
-import net.markdrew.biblebowl.web.onClick
 import net.markdrew.biblebowl.web.spinner
-import net.markdrew.biblebowl.web.ui.chip
 import org.w3c.dom.Element
 import org.w3c.dom.HTMLElement
 
 /**
- * Headings browser (docs/gui-redesign.md §5C) — the Round 5 material as a browsable list, with a
- * flip-to-test self-check mode: the interactive twin of the heading-flashcards PDF. Public.
+ * Headings browser (docs/gui-redesign.md §5C) — the Round 5 material as a browsable list. Testing
+ * yourself on it is Quiz Me's job (#quiz?source=headings), so there's no self-check mode here. Public.
  */
 object HeadingsScreen {
-
-    private var selfCheck = false
 
     private lateinit var root: HTMLElement
     private lateinit var list: HTMLElement
@@ -33,10 +29,6 @@ object HeadingsScreen {
             "p", "text-muted",
             "Every ESV section heading in ${Session.season.eventScripture} — the Round 5 material.",
         )
-        root.child("div", "d-flex flex-wrap gap-1 mb-3") {
-            chip("Browse", !selfCheck) { setMode(false) }
-            chip("Self-check", selfCheck) { setMode(true) }
-        }
         list = root.child("div")
 
         val cached = headings
@@ -56,48 +48,21 @@ object HeadingsScreen {
         }
     }
 
-    private fun setMode(check: Boolean) {
-        if (selfCheck == check) return
-        selfCheck = check
-        root.clear()
-        render(root) // mode flip re-renders, which also resets every card's reveal
-    }
-
     private fun renderList() {
         list.clear()
         headings.orEmpty().forEach { heading -> list.headingCard(heading) }
     }
 
     private fun Element.headingCard(heading: HeadingDto) {
-        var revealed = false
-        child("div", "card section-card mb-2" + if (selfCheck) " tbb-clickable" else "") {
-            val body = child("div", "card-body py-2") {
+        child("div", "card section-card mb-2") {
+            child("div", "card-body py-2") {
                 child("div", "fw-semibold", heading.title)
-            }
-            val line = body.child("div", "d-flex justify-content-between align-items-center")
-            fun renderLine() {
-                line.clear()
-                if (!selfCheck || revealed) {
-                    line.child(
-                        "span",
-                        if (selfCheck) "tbb-gold fw-semibold small" else "tbb-gold small",
-                        "${headingChapterLabel(heading)} · ${heading.reference}",
-                    )
-                } else {
-                    line.child("span", "text-muted fst-italic small", "Tap to reveal chapter")
+                child("div", "d-flex justify-content-between align-items-center") {
+                    val chapter = headingChapterLabel(heading.bookCode, heading.chapter, !Session.studySet.isSingleBook)
+                    child("span", "tbb-gold small", "$chapter · ${heading.reference}")
+                    child("span", "text-muted small", "${heading.index} of ${heading.total}")
                 }
-                line.child("span", "text-muted small", "${heading.index} of ${heading.total}")
             }
-            renderLine()
-            if (selfCheck) onClick { revealed = !revealed; renderLine() }
         }
-    }
-
-    /** "Chapter 14" for single-book seasons; book-qualified ("Num 14") for multi-book sets. */
-    private fun headingChapterLabel(heading: HeadingDto): String {
-        val book = heading.bookCode
-            ?.takeIf { !Session.studySet.isSingleBook }
-            ?.let { code -> Book.entries.firstOrNull { it.name == code } }
-        return book?.let { "${it.briefName} ${heading.chapter}" } ?: "Chapter ${heading.chapter}"
     }
 }

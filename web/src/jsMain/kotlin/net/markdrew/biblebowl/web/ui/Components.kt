@@ -9,7 +9,10 @@ import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.child
 import net.markdrew.biblebowl.web.onClick
 import org.w3c.dom.Element
+import org.w3c.dom.HTMLElement
 import org.w3c.dom.HTMLInputElement
+import org.w3c.dom.asList
+import org.w3c.dom.events.KeyboardEvent
 
 private var nextControlId = 0
 
@@ -25,14 +28,67 @@ fun Element.chip(label: String, selected: Boolean, onSelect: () -> Unit) {
     }
 }
 
-/** A wrapping single-select chip row over [options] (label → value). */
-fun <T> Element.chipRow(options: List<Pair<String, T>>, selected: T, onSelect: (T) -> Unit) {
+/**
+ * A wrapping single-select chip row over [options] (label → value). A non-null [keyGroup] makes the
+ * row one keyboard tab stop (see [rovingGroup]).
+ */
+fun <T> Element.chipRow(
+    options: List<Pair<String, T>>,
+    selected: T,
+    keyGroup: String? = null,
+    onSelect: (T) -> Unit,
+) {
     child("div", "d-flex flex-wrap gap-1 mb-2") {
         options.forEach { (label, value) ->
             chip(label, selected == value) { onSelect(value) }
         }
+        keyGroup?.let { rovingGroup(it) }
     }
 }
+
+/**
+ * Makes this row of chip buttons a single Tab stop (the WAI-ARIA "roving tabindex" pattern): Tab
+ * lands on the selected chip (else the first), ←/→ (and ↑/↓, Home/End) move between chips, and
+ * Space picks one — so a keyboard user crosses a 28-chapter row in one Tab instead of 28. Each chip
+ * gets a stable `data-kbd-id` ("[name]-i") so a screen that re-renders on a pick can put focus
+ * back where it was.
+ */
+fun HTMLElement.rovingGroup(name: String) {
+    setAttribute("role", "group")
+    val chips = querySelectorAll("button").asList().map { it as HTMLElement }
+    if (chips.isEmpty()) return
+    val home = chips.indexOfFirst { it.classList.contains("btn-primary") }.coerceAtLeast(0)
+    chips.forEachIndexed { i, chip ->
+        chip.setAttribute("data-kbd-id", "$name-$i")
+        chip.tabIndex = if (i == home) 0 else -1
+        chip.setAttribute("aria-pressed", chip.classList.contains("btn-primary").toString())
+    }
+    addEventListener("keydown", { e ->
+        val key = (e as KeyboardEvent).key
+        val at = chips.indexOf(e.target)
+        if (at < 0) return@addEventListener
+        val to = when (key) {
+            "ArrowRight", "ArrowDown" -> (at + 1) % chips.size
+            "ArrowLeft", "ArrowUp" -> (at - 1 + chips.size) % chips.size
+            "Home" -> 0
+            "End" -> chips.lastIndex
+            else -> return@addEventListener
+        }
+        e.preventDefault()
+        chips[at].tabIndex = -1
+        chips[to].tabIndex = 0
+        chips[to].focus()
+    })
+}
+
+/**
+ * A small keycap naming a keyboard shortcut. Hidden on touch-first devices (`.tbb-kbd` in
+ * custom.css) unless [always] — e.g. answer letters, which double as labels.
+ */
+fun Element.kbd(key: String, always: Boolean = false, classes: String = "ms-2"): HTMLElement =
+    child("kbd", "tbb-kbd${if (always) " tbb-kbd-always" else ""} $classes", key) {
+        setAttribute("aria-hidden", "true")
+    }
 
 /**
  * The chapter filter, driven by the season's study set (wraps instead of scrolling, same rationale
@@ -49,6 +105,7 @@ fun <T> Element.chipRow(options: List<Pair<String, T>>, selected: T, onSelect: (
 fun Element.chapterChips(
     selected: ScopeSelection,
     range: Boolean = false,
+    keyGroup: String? = null,
     onSelect: (ScopeSelection) -> Unit,
 ) {
     val set = Session.studySet
@@ -60,6 +117,7 @@ fun Element.chapterChips(
                     onSelect(if (selected.book == b) ScopeSelection() else ScopeSelection(b))
                 }
             }
+            keyGroup?.let { rovingGroup("$it-books") }
         }
         selected.book ?: return
     }
@@ -74,6 +132,7 @@ fun Element.chapterChips(
                 onSelect(selected.tap(set, book, ref.chapter, range))
             }
         }
+        keyGroup?.let { rovingGroup("$it-chapters") }
     }
     if (range) {
         child(

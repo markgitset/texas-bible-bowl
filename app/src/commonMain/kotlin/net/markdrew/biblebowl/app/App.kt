@@ -51,6 +51,8 @@ import net.markdrew.biblebowl.app.navigation.route
 import net.markdrew.biblebowl.app.navigation.topDestinationOf
 import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.screens.AccountScreen
+import net.markdrew.biblebowl.app.screens.QuizChoices
+import net.markdrew.biblebowl.app.screens.QuizSource
 import net.markdrew.biblebowl.app.screens.AdminCountsScreen
 import net.markdrew.biblebowl.app.screens.AdminHousingScreen
 import net.markdrew.biblebowl.app.screens.AdminRegistrationsScreen
@@ -256,7 +258,15 @@ private fun AppNavHost(
             section = section,
             onOpenIndices = { navController.navigate(Routes.STUDY_INDICES) },
             onOpenHeadings = { navController.navigate(Routes.STUDY_HEADINGS) },
-            onOpenQuiz = { navController.navigateTopLevel(Routes.QUIZ) },
+            // Each quiz card opens Quiz on the source it names.
+            onOpenQuiz = {
+                QuizChoices.source = QuizSource.QUESTIONS
+                navController.navigateTopLevel(Routes.QUIZ)
+            },
+            onOpenHeadingQuiz = {
+                QuizChoices.source = QuizSource.HEADINGS
+                navController.navigateTopLevel(Routes.QUIZ)
+            },
             onOpenQuestions = { navController.navigateTopLevel(Routes.QUESTIONS) },
             signedIn = user != null,
             onRequireSignIn = requireSignIn,

@@ -15,3 +15,42 @@
 .tbb-clickable {
   cursor: pointer;
 }
+
+/*
+ * Keyboard-shortcut keycaps (Quiz Me). Inherit the surrounding text color so they read on both
+ * outlined and filled buttons. Touch-first devices (no hover, coarse pointer) hide them — along
+ * with whole hint lines — unless marked always-on, like the answer letters that double as labels.
+ */
+.tbb-kbd {
+  display: inline-block;
+  min-width: 1.6em;
+  padding: 0 .35em;
+  font: inherit;
+  font-size: .75em;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: .25rem;
+  box-shadow: none;
+  opacity: .75;
+  vertical-align: .1em;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .tbb-kbd:not(.tbb-kbd-always),
+  .tbb-kbd-hint {
+    display: none !important;
+  }
+}
+
+/* A right answer's quick flash before the quiz moves on by itself. */
+@keyframes tbb-flash-in {
+  from { transform: scale(.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.tbb-correct-flash {
+  animation: tbb-flash-in .15s ease-out;
+}

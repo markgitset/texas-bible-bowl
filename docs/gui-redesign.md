@@ -53,7 +53,7 @@ texasbiblebowl.org/                      [S] Home — hero, season banner (year/
 └── app/                                 [A] Compose wasm bundle, hash-routed
     ├── #/study                          [A] Study hub (default landing; links out to ESV readers)
     │   ├── #/study/indices/{names|numbers} [A]
-    │   └── #/study/headings             [A] headings browser + self-check mode
+    │   └── #/study/headings             [A] headings browser (self-testing is Quiz Me's headings source)
     ├── #/quiz (+ /run, /results)        [A]
     ├── #/questions                      [A] browse community bank (public read)
     │   ├── #/questions/new              [A] (QUESTION_SUBMIT)
@@ -163,8 +163,8 @@ Typst compile.
   `#study` redirects there — see the nav-redesign addendum. Still accurate for the Compose app.)*
 - **`#/study/indices/{names|numbers}`.** Current `IndexScreen` behavior (search, alpha/frequency);
   PDF button delegates to the download center.
-- **`#/study/headings`.** Headings list (R5 material) with a flip-to-test self-check mode — the
-  interactive twin of the heading-flashcards PDF.
+- **`#/study/headings`.** Headings list (R5 material). Self-testing moved to Quiz Me
+  (`#quiz?source=headings`): multiple choice, multiple choice + none of the above, or type the chapter.
 - **`#/quiz`** — setup defaults to last-used settings + global scope; one tap "Start". **`/run`**
   stepper, **`/results`** with per-question review and "retry missed". (Existing `QuizEngine`.)
 

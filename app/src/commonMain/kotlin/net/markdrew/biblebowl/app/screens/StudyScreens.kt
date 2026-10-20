@@ -123,7 +123,7 @@ private fun blurb(section: StudySection, scripture: String): String = when (sect
             "community question bank."
     StudySection.HEADINGS ->
         "Every ESV section heading (Round 5 material) — a one-page list, flashcards, a browser, " +
-            "and self-check mode."
+            "and a quiz."
     StudySection.UNIQUE_WORDS ->
         "Words that appear only once in $scripture — flashcards, a printable index, and a by-chapter " +
             "homework sheet."
@@ -208,6 +208,7 @@ fun StudySectionScreen(
     onOpenIndices: () -> Unit,
     onOpenHeadings: () -> Unit,
     onOpenQuiz: () -> Unit,
+    onOpenHeadingQuiz: () -> Unit,
     onOpenQuestions: () -> Unit,
     // Only the verse decks need these: they're the one study download that requires an account.
     signedIn: Boolean = false,
@@ -480,11 +481,17 @@ fun StudySectionScreen(
                     onCustomize = { customize = Customize.HeadingFlashcards },
                 )
                 LinkCard(
-                    title = "Headings browser & self-check",
-                    subtitle = "Browse every ESV section heading, or flip to self-check mode — the interactive " +
-                        "twin of the flashcards. Quiz can also drill headings.",
+                    title = "Headings browser",
+                    subtitle = "Every ESV section heading, in order, with its chapter and the verses it covers.",
                     actionLabel = "Open browser",
                     onClick = onOpenHeadings,
+                )
+                LinkCard(
+                    title = "Quiz headings",
+                    subtitle = "Name the chapter for each heading — multiple choice, multiple choice with " +
+                        "\"none of the above,\" or type it in. Instant feedback, then retry the ones you missed.",
+                    actionLabel = "Start quiz",
+                    onClick = onOpenHeadingQuiz,
                 )
             }
 
