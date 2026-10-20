@@ -173,7 +173,7 @@ object QuizScreen {
         }
 
         root.child("p", "fw-semibold mb-1", "Chapters")
-        root.chapterChips(selection, range = true, keyGroup = "chapters") {
+        root.chapterChips(selection, range = true, keyGroup = "scope") {
             selection = it
             syncParams()
             rerender()
@@ -360,7 +360,10 @@ object QuizScreen {
                     j == i -> "btn btn-danger text-start"
                     else -> "btn btn-outline-secondary text-start"
                 }
-                b.disabled = true
+                // Inert but not `disabled`, which would fade the green/red to Bootstrap's 65%.
+                b.setAttribute("aria-disabled", "true")
+                b.tabIndex = -1
+                b.style.setProperty("pointer-events", "none")
             }
             stage.focus()
             feedback(quiz, item, footer, correct)
