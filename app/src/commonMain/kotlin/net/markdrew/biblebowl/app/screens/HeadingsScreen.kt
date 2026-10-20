@@ -1,6 +1,5 @@
 package net.markdrew.biblebowl.app.screens
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +12,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -24,24 +22,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.resolvedStudySet
-import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.client.TbbApi
+import net.markdrew.biblebowl.generation.quiz.headingChapterLabel
 
 /**
- * Headings browser (docs/gui-redesign.md §5C) — the Round 5 material as a browsable list, with a
- * flip-to-test self-check mode: the interactive twin of the heading-flashcards PDF. Public.
+ * Headings browser (docs/gui-redesign.md §5C) — the Round 5 material as a browsable list. Testing
+ * yourself on it is the Quiz tab's job (Chapter headings source), so there's no self-check mode
+ * here. Public.
  */
 @Composable
 fun HeadingsScreen(api: TbbApi) {
     var headings by remember { mutableStateOf<List<HeadingDto>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
-    var selfCheck by remember { mutableStateOf(false) }
+    val multiBook = !LocalSeason.current.resolvedStudySet.isSingleBook
 
     LaunchedEffect(Unit) {
         try {
@@ -62,10 +60,6 @@ fun HeadingsScreen(api: TbbApi) {
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            FilterChip(selected = !selfCheck, onClick = { selfCheck = false }, label = { Text("Browse") })
-            FilterChip(selected = selfCheck, onClick = { selfCheck = true }, label = { Text("Self-check") })
-        }
 
         when {
             error != null -> Text("Couldn't load headings: $error", color = MaterialTheme.colorScheme.error)
@@ -74,7 +68,7 @@ fun HeadingsScreen(api: TbbApi) {
             }
             else -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(headings.orEmpty(), key = { it.index }) { heading ->
-                    HeadingCard(heading, selfCheck)
+                    HeadingCard(heading, multiBook)
                 }
             }
         }
@@ -82,31 +76,16 @@ fun HeadingsScreen(api: TbbApi) {
 }
 
 @Composable
-private fun HeadingCard(heading: HeadingDto, selfCheck: Boolean) {
-    // Self-check: the chapter is the answer, hidden until tapped; reset when the mode flips.
-    var revealed by remember(heading.index, selfCheck) { mutableStateOf(false) }
-
-    ElevatedCard(
-        Modifier.fillMaxWidth().clickable(enabled = selfCheck) { revealed = !revealed },
-    ) {
+private fun HeadingCard(heading: HeadingDto, multiBook: Boolean) {
+    ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(heading.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!selfCheck || revealed) {
-                    Text(
-                        "${headingChapterLabel(heading)} · ${heading.reference}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = if (selfCheck) FontWeight.SemiBold else FontWeight.Normal,
-                    )
-                } else {
-                    Text(
-                        "Tap to reveal chapter",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontStyle = FontStyle.Italic,
-                        color = MaterialTheme.colorScheme.outline,
-                    )
-                }
+                Text(
+                    "${headingChapterLabel(heading.bookCode, heading.chapter, multiBook)} · ${heading.reference}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
                 Spacer(Modifier.weight(1f))
                 Text(
                     "${heading.index} of ${heading.total}",
@@ -116,13 +95,4 @@ private fun HeadingCard(heading: HeadingDto, selfCheck: Boolean) {
             }
         }
     }
-}
-
-/** "Chapter 14" for single-book seasons; book-qualified ("Num 14") for multi-book sets. */
-@Composable
-private fun headingChapterLabel(heading: HeadingDto): String {
-    val book = heading.bookCode
-        ?.takeIf { !LocalSeason.current.resolvedStudySet.isSingleBook }
-        ?.let { code -> Book.entries.firstOrNull { it.name == code } }
-    return book?.let { "${it.briefName} ${heading.chapter}" } ?: "Chapter ${heading.chapter}"
 }
