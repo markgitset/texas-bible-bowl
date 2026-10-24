@@ -39,7 +39,8 @@ fun headingQuestions(
         QuestionDto(
             id = "heading-${h.index}",
             roundType = Round.EVENTS,
-            prompt = "Which chapter has the heading “${h.title}”?",
+            // Just the heading: the round label above it already asks "which chapter?".
+            prompt = h.title,
             answer = label(h),
             references = listOf(h.reference),
             choices = if (mode == HeadingQuizMode.TYPED) emptyList()

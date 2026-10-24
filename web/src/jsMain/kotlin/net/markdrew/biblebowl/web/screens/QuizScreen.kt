@@ -10,6 +10,7 @@ import net.markdrew.biblebowl.api.scopeQueryParams
 import net.markdrew.biblebowl.generation.quiz.HeadingQuizMode
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 import net.markdrew.biblebowl.generation.quiz.QuizItem
+import net.markdrew.biblebowl.generation.quiz.QuizLength
 import net.markdrew.biblebowl.generation.quiz.bookShortcutKeys
 import net.markdrew.biblebowl.generation.quiz.chapterEntryComplete
 import net.markdrew.biblebowl.generation.quiz.headingQuestions
@@ -58,10 +59,13 @@ object QuizScreen {
     private var source = QuizSource.QUESTIONS
     private var round: Round? = null
     private var headingMode = HeadingQuizMode.CHOICE
+    private var length = QuizLength.TWENTY
     private var selection = ScopeSelection()
     private var engine: QuizEngine? = null
     private var engineSource: QuizSource? = null
     private var engineTyped = false
+    /** The finished quiz whose missed questions are on show (so a new results screen starts hidden). */
+    private var missedShownFor: QuizEngine? = null
     private var error: String? = null
 
     /** The keys the current view answers to; reassigned by each render. */
@@ -179,6 +183,11 @@ object QuizScreen {
             rerender()
         }
 
+        root.child("p", "fw-semibold mb-1", "Questions")
+        root.chipRow(QuizLength.entries.map { it.label to it }, length, keyGroup = "length") {
+            length = it; rerender()
+        }
+
         val startButton = root.child("button", "btn btn-primary w-100 mt-2", "Start quiz") {
             setAttribute("type", "button")
             onClick { start() }
@@ -222,6 +231,7 @@ object QuizScreen {
                 }
                 val e = QuizEngine(
                     pool,
+                    limit = length.count,
                     noneOfTheAbove = source == QuizSource.HEADINGS && headingMode == HeadingQuizMode.CHOICE_NOTA,
                 )
                 if (e.isEmpty) {
@@ -561,8 +571,14 @@ object QuizScreen {
             }
         }
         val missed = result.missed
+        val showMissed = missedShownFor === quiz && missed.isNotEmpty()
         fun retry() { engine = quiz.retryMissed(); rerender() }
         fun newQuiz() { engine = null; rerender() }
+        fun toggleMissed() {
+            missedShownFor = if (showMissed) null else quiz
+            rerender()
+            (root.querySelector("[data-tbb-review]") as? HTMLElement)?.focus()
+        }
 
         val buttons = root.child("div", "d-grid gap-2 mt-3")
         val retryButton = if (missed.isEmpty()) null else {
@@ -570,6 +586,15 @@ object QuizScreen {
                 setAttribute("type", "button")
                 onClick { retry() }
                 kbd("R")
+            }
+        }
+        if (missed.isNotEmpty()) {
+            buttons.child("button", "btn btn-outline-primary", if (showMissed) "Hide missed" else "Review missed") {
+                setAttribute("type", "button")
+                setAttribute("data-tbb-review", "")
+                setAttribute("aria-expanded", "$showMissed")
+                onClick { toggleMissed() }
+                kbd("V")
             }
         }
         val newButton = buttons.child(
@@ -581,8 +606,8 @@ object QuizScreen {
         }
         (retryButton ?: newButton).focus()
 
-        if (missed.isNotEmpty()) {
-            root.child("p", "fw-semibold mt-4 mb-2", "Review these:")
+        if (showMissed) {
+            root.child("p", "fw-semibold mt-4 mb-2", "Missed questions")
             missed.forEach { item ->
                 root.child("div", "card section-card mb-2") {
                     child("div", "card-body py-2") {
@@ -600,8 +625,12 @@ object QuizScreen {
 
         keyHandler = { e ->
             when (e.key.lowercase()) {
-                "enter" -> { if (missed.isNotEmpty()) retry() else newQuiz(); true }
+                // A focused button (Review missed, New quiz) answers Enter itself.
+                "enter" -> if (document.activeElement is HTMLButtonElement) false else {
+                    if (missed.isNotEmpty()) retry() else newQuiz(); true
+                }
                 "r" -> if (missed.isNotEmpty()) { retry(); true } else false
+                "v" -> if (missed.isNotEmpty()) { toggleMissed(); true } else false
                 "n" -> { newQuiz(); true }
                 else -> false
             }

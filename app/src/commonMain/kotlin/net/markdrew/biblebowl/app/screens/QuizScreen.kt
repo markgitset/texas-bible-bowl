@@ -69,6 +69,7 @@ import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.generation.quiz.HeadingQuizMode
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 import net.markdrew.biblebowl.generation.quiz.QuizItem
+import net.markdrew.biblebowl.generation.quiz.QuizLength
 import net.markdrew.biblebowl.generation.quiz.bookShortcutKeys
 import net.markdrew.biblebowl.generation.quiz.chapterEntryComplete
 import net.markdrew.biblebowl.generation.quiz.headingQuestions
@@ -91,6 +92,7 @@ object QuizChoices {
     var source by mutableStateOf(QuizSource.QUESTIONS)
     var round by mutableStateOf<Round?>(null)
     var headingMode by mutableStateOf(HeadingQuizMode.CHOICE)
+    var length by mutableStateOf(QuizLength.TWENTY)
     var selection by mutableStateOf(ScopeSelection())
 }
 
@@ -144,6 +146,7 @@ fun QuizScreen(api: TbbApi) {
                         }
                         val e = QuizEngine(
                             pool,
+                            limit = choices.length.count,
                             noneOfTheAbove = source == QuizSource.HEADINGS && mode == HeadingQuizMode.CHOICE_NOTA,
                         )
                         if (e.isEmpty) error = when (source) {
@@ -250,6 +253,12 @@ private fun QuizSetup(error: String?, onStart: () -> Unit) {
         }
         Text("Chapters", style = MaterialTheme.typography.labelLarge)
         ChapterChips(selected = c.selection, range = true, onSelect = { c.selection = it })
+        Text("Questions", style = MaterialTheme.typography.labelLarge)
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            QuizLength.entries.forEach { n ->
+                FilterChip(selected = c.length == n, onClick = { c.length = n }, label = { Text(n.label) })
+            }
+        }
         Button(onClick = onStart, modifier = Modifier.fillMaxWidth()) {
             Text("Start quiz")
             KeyHint("Enter")
@@ -488,10 +497,12 @@ private fun Feedback(item: QuizItem, correct: Boolean, onContinue: () -> Unit) {
 private fun QuizResults(quiz: QuizEngine, onRetry: () -> Unit, onRestart: () -> Unit) {
     val result = quiz.result()
     val missed = result.missed
+    var showMissed by remember(quiz) { mutableStateOf(false) }
     val keys = keyboardScope(quiz) { e ->
         when {
             e.key == Key.Enter -> { if (missed.isNotEmpty()) onRetry() else onRestart(); true }
             e.char == 'R' && missed.isNotEmpty() -> { onRetry(); true }
+            e.char == 'V' && missed.isNotEmpty() -> { showMissed = !showMissed; true }
             e.char == 'N' -> { onRestart(); true }
             else -> false
         }
@@ -513,17 +524,22 @@ private fun QuizResults(quiz: QuizEngine, onRetry: () -> Unit, onRestart: () -> 
             Button(onClick = onRetry, modifier = Modifier.fillMaxWidth()) {
                 Text("Retry the ${missed.size} missed"); KeyHint("R")
             }
+            OutlinedButton(onClick = { showMissed = !showMissed }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (showMissed) "Hide missed" else "Review missed"); KeyHint("V")
+            }
             OutlinedButton(onClick = onRestart, modifier = Modifier.fillMaxWidth()) { Text("New quiz"); KeyHint("N") }
-            Text("Review these:", style = MaterialTheme.typography.titleMedium)
-            missed.forEach { item ->
-                ElevatedCard(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(item.question.prompt, style = MaterialTheme.typography.bodyLarge)
-                        Text(item.question.answer, fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary)
-                        if (item.question.references.isNotEmpty()) {
-                            Text(item.question.references.joinToString("; "),
-                                style = MaterialTheme.typography.bodySmall)
+            if (showMissed) {
+                Text("Missed questions", style = MaterialTheme.typography.titleMedium)
+                missed.forEach { item ->
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(item.question.prompt, style = MaterialTheme.typography.bodyLarge)
+                            Text(item.question.answer, fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.primary)
+                            if (item.question.references.isNotEmpty()) {
+                                Text(item.question.references.joinToString("; "),
+                                    style = MaterialTheme.typography.bodySmall)
+                            }
                         }
                     }
                 }
