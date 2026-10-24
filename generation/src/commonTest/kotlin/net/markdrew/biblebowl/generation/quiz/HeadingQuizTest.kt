@@ -33,6 +33,12 @@ class HeadingQuizTest {
     }
 
     @Test
+    fun promptIsJustTheHeading() {
+        val q = headingQuestions(headings, multiBook = false, mode = HeadingQuizMode.CHOICE).first { it.chapter == 3 }
+        assertEquals("Heading 3", q.prompt)
+    }
+
+    @Test
     fun typedModeCarriesNoChoices() {
         val qs = headingQuestions(headings, multiBook = false, mode = HeadingQuizMode.TYPED)
         assertTrue(qs.all { it.choices.isEmpty() })

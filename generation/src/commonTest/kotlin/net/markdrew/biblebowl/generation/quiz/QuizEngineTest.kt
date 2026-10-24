@@ -47,6 +47,12 @@ class QuizEngineTest {
     }
 
     @Test
+    fun allLengthTakesTheWholePool() {
+        val engine = QuizEngine((1..137).map { mc("q$it") }, limit = QuizLength.ALL.count, random = Random(1))
+        assertEquals(137, engine.total)
+    }
+
+    @Test
     fun multipleChoiceScoringFlow() {
         val engine = QuizEngine(listOf(mc("q1"), mc("q2")), random = Random(7))
         assertFalse(engine.isFinished)

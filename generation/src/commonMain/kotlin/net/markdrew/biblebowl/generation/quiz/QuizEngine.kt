@@ -19,6 +19,14 @@ data class QuizItem(
     val isMultipleChoice: Boolean get() = choices.isNotEmpty()
 }
 
+/** How many questions a quiz asks, chosen at setup; [ALL] takes the whole pool. */
+enum class QuizLength(val label: String, val count: Int) {
+    TEN("10", 10),
+    TWENTY("20", 20),
+    FIFTY("50", 50),
+    ALL("All", Int.MAX_VALUE),
+}
+
 /** The outcome of one answered item. */
 data class QuizAnswer(val item: QuizItem, val correct: Boolean)
 
@@ -42,7 +50,7 @@ data class QuizResult(val answers: List<QuizAnswer>) {
  */
 class QuizEngine(
     questions: List<QuestionDto>,
-    private val limit: Int = 20,
+    private val limit: Int = QuizLength.TWENTY.count,
     private val random: Random = Random.Default,
     private val noneOfTheAbove: Boolean = false,
 ) {
