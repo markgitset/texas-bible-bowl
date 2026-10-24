@@ -273,6 +273,11 @@ This renders the real pipeline without hitting Crossway.
   the local one is merged. Nothing else collects them — 120 had piled up by 2026-08-09. The
   merging session can't do it itself (it's standing on the branch), hence "later, from main".
   Dry run by default; it keeps anything it can't prove landed.
+- **Every time something merges to `main`, give Mark the staging link** (Mark, 2026-10-24):
+  a merge auto-deploys staging, so end the report with
+  https://texas-bible-bowl-staging-web.fly.dev (plus the `/app/#…` deep link to the changed
+  screen when there is one). Say whether `deploy-staging.yml` has finished for that commit —
+  don't call it live on staging until the run succeeded.
 - **Only one worktree can run the local backend**: `:8080` is baked into the web app's
   `defaultBaseUrl()`, the desktop `DEFAULT_BASE_URL`, and `EndToEndFlowTest`'s probe, so
   `.claude/launch.json` deliberately gives the `backend` config no `autoPort` (the static-file
