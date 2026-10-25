@@ -11,6 +11,7 @@ import net.markdrew.biblebowl.generation.quiz.HeadingQuizMode
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 import net.markdrew.biblebowl.generation.quiz.QuizItem
 import net.markdrew.biblebowl.generation.quiz.QuizLength
+import net.markdrew.biblebowl.generation.quiz.QuizSound
 import net.markdrew.biblebowl.generation.quiz.bookShortcutKeys
 import net.markdrew.biblebowl.generation.quiz.chapterEntryComplete
 import net.markdrew.biblebowl.generation.quiz.headingQuestions
@@ -27,6 +28,7 @@ import net.markdrew.biblebowl.web.errorLine
 import net.markdrew.biblebowl.web.friendlyError
 import net.markdrew.biblebowl.web.onClick
 import net.markdrew.biblebowl.web.spinner
+import net.markdrew.biblebowl.web.ui.QuizAudio
 import net.markdrew.biblebowl.web.ui.chapterChips
 import net.markdrew.biblebowl.web.ui.chip
 import net.markdrew.biblebowl.web.ui.chipRow
@@ -271,12 +273,15 @@ object QuizScreen {
         root.child("div", "d-flex justify-content-between align-items-center mb-3") {
             child("span", "fw-semibold small", "${quiz.position} of ${quiz.total}")
             child("span", "fw-semibold small tbb-gold", "Score: ${quiz.scoreSoFar}")
-            // The quiz is sticky across navigation, so this is the way out short of finishing —
-            // back to setup with the filters kept, to pick other chapters or another source.
-            child("button", "btn btn-sm btn-outline-secondary", "End quiz") {
-                setAttribute("type", "button")
-                onClick { endQuiz() }
-                kbd("Esc")
+            child("div", "d-flex gap-2") {
+                soundToggle()
+                // The quiz is sticky across navigation, so this is the way out short of finishing —
+                // back to setup with the filters kept, to pick other chapters or another source.
+                child("button", "btn btn-sm btn-outline-secondary", "End quiz") {
+                    setAttribute("type", "button")
+                    onClick { endQuiz() }
+                    kbd("Esc")
+                }
             }
         }
 
@@ -297,6 +302,24 @@ object QuizScreen {
         }
     }
 
+    /** Turns the answer cues on or off, in place — a re-render would cost an answered item its feedback. */
+    private fun HTMLElement.soundToggle() {
+        child("button", "btn btn-sm btn-outline-secondary") {
+            setAttribute("type", "button")
+            setAttribute("aria-label", "Answer sounds")
+            fun show() {
+                setAttribute("aria-pressed", "${QuizAudio.enabled}")
+                setAttribute("title", if (QuizAudio.enabled) "Sounds on" else "Sounds off")
+                clear()
+                child("i", if (QuizAudio.enabled) "bi bi-volume-up-fill" else "bi bi-volume-mute-fill") {
+                    setAttribute("aria-hidden", "true")
+                }
+            }
+            show()
+            onClick { QuizAudio.enabled = !QuizAudio.enabled; show() }
+        }
+    }
+
     /** Moves on: now, or after the right-answer flash (a stale timer can't advance a later item). */
     private fun advance(quiz: QuizEngine, afterFlash: Boolean = false) {
         cancelAdvance()
@@ -314,10 +337,11 @@ object QuizScreen {
     }
 
     /**
-     * After an answer: a right one flashes ✓ and moves on by itself (Enter skips the wait); a wrong
-     * one shows the right answer and waits for Continue.
+     * After an answer: a right one chimes, flashes ✓ and moves on by itself (Enter skips the wait); a
+     * wrong one plays the falling cue, shows the right answer and waits for Continue.
      */
     private fun feedback(quiz: QuizEngine, item: QuizItem, footer: HTMLElement, correct: Boolean) {
+        QuizAudio.play(if (correct) QuizSound.CORRECT else QuizSound.WRONG)
         val refs = item.question.references.joinToString("; ")
         if (correct) {
             footer.child("p", "tbb-correct-flash fw-semibold text-success fs-5 mb-1", "✓ Correct") {
