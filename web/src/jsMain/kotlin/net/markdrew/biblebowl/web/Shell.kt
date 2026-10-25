@@ -6,6 +6,7 @@ import kotlinx.coroutines.MainScope
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.StudySection
 import net.markdrew.biblebowl.api.hasEventWidePermission
+import net.markdrew.biblebowl.generation.quiz.QuizKind
 import net.markdrew.biblebowl.web.screens.AccountScreen
 import net.markdrew.biblebowl.web.screens.AdminCountsScreen
 import net.markdrew.biblebowl.web.screens.AdminHousingScreen
@@ -167,7 +168,8 @@ object Shell {
                     child("a", text = "Home") { setAttribute("href", "../") }
                 }
                 val top = topDestinationOf(route)
-                if (route != Routes.STUDY && (top != null || route.startsWith("study/"))) {
+                val quiz = QuizKind.fromRoute(route)
+                if (route != Routes.STUDY && (top != null || quiz != null || route.startsWith("study/"))) {
                     child("li", "breadcrumb-item") {
                         child("a", text = "Study & Practice") { setAttribute("href", "#${Routes.STUDY}") }
                     }
@@ -177,7 +179,13 @@ object Shell {
                         child("a", text = top.label) { setAttribute("href", "#${top.route}") }
                     }
                 }
-                child("li", "breadcrumb-item active", routeLabel(route)) {
+                // A quiz belongs to its study section: Home › Study & Practice › Verses › Quiz.
+                if (quiz != null) {
+                    child("li", "breadcrumb-item") {
+                        child("a", text = quiz.section.title) { setAttribute("href", "#${quiz.section.route}") }
+                    }
+                }
+                child("li", "breadcrumb-item active", if (quiz != null) "Quiz" else routeLabel(route)) {
                     setAttribute("aria-current", "page")
                 }
             }
@@ -197,7 +205,9 @@ object Shell {
                 route == dest
             } else {
                 val studyFamily =
-                    dest == Routes.STUDY && (topDestinationOf(route) != null || route == Routes.DOWNLOADS)
+                    dest == Routes.STUDY && (
+                        topDestinationOf(route) != null || QuizKind.fromRoute(route) != null || route == Routes.DOWNLOADS
+                    )
                 route == dest || route.startsWith("$dest/") || studyFamily
             }
             el.classList.toggle("active", active)
@@ -225,7 +235,17 @@ object Shell {
             Routes.STUDY -> DownloadsScreen.render(container) // the Study & Practice overview
             Routes.STUDY_INDICES -> IndexScreen.render(container)
             Routes.STUDY_HEADINGS -> HeadingsScreen.render(container)
-            Routes.QUIZ -> QuizScreen.render(container, currentParams())
+            // No quiz-of-quizzes page: each quiz lives under its section. The old single screen's
+            // `#quiz?source=headings&…` lands on that quiz with its scope kept; a bare #quiz → the hub.
+            Routes.QUIZ -> {
+                val params = currentParams()
+                val legacy = QuizKind.byLegacySource(params["source"])
+                val query = params.filterKeys { it != "source" }.entries
+                    .joinToString("&") { (k, v) -> "$k=${encodeURIComponent(v)}" }
+                window.location.replace(
+                    if (legacy == null) "#${Routes.STUDY}" else "#${legacy.route}" + (if (query.isEmpty()) "" else "?$query"),
+                )
+            }
             Routes.QUESTIONS -> QuestionsScreen.render(container, currentParams())
             // Legacy alias: the download center grew into the hub. replace() keeps Back working.
             Routes.DOWNLOADS -> window.location.replace("#${Routes.STUDY}")
@@ -295,8 +315,12 @@ object Shell {
             }
             else -> {
                 val section = StudySection.fromRoute(route)
-                if (section != null) DownloadsScreen.render(container, section) // a study section's page
-                else window.location.replace("#${Routes.STUDY}") // unknown deep link → the overview
+                val quiz = QuizKind.fromRoute(route)
+                when {
+                    section != null -> DownloadsScreen.render(container, section) // a study section's page
+                    quiz != null -> QuizScreen.render(container, quiz, currentParams())
+                    else -> window.location.replace("#${Routes.STUDY}") // unknown deep link → the overview
+                }
             }
         }
     }

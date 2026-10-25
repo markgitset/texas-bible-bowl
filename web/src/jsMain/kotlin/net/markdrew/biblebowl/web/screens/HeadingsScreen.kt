@@ -14,7 +14,7 @@ import org.w3c.dom.HTMLElement
 
 /**
  * Headings browser (docs/gui-redesign.md §5C) — the Round 5 material as a browsable list. Testing
- * yourself on it is Quiz Me's job (#quiz?source=headings), so there's no self-check mode here. Public.
+ * yourself on it is the Chapter Headings quiz's job (#quiz/chapter-headings), so there's no self-check mode here. Public.
  */
 object HeadingsScreen {
 

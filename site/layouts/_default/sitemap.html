@@ -40,7 +40,10 @@
         {{ range (index site.Data "study-sections").sections }}
         <li><a href="{{ $.Site.BaseURL }}app/#study/{{ .slug }}">{{ .title }}</a></li>
         {{ end }}
-        <li><a href="{{ $.Site.BaseURL }}app/#quiz">Quiz Me</a></li>
+        {{- /* One quiz per section that has one (QuizKind in :generation); each route is quiz/<section slug>. */ -}}
+        <li><a href="{{ $.Site.BaseURL }}app/#quiz/general-knowledge">General Knowledge Quiz</a></li>
+        <li><a href="{{ $.Site.BaseURL }}app/#quiz/chapter-headings">Chapter Headings Quiz</a></li>
+        <li><a href="{{ $.Site.BaseURL }}app/#quiz/verses">Verses Quiz</a></li>
         <li><a href="{{ $.Site.BaseURL }}app/#questions">Community Questions</a></li>
       </ul>
       {{ else }}

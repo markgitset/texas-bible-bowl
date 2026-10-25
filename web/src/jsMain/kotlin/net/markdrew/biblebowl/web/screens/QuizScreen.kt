@@ -2,6 +2,8 @@ package net.markdrew.biblebowl.web.screens
 
 import kotlinx.browser.document
 import kotlinx.browser.window
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.StudyScopeParams
@@ -10,6 +12,7 @@ import net.markdrew.biblebowl.api.scopeQueryParams
 import net.markdrew.biblebowl.generation.quiz.HeadingQuizMode
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 import net.markdrew.biblebowl.generation.quiz.QuizItem
+import net.markdrew.biblebowl.generation.quiz.QuizKind
 import net.markdrew.biblebowl.generation.quiz.QuizLength
 import net.markdrew.biblebowl.generation.quiz.QuizSound
 import net.markdrew.biblebowl.generation.quiz.bookShortcutKeys
@@ -17,6 +20,8 @@ import net.markdrew.biblebowl.generation.quiz.chapterEntryComplete
 import net.markdrew.biblebowl.generation.quiz.headingQuestions
 import net.markdrew.biblebowl.generation.quiz.lastChapterIn
 import net.markdrew.biblebowl.generation.quiz.typedAnswerCorrect
+import net.markdrew.biblebowl.generation.quiz.VerseQuizMode
+import net.markdrew.biblebowl.generation.quiz.verseQuestions
 import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.model.bookByCode
@@ -41,33 +46,35 @@ import org.w3c.dom.Node
 import org.w3c.dom.asList
 import org.w3c.dom.events.KeyboardEvent
 
-/** What a quiz draws from: the community question bank, or ESV chapter headings (Round 5). */
-private enum class QuizSource(val displayName: String, val slug: String) {
-    QUESTIONS("Question bank", "questions"),
-    HEADINGS("Chapter headings", "headings"),
-}
-
 /** How long a right answer's ✓ shows before the quiz moves on by itself. */
 private const val CORRECT_FLASH_MS = 500
 
+/** One quiz kind's own choices and run — kept apart so drilling one never disturbs another. */
+private class KindState {
+    var round: Round? = null
+    var headingMode = HeadingQuizMode.CHOICE
+    var verseMode = VerseQuizMode.HEADING_CHOICE
+    var length = QuizLength.TWENTY
+    var engine: QuizEngine? = null
+    var engineTyped = false
+    /** The finished quiz whose missed questions are on show (so a new results screen starts hidden). */
+    var missedShownFor: QuizEngine? = null
+}
+
 /**
- * Quiz mode: setup → stepper → results (with a retry of the misses). All quiz logic lives in
- * QuizEngine. Built to be driven from the keyboard end to end — see [onKey] for the shortcuts,
- * which the screen advertises with keycaps that touch devices hide.
+ * Quiz mode: setup → stepper → results (with a retry of the misses), one page per [QuizKind] at
+ * `#quiz/<section slug>`. All quiz logic lives in QuizEngine. Built to be driven from the keyboard
+ * end to end — see [onKey] for the shortcuts, which the screen advertises with keycaps that touch
+ * devices hide.
  */
 object QuizScreen {
 
-    // Setup filters and any in-flight quiz are sticky for the session.
-    private var source = QuizSource.QUESTIONS
-    private var round: Round? = null
-    private var headingMode = HeadingQuizMode.CHOICE
-    private var length = QuizLength.TWENTY
+    // Each kind's filters and any in-flight quiz are sticky for the session; the chapter span is
+    // shared, so "I'm studying 1–5" carries from one quiz to the next.
+    private val states = QuizKind.entries.associateWith { KindState() }
+    private var kind = QuizKind.GENERAL
+    private val state: KindState get() = states.getValue(kind)
     private var selection = ScopeSelection()
-    private var engine: QuizEngine? = null
-    private var engineSource: QuizSource? = null
-    private var engineTyped = false
-    /** The finished quiz whose missed questions are on show (so a new results screen starts hidden). */
-    private var missedShownFor: QuizEngine? = null
     private var error: String? = null
 
     /** The keys the current view answers to; reassigned by each render. */
@@ -77,9 +84,11 @@ object QuizScreen {
 
     private lateinit var root: HTMLElement
 
-    fun render(container: HTMLElement, params: Map<String, String> = emptyMap()) {
-        // A scoped deep link (#quiz?book=ACT&fromChapter=3&chapter=7) seeds the setup filters. A
-        // single-book set's links omit the book, so it's filled back in for the chips to light.
+    fun render(container: HTMLElement, kind: QuizKind, params: Map<String, String> = emptyMap()) {
+        if (this.kind != kind) error = null
+        this.kind = kind
+        // A scoped deep link (#quiz/verses?book=ACT&fromChapter=3&chapter=7) seeds the chapter span.
+        // A single-book set's links omit the book, so it's filled back in for the chips to light.
         if (params.isNotEmpty()) {
             selection = ScopeSelection(
                 book = params[StudyScopeParams.BOOK]?.let { bookByCode(it) }
@@ -87,12 +96,6 @@ object QuizScreen {
                 chapter = params[StudyScopeParams.CHAPTER]?.toIntOrNull(),
                 fromChapter = params[StudyScopeParams.FROM_CHAPTER]?.toIntOrNull(),
             )
-        }
-        // The study cards link to a source (#quiz?source=headings); a quiz in flight from the other
-        // source is set aside so the link lands on what it promised.
-        QuizSource.entries.firstOrNull { it.slug == params["source"] }?.let { requested ->
-            source = requested
-            if (engineSource != requested) engine = null
         }
         root = container
         listen()
@@ -122,7 +125,7 @@ object QuizScreen {
         val focusKey = (document.activeElement as? HTMLElement)?.getAttribute("data-kbd-id")
         root.clear()
         keyHandler = { false }
-        val quiz = engine
+        val quiz = state.engine
         when {
             quiz == null -> {
                 renderSetup()
@@ -140,40 +143,40 @@ object QuizScreen {
 
     private fun endQuiz() {
         cancelAdvance()
-        engine = null
+        state.engine = null
         rerender()
     }
 
     private fun syncParams() {
-        Shell.replaceParams(
-            listOf("source" to source.slug) + scopeQueryParams(Session.studySet, selection),
-        )
+        Shell.replaceParams(scopeQueryParams(Session.studySet, selection))
     }
 
     // --- setup ---
 
     private fun renderSetup() {
-        root.child("h1", "page-title", "Quiz me")
+        val state = state
+        root.child("h1", "page-title", "${kind.title} quiz")
 
-        root.child("p", "fw-semibold mb-1", "Source")
-        root.chipRow(QuizSource.entries.map { it.displayName to it }, source, keyGroup = "source") {
-            source = it; syncParams(); rerender()
-        }
-
-        when (source) {
-            QuizSource.QUESTIONS -> {
+        when (kind) {
+            QuizKind.GENERAL -> {
                 root.child("p", "fw-semibold mb-1", "Round")
                 root.chipRow(
                     listOf<Pair<String, Round?>>("All" to null) +
                         Round.crowdSourcedRounds.map { it.displayName to it },
-                    round,
+                    state.round,
                     keyGroup = "round",
-                ) { round = it; rerender() }
+                ) { state.round = it; rerender() }
             }
-            QuizSource.HEADINGS -> {
+            QuizKind.HEADINGS -> {
                 root.child("p", "fw-semibold mb-1", "Mode")
-                root.chipRow(HeadingQuizMode.entries.map { it.label to it }, headingMode, keyGroup = "mode") {
-                    headingMode = it; rerender()
+                root.chipRow(HeadingQuizMode.entries.map { it.label to it }, state.headingMode, keyGroup = "mode") {
+                    state.headingMode = it; rerender()
+                }
+            }
+            QuizKind.VERSES -> {
+                root.child("p", "fw-semibold mb-1", "Mode")
+                root.chipRow(VerseQuizMode.entries.map { it.label to it }, state.verseMode, keyGroup = "mode") {
+                    state.verseMode = it; rerender()
                 }
             }
         }
@@ -186,8 +189,9 @@ object QuizScreen {
         }
 
         root.child("p", "fw-semibold mb-1", "Questions")
-        root.chipRow(QuizLength.entries.map { it.label to it }, length, keyGroup = "length") {
-            length = it; rerender()
+        if (state.length !in kind.lengths) state.length = QuizLength.FIFTY
+        root.chipRow(kind.lengths.map { it.label to it }, state.length, keyGroup = "length") {
+            state.length = it; rerender()
         }
 
         val startButton = root.child("button", "btn btn-primary w-100 mt-2", "Start quiz") {
@@ -214,42 +218,55 @@ object QuizScreen {
         root.spinner()
         keyHandler = { false }
         error = null
+        val kind = kind
+        val state = state
         Shell.scope.launch {
             try {
-                // Both sources ask for exactly the span the chips light, ends spelled out explicitly.
+                // Every kind asks for exactly the span the chips light, ends spelled out explicitly.
                 val scope = selection.resolveWithin(Session.studySet)
                 val book = scope.book?.name
                 val from = scope.chapters?.start?.chapter
                 val through = scope.chapters?.endInclusive?.chapter
-                val pool = when (source) {
-                    QuizSource.QUESTIONS ->
+                val multiBook = !Session.studySet.isSingleBook
+                val pool = when (kind) {
+                    QuizKind.GENERAL ->
                         Session.api.questions(book = book, fromChapter = from, chapter = through)
-                            .filter { round == null || it.roundType == round }
-                    QuizSource.HEADINGS -> headingQuestions(
+                            .filter { state.round == null || it.roundType == state.round }
+                    QuizKind.HEADINGS -> headingQuestions(
                         Session.api.headings(book = book, fromChapter = from, throughChapter = through),
-                        multiBook = !Session.studySet.isSingleBook,
-                        mode = headingMode,
+                        multiBook = multiBook,
+                        mode = state.headingMode,
                     )
+                    QuizKind.VERSES -> coroutineScope {
+                        val verses = async {
+                            Session.api.verses(state.length.count, book = book, fromChapter = from, throughChapter = through)
+                        }
+                        val headings = async { Session.api.headings(book = book, fromChapter = from, throughChapter = through) }
+                        verseQuestions(verses.await(), headings.await(), multiBook = multiBook, mode = state.verseMode)
+                    }
                 }
                 val e = QuizEngine(
                     pool,
-                    limit = length.count,
-                    noneOfTheAbove = source == QuizSource.HEADINGS && headingMode == HeadingQuizMode.CHOICE_NOTA,
+                    limit = state.length.count,
+                    noneOfTheAbove = (kind == QuizKind.HEADINGS && state.headingMode == HeadingQuizMode.CHOICE_NOTA) ||
+                        (kind == QuizKind.VERSES && state.verseMode == VerseQuizMode.HEADING_CHOICE_NOTA),
                 )
                 if (e.isEmpty) {
-                    error = when (source) {
-                        QuizSource.QUESTIONS -> "No approved questions match — loosen the filters or contribute some!"
-                        QuizSource.HEADINGS -> "Chapter headings aren't available right now — please try again later."
+                    error = when (kind) {
+                        QuizKind.GENERAL -> "No approved questions match — loosen the filters or contribute some!"
+                        QuizKind.HEADINGS -> "Chapter headings aren't available right now — please try again later."
+                        QuizKind.VERSES -> "Verses aren't available right now — please try again later."
                     }
                 } else {
-                    engine = e
-                    engineSource = source
-                    engineTyped = source == QuizSource.HEADINGS && headingMode == HeadingQuizMode.TYPED
+                    state.engine = e
+                    state.engineTyped = (kind == QuizKind.HEADINGS && state.headingMode == HeadingQuizMode.TYPED) ||
+                        (kind == QuizKind.VERSES && state.verseMode == VerseQuizMode.TYPED)
                 }
             } catch (t: Throwable) {
                 error = friendlyError(t)
             }
-            rerender()
+            // Still on this quiz? (A slow fetch can land after the user has moved to another.)
+            if (this@QuizScreen.kind == kind) rerender()
         }
     }
 
@@ -276,7 +293,7 @@ object QuizScreen {
             child("div", "d-flex gap-2") {
                 soundToggle()
                 // The quiz is sticky across navigation, so this is the way out short of finishing —
-                // back to setup with the filters kept, to pick other chapters or another source.
+                // back to setup with the filters kept, to pick other chapters or another mode.
                 child("button", "btn btn-sm btn-outline-secondary", "End quiz") {
                     setAttribute("type", "button")
                     onClick { endQuiz() }
@@ -290,14 +307,14 @@ object QuizScreen {
         val stage = root.child("div") { tabIndex = -1; setAttribute("style", "outline: none;") }
         stage.child("div", "card section-card mb-3") {
             child("div", "card-body") {
-                child("div", "text-muted small mb-1", item.question.roundType.displayName)
+                child("div", "text-muted small mb-1", kind.askLine(item))
                 child("p", "fs-5 mb-0", item.question.prompt)
             }
         }
 
         when {
             item.isMultipleChoice -> multipleChoice(quiz, item, stage)
-            engineTyped -> typedChapter(quiz, item, stage)
+            state.engineTyped -> typedChapter(quiz, item, stage)
             else -> selfGraded(quiz, item, stage)
         }
     }
@@ -329,7 +346,7 @@ object QuizScreen {
         val position = quiz.position
         advanceTimer = window.setTimeout({
             advanceTimer = null
-            if (engine === quiz && quiz.position == position) {
+            if (state.engine === quiz && quiz.position == position) {
                 quiz.next()
                 if (document.body?.contains(root) == true) rerender()
             }
@@ -436,7 +453,7 @@ object QuizScreen {
         val set = Session.studySet
         val multiBook = !set.isSingleBook
         // Only the books this quiz draws from; with just one there's nothing to pick.
-        val books = engine?.items.orEmpty()
+        val books = quiz.items
             .mapNotNull { it.question.bookCode?.let(::bookByCode) }
             .distinct().sortedBy { it.ordinal }
             .ifEmpty { set.books }
@@ -595,11 +612,12 @@ object QuizScreen {
             }
         }
         val missed = result.missed
-        val showMissed = missedShownFor === quiz && missed.isNotEmpty()
-        fun retry() { engine = quiz.retryMissed(); rerender() }
-        fun newQuiz() { engine = null; rerender() }
+        val state = state
+        val showMissed = state.missedShownFor === quiz && missed.isNotEmpty()
+        fun retry() { state.engine = quiz.retryMissed(); rerender() }
+        fun newQuiz() { state.engine = null; rerender() }
         fun toggleMissed() {
-            missedShownFor = if (showMissed) null else quiz
+            state.missedShownFor = if (showMissed) null else quiz
             rerender()
             (root.querySelector("[data-tbb-review]") as? HTMLElement)?.focus()
         }
