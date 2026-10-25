@@ -68,7 +68,10 @@ android {
         applicationId = "net.markdrew.biblebowl"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
+        // Play rejects an upload whose versionCode doesn't exceed the last one, so the
+        // android-release workflow passes main's commit count: it grows with every commit and,
+        // unlike a run number, survives renaming the workflow. Local builds are 1.
+        versionCode = providers.environmentVariable("TBB_VERSION_CODE").orNull?.toInt() ?: 1
         versionName = "0.1.0"
         // The APK talks to the live backend by default so a sideloaded build just works. Override for
         // local dev, e.g. `-Ptbb.backendUrl=http://10.0.2.2:8080` (the emulator's alias for the host).
