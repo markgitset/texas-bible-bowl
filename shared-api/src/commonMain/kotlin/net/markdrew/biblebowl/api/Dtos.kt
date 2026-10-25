@@ -191,6 +191,27 @@ data class HeadingDto(
     val total: Int,
 )
 
+/**
+ * One ESV verse for the verse quiz ("which heading / which chapter is this verse in?"). The server
+ * samples a handful per request — never the running text in bulk (the ESV licence keeps that
+ * server-side).
+ */
+@Serializable
+data class VerseDto(
+    /** The verse's reference within its book, e.g. "3:16". */
+    val reference: String,
+    /** Book enum name (e.g. "ACT"). */
+    val bookCode: String,
+    val chapter: Int,
+    val verse: Int,
+    val text: String,
+    /**
+     * The section heading the verse sits under — included because a heading can start before the
+     * quizzed span — or null when the verse straddles two headings or precedes the first one.
+     */
+    val heading: HeadingDto? = null,
+)
+
 /** One entry of a study index (e.g. the Numbers index): a key and the verses it occurs in. */
 @Serializable
 data class IndexEntryDto(

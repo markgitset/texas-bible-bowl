@@ -95,7 +95,7 @@ class TbbApiRequestTest {
                     """{"seasonYear":"2027","divisions":[]}""" to "application/json"
                 "/scores/mine" ->
                     """{"seasonYear":"2027","released":false,"rows":[]}""" to "application/json"
-                "/questions", "/study/headings" -> "[]" to "application/json"
+                "/questions", "/study/headings", "/study/verses" -> "[]" to "application/json"
                 "/study-materials" ->
                     if (exchange.requestMethod == "GET") "[]" to "application/json"
                     else """{"materials":[]}""" to "application/json"
@@ -183,6 +183,13 @@ class TbbApiRequestTest {
         api.headings(throughChapter = 5, set = "john")
         requests.last().let { uri ->
             assertTrue("set=john" in uri && "throughChapter=5" in uri && "chapter=5" !in uri.substringBefore("throughChapter"), uri)
+        }
+        api.verses(count = 20, book = "NUM", fromChapter = 3, throughChapter = 7)
+        requests.last().let { uri ->
+            assertTrue(uri.startsWith("/study/verses?"), uri)
+            listOf("book=NUM", "fromChapter=3", "throughChapter=7", "count=20").forEach { param ->
+                assertTrue(param in uri, "expected $param in $uri")
+            }
         }
         api.headingFlashcardsPdf(throughChapter = 5, book = "JOH")
         requests.last().let { uri ->

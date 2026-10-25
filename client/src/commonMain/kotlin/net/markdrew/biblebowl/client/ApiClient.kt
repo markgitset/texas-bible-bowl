@@ -40,6 +40,7 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.GradingSheetResponse
 import net.markdrew.biblebowl.api.HeadingDto
+import net.markdrew.biblebowl.api.VerseDto
 import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.ChangePasswordRequest
@@ -318,6 +319,23 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         client.get("$baseUrl/study/headings") {
             authorize()
             scopeParams(set, book, throughChapter, chapterKey = StudyScopeParams.THROUGH_CHAPTER, fromChapter = fromChapter)
+        }.bodyOrThrow()
+
+    /**
+     * A random sample of [count] verses in scope for the verse quiz (the server caps it at 50), each
+     * with the section heading it sits under.
+     */
+    suspend fun verses(
+        count: Int,
+        throughChapter: Int? = null,
+        set: String? = null,
+        book: String? = null,
+        fromChapter: Int? = null,
+    ): List<VerseDto> =
+        client.get("$baseUrl/study/verses") {
+            authorize()
+            scopeParams(set, book, throughChapter, chapterKey = StudyScopeParams.THROUGH_CHAPTER, fromChapter = fromChapter)
+            parameter("count", count)
         }.bodyOrThrow()
 
     /** Fetches a chapter-headings flashcard deck PDF, optionally limited through a chapter. */

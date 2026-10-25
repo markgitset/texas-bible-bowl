@@ -23,6 +23,7 @@ import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.RegisterRequest
+import net.markdrew.biblebowl.api.VerseDto
 import net.markdrew.biblebowl.generate.LayoutRevisions
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingBook
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingChapter
@@ -44,6 +45,7 @@ import net.markdrew.biblebowl.server.esv.InMemoryEsvCache
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.study.StudyDataRegistry
 import net.markdrew.biblebowl.server.study.StudyDataService
+import net.markdrew.biblebowl.server.routes.distinctlyWorded
 import net.markdrew.biblebowl.server.routes.headingReference
 import net.markdrew.biblebowl.server.typst.TypstCompiler
 import kotlin.test.Test
@@ -193,6 +195,56 @@ class StudyRoutesTest {
         val filtered = api.get("/study/headings?throughChapter=1")
         val filteredHeadings: List<HeadingDto> = json.decodeFromString(filtered.bodyAsText())
         assertEquals(listOf("The Promise of the Holy Spirit"), filteredHeadings.map { it.title })
+    }
+
+    @Test
+    fun versesEndpointSamplesInScopeVersesWithTheirHeadings() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(studyService()),
+            )
+        }
+        val json = Json { ignoreUnknownKeys = true }
+        val api = createClient { install(ContentNegotiation) { json(json) } }
+
+        // Public like the rest of the study material.
+        val all: List<VerseDto> = json.decodeFromString(api.get("/study/verses?count=50").bodyAsText())
+        assertEquals(setOf("1:1", "1:2", "2:1", "2:2"), all.map { it.reference }.toSet())
+        val pentecost = all.single { it.reference == "2:1" }
+        assertEquals("When the day of Pentecost arrived, they were all together in one place.", pentecost.text)
+        assertEquals("ACT", pentecost.bookCode)
+        assertEquals(2, pentecost.chapter)
+        assertEquals(1, pentecost.verse)
+        assertEquals("The Coming of the Holy Spirit", pentecost.heading?.title)
+        assertEquals(2, pentecost.heading?.index)
+
+        // Scope and count both narrow the sample.
+        val chapter2: List<VerseDto> =
+            json.decodeFromString(api.get("/study/verses?fromChapter=2&throughChapter=2").bodyAsText())
+        assertEquals(setOf(2), chapter2.map { it.chapter }.toSet())
+        val one: List<VerseDto> = json.decodeFromString(api.get("/study/verses?count=1").bodyAsText())
+        assertEquals(1, one.size)
+    }
+
+    @Test
+    fun quizVersesMustBeLongEnoughAndWordedUniquely() {
+        val all = listOf("Jesus wept.", "And it was so.", "And it was so.", "In the beginning, God created the heavens.")
+        assertEquals(
+            listOf("In the beginning, God created the heavens."),
+            distinctlyWorded(all.distinct(), all) { it },
+        )
+    }
+
+    @Test
+    fun versesEndpointReturns503WithoutStudyService() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = null,
+            )
+        }
+        assertEquals(HttpStatusCode.ServiceUnavailable, client.get("/study/verses").status)
     }
 
     @Test
