@@ -74,7 +74,6 @@ import net.markdrew.biblebowl.server.routes.AUTH_RATE_LIMIT
 import net.markdrew.biblebowl.server.routes.GENERATE_RATE_LIMIT
 import net.markdrew.biblebowl.server.routes.adminRegistrationRoutes
 import net.markdrew.biblebowl.server.routes.authRoutes
-import net.markdrew.biblebowl.server.routes.bibleRoutes
 import net.markdrew.biblebowl.server.routes.generateRoutes
 import net.markdrew.biblebowl.server.routes.housingRoutes
 import net.markdrew.biblebowl.server.routes.tribeRoutes
@@ -249,7 +248,6 @@ fun Application.module(
         }
         authRoutes(users, jwt, resets, email)
         questionRoutes(users, questions, seasons)
-        bibleRoutes(esv)
         studyRoutes(study, seasons)
         generateRoutes(users, questions, seasons, study, pdfCache)
         seasonRoutes(users, seasons)
