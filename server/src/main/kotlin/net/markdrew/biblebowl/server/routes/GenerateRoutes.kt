@@ -795,7 +795,8 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
                 val distractors = (chaptersInScope - own).shuffled(random).take(3)
                 val answers = (distractors + own).sorted().map { chapterLabel(scope.set, it) }
                 KahootQuestion(
-                    question = "Which chapter has the heading “${h.title}”?",
+                    // Just the heading, like every other headings drill: the chapter choices say what's asked.
+                    question = h.title,
                     answers = answers,
                     correctIndices = listOf(answers.indexOf(chapterLabel(scope.set, own)) + 1),
                 )
