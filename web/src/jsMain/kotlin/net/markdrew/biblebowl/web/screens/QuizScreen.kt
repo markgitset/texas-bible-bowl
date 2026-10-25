@@ -48,7 +48,7 @@ private enum class QuizSource(val displayName: String, val slug: String) {
 }
 
 /** How long a right answer's ✓ shows before the quiz moves on by itself. */
-private const val CORRECT_FLASH_MS = 800
+private const val CORRECT_FLASH_MS = 500
 
 /**
  * Quiz mode: setup → stepper → results (with a retry of the misses). All quiz logic lives in

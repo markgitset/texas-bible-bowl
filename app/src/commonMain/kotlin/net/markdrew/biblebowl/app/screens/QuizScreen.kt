@@ -104,7 +104,7 @@ object QuizChoices {
 }
 
 /** How long a right answer's ✓ shows before the quiz moves on by itself. */
-private const val CORRECT_FLASH_MS = 800L
+private const val CORRECT_FLASH_MS = 500L
 
 /**
  * Quiz mode: setup → stepper → results (with a retry of the misses). All quiz logic lives in

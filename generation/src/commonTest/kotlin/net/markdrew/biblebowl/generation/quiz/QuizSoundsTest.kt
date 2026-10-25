@@ -9,7 +9,7 @@ class QuizSoundsTest {
 
     @Test
     fun correctSoundEndsWellInsideTheCorrectFlash() {
-        // The ✓ shows for 800 ms before the quiz moves on; the cue should be long over by then.
+        // The ✓ shows for 500 ms before the quiz moves on; the cue should be over by then.
         assertTrue(QuizSound.CORRECT.durationS < 0.4)
     }
 

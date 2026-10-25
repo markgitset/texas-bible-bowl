@@ -9,7 +9,7 @@ import kotlin.math.sin
  * major third for wrong. Self-graded items play nothing — the student already knows.
  *
  * Synthesized rather than shipped as audio files, so there is nothing to license and every app
- * plays identical samples from [samples]. [CORRECT] must finish well inside the 800 ms ✓ flash.
+ * plays identical samples from [samples]. [CORRECT] must finish inside the 500 ms ✓ flash.
  */
 enum class QuizSound(internal val notes: List<Note>) {
     CORRECT(listOf(Note(1046.5, startS = 0.0, durS = 0.18), Note(1568.0, startS = 0.09, durS = 0.24))),
