@@ -189,7 +189,6 @@ object QuizScreen {
         }
 
         root.child("p", "fw-semibold mb-1", "Questions")
-        if (state.length !in kind.lengths) state.length = QuizLength.FIFTY
         root.chipRow(kind.lengths.map { it.label to it }, state.length, keyGroup = "length") {
             state.length = it; rerender()
         }

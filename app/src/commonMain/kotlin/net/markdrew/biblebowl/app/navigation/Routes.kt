@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.ui.graphics.vector.ImageVector
 import net.markdrew.biblebowl.api.StudySection
+import net.markdrew.biblebowl.generation.quiz.QuizKind
 
 /**
  * The app's route strings (see docs/gui-redesign.md §2.1). On web these become hash URLs
@@ -45,6 +46,12 @@ object Routes {
  * the web app's (same shared enum) so deep links mean the same thing on both platforms.
  */
 val StudySection.route: String get() = "${Routes.STUDY}/$slug"
+
+/**
+ * Each quiz is its own screen at `quiz/<section slug>`, pushed over the Quiz tab's chooser (the tab's
+ * start, `quiz`). Identical to the web app's routes, though web has no chooser page.
+ */
+val QuizKind.route: String get() = "${Routes.QUIZ}/$slug"
 
 /**
  * The four top-level destinations (§2.2). Identical for everyone — role-gated features live

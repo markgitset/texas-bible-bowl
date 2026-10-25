@@ -9,6 +9,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import net.markdrew.biblebowl.app.navigation.Routes
 import net.markdrew.biblebowl.app.navigation.TopDestination
+import net.markdrew.biblebowl.app.navigation.route
+import net.markdrew.biblebowl.api.StudySection
+import net.markdrew.biblebowl.generation.quiz.QuizKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -21,13 +24,16 @@ import kotlin.test.assertEquals
 class NavigationTest {
 
     private val routes = listOf(
-        Routes.STUDY, Routes.STUDY_HEADINGS, Routes.QUIZ, Routes.QUESTIONS, Routes.QUESTIONS_NEW,
-        Routes.EVENT, Routes.GRADING, Routes.SIGN_IN, Routes.ACCOUNT,
-    )
+        Routes.STUDY, Routes.STUDY_HEADINGS, StudySection.VERSES.route, Routes.QUIZ, Routes.QUESTIONS,
+        Routes.QUESTIONS_NEW, Routes.EVENT, Routes.GRADING, Routes.SIGN_IN, Routes.ACCOUNT,
+    ) + QuizKind.entries.map { it.route }
 
     /** Runs [steps] one per idle frame, then returns the route left showing. */
-    private fun routeAfter(vararg steps: NavHostController.() -> Unit): String? {
-        var shown: String? = null
+    private fun routeAfter(vararg steps: NavHostController.() -> Unit): String? = stackAfter(*steps).lastOrNull()
+
+    /** Runs [steps] one per idle frame, then returns the back stack's routes, bottom first. */
+    private fun stackAfter(vararg steps: NavHostController.() -> Unit): List<String?> {
+        var shown: List<String?> = emptyList()
         runComposeUiTest {
             lateinit var nav: NavHostController
             setContent {
@@ -37,7 +43,7 @@ class NavigationTest {
                 }
             }
             steps.forEach { step -> runOnIdle { nav.step() } }
-            runOnIdle { shown = nav.currentDestination?.route }
+            runOnIdle { shown = nav.currentBackStack.value.mapNotNull { it.destination.route } }
         }
         return shown
     }
@@ -116,6 +122,48 @@ class NavigationTest {
             routeAfter(
                 { navigate(Routes.STUDY_HEADINGS) },
                 { navigateTop(TopDestination.STUDY) },
+            ),
+        )
+    }
+
+    @Test
+    fun aSectionsQuizCardOpensItsQuizOverTheChooser() {
+        assertEquals(
+            listOf(Routes.STUDY, Routes.QUIZ, QuizKind.VERSES.route),
+            stackAfter(
+                { navigate(StudySection.VERSES.route) },
+                { navigateToQuiz(QuizKind.VERSES) },
+            ),
+        )
+    }
+
+    @Test
+    fun openingAnotherQuizReplacesTheOneShowing() {
+        assertEquals(
+            listOf(Routes.STUDY, Routes.QUIZ, QuizKind.GENERAL.route),
+            stackAfter(
+                { navigateToQuiz(QuizKind.HEADINGS) },
+                { navigateTop(TopDestination.STUDY) },
+                { navigateToQuiz(QuizKind.GENERAL) },
+            ),
+        )
+    }
+
+    @Test
+    fun theQuizTabKeepsAQuizAndReselectingItReturnsToTheChooser() {
+        assertEquals(
+            QuizKind.HEADINGS.route,
+            routeAfter(
+                { navigateToQuiz(QuizKind.HEADINGS) },
+                { navigateTop(TopDestination.EVENT) },
+                { navigateTop(TopDestination.QUIZ) },
+            ),
+        )
+        assertEquals(
+            Routes.QUIZ,
+            routeAfter(
+                { navigateToQuiz(QuizKind.HEADINGS) },
+                { navigateTop(TopDestination.QUIZ) },
             ),
         )
     }
