@@ -49,6 +49,9 @@ kotlin {
         val desktopTest by getting
         desktopTest.dependencies {
             implementation(kotlin("test"))
+            // runComposeUiTest: drives the real NavController offscreen (NavigationTest).
+            @OptIn(org.jetbrains.compose.ExperimentalComposeLibrary::class)
+            implementation(compose.uiTest)
         }
 
         androidMain.dependencies {

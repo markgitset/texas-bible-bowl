@@ -132,17 +132,6 @@ private fun AppScaffold(
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentTop = topDestinationOf(backStackEntry?.destination?.route)
 
-    fun navigateTop(dest: TopDestination) {
-        if (dest == currentTop) {
-            // Re-selecting the active destination returns to its root (e.g. Study hub from
-            // study/headings). Plain navigate-with-restoreState would restore the saved stack —
-            // including the sub-screen the user is trying to leave — and visibly do nothing.
-            navController.popBackStack(dest.route, inclusive = false)
-        } else {
-            navController.navigateTopLevel(dest.route)
-        }
-    }
-
     val accountAction = {
         navController.navigate(if (user == null) Routes.SIGN_IN else Routes.ACCOUNT) {
             launchSingleTop = true
@@ -165,7 +154,7 @@ private fun AppScaffold(
                         if (!compact) {
                             Row {
                                 TopDestination.entries.forEach { dest ->
-                                    TextButton(onClick = { navigateTop(dest) }) {
+                                    TextButton(onClick = { navController.navigateTop(dest) }) {
                                         Text(
                                             dest.label,
                                             fontWeight = if (dest == currentTop) FontWeight.Bold else FontWeight.Normal,
@@ -198,7 +187,7 @@ private fun AppScaffold(
                         TopDestination.entries.forEach { dest ->
                             NavigationBarItem(
                                 selected = dest == currentTop,
-                                onClick = { navigateTop(dest) },
+                                onClick = { navController.navigateTop(dest) },
                                 icon = { Icon(dest.icon, contentDescription = dest.label) },
                                 label = { Text(dest.label) },
                             )
@@ -216,6 +205,33 @@ private fun AppScaffold(
                 }
             }
         }
+    }
+}
+
+/**
+ * The nav bar's tab switch. Account, sign-in and admin screens belong to no tab, yet they are
+ * pushed on top of whichever tab was showing — and so are cross-tab pushes like Account's links
+ * to event-staff screens. Those entries are dropped first: left in place, [navigateTopLevel]
+ * would save them as part of the tab underneath and restore them on its next selection, so
+ * after visiting Account from Quiz, every Quiz tap reopened Account.
+ */
+internal fun NavHostController.navigateTop(dest: TopDestination) {
+    // The tab that owns this stack: navigateTopLevel keeps at most one other tab's root above
+    // Study (the start destination), so the owner is that tab if present, else Study.
+    val owner = TopDestination.entries.firstOrNull { tab ->
+        tab != TopDestination.STUDY && runCatching { getBackStackEntry(tab.route) }.isSuccess
+    } ?: TopDestination.STUDY
+    while (previousBackStackEntry != null &&
+        topDestinationOf(currentBackStackEntry?.destination?.route) != owner
+    ) popBackStack()
+
+    if (dest == owner) {
+        // Re-selecting the active destination returns to its root (e.g. Study hub from
+        // study/headings). Plain navigate-with-restoreState would restore the saved stack —
+        // including the sub-screen the user is trying to leave — and visibly do nothing.
+        popBackStack(dest.route, inclusive = false)
+    } else {
+        navigateTopLevel(dest.route)
     }
 }
 
