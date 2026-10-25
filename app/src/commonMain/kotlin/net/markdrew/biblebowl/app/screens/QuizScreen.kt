@@ -18,11 +18,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.VolumeOff
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -62,6 +67,7 @@ import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.resolveWithin
 import net.markdrew.biblebowl.api.resolvedStudySet
+import net.markdrew.biblebowl.app.platform.QuizAudio
 import net.markdrew.biblebowl.app.platform.hasHardwareKeyboard
 import net.markdrew.biblebowl.app.ui.ChapterChips
 import net.markdrew.biblebowl.app.ui.LocalSeason
@@ -70,6 +76,7 @@ import net.markdrew.biblebowl.generation.quiz.HeadingQuizMode
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 import net.markdrew.biblebowl.generation.quiz.QuizItem
 import net.markdrew.biblebowl.generation.quiz.QuizLength
+import net.markdrew.biblebowl.generation.quiz.QuizSound
 import net.markdrew.biblebowl.generation.quiz.bookShortcutKeys
 import net.markdrew.biblebowl.generation.quiz.chapterEntryComplete
 import net.markdrew.biblebowl.generation.quiz.headingQuestions
@@ -97,7 +104,7 @@ object QuizChoices {
 }
 
 /** How long a right answer's ✓ shows before the quiz moves on by itself. */
-private const val CORRECT_FLASH_MS = 800L
+private const val CORRECT_FLASH_MS = 500L
 
 /**
  * Quiz mode: setup → stepper → results (with a retry of the misses). All quiz logic lives in
@@ -297,10 +304,12 @@ private fun QuizStepper(quiz: QuizEngine, typed: Boolean, tick: Int, onTick: () 
     val bookKeys = remember(books) { bookShortcutKeys(books) }
     var book by remember(item) { mutableStateOf(books.singleOrNull()) }
 
+    // Machine-graded answers chime or fall; self-graded ones stay quiet (the student already knows).
+    fun cue(correct: Boolean) = QuizAudio.play(if (correct) QuizSound.CORRECT else QuizSound.WRONG)
     fun pick(i: Int) {
         if (picked != null) return
         picked = i
-        verdict = quiz.answerChoice(i)
+        verdict = quiz.answerChoice(i).also(::cue)
         onTick()
     }
     fun submitTyped() {
@@ -310,6 +319,7 @@ private fun QuizStepper(quiz: QuizEngine, typed: Boolean, tick: Int, onTick: () 
         val ok = typedAnswerCorrect(item.question, b, chapter, multiBook = !set.isSingleBook)
         quiz.answerSelf(ok)
         verdict = ok
+        cue(ok)
         onTick()
     }
     fun maybeSubmitTyped() {
@@ -370,6 +380,12 @@ private fun QuizStepper(quiz: QuizEngine, typed: Boolean, tick: Int, onTick: () 
             Text("Score: ${quiz.scoreSoFar}", style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.secondary)
             Spacer(Modifier.weight(1f))
+            IconButton(onClick = { QuizAudio.enabled = !QuizAudio.enabled }) {
+                Icon(
+                    if (QuizAudio.enabled) Icons.AutoMirrored.Filled.VolumeUp else Icons.AutoMirrored.Filled.VolumeOff,
+                    contentDescription = if (QuizAudio.enabled) "Answer sounds on" else "Answer sounds off",
+                )
+            }
             // The way out short of finishing — back to setup with the filters kept.
             TextButton(onClick = onEnd) { Text("End quiz"); KeyHint("Esc") }
         }
