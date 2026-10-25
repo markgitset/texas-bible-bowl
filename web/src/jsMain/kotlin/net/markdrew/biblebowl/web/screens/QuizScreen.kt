@@ -15,12 +15,12 @@ import net.markdrew.biblebowl.generation.quiz.QuizItem
 import net.markdrew.biblebowl.generation.quiz.QuizKind
 import net.markdrew.biblebowl.generation.quiz.QuizLength
 import net.markdrew.biblebowl.generation.quiz.QuizSound
+import net.markdrew.biblebowl.generation.quiz.VerseQuizMode
 import net.markdrew.biblebowl.generation.quiz.bookShortcutKeys
 import net.markdrew.biblebowl.generation.quiz.chapterEntryComplete
 import net.markdrew.biblebowl.generation.quiz.headingQuestions
 import net.markdrew.biblebowl.generation.quiz.lastChapterIn
 import net.markdrew.biblebowl.generation.quiz.typedAnswerCorrect
-import net.markdrew.biblebowl.generation.quiz.VerseQuizMode
 import net.markdrew.biblebowl.generation.quiz.verseQuestions
 import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.Round
