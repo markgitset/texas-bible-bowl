@@ -6,14 +6,15 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.StudyScopeParams
-import net.markdrew.biblebowl.api.VerseDto
-import net.markdrew.biblebowl.generate.normalizeWS
+import net.markdrew.biblebowl.api.VersePlaceDto
+import net.markdrew.biblebowl.api.VerseQuestionDto
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.server.data.SeasonRepository
 import net.markdrew.biblebowl.server.esv.EsvUpstreamException
 import net.markdrew.biblebowl.server.study.StudyDataRegistry
 import net.markdrew.biblebowl.server.study.StudyDataService
 import net.markdrew.biblebowl.server.study.toDto
+import net.markdrew.biblebowl.server.study.versesByWording
 
 fun Route.studyRoutes(study: StudyDataRegistry?, seasons: SeasonRepository) {
     // Public: study material never requires sign-in (signing in only *adds* capabilities).
@@ -43,7 +44,7 @@ fun Route.studyRoutes(study: StudyDataRegistry?, seasons: SeasonRepository) {
     }
 
     // GET /study/verses?set=acts&book=ACT&fromChapter=2&throughChapter=5&count=20 — a random sample
-    // of verses for the verse quiz. Public like the rest of the study material: it hands out a few
+    // of verse-quiz questions. Public like the rest of the study material: it hands out a few
     // dozen short excerpts per request (at most [MAX_QUIZ_VERSES]), never the running text in bulk.
     get("/study/verses") {
         val scope = call.resolveEsvScopeOrRespond(
@@ -59,24 +60,24 @@ fun Route.studyRoutes(study: StudyDataRegistry?, seasons: SeasonRepository) {
         }
         try {
             call.advertiseCanonicalScope(scope, chapterKey = StudyScopeParams.THROUGH_CHAPTER)
-            val sd = svc.studyData()
-            // Each heading paired with the text it covers, to find the one a verse sits under.
-            val headingAt = sd.headingCharRanges.entries.map { it.key }.zip(sd.headings).toMap()
-            val inScope = sd.verses.entries
-                .filter { (_, verseRef) -> scope.covers(verseRef.chapterRef) }
-                .map { (range, verseRef) -> Triple(range, verseRef, sd.text.substring(range).normalizeWS()) }
-            val verses = distinctlyWorded(inScope, sd.verses.entries.map { sd.text.substring(it.key).normalizeWS() }) { it.third }
+            // One question per wording, asked when any of its places is in scope; each lists every place
+            // in the set (a refrain's other places count even outside the requested chapters).
+            val verses = svc.studyData().versesByWording()
+                .filter { group -> group.any { scope.covers(it.ref.chapterRef) } }
                 .shuffled()
                 .take(count)
-                .map { (range, verseRef, text) ->
-                    VerseDto(
-                        reference = verseRef.format(NO_BOOK_FORMAT),
-                        bookCode = verseRef.book.name,
-                        chapter = verseRef.chapter,
-                        verse = verseRef.verse,
-                        text = text,
-                        // Null for a verse that straddles a heading boundary (or precedes the first).
-                        heading = sd.headingCharRanges.keyEnclosing(range)?.let { headingAt[it] }?.toDto(),
+                .map { group ->
+                    VerseQuestionDto(
+                        text = group.first().text,
+                        places = group.map { place ->
+                            VersePlaceDto(
+                                reference = place.ref.format(NO_BOOK_FORMAT),
+                                bookCode = place.ref.book.name,
+                                chapter = place.ref.chapter,
+                                verse = place.ref.verse,
+                                heading = place.heading?.toDto(),
+                            )
+                        },
                     )
                 }
             call.respond(verses)
@@ -98,21 +99,6 @@ fun Route.studyRoutes(study: StudyDataRegistry?, seasons: SeasonRepository) {
 
 /** The most verses one /study/verses request hands out — the verse quiz's longest run. */
 const val MAX_QUIZ_VERSES = 50
-
-/** The shortest verse worth quizzing — the practice rounds' 15-character clue floor. */
-private const val MIN_QUIZ_VERSE_LENGTH = 15
-
-/**
- * The [candidates] whose [text] can be placed: long enough to recognize, and worded unlike every
- * other verse in [allTexts] (the whole study set), so a repeated refrain never has two right answers.
- */
-internal fun <T> distinctlyWorded(candidates: List<T>, allTexts: List<String>, text: (T) -> String): List<T> {
-    val occurrences = allTexts.groupingBy { it.lowercase() }.eachCount()
-    return candidates.filter { c ->
-        val t = text(c)
-        t.length >= MIN_QUIZ_VERSE_LENGTH && occurrences[t.lowercase()] == 1
-    }
-}
 
 /** Responds with an index (numbers/names) or the standard 503/502 when the study service is unavailable. */
 private suspend fun io.ktor.server.routing.RoutingContext.respondIndex(

@@ -23,7 +23,7 @@ import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.RegisterRequest
-import net.markdrew.biblebowl.api.VerseDto
+import net.markdrew.biblebowl.api.VerseQuestionDto
 import net.markdrew.biblebowl.generate.LayoutRevisions
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingBook
 import net.markdrew.biblebowl.generation.typst.ChapterHeadingChapter
@@ -45,7 +45,6 @@ import net.markdrew.biblebowl.server.esv.InMemoryEsvCache
 import net.markdrew.biblebowl.server.security.JwtService
 import net.markdrew.biblebowl.server.study.StudyDataRegistry
 import net.markdrew.biblebowl.server.study.StudyDataService
-import net.markdrew.biblebowl.server.routes.distinctlyWorded
 import net.markdrew.biblebowl.server.routes.headingReference
 import net.markdrew.biblebowl.server.typst.TypstCompiler
 import kotlin.test.Test
@@ -68,6 +67,31 @@ private val CHAPTER_TEXTS = mapOf(
         The Coming of the Holy Spirit
 
           [1] When the day of Pentecost arrived, they were all together in one place. [2] And suddenly there came from heaven a sound.
+    """.trimIndent(),
+)
+
+/**
+ * A three-chapter fixture with repeats: chapters 1 and 3 share a heading title, "And it was so." is
+ * verse 1:2 and verse 2:1, and "Jesus wept." is a short verse.
+ */
+private val REPEAT_TEXTS = mapOf(
+    "44001001-44001999" to """
+        _______________________________________________________
+        The Same Heading
+
+          [1] Jesus wept. [2] And it was so.
+    """.trimIndent(),
+    "44002001-44002999" to """
+        _______________________________________________________
+        Another Heading
+
+          [1] And it was so. [2] Something long enough to stand on its own happened here today.
+    """.trimIndent(),
+    "44003001-44003999" to """
+        _______________________________________________________
+        The Same Heading
+
+          [1] A third chapter verse that reads like no other.
     """.trimIndent(),
 )
 
@@ -103,9 +127,9 @@ private fun ByteArray.pdfPageCount(): Int =
 
 class StudyRoutesTest {
 
-    private fun mockEsvClient(): HttpClient = HttpClient(MockEngine { request ->
+    private fun mockEsvClient(texts: Map<String, String> = CHAPTER_TEXTS): HttpClient = HttpClient(MockEngine { request ->
         val query = request.url.parameters["q"] ?: ""
-        val text = CHAPTER_TEXTS.getValue(query)
+        val text = texts.getValue(query)
         val chapter = query.substring(4, 7).trimStart('0')
         respond(
             content = """
@@ -128,6 +152,17 @@ class StudyRoutesTest {
             baseUrl = "https://fake.esv",
         ),
         studySet = StudySet("Acts 1-2", "acts-test", Book.ACT.chapterRange(1, 2)),
+    )
+
+    /** [REPEAT_TEXTS] as a study set: repeated headings and verses. */
+    private fun repeatStudyService() = StudyDataService(
+        esv = EsvPassageService(
+            client = mockEsvClient(REPEAT_TEXTS),
+            cache = InMemoryEsvCache(),
+            token = "test-esv-token",
+            baseUrl = "https://fake.esv",
+        ),
+        studySet = StudySet("Acts 1-3", "acts-test", Book.ACT.chapterRange(1, 3)),
     )
 
     @Test
@@ -209,31 +244,86 @@ class StudyRoutesTest {
         val api = createClient { install(ContentNegotiation) { json(json) } }
 
         // Public like the rest of the study material.
-        val all: List<VerseDto> = json.decodeFromString(api.get("/study/verses?count=50").bodyAsText())
-        assertEquals(setOf("1:1", "1:2", "2:1", "2:2"), all.map { it.reference }.toSet())
-        val pentecost = all.single { it.reference == "2:1" }
+        val all: List<VerseQuestionDto> = json.decodeFromString(api.get("/study/verses?count=50").bodyAsText())
+        assertEquals(setOf("1:1", "1:2", "2:1", "2:2"), all.map { it.places.single().reference }.toSet())
+        val pentecost = all.single { it.places.single().reference == "2:1" }
         assertEquals("When the day of Pentecost arrived, they were all together in one place.", pentecost.text)
-        assertEquals("ACT", pentecost.bookCode)
-        assertEquals(2, pentecost.chapter)
-        assertEquals(1, pentecost.verse)
-        assertEquals("The Coming of the Holy Spirit", pentecost.heading?.title)
-        assertEquals(2, pentecost.heading?.index)
+        val place = pentecost.places.single()
+        assertEquals("ACT", place.bookCode)
+        assertEquals(2, place.chapter)
+        assertEquals(1, place.verse)
+        assertEquals("The Coming of the Holy Spirit", place.heading?.title)
+        assertEquals(2, place.heading?.index)
+        assertEquals(1, place.heading?.verse, "a heading names the verse it starts at")
 
         // Scope and count both narrow the sample.
-        val chapter2: List<VerseDto> =
+        val chapter2: List<VerseQuestionDto> =
             json.decodeFromString(api.get("/study/verses?fromChapter=2&throughChapter=2").bodyAsText())
-        assertEquals(setOf(2), chapter2.map { it.chapter }.toSet())
-        val one: List<VerseDto> = json.decodeFromString(api.get("/study/verses?count=1").bodyAsText())
+        assertEquals(setOf(2), chapter2.flatMap { q -> q.places.map { it.chapter } }.toSet())
+        val one: List<VerseQuestionDto> = json.decodeFromString(api.get("/study/verses?count=1").bodyAsText())
         assertEquals(1, one.size)
     }
 
     @Test
-    fun quizVersesMustBeLongEnoughAndWordedUniquely() {
-        val all = listOf("Jesus wept.", "And it was so.", "And it was so.", "In the beginning, God created the heavens.")
+    fun versesEndpointAsksShortAndRepeatedVersesWithEveryPlace() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(repeatStudyService()),
+            )
+        }
+        val json = Json { ignoreUnknownKeys = true }
+        val api = createClient { install(ContentNegotiation) { json(json) } }
+
+        val all: List<VerseQuestionDto> = json.decodeFromString(api.get("/study/verses?count=50").bodyAsText())
+        assertTrue(all.any { it.text == "Jesus wept." }, "a short verse is asked too")
+        assertEquals(1, all.count { it.text == "And it was so." }, "a repeated verse is asked once")
+        val refrain = all.single { it.text == "And it was so." }
+        assertEquals(listOf("1:2", "2:1"), refrain.places.map { it.reference })
+        assertEquals(listOf("The Same Heading", "Another Heading"), refrain.places.map { it.heading?.title })
+
+        // Asked when any place is in scope, still listing every place.
+        val chapter2: List<VerseQuestionDto> =
+            json.decodeFromString(api.get("/study/verses?fromChapter=2&throughChapter=2").bodyAsText())
+        assertEquals(setOf("And it was so.", "Something long enough to stand on its own happened here today."),
+            chapter2.map { it.text }.toSet())
+        assertEquals(listOf("1:2", "2:1"), chapter2.single { it.text == "And it was so." }.places.map { it.reference })
+    }
+
+    @Test
+    fun repeatedHeadingsAndVersesAreOneCardEach() = testApplication {
+        application {
+            module(
+                InMemoryUserRepository(), InMemoryQuestionRepository(),
+                JwtService(secret = "test-secret"), esv = null, study = StudyDataRegistry.fixed(repeatStudyService()),
+            )
+        }
+        val json = Json { ignoreUnknownKeys = true }
+        val api = createClient { install(ContentNegotiation) { json(json) } }
+
+        // A heading title that recurs is one card naming every chapter it begins in.
         assertEquals(
-            listOf("In the beginning, God created the heavens."),
-            distinctlyWorded(all.distinct(), all) { it },
+            listOf("Front,Back", "The Same Heading,Chapter 1 · Chapter 3", "Another Heading,Chapter 2"),
+            api.get("/generate/space-questions.csv?source=headings").bodyAsText().trim().lines(),
         )
+        // ...and in Kahoot, one question whose wrong choices never name the other chapter.
+        val sheet = readZipEntry(api.get("/generate/kahoot-questions.xlsx?source=headings").bodyAsBytes(), "xl/worksheets/sheet1.xml")
+        val rows = Regex("<row[^>]*>.*?</row>", RegexOption.DOT_MATCHES_ALL).findAll(sheet).map { it.value }.toList()
+        val same = rows.filter { ">The Same Heading</t>" in it }
+        assertEquals(1, same.size, "one question per title")
+        assertTrue("Chapter 3" !in same.single(), "the twin chapter is never a wrong choice:\n${same.single()}")
+
+        // A verse that recurs is one deck card whose back names every place.
+        val token: String = json.decodeFromString<AuthResponse>(
+            api.post("/auth/register") {
+                contentType(ContentType.Application.Json)
+                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
+            }.bodyAsText()
+        ).token
+        val txt = api.get("/generate/quizlet-verses.txt") { header(HttpHeaders.Authorization, "Bearer $token") }.bodyAsText()
+        assertEquals(1, txt.split("And it was so.").size - 1, "one card for the refrain")
+        assertTrue("And it was so.\tThe Same Heading\n*Acts 1:2*\nAnother Heading\n*Acts 2:1*" in txt, txt)
+        assertTrue("Jesus wept." in txt, "short verses are carded too")
     }
 
     @Test

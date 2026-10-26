@@ -57,9 +57,10 @@ object LayoutRevisions {
      * `flashcardsTypst`, shared by the question-bank, unique-word, and chapter-heading decks.
      * 1 = Markdown rich text with the unique word underlined, which only the unique-word deck was
      * salted for at the time — the heading deck served the pre-Markdown rendering until 2 retired
-     * it; 3 = the corner revision mark.
+     * it; 3 = the corner revision mark; 4 = a heading title that recurs is one card naming every
+     * chapter it begins in.
      */
-    const val FLASHCARDS = 3
+    const val FLASHCARDS = 4
 
     /**
      * `studyGuideTypst`, for both the student and answer copies. 1 = the embedded-font fix;
