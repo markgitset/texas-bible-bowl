@@ -27,7 +27,7 @@
              registration opens and disappears when it closes with no rebuild. The Registration
              page stays in the navbar year-round for dates and pricing. -->
         {{ $season := partialCached "season.html" . "season" }}
-        <a href="/registration/" class="btn btn-warning btn-lg fw-bold px-4"
+        <a href="/registration/" class="btn btn-gold btn-lg fw-bold px-4"
            data-tbb-show-if="registrationOpen"{{ if not $season.registrationOpen }} hidden{{ end }}>Register Now</a>
         <a href="/app/#study" class="btn btn-outline-light btn-lg px-4">Study Now</a>
       </div>

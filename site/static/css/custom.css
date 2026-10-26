@@ -30,6 +30,8 @@ h1, .display-5 { font-weight: 700; }
 .btn-outline-primary  { color: var(--tbb-navy); border-color: var(--tbb-navy); }
 .btn-outline-primary:hover { background-color: var(--tbb-navy); color: #fff; }
 .list-group-item.active { background-color: var(--tbb-navy); border-color: var(--tbb-navy); }
+.btn-gold             { background-color: var(--tbb-gold); border-color: var(--tbb-gold); color: #fff; }
+.btn-gold:hover, .btn-gold:focus { background-color: #ad7f22; border-color: #ad7f22; color: #fff; }
 
 /* ── Navbar ──────────────────────────────────────────────────────────────── */
 .navbar        { box-shadow: 0 2px 6px rgba(0,0,0,0.2); }
