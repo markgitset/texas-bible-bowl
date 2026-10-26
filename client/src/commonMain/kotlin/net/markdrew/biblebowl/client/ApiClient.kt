@@ -40,7 +40,7 @@ import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.EnrollContestantRequest
 import net.markdrew.biblebowl.api.GradingSheetResponse
 import net.markdrew.biblebowl.api.HeadingDto
-import net.markdrew.biblebowl.api.VerseDto
+import net.markdrew.biblebowl.api.VerseQuestionDto
 import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.ChangePasswordRequest
@@ -322,8 +322,8 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         }.bodyOrThrow()
 
     /**
-     * A random sample of [count] verses in scope for the verse quiz (the server caps it at 50), each
-     * with the section heading it sits under.
+     * A random sample of [count] verse-quiz questions in scope (the server caps it at 50): each a
+     * verse's wording with every place it occurs and the heading over each.
      */
     suspend fun verses(
         count: Int,
@@ -331,7 +331,7 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         set: String? = null,
         book: String? = null,
         fromChapter: Int? = null,
-    ): List<VerseDto> =
+    ): List<VerseQuestionDto> =
         client.get("$baseUrl/study/verses") {
             authorize()
             scopeParams(set, book, throughChapter, chapterKey = StudyScopeParams.THROUGH_CHAPTER, fromChapter = fromChapter)

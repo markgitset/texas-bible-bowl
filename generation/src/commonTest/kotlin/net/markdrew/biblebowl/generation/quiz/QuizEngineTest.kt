@@ -12,15 +12,15 @@ import kotlin.test.assertTrue
 class QuizEngineTest {
 
     private fun mc(id: String, answer: String = "Right", wrong: List<String> = listOf("Wrong1", "Wrong2")) =
-        QuestionDto(
+        BankQuestion(QuestionDto(
             id = id, roundType = Round.FACT_FINDER, prompt = "Prompt $id", answer = answer,
             choices = listOf(answer) + wrong, chapter = 1, status = QuestionStatus.APPROVED, authorId = "a",
-        )
+        ))
 
-    private fun shortAnswer(id: String) = QuestionDto(
+    private fun shortAnswer(id: String) = BankQuestion(QuestionDto(
         id = id, roundType = Round.FIND_THE_VERSE, prompt = "Quote $id", answer = "Acts 1:$id",
         chapter = 1, status = QuestionStatus.APPROVED, authorId = "a",
-    )
+    ))
 
     @Test
     fun choicesAreShuffledButCorrectIndexTracksAnswer() {

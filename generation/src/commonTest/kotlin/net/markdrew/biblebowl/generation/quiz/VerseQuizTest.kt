@@ -4,8 +4,10 @@ import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.QuestionDto
 import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.api.StudySection
-import net.markdrew.biblebowl.api.VerseDto
+import net.markdrew.biblebowl.api.VersePlaceDto
+import net.markdrew.biblebowl.api.VerseQuestionDto
 import net.markdrew.biblebowl.model.Book
+import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.Round
 import kotlin.random.Random
 import kotlin.test.Test
@@ -20,53 +22,80 @@ class VerseQuizTest {
         HeadingDto(title = title, reference = ref, bookCode = book, chapter = chapter, index = index, total = 99)
 
     private val headings = (1..8).map { heading(it) }
+    private val everywhere: (ChapterRef) -> Boolean = { true }
 
-    private fun verse(chapter: Int, verse: Int = 1, heading: HeadingDto? = headings.first { it.chapter == chapter }, book: String = "ACT") =
-        VerseDto(reference = "$chapter:$verse", bookCode = book, chapter = chapter, verse = verse, text = "Verse text $chapter:$verse", heading = heading)
+    private fun place(chapter: Int, verse: Int = 1, heading: HeadingDto? = headings.first { it.chapter == chapter }, book: String = "ACT") =
+        VersePlaceDto(reference = "$chapter:$verse", bookCode = book, chapter = chapter, verse = verse, heading = heading)
+
+    private fun verse(vararg places: VersePlaceDto, text: String = "Verse text ${places.first().reference}") =
+        VerseQuestionDto(text, places.toList())
 
     @Test
     fun headingChoicesOfferTheVersesHeadingPlusFourInScopeDistractors() {
         listOf(VerseQuizMode.HEADING_CHOICE, VerseQuizMode.HEADING_CHOICE_NOTA).forEach { mode ->
-            val q = verseQuestions(listOf(verse(3)), headings, multiBook = false, mode = mode, random = Random(1)).single()
+            val q = verseQuestions(listOf(verse(place(3))), headings, everywhere, multiBook = false, mode = mode, random = Random(1)).single()
             assertEquals("Heading 3", q.answer)
             assertEquals(5, q.choices.size)
             assertEquals(5, q.choices.distinct().size)
             assertTrue(q.answer in q.choices)
             assertTrue(q.choices.all { c -> headings.any { it.title == c } })
             assertEquals("Verse text 3:1", q.prompt)
-            assertEquals(listOf("3:1"), q.references)
+            assertEquals(listOf("3:1 — Heading 3"), q.references)
+            assertNull(q.repeatNote)
         }
     }
 
     @Test
-    fun versesWithoutASingleHeadingAreSkippedForChoicesButKeptWhenTyped() {
-        val verses = listOf(verse(2), verse(3, heading = null))
-        assertEquals(1, verseQuestions(verses, headings, multiBook = false, mode = VerseQuizMode.HEADING_CHOICE).size)
-        val typed = verseQuestions(verses, headings, multiBook = false, mode = VerseQuizMode.TYPED)
-        assertEquals(2, typed.size)
-        assertEquals("Chapter 3", typed.single { it.chapter == 3 }.answer)
-        assertEquals("Chapter 2 — Heading 2", typed.single { it.chapter == 2 }.answer)
+    fun distractorsComeFromTheQuizzedChaptersOnly() {
+        val q = verseQuestions(listOf(verse(place(3))), headings, { it.chapter in 2..4 }, multiBook = false,
+            mode = VerseQuizMode.HEADING_CHOICE).single()
+        assertEquals(setOf("Heading 2", "Heading 3", "Heading 4"), q.choices.toSet())
+    }
+
+    @Test
+    fun aVerseWithNoHeadingIsSkippedForChoicesButKeptWhenTyped() {
+        val verses = listOf(verse(place(2)), verse(place(3, heading = null)))
+        assertEquals(1, verseQuestions(verses, headings, everywhere, multiBook = false, mode = VerseQuizMode.HEADING_CHOICE).size)
+        val typed = verseQuestions(verses, headings, everywhere, multiBook = false, mode = VerseQuizMode.TYPED)
+        assertEquals(listOf("Chapter 2 — Heading 2", "Chapter 3"), typed.map { it.answer })
     }
 
     @Test
     fun typedItemsCarryNoChoicesAndGradeTheChapterAndBook() {
-        val q = verseQuestions(listOf(verse(3)), headings, multiBook = true, mode = VerseQuizMode.TYPED).single()
+        val q = verseQuestions(listOf(verse(place(3))), headings, everywhere, multiBook = true, mode = VerseQuizMode.TYPED).single()
         assertTrue(q.choices.isEmpty())
         assertFalse(QuizEngine(listOf(q)).current!!.isMultipleChoice)
-        assertTrue(typedAnswerCorrect(q, Book.ACT, 3, multiBook = true))
-        assertFalse(typedAnswerCorrect(q, Book.NUM, 3, multiBook = true))
-        assertFalse(typedAnswerCorrect(q, Book.ACT, 4, multiBook = true))
-        assertEquals(listOf("Acts 3:1"), q.references)
+        assertTrue(q.accepts(Book.ACT, 3, multiBook = true))
+        assertFalse(q.accepts(Book.NUM, 3, multiBook = true))
+        assertFalse(q.accepts(Book.ACT, 4, multiBook = true))
+        assertEquals(listOf("Acts 3:1 — Heading 3"), q.references)
         assertEquals("Acts 3 — Heading 3", q.answer)
     }
 
     @Test
-    fun aHeadingThatStartedBeforeTheSpanStillAnswersItsVerses() {
-        val earlier = heading(index = 20, title = "From Before", chapter = 1)
-        val q = verseQuestions(listOf(verse(2, heading = earlier)), headings.drop(1), multiBook = false,
+    fun aRepeatedVerseAcceptsEveryPlaceAndSaysSo() {
+        val refrain = verse(place(2, 4), place(5, 9), place(7, 2), text = "And it was so.")
+        val typed = verseQuestions(listOf(refrain), headings, { it.chapter <= 5 }, multiBook = false,
+            mode = VerseQuizMode.TYPED).single()
+        assertTrue(listOf(2, 5, 7).all { typed.accepts(null, it, multiBook = false) }, "every place, even outside the span")
+        assertFalse(typed.accepts(null, 3, multiBook = false))
+        assertEquals(
+            "This exact wording appears in 3 places: 2:4 — Heading 2 · 5:9 — Heading 5 · " +
+                "7:2 — Heading 7 (outside your chapters)",
+            typed.repeatNote,
+        )
+
+        val choice = verseQuestions(listOf(refrain), headings, everywhere, multiBook = false,
+            mode = VerseQuizMode.HEADING_CHOICE, random = Random(2)).single()
+        assertEquals("Heading 2", choice.answer)
+        assertTrue(choice.choices.none { it == "Heading 5" || it == "Heading 7" }, "no other place's heading is a wrong choice")
+    }
+
+    @Test
+    fun theRightHeadingFallsBackToAPlaceThatHasOne() {
+        val q = verseQuestions(listOf(verse(place(2, heading = null), place(6))), headings, everywhere, multiBook = false,
             mode = VerseQuizMode.HEADING_CHOICE).single()
-        assertEquals("From Before", q.answer)
-        assertTrue(q.answer in q.choices)
+        assertEquals("Heading 6", q.answer)
     }
 
     @Test
@@ -102,7 +131,7 @@ class VerseQuizTest {
     @Test
     fun theAnswerIsMatchedByIndexNotTitle() {
         val twins = listOf(heading(1, "The Plague", chapter = 1), heading(2, "The Plague", chapter = 5))
-        val q = verseQuestions(listOf(verse(5, heading = twins[1])), twins, multiBook = false,
+        val q = verseQuestions(listOf(verse(place(5, heading = twins[1]))), twins, everywhere, multiBook = false,
             mode = VerseQuizMode.HEADING_CHOICE).single()
         assertEquals("The Plague (Ch 5)", q.answer)
         assertEquals(setOf("The Plague (Ch 1)", "The Plague (Ch 5)"), q.choices.toSet())
@@ -122,11 +151,12 @@ class VerseQuizTest {
 
     @Test
     fun askLineFollowsTheKind() {
-        val question = QuestionDto(id = "q", roundType = Round.FACT_FINDER, prompt = "p", answer = "a",
-            status = QuestionStatus.APPROVED, authorId = "x")
-        val typed = QuizItem(question, emptyList(), -1)
-        val choice = QuizItem(question, listOf("a", "b"), 0)
+        val bank = BankQuestion(QuestionDto(id = "q", roundType = Round.FACT_FINDER, prompt = "p", answer = "a",
+            status = QuestionStatus.APPROVED, authorId = "x"))
+        val typed = QuizItem(bank, emptyList(), -1)
+        val choice = QuizItem(bank, listOf("a", "b"), 0)
         assertEquals(Round.FACT_FINDER.displayName, QuizKind.GENERAL.askLine(typed))
+        assertEquals(Round.EVENTS.displayName, QuizKind.HEADINGS.askLine(choice))
         assertEquals("Which chapter is this verse in?", QuizKind.VERSES.askLine(typed))
         assertEquals("Which heading is this verse under?", QuizKind.VERSES.askLine(choice))
     }

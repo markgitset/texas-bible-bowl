@@ -1,11 +1,13 @@
 package net.markdrew.biblebowl.generation.quiz
 
 import net.markdrew.biblebowl.api.HeadingDto
-import net.markdrew.biblebowl.api.QuestionDto
-import net.markdrew.biblebowl.api.QuestionStatus
-import net.markdrew.biblebowl.api.VerseDto
+import net.markdrew.biblebowl.api.VerseQuestionDto
+import net.markdrew.biblebowl.api.VersePlaceDto
 import net.markdrew.biblebowl.model.Book
-import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.model.ChapterRef
+import net.markdrew.biblebowl.model.LocationQuestion
+import net.markdrew.biblebowl.model.VerseRef
+import net.markdrew.biblebowl.model.bookByCode
 import kotlin.random.Random
 
 /** How a verse quiz asks where the verse is. */
@@ -41,49 +43,55 @@ private fun briefBookName(bookCode: String?, multiBook: Boolean): String? =
     bookCode?.takeIf { multiBook }?.let { code -> Book.entries.firstOrNull { it.name == code }?.briefName }
 
 /**
- * Turns sampled [verses] into quiz items. The heading-choice modes offer the verse's own heading
- * plus four distractors drawn from [headings] (the headings of the quizzed span); verses with no
- * single heading are left out of them. [VerseQuizMode.TYPED] items carry no choices — the UI grades
- * the typed chapter with [typedAnswerCorrect] — and name the heading alongside the chapter in the
- * revealed answer.
+ * Turns sampled verse-quiz questions into quiz items. Each [VerseQuestionDto] lists every place its
+ * wording occurs, and each is a right answer: the typed mode accepts any of their chapters, and the
+ * heading-choice modes offer the heading over the place being quizzed (the first one [inScope], else
+ * the first with a single heading) plus four distractors from the in-scope [headings] (the WHOLE
+ * set's list, filtered here) — never another place's heading. A question no place of which sits under
+ * a single heading is left out of the heading-choice modes; the typed mode keeps it.
  */
 fun verseQuestions(
-    verses: List<VerseDto>,
+    questions: List<VerseQuestionDto>,
     headings: List<HeadingDto>,
+    inScope: (ChapterRef) -> Boolean,
     multiBook: Boolean,
     mode: VerseQuizMode,
     random: Random = Random.Default,
-): List<QuestionDto> {
-    // A verse's heading may have started before the span, so it joins the pool it's labelled within.
-    val pool = (headings + verses.mapNotNull { it.heading }).distinctBy { it.index }
-    val labels = headingChoiceLabels(pool, multiBook)
-    return verses.mapNotNull { v ->
-        val heading = v.heading
-        val chapterLabel = headingChapterLabel(v.bookCode, v.chapter, multiBook)
-        val reference = briefBookName(v.bookCode, multiBook)?.let { "$it ${v.reference}" } ?: v.reference
+): List<PlaceQuestion> {
+    val scopedHeadings = headings.filter { inScope(it.place().chapterRef) }
+    // Every heading a choice could name, so repeated titles are told apart across the whole quiz.
+    val labels = headingChoiceLabels(
+        (scopedHeadings + questions.flatMap { q -> q.places.mapNotNull { it.heading } }).distinctBy { it.index },
+        multiBook,
+    )
+    fun VersePlaceDto.ref() = VerseRef(bookByCode(bookCode) ?: error("unknown book $bookCode"), chapter, verse)
+    return questions.mapNotNull { q ->
+        val places = q.places.sortedBy { it.ref() }
+        if (places.isEmpty()) return@mapNotNull null
+        val asked = places.firstOrNull { inScope(it.ref().chapterRef) } ?: places.first()
+        val chapterLabel = headingChapterLabel(asked.bookCode, asked.chapter, multiBook)
         val choices: List<String>
         val answer: String
         if (mode == VerseQuizMode.TYPED) {
             choices = emptyList()
-            answer = heading?.let { "$chapterLabel — ${labels.getValue(it.index)}" } ?: chapterLabel
+            answer = asked.heading?.let { "$chapterLabel — ${labels.getValue(it.index)}" } ?: chapterLabel
         } else {
-            if (heading == null) return@mapNotNull null
+            val heading = (listOf(asked) + places).firstNotNullOfOrNull { it.heading } ?: return@mapNotNull null
+            val placeHeadings = places.mapNotNull { it.heading?.index }.toSet()
             answer = labels.getValue(heading.index)
-            val distractors = headings.filter { it.index != heading.index }.distinctBy { it.index }
-                .shuffled(random).take(4).map { labels.getValue(it.index) }
-            choices = distractors + answer
+            choices = scopedHeadings.filter { it.index !in placeHeadings }.distinctBy { it.index }
+                .shuffled(random).take(4).map { labels.getValue(it.index) } + answer
         }
-        QuestionDto(
-            id = "verse-${v.bookCode}-${v.chapter}-${v.verse}",
-            roundType = Round.QUOTES,
-            prompt = v.text,
+        PlaceQuestion(
+            id = "verse-${asked.bookCode}-${asked.chapter}-${asked.verse}",
+            location = LocationQuestion(q.text, places.map { it.ref() }),
             answer = answer,
-            references = listOf(reference),
             choices = choices,
-            bookCode = v.bookCode,
-            chapter = v.chapter,
-            status = QuestionStatus.APPROVED,
-            authorId = "esv-verses",
+            placeLabels = places.map { p ->
+                val reference = briefBookName(p.bookCode, multiBook)?.let { "$it ${p.reference}" } ?: p.reference
+                reference + (p.heading?.let { " — ${it.title}" } ?: "") +
+                    if (inScope(p.ref().chapterRef)) "" else OUTSIDE_CHAPTERS
+            },
         )
     }
 }

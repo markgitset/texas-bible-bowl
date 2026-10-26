@@ -117,6 +117,7 @@ fun Heading.toDto(): HeadingDto = HeadingDto(
     reference = verseRange.format(NO_BOOK_FORMAT),
     bookCode = chapterRange.start.book.name,
     chapter = chapterRange.start.chapter,
+    verse = verseRange.start.verse,
     index = index,
     total = maxIndex,
 )

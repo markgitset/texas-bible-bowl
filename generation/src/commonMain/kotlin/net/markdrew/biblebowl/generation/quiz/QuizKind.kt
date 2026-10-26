@@ -1,6 +1,7 @@
 package net.markdrew.biblebowl.generation.quiz
 
 import net.markdrew.biblebowl.api.StudySection
+import net.markdrew.biblebowl.model.Round
 
 /**
  * The quizzes, one per study section that has one. Each is its own screen at `quiz/<section slug>`
@@ -25,8 +26,9 @@ enum class QuizKind(val section: StudySection, val title: String) {
 
     /** The line above each prompt saying what's being asked. */
     fun askLine(item: QuizItem): String = when (this) {
+        GENERAL -> (item.question as? BankQuestion)?.dto?.roundType?.displayName.orEmpty()
+        HEADINGS -> Round.EVENTS.displayName
         VERSES -> if (item.isMultipleChoice) "Which heading is this verse under?" else "Which chapter is this verse in?"
-        else -> item.question.roundType.displayName
     }
 
     companion object {
