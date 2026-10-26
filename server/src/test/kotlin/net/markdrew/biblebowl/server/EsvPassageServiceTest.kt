@@ -3,18 +3,13 @@ package net.markdrew.biblebowl.server
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
-import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
-import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
-import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.testing.testApplication
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.Json
-import net.markdrew.biblebowl.api.ChapterTextDto
 import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.server.data.InMemoryQuestionRepository
 import net.markdrew.biblebowl.server.data.InMemoryUserRepository
@@ -134,7 +129,9 @@ class EsvPassageServiceTest {
     }
 
     @Test
-    fun bibleRouteServesChapterAnonymously() = testApplication {
+    fun noPublicRouteServesWholeChapters() = testApplication {
+        // Full ESV chapters never leave the server (non-profit licence): the old anonymous
+        // GET /bible/{book}/{chapter} proxy is gone, and requesting it must not reach Crossway.
         val hits = mutableListOf<String>()
         val esv = EsvPassageService(
             client = mockEsvClient(hits),
@@ -142,43 +139,11 @@ class EsvPassageServiceTest {
             token = "test-esv-token",
             baseUrl = "https://fake.esv",
         )
-        val users = InMemoryUserRepository()
         application {
-            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"), esv)
+            module(InMemoryUserRepository(), InMemoryQuestionRepository(), JwtService(secret = "test-secret"), esv)
         }
-        val json = Json { ignoreUnknownKeys = true }
-        val api = createClient {
-            install(ContentNegotiation) { json(json) }
-        }
-
-        // Study material is public — no sign-in needed. Fetch Acts 2 by code and by full name.
-        val res = api.get("/bible/ACT/2")
-        assertEquals(HttpStatusCode.OK, res.status)
-        val dto: ChapterTextDto = json.decodeFromString(res.bodyAsText())
-        assertEquals("ACT", dto.bookCode)
-        assertEquals(2, dto.chapter)
-        assertEquals("ESV", dto.translation)
-        assertTrue(dto.text.contains("Pentecost"))
-        assertTrue(dto.copyright.contains("Crossway"))
-
-        val byName = api.get("/bible/Acts/2")
-        assertEquals(HttpStatusCode.OK, byName.status)
-        assertEquals(1, hits.size, "both requests should share one upstream fetch via the cache")
-
-        // Bad book -> 400
-        val bad = api.get("/bible/NOPE/2")
-        assertEquals(HttpStatusCode.BadRequest, bad.status)
-    }
-
-    @Test
-    fun unconfiguredServiceReturns503() = testApplication {
-        val users = InMemoryUserRepository()
-        application {
-            module(users, InMemoryQuestionRepository(), JwtService(secret = "test-secret"), esv = null)
-        }
-        val json = Json { ignoreUnknownKeys = true }
-        val api = createClient { install(ContentNegotiation) { json(json) } }
-        val res = api.get("/bible/ACT/2")
-        assertEquals(HttpStatusCode.ServiceUnavailable, res.status)
+        val res = client.get("/bible/ACT/2")
+        assertEquals(HttpStatusCode.NotFound, res.status)
+        assertEquals(emptyList(), hits, "no upstream ESV fetch for an unrouted request")
     }
 }
