@@ -221,7 +221,7 @@ object Shell {
         val user = Session.user
         slot.classList.toggle("dropdown", user != null)
         if (user == null) {
-            slot.child("a", "btn btn-gold btn-sm fw-bold px-3", "Sign in") {
+            slot.child("a", "btn btn-outline-light btn-sm px-3", "Sign in") {
                 setAttribute("href", "#${Routes.SIGN_IN}")
             }
         } else {
