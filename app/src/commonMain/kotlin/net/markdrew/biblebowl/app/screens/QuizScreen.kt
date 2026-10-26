@@ -74,7 +74,9 @@ import net.markdrew.biblebowl.app.platform.hasHardwareKeyboard
 import net.markdrew.biblebowl.app.ui.ChapterChips
 import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.client.TbbApi
+import net.markdrew.biblebowl.generation.quiz.BankQuestion
 import net.markdrew.biblebowl.generation.quiz.HeadingQuizMode
+import net.markdrew.biblebowl.generation.quiz.PlaceQuestion
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 import net.markdrew.biblebowl.generation.quiz.QuizItem
 import net.markdrew.biblebowl.generation.quiz.QuizKind
@@ -85,7 +87,6 @@ import net.markdrew.biblebowl.generation.quiz.bookShortcutKeys
 import net.markdrew.biblebowl.generation.quiz.chapterEntryComplete
 import net.markdrew.biblebowl.generation.quiz.headingQuestions
 import net.markdrew.biblebowl.generation.quiz.lastChapterIn
-import net.markdrew.biblebowl.generation.quiz.typedAnswerCorrect
 import net.markdrew.biblebowl.generation.quiz.verseQuestions
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.model.bookByCode
@@ -181,8 +182,11 @@ fun QuizScreen(api: TbbApi, kind: QuizKind) {
                             QuizKind.GENERAL ->
                                 api.questions(book = book, fromChapter = from, chapter = through)
                                     .filter { state.round == null || it.roundType == state.round }
+                                    .map(::BankQuestion)
+                            // The whole set's headings, so a title that recurs outside the span is still known.
                             QuizKind.HEADINGS -> headingQuestions(
-                                api.headings(book = book, fromChapter = from, throughChapter = through),
+                                api.headings(),
+                                inScope = scoped::covers,
                                 multiBook = multiBook,
                                 mode = state.headingMode,
                             )
@@ -190,8 +194,8 @@ fun QuizScreen(api: TbbApi, kind: QuizKind) {
                                 val verses = async {
                                     api.verses(state.length.count, book = book, fromChapter = from, throughChapter = through)
                                 }
-                                val headings = async { api.headings(book = book, fromChapter = from, throughChapter = through) }
-                                verseQuestions(verses.await(), headings.await(), multiBook = multiBook, mode = state.verseMode)
+                                val headings = async { api.headings() }
+                                verseQuestions(verses.await(), headings.await(), scoped::covers, multiBook, state.verseMode)
                             }
                         }
                         val e = QuizEngine(
@@ -345,7 +349,7 @@ private fun QuizStepper(kind: QuizKind, quiz: QuizEngine, typed: Boolean, tick: 
     // Type-the-chapter: only the books this quiz draws from; with just one there's nothing to pick.
     val set = LocalSeason.current.resolvedStudySet
     val books = remember(quiz) {
-        quiz.items.mapNotNull { it.question.bookCode?.let(::bookByCode) }.distinct().sortedBy { it.ordinal }
+        quiz.items.flatMap { (it.question as? PlaceQuestion)?.books.orEmpty() }.distinct().sortedBy { it.ordinal }
             .ifEmpty { set.books }
     }
     val bookKeys = remember(books) { bookShortcutKeys(books) }
@@ -363,7 +367,7 @@ private fun QuizStepper(kind: QuizKind, quiz: QuizEngine, typed: Boolean, tick: 
         if (verdict != null) return
         val chapter = typedText.toIntOrNull() ?: return
         val b = book ?: run { needBook = true; return }
-        val ok = typedAnswerCorrect(item.question, b, chapter, multiBook = !set.isSingleBook)
+        val ok = (item.question as PlaceQuestion).accepts(b, chapter, multiBook = !set.isSingleBook)
         quiz.answerSelf(ok)
         verdict = ok
         cue(ok)
@@ -377,8 +381,10 @@ private fun QuizStepper(kind: QuizKind, quiz: QuizEngine, typed: Boolean, tick: 
         quiz.answerSelf(gotIt); advance()
     }
 
-    // A right answer flashes ✓ and moves on by itself; leaving the screen cancels the wait.
-    if (verdict == true) LaunchedEffect(item) { delay(CORRECT_FLASH_MS); advance() }
+    // A right answer flashes ✓ and moves on by itself; leaving the screen cancels the wait. Wording that
+    // occurs in more than one place waits for Continue instead, so its places are read first.
+    val repeatNote = (item.question as? PlaceQuestion)?.repeatNote
+    if (verdict == true && repeatNote == null) LaunchedEffect(item) { delay(CORRECT_FLASH_MS); advance() }
 
     // Typing goes to the chapter field; everything else (and Continue after a typed answer, once
     // the field is disabled) keys off the view itself.
@@ -534,12 +540,17 @@ private fun QuizStepper(kind: QuizKind, quiz: QuizEngine, typed: Boolean, tick: 
 
 /**
  * After an answer: a right one shows a quick ✓ (the stepper moves on by itself); a wrong one shows
- * the right answer and waits for Continue.
+ * the right answer and waits for Continue. Wording that occurs in more than one place always names
+ * every place and waits for Continue, right or wrong.
  */
 @Composable
 private fun Feedback(item: QuizItem, correct: Boolean, onContinue: () -> Unit) {
     val refs = item.question.references.joinToString("; ")
-    if (correct) {
+    val repeatNote = (item.question as? PlaceQuestion)?.repeatNote
+    if (correct && repeatNote != null) {
+        Text("✓ Correct", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF2E7D32))
+    } else if (correct) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("✓ Correct", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                 color = Color(0xFF2E7D32))
@@ -550,9 +561,12 @@ private fun Feedback(item: QuizItem, correct: Boolean, onContinue: () -> Unit) {
         }
         return
     }
-    val answer = if (item.noneIsCorrect) "${QuizEngine.NONE_OF_THE_ABOVE} — ${item.question.answer}" else item.question.answer
-    Text("Answer: $answer", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-    if (refs.isNotEmpty()) Text(refs, style = MaterialTheme.typography.bodySmall)
+    if (!correct) {
+        val answer = if (item.noneIsCorrect) "${QuizEngine.NONE_OF_THE_ABOVE} — ${item.question.answer}" else item.question.answer
+        Text("Answer: $answer", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+        if (refs.isNotEmpty()) Text(refs, style = MaterialTheme.typography.bodySmall)
+    }
+    repeatNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
     Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) { Text("Continue"); KeyHint("Enter") }
 }
 
@@ -602,6 +616,9 @@ private fun QuizResults(quiz: QuizEngine, onRetry: () -> Unit, onRestart: () -> 
                             if (item.question.references.isNotEmpty()) {
                                 Text(item.question.references.joinToString("; "),
                                     style = MaterialTheme.typography.bodySmall)
+                            }
+                            (item.question as? PlaceQuestion)?.repeatNote?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }

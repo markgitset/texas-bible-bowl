@@ -9,7 +9,9 @@ import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.StudyScopeParams
 import net.markdrew.biblebowl.api.resolveWithin
 import net.markdrew.biblebowl.api.scopeQueryParams
+import net.markdrew.biblebowl.generation.quiz.BankQuestion
 import net.markdrew.biblebowl.generation.quiz.HeadingQuizMode
+import net.markdrew.biblebowl.generation.quiz.PlaceQuestion
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 import net.markdrew.biblebowl.generation.quiz.QuizItem
 import net.markdrew.biblebowl.generation.quiz.QuizKind
@@ -20,7 +22,6 @@ import net.markdrew.biblebowl.generation.quiz.bookShortcutKeys
 import net.markdrew.biblebowl.generation.quiz.chapterEntryComplete
 import net.markdrew.biblebowl.generation.quiz.headingQuestions
 import net.markdrew.biblebowl.generation.quiz.lastChapterIn
-import net.markdrew.biblebowl.generation.quiz.typedAnswerCorrect
 import net.markdrew.biblebowl.generation.quiz.verseQuestions
 import net.markdrew.biblebowl.model.Book
 import net.markdrew.biblebowl.model.Round
@@ -231,8 +232,11 @@ object QuizScreen {
                     QuizKind.GENERAL ->
                         Session.api.questions(book = book, fromChapter = from, chapter = through)
                             .filter { state.round == null || it.roundType == state.round }
+                            .map(::BankQuestion)
+                    // The whole set's headings, so a title that recurs outside the span is still known.
                     QuizKind.HEADINGS -> headingQuestions(
-                        Session.api.headings(book = book, fromChapter = from, throughChapter = through),
+                        Session.api.headings(),
+                        inScope = scope::covers,
                         multiBook = multiBook,
                         mode = state.headingMode,
                     )
@@ -240,8 +244,8 @@ object QuizScreen {
                         val verses = async {
                             Session.api.verses(state.length.count, book = book, fromChapter = from, throughChapter = through)
                         }
-                        val headings = async { Session.api.headings(book = book, fromChapter = from, throughChapter = through) }
-                        verseQuestions(verses.await(), headings.await(), multiBook = multiBook, mode = state.verseMode)
+                        val headings = async { Session.api.headings() }
+                        verseQuestions(verses.await(), headings.await(), scope::covers, multiBook, state.verseMode)
                     }
                 }
                 val e = QuizEngine(
@@ -354,12 +358,18 @@ object QuizScreen {
 
     /**
      * After an answer: a right one chimes, flashes ✓ and moves on by itself (Enter skips the wait); a
-     * wrong one plays the falling cue, shows the right answer and waits for Continue.
+     * wrong one plays the falling cue, shows the right answer and waits for Continue. Wording that occurs
+     * in more than one place always names every place and waits for Continue, right or wrong.
      */
     private fun feedback(quiz: QuizEngine, item: QuizItem, footer: HTMLElement, correct: Boolean) {
         QuizAudio.play(if (correct) QuizSound.CORRECT else QuizSound.WRONG)
         val refs = item.question.references.joinToString("; ")
-        if (correct) {
+        // Wording that occurs in more than one place: every place is named, and the quiz waits for
+        // Continue even after a right answer, so the repeat is seen before the next question.
+        val repeatNote = (item.question as? PlaceQuestion)?.repeatNote
+        if (correct && repeatNote != null) {
+            footer.child("p", "tbb-correct-flash fw-semibold text-success fs-5 mb-1", "✓ Correct")
+        } else if (correct) {
             footer.child("p", "tbb-correct-flash fw-semibold text-success fs-5 mb-1", "✓ Correct") {
                 if (refs.isNotEmpty()) child("span", "small text-muted fw-normal ms-2", refs)
             }
@@ -373,7 +383,7 @@ object QuizScreen {
             }
             return
         }
-        footer.child("p", "mb-2") {
+        if (!correct) footer.child("p", "mb-2") {
             child("span", "text-muted", "Answer: ")
             val answer = if (item.noneIsCorrect) {
                 "${QuizEngine.NONE_OF_THE_ABOVE} — ${item.question.answer}"
@@ -381,6 +391,7 @@ object QuizScreen {
             child("span", "fw-semibold", answer) { setAttribute("style", "color:var(--tbb-navy);") }
             if (refs.isNotEmpty()) child("span", "small text-muted ms-2", refs)
         }
+        repeatNote?.let { footer.child("p", "small mb-2", it) { setAttribute("role", "status") } }
         val continueButton = footer.child("button", "btn btn-primary w-100", "Continue") {
             setAttribute("type", "button")
             onClick { advance(quiz) }
@@ -453,7 +464,7 @@ object QuizScreen {
         val multiBook = !set.isSingleBook
         // Only the books this quiz draws from; with just one there's nothing to pick.
         val books = quiz.items
-            .mapNotNull { it.question.bookCode?.let(::bookByCode) }
+            .flatMap { (it.question as? PlaceQuestion)?.books.orEmpty() }
             .distinct().sortedBy { it.ordinal }
             .ifEmpty { set.books }
         val keys = bookShortcutKeys(books)
@@ -487,7 +498,7 @@ object QuizScreen {
                 footer.child("p", "small text-danger mb-2", "Pick the book first.")
                 return
             }
-            val correct = typedAnswerCorrect(item.question, book, chapter, multiBook)
+            val correct = (item.question as PlaceQuestion).accepts(book, chapter, multiBook)
             quiz.answerSelf(correct)
             input.disabled = true
             checkButton.disabled = true
@@ -659,6 +670,7 @@ object QuizScreen {
                         if (item.question.references.isNotEmpty()) {
                             child("p", "small text-muted mb-0", item.question.references.joinToString("; "))
                         }
+                        (item.question as? PlaceQuestion)?.repeatNote?.let { child("p", "small text-muted mb-0", it) }
                     }
                 }
             }
