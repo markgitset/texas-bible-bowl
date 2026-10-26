@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The navy of the TBB emblem (ic_launcher-playstore.png), so the foreground's square edge vanishes. -->
+    <color name="ic_launcher_background">#1C3A5D</color>
+</resources>

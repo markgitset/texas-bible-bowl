@@ -62,13 +62,18 @@ kotlin {
 
 android {
     namespace = "net.markdrew.biblebowl.app"
-    compileSdk = 35
+    compileSdk = 36
     buildFeatures { buildConfig = true }
     defaultConfig {
-        applicationId = "net.markdrew.biblebowl"
+        // The app's permanent identity on Google Play (it can never change once published), so it's
+        // the organization's domain, not a personal one; unrelated to `namespace`, the code package.
+        applicationId = "org.texasbiblebowl.app"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
+        targetSdk = 36 // Play's floor for new apps and updates since 2026-08-31
+        // Play rejects an upload whose versionCode doesn't exceed the last one, so the
+        // android-release workflow passes main's commit count: it grows with every commit and,
+        // unlike a run number, survives renaming the workflow. Local builds are 1.
+        versionCode = providers.environmentVariable("TBB_VERSION_CODE").orNull?.toInt() ?: 1
         versionName = "0.1.0"
         // The APK talks to the live backend by default so a sideloaded build just works. Override for
         // local dev, e.g. `-Ptbb.backendUrl=http://10.0.2.2:8080` (the emulator's alias for the host).
@@ -77,9 +82,24 @@ android {
         val backendUrl = (project.findProperty("tbb.backendUrl") as String?) ?: "https://api.texasbiblebowl.org"
         buildConfigField("String", "BACKEND_URL", "\"$backendUrl\"")
     }
+    // Release signing comes from the environment so the key never touches the repo: the
+    // android-release workflow decodes its keystore secret to a temp file and points
+    // TBB_KEYSTORE_FILE at it. Without that (local builds, CI) the release APK comes out unsigned.
+    // One fixed key is what lets each new APK install as an update over the last; CI's debug APKs
+    // are signed with a throwaway key per runner, so they can't.
+    val releaseKeystore = providers.environmentVariable("TBB_KEYSTORE_FILE").orNull
+    signingConfigs {
+        if (releaseKeystore != null) create("release") {
+            storeFile = file(releaseKeystore)
+            storePassword = providers.environmentVariable("TBB_KEYSTORE_PASSWORD").get()
+            keyAlias = "tbb-release"
+            keyPassword = storePassword // a PKCS12 keystore has one password for store and key
+        }
+    }
     buildTypes {
         release {
             isMinifyEnabled = false // enable + configure proguard before a real release
+            signingConfig = signingConfigs.findByName("release")
         }
     }
     compileOptions {
