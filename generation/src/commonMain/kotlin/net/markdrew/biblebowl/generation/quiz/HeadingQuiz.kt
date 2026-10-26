@@ -1,11 +1,12 @@
 package net.markdrew.biblebowl.generation.quiz
 
 import net.markdrew.biblebowl.api.HeadingDto
-import net.markdrew.biblebowl.api.QuestionDto
-import net.markdrew.biblebowl.api.QuestionStatus
 import net.markdrew.biblebowl.model.Book
-import net.markdrew.biblebowl.model.Round
+import net.markdrew.biblebowl.model.ChapterRef
+import net.markdrew.biblebowl.model.LocationQuestion
 import net.markdrew.biblebowl.model.StudySet
+import net.markdrew.biblebowl.model.VerseRef
+import net.markdrew.biblebowl.model.bookByCode
 import kotlin.random.Random
 
 /** How a chapter-headings quiz asks "which chapter?". */
@@ -21,41 +22,50 @@ fun headingChapterLabel(bookCode: String?, chapter: Int, multiBook: Boolean): St
     return book?.let { "${it.briefName} $chapter" } ?: "Chapter $chapter"
 }
 
+/** A heading's place: its book, its chapter, and the verse it starts at. */
+fun HeadingDto.place(): VerseRef =
+    VerseRef(bookCode?.let(::bookByCode) ?: error("heading \"$title\" has no book"), chapter, verse)
+
+/** Marks a place outside the chapters being quizzed — still a right answer, but worth saying so. */
+internal const val OUTSIDE_CHAPTERS = " (outside your chapters)"
+
 /**
- * Turns the season's headings into "which chapter?" quiz items. The multiple-choice modes offer
- * four distractors drawn from the other chapters in scope, so a drill over a chapter span never
- * offers chapters outside it (none-of-the-above is applied by [QuizEngine], not here); [TYPED]
- * items carry no choices — the UI grades the typed chapter with [typedAnswerCorrect].
+ * Turns the season's headings into "which chapter?" quiz items, one per distinct title among the
+ * headings [inScope] chapters begin in. [headings] is the WHOLE set's list, so a title that recurs —
+ * even outside the quizzed span — is one question that accepts every chapter it begins in. The
+ * multiple-choice modes offer four distractors drawn from the other in-scope chapters, never another
+ * chapter the title begins in (none-of-the-above is applied by [QuizEngine], not here); [TYPED] items
+ * carry no choices — the UI grades the typed chapter with [PlaceQuestion.accepts].
  */
 fun headingQuestions(
     headings: List<HeadingDto>,
+    inScope: (ChapterRef) -> Boolean,
     multiBook: Boolean,
     mode: HeadingQuizMode,
     random: Random = Random.Default,
-): List<QuestionDto> {
+): List<PlaceQuestion> {
     fun label(h: HeadingDto) = headingChapterLabel(h.bookCode, h.chapter, multiBook)
-    val chaptersInScope = headings.map(::label).distinct()
-    return headings.map { h ->
-        QuestionDto(
-            id = "heading-${h.index}",
-            roundType = Round.EVENTS,
-            // Just the heading: the round label above it already asks "which chapter?".
-            prompt = h.title,
-            answer = label(h),
-            references = listOf(h.reference),
+    val scoped = headings.filter { inScope(it.place().chapterRef) }
+    val chaptersInScope = scoped.map(::label).distinct()
+    val byTitle = headings.groupBy { it.title }
+    return scoped.distinctBy { it.title }.map { asked ->
+        val twins = byTitle.getValue(asked.title).sortedBy { it.place() }
+        val answer = label(asked)
+        PlaceQuestion(
+            id = "heading-${asked.index}",
+            // Just the heading: the ask line above it already asks "which chapter?".
+            location = LocationQuestion(asked.title, twins.map { it.place() }),
+            answer = answer,
             choices = if (mode == HeadingQuizMode.TYPED) emptyList()
-            else (chaptersInScope - label(h)).shuffled(random).take(4) + label(h),
-            bookCode = h.bookCode,
-            chapter = h.chapter,
-            status = QuestionStatus.APPROVED,
-            authorId = "esv-headings",
+            else (chaptersInScope - twins.map(::label).toSet()).shuffled(random).take(4) + answer,
+            placeLabels = twins.map { h ->
+                val book = h.bookCode?.takeIf { multiBook }?.let(::bookByCode)?.briefName
+                listOfNotNull(book, h.reference).joinToString(" ") +
+                    if (inScope(h.place().chapterRef)) "" else OUTSIDE_CHAPTERS
+            },
         )
     }
 }
-
-/** Whether a typed answer names [question]'s chapter (and, in multi-book sets, its book). */
-fun typedAnswerCorrect(question: QuestionDto, book: Book?, chapter: Int, multiBook: Boolean): Boolean =
-    chapter == question.chapter && (!multiBook || question.bookCode == null || book?.name == question.bookCode)
 
 /**
  * True once the digits typed so far can only mean one chapter — no further digit could still name

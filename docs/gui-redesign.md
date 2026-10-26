@@ -164,7 +164,7 @@ Typst compile.
 - **`#/study/indices/{names|numbers}`.** Current `IndexScreen` behavior (search, alpha/frequency);
   PDF button delegates to the download center.
 - **`#/study/headings`.** Headings list (R5 material). Self-testing moved to Quiz Me
-  (`#quiz?source=headings`): multiple choice, multiple choice + none of the above, or type the chapter.
+  (`#quiz/chapter-headings`): multiple choice, multiple choice + none of the above, or type the chapter.
 - **`#/quiz`** — setup defaults to last-used settings + global scope; one tap "Start". **`/run`**
   stepper, **`/results`** with per-question review and "retry missed". (Existing `QuizEngine`.)
 

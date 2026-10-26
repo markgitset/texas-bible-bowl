@@ -11,11 +11,14 @@ import net.markdrew.chupacabra.core.DisjointRangeMap
 import net.markdrew.biblebowl.api.HeadingDto
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.IndexRefDto
+import net.markdrew.biblebowl.generate.normalizeWS
 import net.markdrew.biblebowl.model.Heading
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
 import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.model.StudyData
 import net.markdrew.biblebowl.model.StudySet
+import net.markdrew.biblebowl.model.VerseRef
+import net.markdrew.biblebowl.model.groupByWording
 import net.markdrew.biblebowl.server.esv.EsvPassageService
 import net.markdrew.biblebowl.ws.EsvIndexer
 import net.markdrew.biblebowl.ws.Passage
@@ -117,6 +120,25 @@ fun Heading.toDto(): HeadingDto = HeadingDto(
     reference = verseRange.format(NO_BOOK_FORMAT),
     bookCode = chapterRange.start.book.name,
     chapter = chapterRange.start.chapter,
+    verse = verseRange.start.verse,
     index = index,
     total = maxIndex,
 )
+
+/** One place a verse's wording occurs: the verse, its wording, and the heading over it (null if it straddles two). */
+data class VersePlace(val ref: VerseRef, val text: String, val heading: Heading?)
+
+/**
+ * Every verse of the set grouped by wording (see [groupByWording]) — a refrain is one group listing
+ * each place it occurs, in Bible order; most groups are a single verse. Shared by the verse quiz and
+ * the verse decks so a repeated verse is one question / one card everywhere.
+ */
+fun StudyData.versesByWording(): List<List<VersePlace>> {
+    // Each heading paired with the text it covers, to find the one a verse sits under.
+    val headingAt = headingCharRanges.entries.map { it.key }.zip(headings).toMap()
+    val places = verses.entries.map { (range, verseRef) ->
+        // The stored text keeps the layout's line breaks; a question or card wants one flowing paragraph.
+        VersePlace(verseRef, text.substring(range).normalizeWS(), headingCharRanges.keyEnclosing(range)?.let { headingAt[it] })
+    }
+    return groupByWording(places) { it.text }
+}

@@ -85,6 +85,7 @@ import net.markdrew.biblebowl.server.security.requirePermission
 import net.markdrew.biblebowl.server.study.PdfCache
 import net.markdrew.biblebowl.server.study.StudyDataRegistry
 import net.markdrew.biblebowl.server.study.StudyDataService
+import net.markdrew.biblebowl.server.study.versesByWording
 import net.markdrew.biblebowl.server.typst.TypstCompiler
 import net.markdrew.biblebowl.server.typst.TypstException
 import kotlin.random.Random
@@ -506,13 +507,15 @@ fun Route.generateRoutes(
                     respondCachedPdf(svc, pdfCache, fileName, LayoutRevisions.FLASHCARDS) {
                         // The scope's own span test — book-aware, so it stays correct across the books of
                         // a multi-book set whether it was spelled cumulatively or as an explicit range.
-                        val headings = svc.studyData().headings
-                            .filter { scope.covers(it.chapterRange.start) }
-                        val cards = headings.map { h ->
+                        val all = svc.studyData().headings
+                        val byTitle = all.groupBy { it.title }
+                        // One card per title: a heading that recurs names every chapter it begins in.
+                        val cards = all.filter { scope.covers(it.chapterRange.start) }.distinctBy { it.title }.map { h ->
+                            val twins = byTitle.getValue(h.title)
                             Flashcard(
                                 front = h.title,
-                                back = chapterLabel(scope.set, h.chapterRange.start),
-                                note = h.verseRange.format(NO_BOOK_FORMAT),
+                                back = twins.joinToString(" · ") { chapterLabel(scope.set, it.chapterRange.start) },
+                                note = twins.joinToString(" · ") { it.verseRange.format(NO_BOOK_FORMAT) },
                                 footer = "${h.index} of ${h.maxIndex}",
                             )
                         }
@@ -769,30 +772,35 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
             ApiError("esv_unconfigured", "ESV service is not configured (set ESV_API_TOKEN)"),
         )
     }
-    val headings = try {
-        // The scope's own span test — book-aware, and the same for a cumulative or an explicit range.
-        svc.studyData().headings.filter { scope.covers(it.chapterRange.start) }
+    val allHeadings = try {
+        svc.studyData().headings
     } catch (e: EsvUpstreamException) {
         return call.respond(HttpStatusCode.BadGateway, ApiError("esv_upstream", e.message ?: "ESV API error"))
     }
+    // The scope's own span test — book-aware, and the same for a cumulative or an explicit range.
+    val headings = allHeadings.filter { scope.covers(it.chapterRange.start) }
     if (headings.isEmpty()) return call.respond(HttpStatusCode.NotFound, ApiError("no_headings", "No headings in scope"))
     // Advertised under `chapter`, the key this route reads (see above).
     call.advertiseCanonicalScope(scope)
     val baseName = PdfFileNames.withSet(scope.set.simpleName, "headings${scope.chapterSuffix()}")
+    // One row per title: a heading that recurs (anywhere in the set) is one question, and every chapter
+    // it begins in is right.
+    val twinChapters: Map<String, List<ChapterRef>> = allHeadings.groupBy({ it.title }, { it.chapterRange.start })
+    val asked = headings.distinctBy { it.title }
     when (format) {
         ExportFormat.SPACE_CSV, ExportFormat.QUIZLET_TXT -> respondCardFile(
             format,
-            headings.map { it.title to chapterLabel(scope.set, it.chapterRange.start) },
+            asked.map { h -> h.title to twinChapters.getValue(h.title).joinToString(" · ") { chapterLabel(scope.set, it) } },
             baseName,
         )
         ExportFormat.KAHOOT_XLSX -> {
             val chaptersInScope = headings.map { it.chapterRange.start }.distinct()
-            val rows = headings.take(KAHOOT_MAX_QUESTIONS).mapIndexed { i, h ->
+            val rows = asked.take(KAHOOT_MAX_QUESTIONS).mapIndexed { i, h ->
                 val own = h.chapterRange.start
                 // Seeded per row so the same export is reproducible; distractors never leak
-                // chapters beyond the requested scope.
+                // chapters beyond the requested scope, nor name another chapter the title begins in.
                 val random = Random(i * 31 + own.chapter)
-                val distractors = (chaptersInScope - own).shuffled(random).take(3)
+                val distractors = (chaptersInScope - twinChapters.getValue(h.title).toSet()).shuffled(random).take(3)
                 val answers = (distractors + own).sorted().map { chapterLabel(scope.set, it) }
                 KahootQuestion(
                     // Just the heading, like every other headings drill: the chapter choices say what's asked.
@@ -899,26 +907,28 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondVerseDeck(
     }
     try {
         call.advertiseCanonicalScope(scope, chapterKey)
-        val sd = svc.studyData()
-        // One span test for every spelling: a single chapter, a cumulative reach-back, or a range.
-        val inScope = sd.verses.entries.filter { (_, verseRef) -> scope.covers(verseRef.chapterRef) }
-        if (inScope.isEmpty()) {
+        // One span test for every spelling: a single chapter, a cumulative reach-back, or a range. A
+        // wording that recurs is one card, carded when any of its places is in scope, and its back names
+        // every place (in the set) with the heading over each.
+        val groups = svc.studyData().versesByWording().filter { group -> group.any { scope.covers(it.ref.chapterRef) } }
+        if (groups.isEmpty()) {
             return call.respond(HttpStatusCode.NotFound, ApiError("no_verses", "No verses in scope"))
         }
-        val cards = inScope.map { (range, verseRef) ->
-            // The full book name (unlike the PDFs' set-relative refs): the export leaves the app, so
-            // each card has to name its verse completely on its own.
-            val ref = verseRef.format(FULL_BOOK_FORMAT)
-            // Null for a verse that straddles a heading boundary — the card then carries the reference
-            // alone rather than one arbitrary side's heading.
-            val heading = sd.headingCharRanges.valueEnclosing(range)
-            val back =
+        val cards = groups.map { group ->
+            // Places stack as their own paragraphs (Space's Markdown needs the blank line between them).
+            val back = group.joinToString(if (forSpace) "\n\n" else "\n") { place ->
+                // The full book name (unlike the PDFs' set-relative refs): the export leaves the app, so
+                // each card has to name its verse completely on its own.
+                val ref = place.ref.format(FULL_BOOK_FORMAT)
+                // A verse that straddles a heading boundary carries the reference alone rather than one
+                // arbitrary side's heading.
+                val heading = place.heading?.title
                 if (forSpace) listOfNotNull(
                     heading?.let { "$it\n" }, // + the joiner's newline = the Markdown paragraph break
                     "**$ref**",
-                ) else listOfNotNull(heading, "*$ref*")
-            // The stored text keeps the layout's line breaks; a card front wants one flowing paragraph.
-            sd.text.substring(range).normalizeWS() to back.joinToString("\n")
+                ).joinToString("\n") else listOfNotNull(heading, "*$ref*").joinToString("\n")
+            }
+            group.first().text to back
         }
         val baseName = PdfFileNames.withSet(scope.set.simpleName, "verses${scope.chapterSuffix()}")
         if (forSpace) respondAttachment(spaceCsv(cards).toByteArray(), "space-$baseName.csv", CSV_CONTENT_TYPE)

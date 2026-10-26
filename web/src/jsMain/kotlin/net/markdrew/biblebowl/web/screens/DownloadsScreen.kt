@@ -15,6 +15,7 @@ import net.markdrew.biblebowl.api.filePath
 import net.markdrew.biblebowl.api.scopeQueryParams
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.api.StudySection
+import net.markdrew.biblebowl.generation.quiz.QuizKind
 import net.markdrew.biblebowl.web.Routes
 import net.markdrew.biblebowl.web.Session
 import net.markdrew.biblebowl.web.Shell
@@ -244,8 +245,8 @@ object DownloadsScreen {
             StudySection.TEXT ->
                 "The complete text of $scripture — the highlighted study PDF, plus places to read or listen online."
             StudySection.VERSES ->
-                "Verse-by-verse memory work for $scripture — the importable verse decks live under " +
-                    "Data & Source Files."
+                "Verse-by-verse work for $scripture — a quiz on where each verse sits; the importable " +
+                    "verse decks live under Data & Source Files."
             StudySection.GENERAL ->
                 "The official study guide and question flashcards, plus the interactive quiz and the " +
                     "community question bank."
@@ -274,10 +275,8 @@ object DownloadsScreen {
         grid = root.child("div", "row g-4")
         when (section) {
             StudySection.TEXT -> textCards()
-            // No built-in cards: the importable verse decks sit with the other source files under
-            // Data & Source Files. The section stays for its admin-curated extras (and whatever
-            // verse-by-verse tools land here later).
-            StudySection.VERSES -> {}
+            // The importable verse decks sit with the other source files under Data & Source Files.
+            StudySection.VERSES -> versesCards()
             StudySection.GENERAL -> generalKnowledgeCards()
             StudySection.HEADINGS -> headingsCards()
             StudySection.UNIQUE_WORDS -> uniqueWordsCards()
@@ -373,15 +372,24 @@ object DownloadsScreen {
             customize = Customize.QuestionFlashcards,
         )
         linkCard(
-            title = "Quiz me",
+            title = "Quiz questions",
             subtitle = "Drill the community question bank online with instant feedback — the interactive " +
                 "twin of the flashcards and practice tests.",
-            links = listOf("Open Quiz Me" to "#quiz?source=questions"),
+            links = listOf("Start quiz" to "#${QuizKind.GENERAL.route}"),
         )
         linkCard(
             title = "Community questions",
             subtitle = "Browse the community question bank, vote for the best questions, and submit your own.",
             links = listOf("Browse questions" to "#questions"),
+        )
+    }
+
+    private fun versesCards() {
+        linkCard(
+            title = "Quiz verses",
+            subtitle = "A random verse at a time — pick the heading it sits under (with or without \"none " +
+                "of the above\"), or type its chapter. Instant feedback, then retry the ones you missed.",
+            links = listOf("Start quiz" to "#${QuizKind.VERSES.route}"),
         )
     }
 
@@ -411,7 +419,7 @@ object DownloadsScreen {
             title = "Quiz headings",
             subtitle = "Name the chapter for each heading — multiple choice, multiple choice with \"none " +
                 "of the above,\" or type it in. Instant feedback, then retry the ones you missed.",
-            links = listOf("Start quiz" to "#quiz?source=headings"),
+            links = listOf("Start quiz" to "#${QuizKind.HEADINGS.route}"),
         )
     }
 

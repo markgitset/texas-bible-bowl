@@ -57,9 +57,10 @@ object LayoutRevisions {
      * `flashcardsTypst`, shared by the question-bank, unique-word, and chapter-heading decks.
      * 1 = Markdown rich text with the unique word underlined, which only the unique-word deck was
      * salted for at the time — the heading deck served the pre-Markdown rendering until 2 retired
-     * it; 3 = the corner revision mark.
+     * it; 3 = the corner revision mark; 4 = a heading title that recurs is one card naming every
+     * chapter it begins in.
      */
-    const val FLASHCARDS = 3
+    const val FLASHCARDS = 4
 
     /**
      * `studyGuideTypst`, for both the student and answer copies. 1 = the embedded-font fix;
@@ -77,23 +78,26 @@ object LayoutRevisions {
     /**
      * `findTheVerseTypst` — the R1 text-generated practice test. 1 = the corner revision mark;
      * 2 = the answer-column header repeats on the second page, the sheet title shows its "#" before
-     * the seed like the key does, and the clue size grows to fill the sheet's two sides.
+     * the seed like the key does, and the clue size grows to fill the sheet's two sides; 3 = a clue that
+     * recurs is asked once and the key names every verse it occurs in.
      */
-    const val FIND_THE_VERSE = 2
+    const val FIND_THE_VERSE = 3
 
     /**
      * `quotesTypst` — the R4 text-generated practice test. 1 = the corner revision mark; 2 = two-page
      * fit search with unbreakable questions (choices tight under their question) and chapter headings
-     * in the answer key.
+     * in the answer key; 3 = repeated quotations are asked once (no longer dropped) and the key names
+     * every place.
      */
-    const val QUOTES = 2
+    const val QUOTES = 3
 
     /**
      * `eventsTypst` — the R5 text-generated practice test. 1 = the corner revision mark; 2 = two-page
      * fit search with unbreakable questions (choices tight under their question); the key keeps the
-     * classic letter + chapter format.
+     * classic letter + chapter format; 3 = a repeated heading is asked once and the key names every
+     * chapter it begins (twins anywhere in the set, not just the covered chapters).
      */
-    const val EVENTS = 2
+    const val EVENTS = 3
 
     /** `nametagsTypst` — the event nametag sheets. 1 = the corner revision mark. */
     const val NAMETAGS = 1

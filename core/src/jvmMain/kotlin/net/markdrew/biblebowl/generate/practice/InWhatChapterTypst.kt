@@ -5,6 +5,7 @@ import net.markdrew.biblebowl.generate.questionItemTypst
 import net.markdrew.biblebowl.model.BRIEF_BOOK_FORMAT
 import net.markdrew.biblebowl.model.BookFormat
 import net.markdrew.biblebowl.model.NO_BOOK_FORMAT
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.model.VerseRef
 
 /** Escapes Typst markup metacharacters so arbitrary study text renders literally. */
@@ -49,7 +50,7 @@ fun inWhatChapterTypst(practiceTest: PracticeTest, questions: List<MultiChoiceQu
     """.trimIndent()
 
     val items = questions.mapIndexed { i, multiChoice ->
-        val qText = escapeTypst(multiChoice.question.question)
+        val qText = escapeTypst(multiChoice.question.prompt)
         val choicesStr = multiChoice.choices.mapIndexed { idx, choice ->
             val label = ('A' + idx).toString()
             val text = choice?.format(bookFormat) ?: "none of these"
@@ -86,22 +87,28 @@ private fun appendAnswerKey(
           #set enum(indent: 0pt, body-indent: 6pt)
     """.trimIndent()
     )
+    val quotes = practiceTest.round == Round.QUOTES
     questions.forEach { multiChoice ->
         val q = multiChoice.question
         val prefix = if (bookFormat == NO_BOOK_FORMAT) "chapter " else ""
+        // Every place the clue occurs is a right answer, so the key names them all ("chapter 3 or 9").
         val ref: String =
-            if (q.answerRefs != null) q.answerRefs.first().format(bookFormat)
-            else prefix + q.answers.joinToString(" and ") { it.format(bookFormat) }
+            if (quotes) q.answers.joinToString(" or ") { it.format(bookFormat) }
+            else prefix + q.chapters.joinToString(" or ") { it.format(bookFormat) }
         val label = ('A' + multiChoice.correctChoice).toString()
         // A quotes (R4) entry carries the chapter heading(s) the quoted verse falls under, so the key
         // reads on its own. An events (R5) entry stays the classic letter + chapter — its question IS
         // a chapter heading, so repeating it here would say nothing.
-        val headingLines: List<String> = q.answerRefs.orEmpty().flatMap { verseRef: VerseRef ->
-            practiceTest.content.studyData.headingsIntersecting(verseRef).map { escapeTypst(it) }
-        }.distinct()
+        // A quote that recurs gets one line per place, led by its reference — "AND" stays reserved for
+        // a single verse that straddles two headings.
+        val headingLines: List<String> = if (!quotes) emptyList() else q.answers.map { verseRef: VerseRef ->
+            val headings = practiceTest.content.studyData.headingsIntersecting(verseRef).map { escapeTypst(it) }
+            val lead = if (q.isRepeated) escapeTypst(verseRef.format(bookFormat)) + " " else ""
+            lead + headings.joinToString(" AND \\\n    ")
+        }
         appendable.append("  + *$label* (${escapeTypst(ref)})")
         if (headingLines.isEmpty()) appendable.appendLine()
-        else appendable.appendLine(" \\\n    " + headingLines.joinToString(" AND \\\n    "))
+        else appendable.appendLine(" \\\n    " + headingLines.joinToString(" \\\n    "))
     }
     appendable.appendLine("""]""")
 }

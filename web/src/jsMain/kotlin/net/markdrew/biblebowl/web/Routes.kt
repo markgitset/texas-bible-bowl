@@ -1,6 +1,7 @@
 package net.markdrew.biblebowl.web
 
 import net.markdrew.biblebowl.api.StudySection
+import net.markdrew.biblebowl.generation.quiz.QuizKind
 
 /**
  * Hash-route strings, kept identical to the Compose app's Routes so existing links from the
@@ -47,12 +48,22 @@ fun StudySection.Companion.fromRoute(route: String): StudySection? =
     StudySection.entries.firstOrNull { it.route == route }
 
 /**
+ * Each quiz is its own page at `#quiz/<section slug>`, reached from its study section's page and
+ * crumbed back to it (Home › Study & Practice › Verses › Quiz). There is no quiz-of-quizzes page:
+ * a bare `#quiz` — and the old single screen's `#quiz?source=…` — redirect (see Shell).
+ */
+val QuizKind.route: String get() = "${Routes.QUIZ}/$slug"
+
+/** The quiz whose page is [route] (`quiz/<slug>`), or null for any other route. */
+fun QuizKind.Companion.fromRoute(route: String): QuizKind? =
+    route.removePrefix("${Routes.QUIZ}/").takeIf { it != route }?.let { QuizKind.bySlug(it) }
+
+/**
  * Study-family destinations reached from the hub (`#study`, the app's Study & Practice page);
  * they anchor breadcrumb grouping (Home › Study & Practice › X). The navbar has a single
  * Study & Practice entry — these are not nav items.
  */
 enum class TopDestination(val route: String, val label: String) {
-    QUIZ(Routes.QUIZ, "Quiz Me"),
     QUESTIONS(Routes.QUESTIONS, "Community Questions"),
 }
 
@@ -61,11 +72,11 @@ fun topDestinationOf(route: String): TopDestination? =
     TopDestination.entries.firstOrNull { route == it.route || route.startsWith("${it.route}/") }
 
 /** Human label for [route], used for breadcrumbs and the document title. */
-fun routeLabel(route: String): String = StudySection.fromRoute(route)?.title ?: when (route) {
+fun routeLabel(route: String): String =
+    StudySection.fromRoute(route)?.title ?: QuizKind.fromRoute(route)?.let { "${it.title} Quiz" } ?: when (route) {
     Routes.STUDY -> "Study & Practice" // the overview: one card per study-focus section
     Routes.STUDY_INDICES -> "Names & Numbers"
     Routes.STUDY_HEADINGS -> "Headings Browser" // distinct from the Chapter Headings section page
-    Routes.QUIZ -> "Quiz Me"
     Routes.QUESTIONS -> "Community Questions"
     Routes.QUESTIONS_NEW -> "Submit a Question"
     Routes.QUESTIONS_MODERATE -> "Moderate Questions"

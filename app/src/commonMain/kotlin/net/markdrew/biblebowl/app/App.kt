@@ -51,8 +51,8 @@ import net.markdrew.biblebowl.app.navigation.route
 import net.markdrew.biblebowl.app.navigation.topDestinationOf
 import net.markdrew.biblebowl.client.TbbApi
 import net.markdrew.biblebowl.app.screens.AccountScreen
-import net.markdrew.biblebowl.app.screens.QuizChoices
-import net.markdrew.biblebowl.app.screens.QuizSource
+import net.markdrew.biblebowl.app.screens.QuizChooserScreen
+import net.markdrew.biblebowl.generation.quiz.QuizKind
 import net.markdrew.biblebowl.app.screens.AdminCountsScreen
 import net.markdrew.biblebowl.app.screens.AdminHousingScreen
 import net.markdrew.biblebowl.app.screens.AdminRegistrationsScreen
@@ -250,6 +250,18 @@ private fun NavHostController.navigateTopLevel(route: String) {
     }
 }
 
+/**
+ * Opens [kind]'s quiz on the Quiz tab: switch tabs like the nav bar does, then push the quiz over
+ * the chooser — replacing any other quiz there, so Back always returns to the chooser.
+ */
+internal fun NavHostController.navigateToQuiz(kind: QuizKind) {
+    navigateTop(TopDestination.QUIZ)
+    navigate(kind.route) {
+        popUpTo(Routes.QUIZ)
+        launchSingleTop = true
+    }
+}
+
 @Composable
 private fun AppNavHost(
     api: TbbApi,
@@ -274,15 +286,8 @@ private fun AppNavHost(
             section = section,
             onOpenIndices = { navController.navigate(Routes.STUDY_INDICES) },
             onOpenHeadings = { navController.navigate(Routes.STUDY_HEADINGS) },
-            // Each quiz card opens Quiz on the source it names.
-            onOpenQuiz = {
-                QuizChoices.source = QuizSource.QUESTIONS
-                navController.navigateTopLevel(Routes.QUIZ)
-            },
-            onOpenHeadingQuiz = {
-                QuizChoices.source = QuizSource.HEADINGS
-                navController.navigateTopLevel(Routes.QUIZ)
-            },
+            // Each quiz card opens its own quiz, pushed over the Quiz tab's chooser.
+            onOpenQuiz = { kind -> navController.navigateToQuiz(kind) },
             onOpenQuestions = { navController.navigateTopLevel(Routes.QUESTIONS) },
             signedIn = user != null,
             onRequireSignIn = requireSignIn,
@@ -297,7 +302,10 @@ private fun AppNavHost(
         }
         composable(Routes.STUDY_INDICES) { IndexScreen(api) }
         composable(Routes.STUDY_HEADINGS) { HeadingsScreen(api) }
-        composable(Routes.QUIZ) { QuizScreen(api) }
+        composable(Routes.QUIZ) { QuizChooserScreen(onOpen = { navController.navigateToQuiz(it) }) }
+        QuizKind.entries.forEach { kind ->
+            composable(kind.route) { QuizScreen(api, kind) }
+        }
         composable(Routes.QUESTIONS) {
             QuestionsScreen(
                 api = api,

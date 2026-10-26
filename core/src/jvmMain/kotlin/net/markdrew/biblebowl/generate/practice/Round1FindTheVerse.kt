@@ -5,35 +5,36 @@ import net.markdrew.biblebowl.model.BibleUse
 import net.markdrew.biblebowl.generate.normalizeWS
 import net.markdrew.biblebowl.model.FULL_BOOK_FORMAT
 import net.markdrew.biblebowl.model.PracticeContent
-import net.markdrew.biblebowl.model.ReferencedVerse
+import net.markdrew.biblebowl.model.LocationQuestion
 import net.markdrew.biblebowl.model.StudyData
-import net.markdrew.biblebowl.model.VerseRef
-import net.markdrew.chupacabra.core.DisjointRangeMap
+import net.markdrew.biblebowl.model.groupByWording
 import net.markdrew.chupacabra.core.length
 
 /**
  * Renders a Round 1 ("Find the Verse") test sheet from the study text and returns the complete Typst source.
  *
  * Picks [PracticeTest.numQuestions] single-verse sentence fragments at least [minCharLength] characters long
- * from the covered chapters and emits them along with an answer key. Ported from bible-bowl, rewritten to
+ * from the covered chapters and emits them along with an answer key naming every verse each occurs in. Ported from bible-bowl, rewritten to
  * return a string instead of writing a `.typ`/PDF file.
  */
 fun findTheVerseTypst(practiceTest: PracticeTest, minCharLength: Int = 15): String {
     val content: PracticeContent = practiceTest.content
     val studyData: StudyData = content.studyData
-    var cluePool: DisjointRangeMap<VerseRef> = studyData.oneVerseSentParts
-    if (!content.allChapters) {
-        cluePool = cluePool.enclosedBy(content.coveredOffsets)
-    }
+    val fragments = studyData.oneVerseSentParts.filterKeys { it.length() >= minCharLength }.entries.toList()
 
-    val versesToFind: List<ReferencedVerse> = cluePool
-        .filterKeys { it.length() >= minCharLength }
-        .entries.shuffled(practiceTest.random)
+    // One clue per wording: a fragment that recurs (anywhere in the set) is asked once, and every verse
+    // it occurs in is a right answer. It's asked when any occurrence is in the covered chapters.
+    val versesToFind: List<LocationQuestion> = groupByWording(fragments) { (range, _) -> studyData.text.substring(range) }
+        .filter { group -> content.allChapters || group.any { (range, _) -> range in content.coveredOffsets } }
+        .shuffled(practiceTest.random)
         .take(practiceTest.numQuestions)
-        .map { (range, verseRef) -> ReferencedVerse(verseRef, studyData.text.substring(range)) }
+        .map { group -> LocationQuestion(studyData.text.substring(group.first().key), group.map { it.value }.sorted()) }
 
     return buildString { appendFindTheVerse(versesToFind, practiceTest) }
 }
+
+/** True when [inner] lies wholly inside this range. */
+private operator fun IntRange.contains(inner: IntRange): Boolean = inner.first >= first && inner.last <= last
 
 /** Strings containing pairs of characters that normally occur as pairs. */
 private val charPairs = listOf("()", "“”", "\"\"", "‘’", "''")
@@ -63,7 +64,7 @@ fun removeUnmatchedCharPair(s: String, charPair: String): String {
 }
 
 /** Appends the Round 1 Typst test sheet (questions + answer key) for these reference/verse pairs. */
-private fun Appendable.appendFindTheVerse(versesToFind: List<ReferencedVerse>, practiceTest: PracticeTest) {
+private fun Appendable.appendFindTheVerse(versesToFind: List<LocationQuestion>, practiceTest: PracticeTest) {
     val seedString = "%04d".format(practiceTest.randomSeed)
     val minutes = Round.FIND_THE_VERSE.minutesAtPaceFor(versesToFind.size)
     val chapters: String = practiceTest.content.coveredChaptersString()
@@ -111,7 +112,7 @@ private fun Appendable.appendFindTheVerse(versesToFind: List<ReferencedVerse>, p
     )
 
     versesToFind.forEach { refVerse ->
-        val clue = removeUnmatchedCharPairs(refVerse.verse.normalizeWS())
+        val clue = removeUnmatchedCharPairs(refVerse.prompt.normalizeWS())
         appendLine("  [${escapeTypst(clue)}],")
     }
 
@@ -182,14 +183,15 @@ private fun Appendable.appendFindTheVerse(versesToFind: List<ReferencedVerse>, p
     """.trimIndent()
     )
 
-    versesToFind.forEach {
-        val verseRef: VerseRef = it.reference
-        val headingsList: List<String> = practiceTest.content.studyData.headingsIntersecting(verseRef)
-        if (headingsList.isEmpty()) throw Exception("No chapter heading(s) found for $verseRef!")
-        val formattedVerse = escapeTypst(verseRef.format(FULL_BOOK_FORMAT))
-        append("  + *$formattedVerse* \\ \n")
-        val escapedHeadings = headingsList.map { h -> escapeTypst(h) }
-        append("    " + escapedHeadings.joinToString(" AND \\ \n    ") + "\n")
+    versesToFind.forEach { question ->
+        // Every verse the clue occurs in is a right answer; each is listed with its heading(s).
+        val places = question.answers.map { verseRef ->
+            val headingsList: List<String> = practiceTest.content.studyData.headingsIntersecting(verseRef)
+            if (headingsList.isEmpty()) throw Exception("No chapter heading(s) found for $verseRef!")
+            "*${escapeTypst(verseRef.format(FULL_BOOK_FORMAT))}* \\ \n    " +
+                headingsList.joinToString(" AND \\ \n    ") { h -> escapeTypst(h) }
+        }
+        append("  + " + places.joinToString(" \\ \n    _or_ ") + "\n")
     }
 
     appendLine(

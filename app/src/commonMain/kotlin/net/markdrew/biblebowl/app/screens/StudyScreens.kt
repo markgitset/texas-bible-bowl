@@ -52,6 +52,7 @@ import net.markdrew.biblebowl.api.StudyMaterialType
 import net.markdrew.biblebowl.api.resolvedStudySet
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.client.TbbApi
+import net.markdrew.biblebowl.generation.quiz.QuizKind
 import net.markdrew.biblebowl.api.StudySection
 import net.markdrew.biblebowl.app.platform.Mime
 import net.markdrew.biblebowl.app.platform.saveFile
@@ -116,8 +117,8 @@ private fun blurb(section: StudySection, scripture: String): String = when (sect
     StudySection.TEXT ->
         "The complete text of $scripture — the highlighted study PDF, plus places to read or listen online."
     StudySection.VERSES ->
-        "Verse-by-verse memory work for $scripture — the importable verse decks live under " +
-            "Data & Source Files."
+        "Verse-by-verse work for $scripture — a quiz on where each verse sits; the importable " +
+            "verse decks live under Data & Source Files."
     StudySection.GENERAL ->
         "The official study guide and question flashcards, plus the interactive quiz and the " +
             "community question bank."
@@ -207,8 +208,7 @@ fun StudySectionScreen(
     section: StudySection,
     onOpenIndices: () -> Unit,
     onOpenHeadings: () -> Unit,
-    onOpenQuiz: () -> Unit,
-    onOpenHeadingQuiz: () -> Unit,
+    onOpenQuiz: (QuizKind) -> Unit,
     onOpenQuestions: () -> Unit,
     // Only the verse decks need these: they're the one study download that requires an account.
     signedIn: Boolean = false,
@@ -446,11 +446,11 @@ fun StudySectionScreen(
                     onCustomize = { customize = Customize.QuestionFlashcards },
                 )
                 LinkCard(
-                    title = "Quiz me",
+                    title = "Quiz questions",
                     subtitle = "Drill the community question bank with instant feedback — the interactive twin " +
                         "of the flashcards and practice tests.",
-                    actionLabel = "Open Quiz",
-                    onClick = onOpenQuiz,
+                    actionLabel = "Start quiz",
+                    onClick = { onOpenQuiz(QuizKind.GENERAL) },
                 )
                 LinkCard(
                     title = "Community questions",
@@ -491,14 +491,20 @@ fun StudySectionScreen(
                     subtitle = "Name the chapter for each heading — multiple choice, multiple choice with " +
                         "\"none of the above,\" or type it in. Instant feedback, then retry the ones you missed.",
                     actionLabel = "Start quiz",
-                    onClick = onOpenHeadingQuiz,
+                    onClick = { onOpenQuiz(QuizKind.HEADINGS) },
                 )
             }
 
-            // No built-in cards: the importable verse decks sit with the other source files under
-            // Data & Source Files. The section stays for its admin-curated extras (and whatever
-            // verse-by-verse tools land here later).
-            StudySection.VERSES -> {}
+            // The importable verse decks sit with the other source files under Data & Source Files.
+            StudySection.VERSES -> {
+                LinkCard(
+                    title = "Quiz verses",
+                    subtitle = "A random verse at a time — pick the heading it sits under (with or without " +
+                        "\"none of the above\"), or type its chapter. Instant feedback, then retry the ones you missed.",
+                    actionLabel = "Start quiz",
+                    onClick = { onOpenQuiz(QuizKind.VERSES) },
+                )
+            }
 
             StudySection.UNIQUE_WORDS -> {
                 DownloadCard(

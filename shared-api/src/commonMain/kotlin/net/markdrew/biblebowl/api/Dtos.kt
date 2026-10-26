@@ -171,10 +171,44 @@ data class HeadingDto(
     val bookCode: String? = null,
     /** Chapter the heading starts in (1-based, within [bookCode]). */
     val chapter: Int,
+    /**
+     * Verse the heading starts at, within [chapter] — with [bookCode] and [chapter], the heading's place
+     * (1 from a server that predates the field).
+     */
+    val verse: Int = 1,
     /** 1-based position of this heading within the study set. */
     val index: Int,
     /** Total number of headings in the study set. */
     val total: Int,
+)
+
+/**
+ * One verse-quiz question ("which heading / which chapter is this verse in?"): a verse's wording and
+ * EVERY place it occurs in the study set — usually one, but a refrain repeats, and each place is a
+ * right answer. The server samples a handful per request — never the running text in bulk (the ESV
+ * licence keeps that server-side).
+ */
+@Serializable
+data class VerseQuestionDto(
+    val text: String,
+    /** Every place [text] occurs, in Bible order — including any outside the requested chapters. */
+    val places: List<VersePlaceDto>,
+)
+
+/** One place a verse's wording occurs. */
+@Serializable
+data class VersePlaceDto(
+    /** The verse's reference within its book, e.g. "3:16". */
+    val reference: String,
+    /** Book enum name (e.g. "ACT"). */
+    val bookCode: String,
+    val chapter: Int,
+    val verse: Int,
+    /**
+     * The section heading the verse sits under — included because a heading can start before the
+     * quizzed span — or null when the verse straddles two headings or precedes the first one.
+     */
+    val heading: HeadingDto? = null,
 )
 
 /** One entry of a study index (e.g. the Numbers index): a key and the verses it occurs in. */

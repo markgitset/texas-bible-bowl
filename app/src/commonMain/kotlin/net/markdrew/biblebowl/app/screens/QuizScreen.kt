@@ -62,6 +62,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.ScopeSelection
@@ -72,98 +74,145 @@ import net.markdrew.biblebowl.app.platform.hasHardwareKeyboard
 import net.markdrew.biblebowl.app.ui.ChapterChips
 import net.markdrew.biblebowl.app.ui.LocalSeason
 import net.markdrew.biblebowl.client.TbbApi
+import net.markdrew.biblebowl.generation.quiz.BankQuestion
 import net.markdrew.biblebowl.generation.quiz.HeadingQuizMode
+import net.markdrew.biblebowl.generation.quiz.PlaceQuestion
 import net.markdrew.biblebowl.generation.quiz.QuizEngine
 import net.markdrew.biblebowl.generation.quiz.QuizItem
+import net.markdrew.biblebowl.generation.quiz.QuizKind
 import net.markdrew.biblebowl.generation.quiz.QuizLength
 import net.markdrew.biblebowl.generation.quiz.QuizSound
+import net.markdrew.biblebowl.generation.quiz.VerseQuizMode
 import net.markdrew.biblebowl.generation.quiz.bookShortcutKeys
 import net.markdrew.biblebowl.generation.quiz.chapterEntryComplete
 import net.markdrew.biblebowl.generation.quiz.headingQuestions
 import net.markdrew.biblebowl.generation.quiz.lastChapterIn
-import net.markdrew.biblebowl.generation.quiz.typedAnswerCorrect
+import net.markdrew.biblebowl.generation.quiz.verseQuestions
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.model.bookByCode
 
-/** What a quiz draws from: the community question bank, or ESV chapter headings (Round 5). */
-enum class QuizSource(val displayName: String) {
-    QUESTIONS("Question bank"),
-    HEADINGS("Chapter headings"),
+/** One quiz kind's own choices and run — kept apart so drilling one never disturbs another. */
+class QuizKindState {
+    var round by mutableStateOf<Round?>(null)
+    var headingMode by mutableStateOf(HeadingQuizMode.CHOICE)
+    var verseMode by mutableStateOf(VerseQuizMode.HEADING_CHOICE)
+    var length by mutableStateOf(QuizLength.TWENTY)
+    /** The run in progress — held here, not in the screen, so leaving the tab doesn't lose it. */
+    var engine by mutableStateOf<QuizEngine?>(null)
+    var typed by mutableStateOf(false)
 }
 
 /**
- * Quiz setup choices, sticky across tab switches — and settable from outside, so the study cards
- * can open Quiz on the source they promise (e.g. Chapter Headings → "Quiz headings").
+ * Quiz setup choices, sticky across tab switches: each [QuizKind] keeps its own, while the chapter
+ * span is shared so "I'm studying 1–5" carries from one quiz to the next.
  */
 object QuizChoices {
-    var source by mutableStateOf(QuizSource.QUESTIONS)
-    var round by mutableStateOf<Round?>(null)
-    var headingMode by mutableStateOf(HeadingQuizMode.CHOICE)
-    var length by mutableStateOf(QuizLength.TWENTY)
     var selection by mutableStateOf(ScopeSelection())
+    private val kinds = QuizKind.entries.associateWith { QuizKindState() }
+    fun of(kind: QuizKind): QuizKindState = kinds.getValue(kind)
 }
 
 /** How long a right answer's ✓ shows before the quiz moves on by itself. */
 private const val CORRECT_FLASH_MS = 500L
 
 /**
- * Quiz mode: setup → stepper → results (with a retry of the misses). All quiz logic lives in
+ * The Quiz tab's landing page: one card per quiz, each opening its own screen ([QuizScreen]). The
+ * quizzes never switch kind in place, so this (or a study section's card) is the way between them.
+ */
+@Composable
+fun QuizChooserScreen(onOpen: (QuizKind) -> Unit) {
+    Column(
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Text("Quiz me", style = MaterialTheme.typography.titleLarge)
+        QuizKind.entries.forEach { kind ->
+            ElevatedCard(onClick = { onOpen(kind) }, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(kind.title, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        when (kind) {
+                            QuizKind.GENERAL -> "Drill the community question bank (Rounds 2 and 3)."
+                            QuizKind.HEADINGS -> "Name the chapter for each ESV section heading (Round 5)."
+                            QuizKind.VERSES -> "Place a random verse — pick its heading or type its chapter."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One quiz: setup → stepper → results (with a retry of the misses). All quiz logic lives in
  * QuizEngine. On desktop the whole run is keyboard-driven (see each view's key handler) and the
  * shortcuts are shown as keycaps; Android gets neither.
  */
 @Composable
-fun QuizScreen(api: TbbApi) {
-    var engine by remember { mutableStateOf<QuizEngine?>(null) }
-    var typed by remember { mutableStateOf(false) }
+fun QuizScreen(api: TbbApi, kind: QuizKind) {
+    val state = QuizChoices.of(kind)
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     // Bumped on every answer/advance so Compose re-reads the engine's state.
     var tick by remember { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val season = LocalSeason.current
-    val choices = QuizChoices
 
-    val quiz = engine
+    val quiz = state.engine
     when {
         loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
 
         quiz == null -> QuizSetup(
+            kind = kind,
             error = error,
             onStart = {
                 loading = true; error = null
                 scope.launch {
                     try {
-                        // Both sources ask for exactly the span the chips light, ends spelled out explicitly.
+                        // Every kind asks for exactly the span the chips light, ends spelled out explicitly.
                         val set = season.resolvedStudySet
-                        val scoped = choices.selection.resolveWithin(set)
+                        val scoped = QuizChoices.selection.resolveWithin(set)
                         val book = scoped.book?.name
                         val from = scoped.chapters?.start?.chapter
                         val through = scoped.chapters?.endInclusive?.chapter
-                        val source = choices.source
-                        val mode = choices.headingMode
-                        val pool = when (source) {
-                            QuizSource.QUESTIONS ->
+                        val multiBook = !set.isSingleBook
+                        val pool = when (kind) {
+                            QuizKind.GENERAL ->
                                 api.questions(book = book, fromChapter = from, chapter = through)
-                                    .filter { choices.round == null || it.roundType == choices.round }
-                            QuizSource.HEADINGS -> headingQuestions(
-                                api.headings(book = book, fromChapter = from, throughChapter = through),
-                                multiBook = !set.isSingleBook,
-                                mode = mode,
+                                    .filter { state.round == null || it.roundType == state.round }
+                                    .map(::BankQuestion)
+                            // The whole set's headings, so a title that recurs outside the span is still known.
+                            QuizKind.HEADINGS -> headingQuestions(
+                                api.headings(),
+                                inScope = scoped::covers,
+                                multiBook = multiBook,
+                                mode = state.headingMode,
                             )
+                            QuizKind.VERSES -> coroutineScope {
+                                val verses = async {
+                                    api.verses(state.length.count, book = book, fromChapter = from, throughChapter = through)
+                                }
+                                val headings = async { api.headings() }
+                                verseQuestions(verses.await(), headings.await(), scoped::covers, multiBook, state.verseMode)
+                            }
                         }
                         val e = QuizEngine(
                             pool,
-                            limit = choices.length.count,
-                            noneOfTheAbove = source == QuizSource.HEADINGS && mode == HeadingQuizMode.CHOICE_NOTA,
+                            limit = state.length.count,
+                            noneOfTheAbove = (kind == QuizKind.HEADINGS && state.headingMode == HeadingQuizMode.CHOICE_NOTA) ||
+                                (kind == QuizKind.VERSES && state.verseMode == VerseQuizMode.HEADING_CHOICE_NOTA),
                         )
-                        if (e.isEmpty) error = when (source) {
-                            QuizSource.QUESTIONS ->
-                                "No approved questions match — loosen the filters or contribute some!"
-                            QuizSource.HEADINGS -> "No headings available — is the server's ESV service configured?"
+                        if (e.isEmpty) error = when (kind) {
+                            QuizKind.GENERAL -> "No approved questions match — loosen the filters or contribute some!"
+                            QuizKind.HEADINGS -> "No headings available — is the server's ESV service configured?"
+                            QuizKind.VERSES -> "No verses available — is the server's ESV service configured?"
                         }
                         else {
-                            engine = e
-                            typed = source == QuizSource.HEADINGS && mode == HeadingQuizMode.TYPED
+                            state.typed = (kind == QuizKind.HEADINGS && state.headingMode == HeadingQuizMode.TYPED) ||
+                                (kind == QuizKind.VERSES && state.verseMode == VerseQuizMode.TYPED)
+                            state.engine = e
                         }
                     } catch (t: Throwable) {
                         error = t.message
@@ -176,11 +225,11 @@ fun QuizScreen(api: TbbApi) {
 
         quiz.isFinished -> QuizResults(
             quiz,
-            onRetry = { engine = quiz.retryMissed() },
-            onRestart = { engine = null },
+            onRetry = { state.engine = quiz.retryMissed() },
+            onRestart = { state.engine = null },
         )
 
-        else -> QuizStepper(quiz, typed, tick, onTick = { tick++ }, onEnd = { engine = null })
+        else -> QuizStepper(kind, quiz, state.typed, tick, onTick = { tick++ }, onEnd = { state.engine = null })
     }
 }
 
@@ -221,22 +270,16 @@ private fun KeyHint(key: String, modifier: Modifier = Modifier.padding(start = 8
 }
 
 @Composable
-private fun QuizSetup(error: String?, onStart: () -> Unit) {
-    val c = QuizChoices
+private fun QuizSetup(kind: QuizKind, error: String?, onStart: () -> Unit) {
+    val c = QuizChoices.of(kind)
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState())
             .then(keyboardScope(Unit) { e -> if (e.key == Key.Enter) { onStart(); true } else false }),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Quiz me", style = MaterialTheme.typography.titleLarge)
-        Text("Source", style = MaterialTheme.typography.labelLarge)
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            QuizSource.entries.forEach { s ->
-                FilterChip(selected = c.source == s, onClick = { c.source = s }, label = { Text(s.displayName) })
-            }
-        }
-        when (c.source) {
-            QuizSource.QUESTIONS -> {
+        Text("${kind.title} quiz", style = MaterialTheme.typography.titleLarge)
+        when (kind) {
+            QuizKind.GENERAL -> {
                 Text("Round", style = MaterialTheme.typography.labelLarge)
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(selected = c.round == null, onClick = { c.round = null }, label = { Text("All") })
@@ -249,7 +292,7 @@ private fun QuizSetup(error: String?, onStart: () -> Unit) {
                     }
                 }
             }
-            QuizSource.HEADINGS -> {
+            QuizKind.HEADINGS -> {
                 Text("Mode", style = MaterialTheme.typography.labelLarge)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     HeadingQuizMode.entries.forEach { m ->
@@ -257,12 +300,20 @@ private fun QuizSetup(error: String?, onStart: () -> Unit) {
                     }
                 }
             }
+            QuizKind.VERSES -> {
+                Text("Mode", style = MaterialTheme.typography.labelLarge)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    VerseQuizMode.entries.forEach { m ->
+                        FilterChip(selected = c.verseMode == m, onClick = { c.verseMode = m }, label = { Text(m.label) })
+                    }
+                }
+            }
         }
         Text("Chapters", style = MaterialTheme.typography.labelLarge)
-        ChapterChips(selected = c.selection, range = true, onSelect = { c.selection = it })
+        ChapterChips(selected = QuizChoices.selection, range = true, onSelect = { QuizChoices.selection = it })
         Text("Questions", style = MaterialTheme.typography.labelLarge)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            QuizLength.entries.forEach { n ->
+            kind.lengths.forEach { n ->
                 FilterChip(selected = c.length == n, onClick = { c.length = n }, label = { Text(n.label) })
             }
         }
@@ -282,7 +333,7 @@ private fun QuizSetup(error: String?, onStart: () -> Unit) {
 }
 
 @Composable
-private fun QuizStepper(quiz: QuizEngine, typed: Boolean, tick: Int, onTick: () -> Unit, onEnd: () -> Unit) {
+private fun QuizStepper(kind: QuizKind, quiz: QuizEngine, typed: Boolean, tick: Int, onTick: () -> Unit, onEnd: () -> Unit) {
     // tick is read so answering/advancing recomposes this screen.
     @Suppress("UNUSED_EXPRESSION") tick
     val item = quiz.current ?: return
@@ -298,7 +349,7 @@ private fun QuizStepper(quiz: QuizEngine, typed: Boolean, tick: Int, onTick: () 
     // Type-the-chapter: only the books this quiz draws from; with just one there's nothing to pick.
     val set = LocalSeason.current.resolvedStudySet
     val books = remember(quiz) {
-        quiz.items.mapNotNull { it.question.bookCode?.let(::bookByCode) }.distinct().sortedBy { it.ordinal }
+        quiz.items.flatMap { (it.question as? PlaceQuestion)?.books.orEmpty() }.distinct().sortedBy { it.ordinal }
             .ifEmpty { set.books }
     }
     val bookKeys = remember(books) { bookShortcutKeys(books) }
@@ -316,7 +367,7 @@ private fun QuizStepper(quiz: QuizEngine, typed: Boolean, tick: Int, onTick: () 
         if (verdict != null) return
         val chapter = typedText.toIntOrNull() ?: return
         val b = book ?: run { needBook = true; return }
-        val ok = typedAnswerCorrect(item.question, b, chapter, multiBook = !set.isSingleBook)
+        val ok = (item.question as PlaceQuestion).accepts(b, chapter, multiBook = !set.isSingleBook)
         quiz.answerSelf(ok)
         verdict = ok
         cue(ok)
@@ -330,8 +381,10 @@ private fun QuizStepper(quiz: QuizEngine, typed: Boolean, tick: Int, onTick: () 
         quiz.answerSelf(gotIt); advance()
     }
 
-    // A right answer flashes ✓ and moves on by itself; leaving the screen cancels the wait.
-    if (verdict == true) LaunchedEffect(item) { delay(CORRECT_FLASH_MS); advance() }
+    // A right answer flashes ✓ and moves on by itself; leaving the screen cancels the wait. Wording that
+    // occurs in more than one place waits for Continue instead, so its places are read first.
+    val repeatNote = (item.question as? PlaceQuestion)?.repeatNote
+    if (verdict == true && repeatNote == null) LaunchedEffect(item) { delay(CORRECT_FLASH_MS); advance() }
 
     // Typing goes to the chapter field; everything else (and Continue after a typed answer, once
     // the field is disabled) keys off the view itself.
@@ -392,7 +445,7 @@ private fun QuizStepper(quiz: QuizEngine, typed: Boolean, tick: Int, onTick: () 
 
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(item.question.roundType.displayName, style = MaterialTheme.typography.labelSmall,
+                Text(kind.askLine(item), style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.secondary)
                 Text(item.question.prompt, style = MaterialTheme.typography.titleMedium)
             }
@@ -487,12 +540,17 @@ private fun QuizStepper(quiz: QuizEngine, typed: Boolean, tick: Int, onTick: () 
 
 /**
  * After an answer: a right one shows a quick ✓ (the stepper moves on by itself); a wrong one shows
- * the right answer and waits for Continue.
+ * the right answer and waits for Continue. Wording that occurs in more than one place always names
+ * every place and waits for Continue, right or wrong.
  */
 @Composable
 private fun Feedback(item: QuizItem, correct: Boolean, onContinue: () -> Unit) {
     val refs = item.question.references.joinToString("; ")
-    if (correct) {
+    val repeatNote = (item.question as? PlaceQuestion)?.repeatNote
+    if (correct && repeatNote != null) {
+        Text("✓ Correct", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+            color = Color(0xFF2E7D32))
+    } else if (correct) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("✓ Correct", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
                 color = Color(0xFF2E7D32))
@@ -503,9 +561,12 @@ private fun Feedback(item: QuizItem, correct: Boolean, onContinue: () -> Unit) {
         }
         return
     }
-    val answer = if (item.noneIsCorrect) "${QuizEngine.NONE_OF_THE_ABOVE} — ${item.question.answer}" else item.question.answer
-    Text("Answer: $answer", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
-    if (refs.isNotEmpty()) Text(refs, style = MaterialTheme.typography.bodySmall)
+    if (!correct) {
+        val answer = if (item.noneIsCorrect) "${QuizEngine.NONE_OF_THE_ABOVE} — ${item.question.answer}" else item.question.answer
+        Text("Answer: $answer", fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+        if (refs.isNotEmpty()) Text(refs, style = MaterialTheme.typography.bodySmall)
+    }
+    repeatNote?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
     Button(onClick = onContinue, modifier = Modifier.fillMaxWidth()) { Text("Continue"); KeyHint("Enter") }
 }
 
@@ -555,6 +616,9 @@ private fun QuizResults(quiz: QuizEngine, onRetry: () -> Unit, onRestart: () -> 
                             if (item.question.references.isNotEmpty()) {
                                 Text(item.question.references.joinToString("; "),
                                     style = MaterialTheme.typography.bodySmall)
+                            }
+                            (item.question as? PlaceQuestion)?.repeatNote?.let {
+                                Text(it, style = MaterialTheme.typography.bodySmall)
                             }
                         }
                     }

@@ -1,6 +1,5 @@
 package net.markdrew.biblebowl.generation.quiz
 
-import net.markdrew.biblebowl.api.QuestionDto
 import kotlin.random.Random
 
 /**
@@ -8,10 +7,10 @@ import kotlin.random.Random
  * correct answer first can't be gamed) with [correctIndex] tracking where the answer landed.
  * [choices] is empty for self-graded (short-answer) items. When the quiz offers
  * [NONE_OF_THE_ABOVE] it is always the last choice, and [noneIsCorrect] says the real answer
- * (still [QuestionDto.answer]) was left out of the list.
+ * (still [QuizQuestion.answer]) was left out of the list.
  */
 data class QuizItem(
-    val question: QuestionDto,
+    val question: QuizQuestion,
     val choices: List<String>,
     val correctIndex: Int,
     val noneIsCorrect: Boolean = false,
@@ -49,7 +48,7 @@ data class QuizResult(val answers: List<QuizAnswer>) {
  * answer, and the real answer is left out of the list.
  */
 class QuizEngine(
-    questions: List<QuestionDto>,
+    questions: List<QuizQuestion>,
     private val limit: Int = QuizLength.TWENTY.count,
     private val random: Random = Random.Default,
     private val noneOfTheAbove: Boolean = false,
@@ -71,7 +70,7 @@ class QuizEngine(
             }
         }
 
-    private fun withNoneOfTheAbove(q: QuestionDto): QuizItem {
+    private fun withNoneOfTheAbove(q: QuizQuestion): QuizItem {
         val answer = q.choices.firstOrNull { it.trim() == q.answer.trim() } ?: q.answer
         val distractors = q.choices.filterNot { it.trim() == q.answer.trim() }.shuffled(random)
         // distractors.size + 1 buttons either way; an answer-only question can't hide its answer.
