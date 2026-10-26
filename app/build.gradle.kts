@@ -62,12 +62,14 @@ kotlin {
 
 android {
     namespace = "net.markdrew.biblebowl.app"
-    compileSdk = 35
+    compileSdk = 36
     buildFeatures { buildConfig = true }
     defaultConfig {
-        applicationId = "net.markdrew.biblebowl"
+        // The app's permanent identity on Google Play (it can never change once published), so it's
+        // the organization's domain, not a personal one; unrelated to `namespace`, the code package.
+        applicationId = "org.texasbiblebowl.app"
         minSdk = 26
-        targetSdk = 35
+        targetSdk = 36 // Play's floor for new apps and updates since 2026-08-31
         // Play rejects an upload whose versionCode doesn't exceed the last one, so the
         // android-release workflow passes main's commit count: it grows with every commit and,
         // unlike a run number, survives renaming the workflow. Local builds are 1.

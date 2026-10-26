@@ -249,6 +249,10 @@ This renders the real pipeline without hitting Crossway.
   via `TBB_KEYSTORE_FILE`/`TBB_KEYSTORE_PASSWORD` and leaves release unsigned without them. Mark
   generated it off-session and holds the backup; a lost upload key can be reset via Play Console,
   but sideloaded copies signed with it can then only be reinstalled, not updated.
+  The app id is `org.texasbiblebowl.app` (permanent once on Play; the code `namespace` stays
+  `net.markdrew.biblebowl.app`). Launcher icon: adaptive `mipmap-*` foreground/monochrome layers on
+  a `#1C3A5D` background, cut from the 512px `app/src/androidMain/ic_launcher-playstore.png`
+  (also the Play listing icon) with the emblem scaled into the 66dp safe circle.
 - **Backend, prod (Fly.io):** deployed by the production promotion workflow (above). Claude
   MAY still deploy directly (Mark OK'd 2026-07-13) using `/home/linuxbrew/.linuxbrew/bin/fly`
   (authenticated; the `~/.fly/bin` copy also works) — but the promotion workflow is the
