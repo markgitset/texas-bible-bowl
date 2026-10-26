@@ -236,7 +236,23 @@ This renders the real pipeline without hitting Crossway.
   on every server endpoint — until an admin flips them in Season settings. Global admins bypass
   both gates (links badged "hidden until launch") so dark features can be tested in prod.
 - **CI (`ci.yml`):** runs tests + builds APK/web on push. Deploys nothing itself (staging
-  deploys are the separate `deploy-staging.yml` workflow).
+  deploys are the separate `deploy-staging.yml` workflow). Its debug APK is signed with a
+  throwaway per-runner key, so it can't install as an update over an earlier one.
+- **Android release build (`android-release.yml`):** every merge to `main` builds
+  `:app:bundleRelease` + `:app:assembleRelease` signed with the Play **upload key** and uploads
+  `app-release-aab` (for Play, which re-signs with the app signing key it holds) and
+  `app-release-apk` (to sideload; each one updates the last), 90 days each. versionCode is
+  `git rev-list --count HEAD` passed as `TBB_VERSION_CODE` (local builds: 1), so it rises with
+  every commit as Play requires — which is why that checkout is `fetch-depth: 0`. The key is
+  `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` in the `android-release` environment
+  (main-only, no reviewers — same reasoning as the Fly tokens); `app/build.gradle.kts` reads it
+  via `TBB_KEYSTORE_FILE`/`TBB_KEYSTORE_PASSWORD` and leaves release unsigned without them. Mark
+  generated it off-session and holds the backup; a lost upload key can be reset via Play Console,
+  but sideloaded copies signed with it can then only be reinstalled, not updated.
+  The app id is `org.texasbiblebowl.app` (permanent once on Play; the code `namespace` stays
+  `net.markdrew.biblebowl.app`). Launcher icon: adaptive `mipmap-*` foreground/monochrome layers on
+  a `#1C3A5D` background, cut from the 512px `app/src/androidMain/ic_launcher-playstore.png`
+  (also the Play listing icon) with the emblem scaled into the 66dp safe circle.
 - **Backend, prod (Fly.io):** deployed by the production promotion workflow (above). Claude
   MAY still deploy directly (Mark OK'd 2026-07-13) using `/home/linuxbrew/.linuxbrew/bin/fly`
   (authenticated; the `~/.fly/bin` copy also works) — but the promotion workflow is the

@@ -1,0 +1,90 @@
+name: Android release build
+
+# Builds the Android app for release, signed with the app's upload key:
+#   app-release-aab — the bundle to upload to Google Play (Play re-signs it with its app signing key)
+#   app-release-apk — for sideloading; every one installs as an update over the last (CI's debug
+#                     APK is signed with a throwaway key per runner, so it can't)
+# versionCode is main's commit count, so each build outranks the one before, as Play requires.
+#
+# The key lives in the `android-release` environment, restricted to the `main` branch like the
+# deploy tokens (this repo is PUBLIC and keeps no repo-level secrets):
+#   ANDROID_KEYSTORE_BASE64   — the PKCS12 keystore (alias `tbb-release`), base64-encoded
+#   ANDROID_KEYSTORE_PASSWORD — its password (store and key share it)
+# It is the Play *upload* key (Play holds the app signing key): if it's lost, Play Console can reset
+# it, but sideloaded copies signed with it can then only be reinstalled, not updated — keep a backup.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: android-release
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: android-release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history: versionCode is the commit count, which a shallow clone would truncate.
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Set up Gradle (with caching)
+        uses: gradle/actions/setup-gradle@v5
+
+      # Android SDK is pre-installed on ubuntu-latest runners (ANDROID_HOME is set).
+
+      - name: Decode signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not set in the android-release environment"
+            exit 1
+          fi
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/tbb-release.p12"
+          echo "TBB_KEYSTORE_FILE=$RUNNER_TEMP/tbb-release.p12" >> "$GITHUB_ENV"
+
+      - name: Build signed release APK and bundle
+        env:
+          TBB_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          export TBB_VERSION_CODE=$(git rev-list --count HEAD)
+          echo "versionCode $TBB_VERSION_CODE"
+          ./gradlew :app:assembleRelease :app:bundleRelease
+
+      - name: Show signing certificate
+        run: |
+          apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
+          keytool -printcert -jarfile app/build/outputs/bundle/release/app-release.aab
+
+      - name: Upload release APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-release-aab
+          path: app/build/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Remove keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/tbb-release.p12"
