@@ -99,12 +99,16 @@ private fun appendAnswerKey(
         // A quotes (R4) entry carries the chapter heading(s) the quoted verse falls under, so the key
         // reads on its own. An events (R5) entry stays the classic letter + chapter — its question IS
         // a chapter heading, so repeating it here would say nothing.
-        val headingLines: List<String> = if (!quotes) emptyList() else q.answers.flatMap { verseRef: VerseRef ->
-            practiceTest.content.studyData.headingsIntersecting(verseRef).map { escapeTypst(it) }
-        }.distinct()
+        // A quote that recurs gets one line per place, led by its reference — "AND" stays reserved for
+        // a single verse that straddles two headings.
+        val headingLines: List<String> = if (!quotes) emptyList() else q.answers.map { verseRef: VerseRef ->
+            val headings = practiceTest.content.studyData.headingsIntersecting(verseRef).map { escapeTypst(it) }
+            val lead = if (q.isRepeated) escapeTypst(verseRef.format(bookFormat)) + " " else ""
+            lead + headings.joinToString(" AND \\\n    ")
+        }
         appendable.append("  + *$label* (${escapeTypst(ref)})")
         if (headingLines.isEmpty()) appendable.appendLine()
-        else appendable.appendLine(" \\\n    " + headingLines.joinToString(" AND \\\n    "))
+        else appendable.appendLine(" \\\n    " + headingLines.joinToString(" \\\n    "))
     }
     appendable.appendLine("""]""")
 }
