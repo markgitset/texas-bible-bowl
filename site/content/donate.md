@@ -5,7 +5,8 @@ description: "Support Texas Bible Bowl, a 501(c)(3) non-profit. Donations are ta
 
 ## Support Texas Bible Bowl
 
-Texas Bible Bowl is a **501(c)(3) non-profit organization**. All contributions are
+Bridges to the World is a **501(c)(3) non-profit organization**, doing business as
+Texas Bible Bowl. All contributions are
 tax-deductible and donors receive receipts suitable for tax purposes.
 
 ## Donate Online
