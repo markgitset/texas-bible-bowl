@@ -1,7 +1,7 @@
 package net.markdrew.biblebowl.generate.practice
 
-import net.markdrew.biblebowl.model.ChapterRef
 import net.markdrew.biblebowl.model.Heading
+import net.markdrew.biblebowl.model.LocationQuestion
 import net.markdrew.biblebowl.model.PracticeContent
 
 /**
@@ -20,19 +20,14 @@ fun eventsTypst(practiceTest: PracticeTest): String? {
 /**
  * Samples chapter headings from [practiceTest]'s content into a list of multiple-choice questions.
  *
- * Repeated heading titles are merged so all chapters that share the title are accepted as correct.
+ * A heading title that recurs is asked once, with every chapter any heading of that title begins in
+ * (anywhere in the study set) accepted as correct.
  */
 private fun headingsCluePool(practiceTest: PracticeTest, nChoices: Int): List<MultiChoiceQuestion> {
     val content: PracticeContent = practiceTest.content
+    val byTitle: Map<String, List<Heading>> = content.studyData.headings.groupBy { it.title }
 
-    val headings: List<Heading> = content.headings()
-    val headingsByTitle: Map<String, List<Heading>> = headings.groupBy { it.title }
-
-    return headings.shuffled(practiceTest.random).take(practiceTest.numQuestions)
-        .map { heading ->
-            val answers: List<ChapterRef> = listOf(heading.chapterRange.start) +
-                // and for the unusual case of repeated chapter headings, add other starting chapter refs
-                headingsByTitle.getValue(heading.title).filterNot { it == heading }.map { it.chapterRange.start }
-            Question(heading.title, answers)
-        }.map { multiChoice(it, content.coveredChapters, practiceTest.random, nChoices) }
+    return content.headings().distinctBy { it.title }.shuffled(practiceTest.random).take(practiceTest.numQuestions)
+        .map { heading -> LocationQuestion(heading.title, byTitle.getValue(heading.title).map { it.verseRange.start }) }
+        .map { multiChoice(it, content.coveredChapters, practiceTest.random, nChoices) }
 }

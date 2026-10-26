@@ -1,12 +1,15 @@
 package net.markdrew.biblebowl.generate.practice
 
+import net.markdrew.biblebowl.model.LocationQuestion
 import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.model.StandardStudySet
 import net.markdrew.biblebowl.model.StudyData
+import net.markdrew.biblebowl.model.VerseRef
 import net.markdrew.biblebowl.ws.EsvIndexer
 import net.markdrew.biblebowl.ws.Passage
 import net.markdrew.biblebowl.ws.PassageMeta
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -40,8 +43,15 @@ class PracticeGeneratorsTest {
         return EsvIndexer(StandardStudySet.GENESIS.set).indexBook(sequenceOf(passage))
     }
 
-    /** A four-chapter Genesis fixture: enough chapters for the R4 (≥4) and R5 (≥3) generators. */
-    private fun genesisChapters(): StudyData {
+    /**
+     * A four-chapter Genesis fixture: enough chapters for the R4 (≥4) and R5 (≥3) generators. Verse 2 reads
+     * the same in every chapter (a repeated clue); [heading] and [quoted] can make headings and quotations
+     * repeat too.
+     */
+    private fun genesisChapters(
+        heading: (String) -> String = { "The Heading of Chapter $it" },
+        quoted: (String) -> String = { "This is the story told in chapter ${it.lowercase()} of the book." },
+    ): StudyData {
         val ordinals = listOf("One", "Two", "Three", "Four")
         val passages = (1..4).asSequence().map { c ->
             val firstVerse = 1_000_000 + c * 1_000 + 1
@@ -58,9 +68,9 @@ class PracticeGeneratorsTest {
                 meta = meta,
                 text = """
                     _______________________________________________________
-                    The Heading of Chapter ${ordinals[c - 1]}
+                    ${heading(ordinals[c - 1])}
 
-                    [1] And God said, “This is the story told in chapter ${ordinals[c - 1].lowercase()} of the book.” [2] The people of the land listened carefully to every word that was spoken to them that day. [3] And there was evening and there was morning in chapter ${ordinals[c - 1].lowercase()}.
+                    [1] And God said, “${quoted(ordinals[c - 1])}” [2] The people of the land listened carefully to every word that was spoken to them that day. [3] And there was evening and there was morning in chapter ${ordinals[c - 1].lowercase()}.
                 """.trimIndent(),
             )
         }
@@ -123,5 +133,48 @@ class PracticeGeneratorsTest {
         val a = findTheVerseTypst(PracticeTest(Round.FIND_THE_VERSE, genesisChapter1().practice(), numQuestions = 3, randomSeed = 7))
         val b = findTheVerseTypst(PracticeTest(Round.FIND_THE_VERSE, genesisChapter1().practice(), numQuestions = 3, randomSeed = 7))
         assertTrue(a == b, "same seed + content yields identical output")
+    }
+
+    @Test
+    fun findTheVerseKeyNamesEveryVerseARepeatedClueOccursIn() {
+        val studyData = genesisChapters()
+        val typst = findTheVerseTypst(PracticeTest(Round.FIND_THE_VERSE, studyData.practice(), numQuestions = 50, randomSeed = 3))
+        val clue = "The people of the land listened carefully to every word that was spoken to them that day."
+        assertEquals(1, Regex(Regex.escape(clue)).findAll(typst).count(), "a repeated clue is asked once")
+        val key = typst.substringAfter("ANSWER KEY")
+        assertTrue(
+            Regex("""Genesis 1:2\*[\s\S]*?_or_ \*Genesis 2:2\*[\s\S]*?_or_ \*Genesis 3:2\*[\s\S]*?_or_ \*Genesis 4:2""")
+                .containsMatchIn(key),
+            "the key lists all four places",
+        )
+    }
+
+    @Test
+    fun quotesAskARepeatedQuotationOnceAndAcceptEveryChapter() {
+        val studyData = genesisChapters(quoted = { "Behold, I am with you always." })
+        val typst = quotesTypst(PracticeTest(Round.QUOTES, studyData.practice(), numQuestions = 50, randomSeed = 5))!!
+        assertEquals(1, Regex("Behold, I am with you always").findAll(typst.substringBefore("ANSWER KEY")).count())
+        assertTrue(typst.substringAfter("ANSWER KEY").contains("1:1 or 2:1 or 3:1 or 4:1"), "the key names every place")
+    }
+
+    @Test
+    fun eventsAskARepeatedHeadingOnceAndAcceptEveryChapter() {
+        val studyData = genesisChapters(heading = { if (it == "Two" || it == "Four") "The Same Heading" else "Heading $it" })
+        val typst = eventsTypst(PracticeTest(Round.EVENTS, studyData.practice(), numQuestions = 50, randomSeed = 5))!!
+        assertEquals(1, Regex("The Same Heading").findAll(typst.substringBefore("ANSWER KEY")).count())
+        assertTrue(typst.substringAfter("ANSWER KEY").contains("(chapter 2 or 4)"), "the key names both chapters")
+    }
+
+    @Test
+    fun multipleChoiceNeverOffersAnotherCorrectChapterAsWrong() {
+        val studyData = genesisChapters()
+        val chapters = studyData.chapterRefs
+        val q = LocationQuestion("clue", listOf(VerseRef(chapters[0], 2), VerseRef(chapters[2], 2)))
+        repeat(20) { seed ->
+            val mc = multiChoice(q, chapters, kotlin.random.Random(seed), nChoices = 4)
+            val right = mc.choices.filterNotNull().filter { q.acceptsChapter(it) }
+            assertTrue(right.size <= 1, "at most one right choice offered, got $right")
+            if (right.isEmpty()) assertEquals(mc.noneIndex, mc.correctChoice) else assertEquals(mc.choices.indexOf(right.single()), mc.correctChoice)
+        }
     }
 }
