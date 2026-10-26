@@ -315,8 +315,16 @@ This renders the real pipeline without hitting Crossway.
   secrets; Mark wants that behavior kept).
 - ESV license is a non-profit license: the ESV token, text cache, and all analysis
   caching stay **server-side only**. The verse quiz's `GET /study/verses` is public because it
-  hands out a random sample of at most 50 verses per request (`MAX_QUIZ_VERSES`), never the
+  hands out a random sample of at most 50 verse wordings per request (`MAX_QUIZ_VERSES`), never the
   running text in bulk — keep that cap if you touch it.
+- **Every "where is this?" question is a `LocationQuestion`** (core commonMain): a piece of the text
+  (heading, verse, quote, sentence fragment) plus EVERY place that wording occurs in the set —
+  refrains and repeated heading titles are real, and each place is a right answer. Group with
+  `groupByWording` (case/whitespace-insensitive), ask a repeated wording once, never offer another
+  place as a wrong choice, and name every place in answer keys, card backs and quiz feedback (the
+  quizzes' `PlaceQuestion.repeatNote`, shown before moving on). Never drop repeats or short items to
+  dodge ambiguity. Covers the headings/verses quizzes, R1/R4/R5 practice tests, heading flashcards,
+  the headings exports and the verse decks; the community bank (`BankQuestion`) is outside it.
 - **Password-reset email** (`POST /auth/forgot-password` → 6-digit code): outbound SMTP is
   configured entirely by env vars (`SMTP_HOST`/`SMTP_USERNAME`/`SMTP_PASSWORD`, optional
   `SMTP_PORT`=587 and `SMTP_FROM`=username — fly secrets in prod). Unset → `LogOnlyEmailService`
