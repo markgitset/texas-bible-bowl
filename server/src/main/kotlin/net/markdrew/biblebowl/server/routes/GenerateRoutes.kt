@@ -731,10 +731,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
         // to one season's material (a few thousand prompt/answer rows).
         val pool = questions.list(QuestionStatus.APPROVED, scope.toQuestionScope(), roundType = round)
         call.advertiseCanonicalScope(scope)
-        val baseName = PdfFileNames.withSet(
-            scope.set.simpleName,
-            "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}${scope.chapterSuffix()}",
-        )
+        val baseName = PdfFileNames.withSet(scope.set.simpleName, PdfFileNames.questionExport(round, scope.chapterSuffix()))
         when (format) {
             ExportFormat.SPACE_CSV, ExportFormat.QUIZLET_TXT -> {
                 if (pool.isEmpty()) return call.respond(HttpStatusCode.NotFound, ApiError("no_questions", "No approved questions match"))
@@ -782,7 +779,7 @@ private suspend fun io.ktor.server.routing.RoutingContext.respondExport(
     if (headings.isEmpty()) return call.respond(HttpStatusCode.NotFound, ApiError("no_headings", "No headings in scope"))
     // Advertised under `chapter`, the key this route reads (see above).
     call.advertiseCanonicalScope(scope)
-    val baseName = PdfFileNames.withSet(scope.set.simpleName, "headings${scope.chapterSuffix()}")
+    val baseName = PdfFileNames.withSet(scope.set.simpleName, PdfFileNames.headingsExport(scope.chapterSuffix()))
     // One row per title: a heading that recurs (anywhere in the set) is one question, and every chapter
     // it begins in is right.
     val twinChapters: Map<String, List<ChapterRef>> = allHeadings.groupBy({ it.title }, { it.chapterRange.start })
