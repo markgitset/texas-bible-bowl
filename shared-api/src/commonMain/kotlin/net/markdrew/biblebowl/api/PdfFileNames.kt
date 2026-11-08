@@ -1,6 +1,7 @@
 package net.markdrew.biblebowl.api
 
 import net.markdrew.biblebowl.model.ChapterRef
+import net.markdrew.biblebowl.model.Round
 import net.markdrew.biblebowl.model.StudyScope
 
 /**
@@ -80,6 +81,16 @@ object PdfFileNames {
 
     /** The one-page listing of every ESV section heading in the set, with the verses it covers. */
     fun chapterHeadings(): String = "chapter-headings.pdf"
+
+    /**
+     * Base name (no prefix app, no extension) of a question-bank export, e.g. `questions-fact_finder-ch2`;
+     * the exports add their target app in front (`kahoot-…`, `space-…`) and their own extension.
+     */
+    fun questionExport(round: Round?, chapterSuffix: String): String =
+        "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}$chapterSuffix"
+
+    /** Base name of a chapter-headings export, e.g. `headings-through-ch5` (see [questionExport]). */
+    fun headingsExport(chapterSuffix: String): String = "headings$chapterSuffix"
 
     /** The Round 5 headings deck, cumulatively scoped, e.g. `heading-flashcards-through-ch5.pdf`. */
     fun headingFlashcards(throughChapter: Int? = null): String =

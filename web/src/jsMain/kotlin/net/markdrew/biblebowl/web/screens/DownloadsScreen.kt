@@ -6,11 +6,15 @@ import kotlinx.coroutines.await
 import kotlinx.coroutines.launch
 import kotlin.js.json
 import net.markdrew.biblebowl.api.HeadingSize
+import net.markdrew.biblebowl.api.KahootHandoff
+import net.markdrew.biblebowl.api.PdfFileNames
 import net.markdrew.biblebowl.api.Permission
 import net.markdrew.biblebowl.api.ScopeSelection
 import net.markdrew.biblebowl.api.StudyMaterialDto
 import net.markdrew.biblebowl.api.StudyMaterialType
 import net.markdrew.biblebowl.api.StudyScopeParams
+import net.markdrew.biblebowl.api.chapterSuffix
+import net.markdrew.biblebowl.api.resolveWithin
 import net.markdrew.biblebowl.api.filePath
 import net.markdrew.biblebowl.api.scopeQueryParams
 import net.markdrew.biblebowl.model.Round
@@ -59,7 +63,8 @@ private val showTypstSource: Boolean
     get() = Session.user?.let { Permission.SEASON_MANAGE in it.permissions } == true
 
 /**
- * Fetches [href] with the signed-in user's bearer token and saves the response as a file. [what] names
+ * Fetches [href] with the signed-in user's bearer token (none when signed out, for a public file
+ * fetched this way) and saves the response as a file. [what] names
  * the download in any failure alert; [fallbackFileName] is used only if the response arrives without a
  * `Content-Disposition`.
  *
@@ -71,9 +76,10 @@ private val showTypstSource: Boolean
 private fun downloadWithAuth(href: String, what: String, fallbackFileName: String) {
     Shell.scope.launch {
         val response = runCatching {
+            val token = Session.api.token
             window.fetch(
                 href,
-                RequestInit(headers = json("Authorization" to "Bearer ${Session.api.token.orEmpty()}")),
+                if (token == null) RequestInit() else RequestInit(headers = json("Authorization" to "Bearer $token")),
             ).await()
         }.getOrNull()
         if (response == null || !response.ok) {
@@ -176,6 +182,8 @@ object DownloadsScreen {
     private var practiceSeed: String = ""
     private var exportHeadings = false
     private var exportRound: Round? = null
+    // The Kahoot card's import steps, shown once "Make it in Kahoot" has been pressed.
+    private var kahootStepsShown = false
 
     private lateinit var root: HTMLElement
     private lateinit var grid: HTMLElement // the current section page's tile row; cards append cols to it
@@ -506,13 +514,14 @@ object DownloadsScreen {
         val exportCustomized = exportHeadings || exportRound != null
         downloadCard(
             title = "Kahoot spreadsheet",
-            subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout). " +
+            subtitle = "Multiple-choice questions to import into your own Kahoot account. " +
                 "One kahoot holds 100 questions, so that's the most a sheet carries — narrow the scope " +
                 "to choose which 100." + customizedNote(exportCustomized),
             scope = scopeLine(exportScope),
             href = exportUrl(ExportApp.KAHOOT),
             customize = Customize.Export(ExportApp.KAHOOT),
-            buttonLabel = "Download",
+            buttonLabel = "Download .xlsx",
+            kahootFileName = kahootFileName(),
         )
         downloadCard(
             title = "Questions for the Space app",
@@ -624,6 +633,13 @@ object DownloadsScreen {
     private fun verseDeckUrl(path: String): String =
         generateUrl(path, *scopedParams(verseScope, chapterKey = StudyScopeParams.THROUGH_CHAPTER))
 
+    /** The Kahoot sheet's file name as the server sends it, so the import steps can name it. */
+    private fun kahootFileName(): String {
+        val suffix = exportScope.normalized().resolveWithin(Session.studySet).chapterSuffix()
+        val base = if (exportHeadings) PdfFileNames.headingsExport(suffix) else PdfFileNames.questionExport(exportRound, suffix)
+        return "kahoot-${PdfFileNames.withSet(Session.studySet.simpleName, base)}.xlsx"
+    }
+
     private fun exportUrl(app: ExportApp): String = generateUrl(
         when (app) {
             ExportApp.KAHOOT -> "/generate/kahoot-questions.xlsx"
@@ -697,6 +713,11 @@ object DownloadsScreen {
         // The customized chapter scope, e.g. "Scoped to Acts 1-5" — its own emphasized line rather
         // than a sentence buried at the end of the subtitle, so a narrowed download can't be missed.
         scope: String? = null,
+        /**
+         * Makes this the Kahoot card: the primary button saves the sheet (named this) AND opens Kahoot's
+         * creator, then the card lists the import steps; the plain download drops to a secondary link.
+         */
+        kahootFileName: String? = null,
     ) {
         val open = customize != null && DownloadsScreen.customize == customize
         tile(expanded = open) {
@@ -705,6 +726,24 @@ object DownloadsScreen {
             if (scope != null) child("p", "card-text small fw-semibold text-primary", scope)
             child("div", "d-flex align-items-center gap-2 mt-auto") {
                 when {
+                    kahootFileName != null -> {
+                        child("button", "btn btn-primary btn-sm", "Make it in Kahoot") {
+                            setAttribute("type", "button")
+                            onClick {
+                                // Open the tab first, while we're still inside the click: a window opened
+                                // after the fetch's await would be popup-blocked.
+                                window.open(KahootHandoff.CREATOR_URL, "_blank", "noopener")
+                                downloadWithAuth(href, what = "the Kahoot spreadsheet", fallbackFileName = kahootFileName)
+                                kahootStepsShown = true
+                                rerender()
+                            }
+                        }
+                        child("a", "btn btn-link btn-sm", buttonLabel) {
+                            setAttribute("href", href)
+                            setAttribute("target", "_blank")
+                            setAttribute("rel", "noopener")
+                        }
+                    }
                     !requiresAuth -> child("a", "btn btn-primary btn-sm", buttonLabel) {
                         setAttribute("href", href)
                         setAttribute("target", "_blank")
@@ -750,6 +789,14 @@ object DownloadsScreen {
                                     .removeSuffix(".pdf") + ".typ",
                             )
                         }
+                    }
+                }
+            }
+            if (kahootFileName != null && kahootStepsShown) {
+                child("div", "border-top pt-3 mt-3 small") {
+                    child("p", "fw-semibold mb-1", "Kahoot is open in a new tab. To build your kahoot:")
+                    child("ol", "mb-0 ps-3") {
+                        KahootHandoff.steps(kahootFileName).forEach { child("li", text = it) }
                     }
                 }
             }

@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.app.screens
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -42,6 +43,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.HeadingSize
+import net.markdrew.biblebowl.api.KahootHandoff
 import net.markdrew.biblebowl.api.PdfFileNames
 import net.markdrew.biblebowl.api.chapterSuffix
 import net.markdrew.biblebowl.api.resolveWithin
@@ -232,7 +234,17 @@ fun StudySectionScreen(
     var verseScope by StudyChoices::verseScope
     val scope = rememberCoroutineScope()
 
-    fun download(cardTitle: String, fileName: String, mime: String = Mime.PDF, fetch: suspend () -> ByteArray) {
+    // The saved Kahoot sheet's name once "Make it in Kahoot" has run, so its card can list the import steps.
+    var kahootSheet by remember { mutableStateOf<String?>(null) }
+    val uriHandler = LocalUriHandler.current
+
+    fun download(
+        cardTitle: String,
+        fileName: String,
+        mime: String = Mime.PDF,
+        onSaved: () -> Unit = {},
+        fetch: suspend () -> ByteArray,
+    ) {
         if (busyCard != null) return
         customize = null
         busyCard = cardTitle; message = null
@@ -240,6 +252,7 @@ fun StudySectionScreen(
             try {
                 message = saveFile(fileName, fetch(), mime)
                 isError = false
+                onSaved()
             } catch (e: Throwable) {
                 message = "Download failed: ${e.message}"
                 isError = true
@@ -353,18 +366,28 @@ fun StudySectionScreen(
         }
     }
 
-    fun downloadExport(app: ExportApp) {
+    fun downloadExport(app: ExportApp, openKahoot: Boolean = false) {
         val headings = exportHeadings
         val round = exportRound.takeIf { !headings }
         val scope = exportScope.normalized()
         val base = withSet(
-            if (headings) "headings${chSuffix(scope)}"
-            else "questions${round?.let { "-${it.name.lowercase()}" } ?: ""}${chSuffix(scope)}",
+            if (headings) PdfFileNames.headingsExport(chSuffix(scope))
+            else PdfFileNames.questionExport(round, chSuffix(scope)),
         )
         val book = scope.book?.name
         val from = scope.fromChapter
         when (app) {
-            ExportApp.KAHOOT -> download("Kahoot spreadsheet", "kahoot-$base.xlsx", Mime.XLSX) {
+            ExportApp.KAHOOT -> download(
+                "Kahoot spreadsheet",
+                "kahoot-$base.xlsx",
+                Mime.XLSX,
+                onSaved = {
+                    if (openKahoot) {
+                        kahootSheet = "kahoot-$base.xlsx"
+                        uriHandler.openUri(KahootHandoff.CREATOR_URL)
+                    }
+                },
+            ) {
                 api.kahootQuestionsXlsx(headings, round, scope.chapter, book = book, fromChapter = from)
             }
             ExportApp.SPACE -> download("Questions for the Space app", "space-$base.csv", Mime.CSV) {
@@ -604,13 +627,26 @@ fun StudySectionScreen(
                 val exportCustomized = exportHeadings || exportRound != null
                 DownloadCard(
                     title = "Kahoot spreadsheet",
-                    subtitle = "Multiple-choice questions as a Kahoot-importable .xlsx (their template layout)." +
+                    subtitle = "Multiple-choice questions to import into your own Kahoot account." +
                         customizedNote(exportCustomized),
                     scope = scopeLine(exportScope),
                     busyCard = busyCard,
-                    onClick = { downloadExport(ExportApp.KAHOOT) },
+                    onClick = { downloadExport(ExportApp.KAHOOT, openKahoot = true) },
                     onCustomize = { customize = Customize.Export(ExportApp.KAHOOT) },
-                )
+                    buttonLabel = "Make it in Kahoot",
+                    secondary = "Download .xlsx" to { downloadExport(ExportApp.KAHOOT) },
+                ) {
+                    kahootSheet?.let { sheet ->
+                        Text(
+                            "Kahoot is open in your browser. To build your kahoot:",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        KahootHandoff.steps(sheet).forEachIndexed { i, step ->
+                            Text("${i + 1}. $step", style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
                 DownloadCard(
                     title = "Questions for the Space app",
                     subtitle = "Question-and-answer pairs as a CSV that imports straight into Space " +
@@ -700,7 +736,6 @@ fun StudySectionScreen(
             runCatching { api.studyMaterials(set = studySet.simpleName, section = section) }
                 .onSuccess { extraMaterials = it }
         }
-        val uriHandler = LocalUriHandler.current
         extraMaterials.forEach { m ->
             when (m.type) {
                 StudyMaterialType.DOCUMENT -> DownloadCard(
@@ -1064,6 +1099,10 @@ private fun DownloadCard(
     // The customized chapter scope, e.g. "Scoped to Acts 1-5" — its own emphasized line rather than
     // a sentence buried at the end of the subtitle, so a narrowed download can't be missed.
     scope: String? = null,
+    // A second, quieter action beside the primary one: its label and what it does.
+    secondary: Pair<String, () -> Unit>? = null,
+    // Anything the card shows under its actions (the Kahoot import steps).
+    footer: @Composable ColumnScope.() -> Unit = {},
 ) {
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1090,10 +1129,14 @@ private fun DownloadCard(
                             else "Download PDF",
                     )
                 }
+                if (secondary != null) {
+                    TextButton(onClick = secondary.second, enabled = busyCard == null) { Text(secondary.first) }
+                }
                 if (onCustomize != null) {
                     TextButton(onClick = onCustomize, enabled = busyCard == null) { Text("Customize") }
                 }
             }
+            footer()
         }
     }
 }
