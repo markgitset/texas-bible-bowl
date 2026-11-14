@@ -325,6 +325,16 @@ This renders the real pipeline without hitting Crossway.
   quizzes' `PlaceQuestion.repeatNote`, shown before moving on). Never drop repeats or short items to
   dodge ambiguity. Covers the headings/verses quizzes, R1/R4/R5 practice tests, heading flashcards,
   the headings exports and the verse decks; the community bank (`BankQuestion`) is outside it.
+- **Account deletion** (`POST /auth/delete-account`, password-confirmed; Google Play requires it
+  in-app and on the web): the `users` row is **scrubbed, not removed** — questions, scores and
+  congregations key to it NOT NULL/RESTRICT — and `users.deleted_at_epoch_ms` (V7) hides the
+  tombstone from `findById`/`findByEmail`/`search`, so live JWTs stop resolving and the email can
+  sign up again. Any new query over `UsersTable` that lists accounts must filter on it.
+  `PeopleRepository.releaseAccount` runs first: unregistered people are deleted, rostered people
+  stay as event records (the account's own person loses its contact details). Admins are refused
+  until the role is removed. `site/content/privacy.md` (`/privacy/`) describes exactly this and
+  what is collected — **update it whenever data collection or deletion behavior changes**; its
+  `#deleting-your-account` section is the deletion URL listed in Play Console.
 - **Password-reset email** (`POST /auth/forgot-password` → 6-digit code): outbound SMTP is
   configured entirely by env vars (`SMTP_HOST`/`SMTP_USERNAME`/`SMTP_PASSWORD`, optional
   `SMTP_PORT`=587 and `SMTP_FROM`=username — fly secrets in prod). Unset → `LogOnlyEmailService`
