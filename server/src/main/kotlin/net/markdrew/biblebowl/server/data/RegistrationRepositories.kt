@@ -164,6 +164,14 @@ interface PeopleRepository {
      * (the unique person-per-season would break); the registrar resolves that overlap first.
      */
     fun mergePeople(keepId: String, mergeId: String): MergeResult
+    /**
+     * Detaches the account [userId] from every person record ahead of its deletion (see
+     * [UserRepository.deleteAccount]): it stops being anyone's manager and stops being linked as
+     * its own person. A person left with no event participation is deleted outright. One who is on
+     * a registration stays as that event's record — but the account's own person loses the contact
+     * details (email, address, phone) the account supplied. Idempotent.
+     */
+    fun releaseAccount(userId: String)
 }
 
 /**
@@ -994,6 +1002,15 @@ class InMemoryRegistrationRepository(
         keep.firstSeasonYear = listOfNotNull(keep.firstSeasonYear, merge.firstSeasonYear).minOrNull()
         contestants.remove(mergeId)
         MergeResult.Merged(PersonWithParticipationsDto(personDtoOf(keep), participationsOf(keepId)))
+    }
+
+    override fun releaseAccount(userId: String): Unit = synchronized(lock) {
+        // This double keeps no contact details and no self-link on a person, so releasing is just
+        // un-managing, plus dropping the people nothing else references.
+        val managed = contestants.values.filter { it.ownerUserId == userId }
+        managed.forEach { it.ownerUserId = null }
+        val enrolled = memberContestant.values.toSet() + individualContestant.values
+        managed.filter { it.id !in enrolled }.forEach { contestants.remove(it.id) }
     }
 
     private fun personDtoOf(c: Contestant) = PersonDto(

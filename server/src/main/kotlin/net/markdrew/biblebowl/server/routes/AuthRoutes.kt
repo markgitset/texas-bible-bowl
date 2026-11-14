@@ -17,6 +17,7 @@ import java.security.SecureRandom
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ChangePasswordRequest
+import net.markdrew.biblebowl.api.DeleteAccountRequest
 import net.markdrew.biblebowl.api.ForgotPasswordRequest
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.RegisterRequest
@@ -28,6 +29,7 @@ import net.markdrew.biblebowl.api.UpdateProfileRequest
 import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.server.data.InMemoryPasswordResetRepository
 import net.markdrew.biblebowl.server.data.PasswordResetRepository
+import net.markdrew.biblebowl.server.data.PeopleRepository
 import net.markdrew.biblebowl.server.data.ResetCode
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.email.EmailService
@@ -49,6 +51,7 @@ fun Route.authRoutes(
     jwt: JwtService,
     resets: PasswordResetRepository = InMemoryPasswordResetRepository(),
     email: EmailService = LogOnlyEmailService(),
+    people: PeopleRepository? = null,
 ) {
     route("/auth") {
         post("/register") {
@@ -171,6 +174,39 @@ fun Route.authRoutes(
                 }
                 users.updatePassword(user.id, Passwords.hash(req.newPassword))
                 call.respond(mapOf("status" to "changed"))
+            }
+
+            /**
+             * Self-service account deletion (Google Play requires one in-app and on the web). Proves
+             * the password like a password change does, then scrubs the account — see
+             * [UserRepository.deleteAccount] for what goes and what is kept anonymously.
+             */
+            post("/delete-account") {
+                val user = currentUser(users) ?: return@post
+                val req = call.receive<DeleteAccountRequest>()
+                if (!Passwords.verify(req.currentPassword, user.passwordHash)) {
+                    call.respond(HttpStatusCode.BadRequest, ApiError("bad_current_password", "Current password is incorrect"))
+                    return@post
+                }
+                // An administrator vanishing by accident could leave the site with nobody able to
+                // run it; the role has to be handed off (and removed) deliberately first.
+                if (user.roles.any { it.role == Role.ADMIN }) {
+                    call.respond(
+                        HttpStatusCode.Conflict,
+                        ApiError(
+                            "admin_account",
+                            "Administrator accounts can't be deleted. Have another administrator " +
+                                "remove your Admin role first.",
+                        ),
+                    )
+                    return@post
+                }
+                // People first: if the second step failed, what's left is an intact account that
+                // can simply try again, never a deleted one still attached to person records.
+                people?.releaseAccount(user.id)
+                users.deleteAccount(user.id)
+                resets.delete(user.id)
+                call.respond(mapOf("status" to "deleted"))
             }
 
             get("/me") {

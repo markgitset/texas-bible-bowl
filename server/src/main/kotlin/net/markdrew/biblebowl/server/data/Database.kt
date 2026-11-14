@@ -23,6 +23,9 @@ object UsersTable : Table("users") {
     // claimed or email-matched at signup. Declared without .references() to avoid the
     // UsersTable <-> PeopleTable object-initialization cycle; the DB enforces the FK.
     val personId = varchar("person_id", 36).nullable().uniqueIndex()
+    // Non-null = a deleted account's tombstone (see UserRepository.deleteAccount): scrubbed of
+    // everything personal and invisible to lookups, kept only so NOT NULL keys elsewhere hold.
+    val deletedAtEpochMs = long("deleted_at_epoch_ms").nullable()
     override val primaryKey = PrimaryKey(id)
 }
 

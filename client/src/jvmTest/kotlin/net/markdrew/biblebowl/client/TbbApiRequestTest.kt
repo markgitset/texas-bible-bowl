@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.client
 import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.runBlocking
 import net.markdrew.biblebowl.api.ChangePasswordRequest
+import net.markdrew.biblebowl.api.DeleteAccountRequest
 import net.markdrew.biblebowl.api.CreateCongregationRequest
 import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.LoginRequest
@@ -318,6 +319,10 @@ class TbbApiRequestTest {
 
         api.changePassword(ChangePasswordRequest("old-password", "new-password-1"))
         assertEquals("POST" to "/auth/change-password", methods.last() to requests.last())
+
+        api.deleteAccount(DeleteAccountRequest("new-password-1"))
+        assertEquals("POST" to "/auth/delete-account", methods.last() to requests.last())
+        assertEquals(null, api.user, "deleting the account signs the session out")
 
         // Every registration call must carry the signed-in token.
         assertTrue(authHeaders.drop(1).all { it == "Bearer tok123" }, "missing Bearer on some call: $authHeaders")

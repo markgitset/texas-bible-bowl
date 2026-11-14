@@ -44,6 +44,7 @@ import net.markdrew.biblebowl.api.VerseQuestionDto
 import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.ChangePasswordRequest
+import net.markdrew.biblebowl.api.DeleteAccountRequest
 import net.markdrew.biblebowl.api.ForgotPasswordRequest
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
@@ -205,6 +206,17 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         client.post("$baseUrl/auth/change-password") {
             authorize(); contentType(ContentType.Application.Json); setBody(req)
         }.bodyOrThrow<Unit>()
+    }
+
+    /**
+     * Permanently deletes the signed-in user's account (requires the current password), then
+     * forgets the session — the token is dead server-side from this point.
+     */
+    suspend fun deleteAccount(req: DeleteAccountRequest) {
+        client.post("$baseUrl/auth/delete-account") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow<Unit>()
+        signOut()
     }
 
     /** Fetches the signed-in user's profile (requires a token). */
