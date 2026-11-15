@@ -139,7 +139,4 @@ If we change this policy we will post the new version here and update the effect
 
 ## Contact
 
-Texas Bible Bowl  
-10431 Remuda View Drive  
-San Antonio, TX 78254  
-[info@texasbiblebowl.org](mailto:info@texasbiblebowl.org)
+Email [info@texasbiblebowl.org](mailto:info@texasbiblebowl.org).
