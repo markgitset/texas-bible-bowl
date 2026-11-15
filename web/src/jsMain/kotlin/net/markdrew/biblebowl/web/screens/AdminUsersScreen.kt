@@ -99,8 +99,59 @@ object AdminUsersScreen {
                 user.roles.forEach { grant -> renderGrantLine(this, user, grant) }
 
                 renderGrantForm(this, user)
+                renderDeleteAccount(this, user)
             }
         }
+    }
+
+    /**
+     * Deletes the account on the user's behalf (`DELETE /users/{id}`) — for someone who asked by
+     * email or can't sign in. Two clicks, naming the account. Mirrors the server's guards: not
+     * yourself (the Account page does that, with your password) and not an administrator.
+     */
+    private fun renderDeleteAccount(parent: Element, user: UserDto) {
+        if (user.id == Session.user?.id || user.roles.any { it.role == Role.ADMIN }) return
+        val slot = parent.child("div", "border-top pt-2 mt-2")
+
+        fun closed() {
+            slot.clear()
+            slot.child("button", "btn btn-link link-danger btn-sm p-0", "Delete account…") {
+                setAttribute("type", "button")
+                onClick {
+                    slot.clear()
+                    slot.child(
+                        "p", "small mb-2",
+                        "Permanently delete ${user.email}? Their sign-in, profile, contact details and " +
+                            "roles are removed and can't be restored. Event registrations stay.",
+                    )
+                    val errorSlot = slot.child("div")
+                    slot.child("div", "d-flex gap-2") {
+                        child("button", "btn btn-outline-secondary btn-sm", "Cancel") {
+                            setAttribute("type", "button")
+                            onClick { closed() }
+                        }
+                        val confirm = child("button", "btn btn-danger btn-sm", "Delete forever") {
+                            setAttribute("type", "button")
+                        } as HTMLButtonElement
+                        confirm.onClick {
+                            confirm.disabled = true
+                            Shell.scope.launch {
+                                try {
+                                    Session.api.deleteUser(user.id)
+                                    results = results.filter { it.id != user.id }
+                                    renderResults()
+                                } catch (e: Throwable) {
+                                    confirm.disabled = false
+                                    errorSlot.clear()
+                                    errorSlot.child("p", "text-danger small mb-2", e.message ?: "Delete failed")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        closed()
     }
 
     private fun renderGrantLine(parent: Element, user: UserDto, grant: RoleGrant) {

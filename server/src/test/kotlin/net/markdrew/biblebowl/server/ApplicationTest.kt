@@ -148,7 +148,7 @@ class ApplicationTest {
         // Seed one approved multiple-choice question.
         val contestant: AuthResponse = json.decodeFromString(
             api.post("/auth/register") {
-                setBody(RegisterRequest("kid3@tbb.org", "password123", "Rhoda", birthdate = "2015-05-01"))
+                setBody(RegisterRequest("kid3@tbb.org", "password123", "Rhoda", birthdate = "2012-05-01"))
             }.bodyAsText()
         )
         val q: QuestionDto = json.decodeFromString(

@@ -14,18 +14,21 @@ import io.ktor.server.routing.put
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.security.SecureRandom
+import java.time.LocalDate
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ChangePasswordRequest
 import net.markdrew.biblebowl.api.DeleteAccountRequest
 import net.markdrew.biblebowl.api.ForgotPasswordRequest
 import net.markdrew.biblebowl.api.LoginRequest
+import net.markdrew.biblebowl.api.MIN_ACCOUNT_AGE
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.ResetPasswordRequest
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.UpdateProfileRequest
+import net.markdrew.biblebowl.api.isOldEnoughForAccount
 import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.server.data.InMemoryPasswordResetRepository
 import net.markdrew.biblebowl.server.data.PasswordResetRepository
@@ -62,6 +65,10 @@ fun Route.authRoutes(
             }
             if (!validBirthdateChoice(req.adult, req.birthdate)) {
                 call.respond(HttpStatusCode.BadRequest, birthdateError())
+                return@post
+            }
+            if (tooYoungForAccount(req.adult, req.birthdate)) {
+                call.respond(HttpStatusCode.BadRequest, tooYoungError())
                 return@post
             }
             if (users.findByEmail(req.email) != null) {
@@ -226,6 +233,12 @@ fun Route.authRoutes(
                     call.respond(HttpStatusCode.BadRequest, birthdateError())
                     return@put
                 }
+                // Only a CHANGE to an under-13 birthdate is refused: an account that predates the
+                // rule must still be able to edit its name or contact details.
+                if (req.birthdate != user.birthdate && tooYoungForAccount(req.adult, req.birthdate)) {
+                    call.respond(HttpStatusCode.BadRequest, tooYoungError())
+                    return@put
+                }
                 val updated = users.updateProfile(
                     userId = user.id,
                     displayName = req.displayName.trim(),
@@ -246,6 +259,16 @@ fun Route.authRoutes(
 /** Everyone is either an adult (no birthdate collected) or supplies a valid birthdate. */
 private fun validBirthdateChoice(adult: Boolean, birthdate: String?): Boolean =
     adult || (birthdate != null && isValidBirthdate(birthdate))
+
+/** True for a youth birthdate under [MIN_ACCOUNT_AGE] today (see [isOldEnoughForAccount]). */
+private fun tooYoungForAccount(adult: Boolean, birthdate: String?): Boolean =
+    !adult && birthdate != null && !isOldEnoughForAccount(birthdate, LocalDate.now().toString())
+
+private fun tooYoungError() = ApiError(
+    "too_young",
+    "You need to be at least $MIN_ACCOUNT_AGE to have your own account. Ask a parent or guardian to " +
+        "create an account and add you with the code from your coach.",
+)
 
 private fun birthdateError() =
     ApiError("invalid_birthdate", "A valid birthdate (YYYY-MM-DD) is required unless registering as an adult")

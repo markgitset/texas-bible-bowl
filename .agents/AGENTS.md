@@ -332,7 +332,12 @@ This renders the real pipeline without hitting Crossway.
   sign up again. Any new query over `UsersTable` that lists accounts must filter on it.
   `PeopleRepository.releaseAccount` runs first: unregistered people are deleted, rostered people
   stay as event records (the account's own person loses its contact details). Admins are refused
-  until the role is removed. `site/content/privacy.md` (`/privacy/`) describes exactly this and
+  until the role is removed. Admins can do the same for another user from Manage users
+  (`DELETE /users/{id}`, USER_MANAGE; never themselves or another admin) — that is how the
+  policy's "email us and we'll delete it" gets honored. **Under-13s can't hold an account**
+  (`isOldEnoughForAccount`, enforced server-side at signup and on birthdate changes; the forms
+  give no hint of the cutoff): a parent's account claims the child instead.
+  `site/content/privacy.md` (`/privacy/`) describes exactly this and
   what is collected — **update it whenever data collection or deletion behavior changes**; its
   `#deleting-your-account` section is the deletion URL listed in Play Console.
 - **Password-reset email** (`POST /auth/forgot-password` → 6-digit code): outbound SMTP is

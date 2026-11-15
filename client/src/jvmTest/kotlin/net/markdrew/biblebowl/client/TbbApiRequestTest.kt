@@ -378,6 +378,9 @@ class TbbApiRequestTest {
         api.revokeRole("u2", RoleGrant(Role.ADMIN, ScopeType.GLOBAL, null))
         assertTrue("scopeId" !in requests.last(), requests.last())
 
+        api.deleteUser("u2")
+        assertEquals("DELETE" to "/users/u2", methods.last() to requests.last())
+
         assertTrue(authHeaders.drop(1).all { it == "Bearer tok123" }, "missing Bearer on some call: $authHeaders")
     }
 

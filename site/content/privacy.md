@@ -85,9 +85,10 @@ albums are hosted on Google Photos and open on Google's site.
 Texas Bible Bowl is a youth event, so much of the information we hold is about children. Nearly
 all of it is given to us by a coach or a parent when a congregation registers.
 
-A child under 13 should create an account only with a parent's or guardian's permission. A parent
-can link their own account to their child's registration and manage it for them. If you are a
-parent or guardian and want to see, correct or delete what we hold about your child, email us and
+Children under 13 cannot create an account, and we do not knowingly collect personal information
+from them directly. A parent or guardian can create their own account and link it to their child's
+registration with the code from the child's coach, then follow the registration and scores for
+them. If you are a parent or guardian and want to see, correct or delete what we hold about your child, email us and
 we will do so.
 
 ## How long we keep it

@@ -16,6 +16,8 @@ import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.UserDto
 import net.markdrew.biblebowl.server.data.CongregationRepository
 import net.markdrew.biblebowl.server.data.UserRecord
+import net.markdrew.biblebowl.server.data.PasswordResetRepository
+import net.markdrew.biblebowl.server.data.PeopleRepository
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.security.currentUser
 import net.markdrew.biblebowl.server.security.requirePermission
@@ -27,13 +29,51 @@ import net.markdrew.biblebowl.server.security.toDto
  * congregations the coach creates. Grant identity rides DELETE query params (proxies drop DELETE
  * bodies), and revoking your own GLOBAL ADMIN grant is refused to prevent lockout.
  */
-fun Route.userRoutes(users: UserRepository, congregations: CongregationRepository) {
+fun Route.userRoutes(
+    users: UserRepository,
+    congregations: CongregationRepository,
+    people: PeopleRepository? = null,
+    resets: PasswordResetRepository? = null,
+) {
     authenticate {
         get("/users") {
             val user = currentUser(users) ?: return@get
             if (!requirePermission(user, Permission.USER_MANAGE)) return@get
             val query = call.request.queryParameters["query"] ?: ""
             call.respond(users.search(query).toDtosWithCongregationNames(congregations))
+        }
+
+        /**
+         * Deletes someone else's account on their behalf — the same deletion as the self-service
+         * `POST /auth/delete-account`, for a user who asked by email or can't sign in. Your own
+         * account goes through that route (it proves the password), and an administrator's must
+         * lose the Admin role first.
+         */
+        delete("/users/{userId}") {
+            val user = currentUser(users) ?: return@delete
+            if (!requirePermission(user, Permission.USER_MANAGE)) return@delete
+            val userId = call.parameters["userId"]!!
+            if (userId == user.id) {
+                return@delete call.respond(
+                    HttpStatusCode.Conflict,
+                    ApiError("cannot_delete_self", "Delete your own account from your Account page"),
+                )
+            }
+            val target = users.findById(userId) ?: return@delete call.respond(
+                HttpStatusCode.NotFound,
+                ApiError("not_found", "No such user"),
+            )
+            if (target.roles.any { it.role == Role.ADMIN }) {
+                return@delete call.respond(
+                    HttpStatusCode.Conflict,
+                    ApiError("admin_account", "Remove this user's Admin role before deleting the account"),
+                )
+            }
+            call.application.environment.log.info("Account ${target.id} deleted by administrator ${user.id}")
+            people?.releaseAccount(target.id) // people first — see the self-service route
+            users.deleteAccount(target.id)
+            resets?.delete(target.id)
+            call.respond(mapOf("status" to "deleted"))
         }
 
         post("/users/{userId}/roles") {

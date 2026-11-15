@@ -905,6 +905,11 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     suspend fun searchUsers(query: String): List<UserDto> =
         client.get("$baseUrl/users") { authorize(); parameter("query", query) }.bodyOrThrow()
 
+    /** Permanently deletes another user's account on their behalf (USER_MANAGE; not admins, not yourself). */
+    suspend fun deleteUser(userId: String) {
+        client.delete("$baseUrl/users/$userId") { authorize() }.bodyOrThrow<Unit>()
+    }
+
     /** Grants [grant] to [userId] (ROLE_GRANT); returns the updated user. Idempotent. */
     suspend fun grantRole(userId: String, grant: RoleGrant): UserDto =
         client.post("$baseUrl/users/$userId/roles") {

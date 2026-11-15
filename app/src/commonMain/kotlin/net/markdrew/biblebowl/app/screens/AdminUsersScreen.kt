@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -89,14 +91,23 @@ fun AdminUsersScreen(api: TbbApi, currentUser: UserDto?, onUserChange: (UserDto)
         }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
             items(results, key = { it.id }) { user ->
-                UserCard(api, user, currentUser, onUpdated = ::updateUser)
+                UserCard(
+                    api, user, currentUser, onUpdated = ::updateUser,
+                    onDeleted = { results = results.filter { it.id != user.id } },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun UserCard(api: TbbApi, user: UserDto, currentUser: UserDto?, onUpdated: (UserDto) -> Unit) {
+private fun UserCard(
+    api: TbbApi,
+    user: UserDto,
+    currentUser: UserDto?,
+    onUpdated: (UserDto) -> Unit,
+    onDeleted: () -> Unit,
+) {
     val season = LocalSeason.current
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -113,8 +124,61 @@ private fun UserCard(api: TbbApi, user: UserDto, currentUser: UserDto?, onUpdate
             }
             user.roles.forEach { grant -> GrantLine(api, user, currentUser, grant, onUpdated) }
             GrantForm(api, user, onUpdated)
+            // Mirrors the server's guards: not yourself (the Account screen does that, with your
+            // password) and not an administrator.
+            if (user.id != currentUser?.id && user.roles.none { it.role == Role.ADMIN }) {
+                DeleteAccountRow(api, user, onDeleted)
+            }
         }
     }
+}
+
+/**
+ * Deletes the account on the user's behalf (`DELETE /users/{id}`) — for someone who asked by email
+ * or can't sign in. Two taps, naming the account.
+ */
+@Composable
+private fun DeleteAccountRow(api: TbbApi, user: UserDto, onDeleted: () -> Unit) {
+    var confirming by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    if (!confirming) {
+        TextButton(onClick = { confirming = true }) {
+            Text("Delete account…", color = MaterialTheme.colorScheme.error)
+        }
+        return
+    }
+    Text(
+        "Permanently delete ${user.email}? Their sign-in, profile, contact details and roles are " +
+            "removed and can't be restored. Event registrations stay.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        OutlinedButton(enabled = !busy, onClick = { confirming = false; error = null }) { Text("Cancel") }
+        Button(
+            enabled = !busy,
+            colors = ButtonDefaults.buttonColors(
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError,
+            ),
+            onClick = {
+                busy = true
+                error = null
+                scope.launch {
+                    try {
+                        api.deleteUser(user.id)
+                        onDeleted()
+                    } catch (e: Throwable) {
+                        error = e.message ?: "Delete failed"
+                        busy = false
+                    }
+                }
+            },
+        ) { Text("Delete forever") }
+    }
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 }
 
 @Composable

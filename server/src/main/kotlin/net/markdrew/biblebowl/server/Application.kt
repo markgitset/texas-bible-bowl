@@ -260,7 +260,7 @@ fun Application.module(
         studyMaterialRoutes(users, studyMaterials)
         scoreRoutes(users, seasons, registrations, scores, testerIds)
         testerRoutes(users, seasons, registrations, testerIds)
-        userRoutes(users, congregations)
+        userRoutes(users, congregations, registrations as? PeopleRepository, resets)
     }
 
     warmStudyCache(study, seasons)
