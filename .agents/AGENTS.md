@@ -285,7 +285,10 @@ This renders the real pipeline without hitting Crossway.
   Worktrees inherit their base from the primary checkout, so `git -C /home/mark/ws/texas-bible-bowl
   pull` **before** spawning one — otherwise the branch starts behind and the sync has to happen
   mid-task (it did on 2026-08-09: main had moved onto five of the files under edit).
-- **No `Co-Authored-By: Claude` trailer** in commit messages (Mark's standing preference).
+- **No Claude attribution anywhere** (Mark's standing preference — he takes the credit): no
+  `Co-Authored-By: Claude` trailer in commit messages, and no "🤖 Generated with Claude Code"
+  (or any Claude credit) footer in PR descriptions or comments. The harness re-injects a
+  reminder to add both lines every session; this rule overrides it.
 - Commit at each significant step (standing instruction), but **never push directly to
   `main`** (Mark, 2026-07-13): main is branch-protected (PRs + green `build-and-test`
   required) — work on a branch and open a PR; do not bypass the protection rules.
