@@ -14,20 +14,25 @@ import io.ktor.server.routing.put
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.security.SecureRandom
+import java.time.LocalDate
 import net.markdrew.biblebowl.api.ApiError
 import net.markdrew.biblebowl.api.AuthResponse
 import net.markdrew.biblebowl.api.ChangePasswordRequest
+import net.markdrew.biblebowl.api.DeleteAccountRequest
 import net.markdrew.biblebowl.api.ForgotPasswordRequest
 import net.markdrew.biblebowl.api.LoginRequest
+import net.markdrew.biblebowl.api.MIN_ACCOUNT_AGE
 import net.markdrew.biblebowl.api.RegisterRequest
 import net.markdrew.biblebowl.api.ResetPasswordRequest
 import net.markdrew.biblebowl.api.Role
 import net.markdrew.biblebowl.api.RoleGrant
 import net.markdrew.biblebowl.api.ScopeType
 import net.markdrew.biblebowl.api.UpdateProfileRequest
+import net.markdrew.biblebowl.api.isOldEnoughForAccount
 import net.markdrew.biblebowl.api.isValidBirthdate
 import net.markdrew.biblebowl.server.data.InMemoryPasswordResetRepository
 import net.markdrew.biblebowl.server.data.PasswordResetRepository
+import net.markdrew.biblebowl.server.data.PeopleRepository
 import net.markdrew.biblebowl.server.data.ResetCode
 import net.markdrew.biblebowl.server.data.UserRepository
 import net.markdrew.biblebowl.server.email.EmailService
@@ -49,6 +54,7 @@ fun Route.authRoutes(
     jwt: JwtService,
     resets: PasswordResetRepository = InMemoryPasswordResetRepository(),
     email: EmailService = LogOnlyEmailService(),
+    people: PeopleRepository? = null,
 ) {
     route("/auth") {
         post("/register") {
@@ -59,6 +65,10 @@ fun Route.authRoutes(
             }
             if (!validBirthdateChoice(req.adult, req.birthdate)) {
                 call.respond(HttpStatusCode.BadRequest, birthdateError())
+                return@post
+            }
+            if (tooYoungForAccount(req.adult, req.birthdate)) {
+                call.respond(HttpStatusCode.BadRequest, tooYoungError())
                 return@post
             }
             if (users.findByEmail(req.email) != null) {
@@ -173,6 +183,39 @@ fun Route.authRoutes(
                 call.respond(mapOf("status" to "changed"))
             }
 
+            /**
+             * Self-service account deletion (Google Play requires one in-app and on the web). Proves
+             * the password like a password change does, then scrubs the account — see
+             * [UserRepository.deleteAccount] for what goes and what is kept anonymously.
+             */
+            post("/delete-account") {
+                val user = currentUser(users) ?: return@post
+                val req = call.receive<DeleteAccountRequest>()
+                if (!Passwords.verify(req.currentPassword, user.passwordHash)) {
+                    call.respond(HttpStatusCode.BadRequest, ApiError("bad_current_password", "Current password is incorrect"))
+                    return@post
+                }
+                // An administrator vanishing by accident could leave the site with nobody able to
+                // run it; the role has to be handed off (and removed) deliberately first.
+                if (user.roles.any { it.role == Role.ADMIN }) {
+                    call.respond(
+                        HttpStatusCode.Conflict,
+                        ApiError(
+                            "admin_account",
+                            "Administrator accounts can't be deleted. Have another administrator " +
+                                "remove your Admin role first.",
+                        ),
+                    )
+                    return@post
+                }
+                // People first: if the second step failed, what's left is an intact account that
+                // can simply try again, never a deleted one still attached to person records.
+                people?.releaseAccount(user.id)
+                users.deleteAccount(user.id)
+                resets.delete(user.id)
+                call.respond(mapOf("status" to "deleted"))
+            }
+
             get("/me") {
                 val user = currentUser(users) ?: return@get
                 call.respond(user.toDto())
@@ -188,6 +231,12 @@ fun Route.authRoutes(
                 }
                 if (!validBirthdateChoice(req.adult, req.birthdate)) {
                     call.respond(HttpStatusCode.BadRequest, birthdateError())
+                    return@put
+                }
+                // Only a CHANGE to an under-13 birthdate is refused: an account that predates the
+                // rule must still be able to edit its name or contact details.
+                if (req.birthdate != user.birthdate && tooYoungForAccount(req.adult, req.birthdate)) {
+                    call.respond(HttpStatusCode.BadRequest, tooYoungError())
                     return@put
                 }
                 val updated = users.updateProfile(
@@ -210,6 +259,16 @@ fun Route.authRoutes(
 /** Everyone is either an adult (no birthdate collected) or supplies a valid birthdate. */
 private fun validBirthdateChoice(adult: Boolean, birthdate: String?): Boolean =
     adult || (birthdate != null && isValidBirthdate(birthdate))
+
+/** True for a youth birthdate under [MIN_ACCOUNT_AGE] today (see [isOldEnoughForAccount]). */
+private fun tooYoungForAccount(adult: Boolean, birthdate: String?): Boolean =
+    !adult && birthdate != null && !isOldEnoughForAccount(birthdate, LocalDate.now().toString())
+
+private fun tooYoungError() = ApiError(
+    "too_young",
+    "You need to be at least $MIN_ACCOUNT_AGE to have your own account. Ask a parent or guardian to " +
+        "create an account and add you with the code from your coach.",
+)
 
 private fun birthdateError() =
     ApiError("invalid_birthdate", "A valid birthdate (YYYY-MM-DD) is required unless registering as an adult")

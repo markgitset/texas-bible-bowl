@@ -38,6 +38,7 @@ import net.markdrew.biblebowl.server.data.TribeLeadersTable
 import net.markdrew.biblebowl.server.data.TribesTable
 import net.markdrew.biblebowl.server.data.CongregationsTable
 import net.markdrew.biblebowl.server.data.CreateCongregationResult
+import net.markdrew.biblebowl.server.data.DELETED_USER_NAME
 import net.markdrew.biblebowl.server.data.DatabaseFactory
 import net.markdrew.biblebowl.server.data.DbSettings
 import net.markdrew.biblebowl.server.data.EnrollResult
@@ -1043,6 +1044,83 @@ class PostgresRepositoryTest {
         // linkPerson records the self identity, and it reads back on the user record.
         users.linkPerson(parent.id, valClaim.id)
         assertEquals(valClaim.id, users.findById(parent.id)?.personId)
+    }
+
+    @Test
+    fun deletingAnAccountScrubsItAndReleasesItsPeople() {
+        if (!available) { println("Postgres not reachable — skipping"); return }
+        val users = PostgresUserRepository(db)
+        val congregations = PostgresCongregationRepository(db)
+        val registrations = PostgresRegistrationRepository(db)
+        val questions = PostgresQuestionRepository(db)
+
+        val coach = users.create("dcoach@tbb.org", "Coach", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.COACH)))
+        val cong = assertIs<CreateCongregationResult.Created>(congregations.create(
+            CreateCongregationRequest("Delete Church", "Waco", state = "TX", mailingAddress = "1 Main St", zip = "76701"),
+            coach.id,
+        )).congregation
+        val team = assertNotNull(registrations.addTeam(cong.id, "2027", "Team A"))
+        val child = assertIs<AddMemberResult.Added>(registrations.addMember(
+            team.id, UpsertRosterEntryRequest("Kid", birthdate = "2013-05-01", shirtSize = ShirtSize.YL, gender = Gender.FEMALE),
+        )).entry
+        registrations.addGuest(cong.id, "2027", UpsertGuestRequest(
+            "Val Volunteer", ShirtSize.AM, gender = Gender.FEMALE,
+            contact = ContactInfoDto(email = "val@x.org", phone = "555-0100"),
+        ))
+        fun person(name: String) = transaction(db) {
+            PeopleTable.selectAll().where { PeopleTable.name eq name }.singleOrNull()
+        }
+
+        // The account: manages a rostered child, IS a rostered volunteer, and still has the
+        // unregistered person its signup created.
+        val parent = users.create("dparent@tbb.org", "Parent", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
+        assertIs<PersonClaimResult.Claimed>(registrations.claimPerson(child.claimCode, parent.id))
+        val valId = assertNotNull(person("Val Volunteer"))[PeopleTable.id]
+        assertIs<PersonClaimResult.Claimed>(
+            registrations.claimPerson(assertNotNull(person("Val Volunteer"))[PeopleTable.claimCode], parent.id),
+        )
+        val signupPersonId = assertNotNull(users.findById(parent.id)?.personId)
+        users.linkPerson(parent.id, valId)
+        val question = questions.submit(
+            parent.id, "Parent",
+            SubmitQuestionRequest(
+                roundType = Round.FIND_THE_VERSE, prompt = "\"Repent and be baptized\"", answer = "Acts 2:38",
+                references = listOf("ACT2:38"), chapter = 2,
+            ),
+            Book.ACT,
+        )
+
+        registrations.releaseAccount(parent.id)
+        assertTrue(users.deleteAccount(parent.id))
+
+        // The account no longer resolves anywhere, and deleting it twice is a no-op.
+        assertNull(users.findById(parent.id))
+        assertNull(users.findByEmail("dparent@tbb.org"))
+        assertTrue(users.search("dparent").isEmpty() && users.search("Deleted").isEmpty())
+        assertTrue(!users.deleteAccount(parent.id))
+        val tombstone = transaction(db) { UsersTable.selectAll().where { UsersTable.id eq parent.id }.single() }
+        assertNotNull(tombstone[UsersTable.deletedAtEpochMs])
+        assertNull(tombstone[UsersTable.personId])
+        assertEquals("", tombstone[UsersTable.passwordHash])
+        assertTrue(transaction(db) { RoleGrantsTable.selectAll().where { RoleGrantsTable.userId eq parent.id }.none() })
+
+        // The never-registered signup person is gone; rostered people stay as event records,
+        // unmanaged — and the one who WAS the account loses the account's contact details.
+        assertTrue(transaction(db) { PeopleTable.selectAll().where { PeopleTable.id eq signupPersonId }.none() })
+        assertNull(assertNotNull(person("Kid"))[PeopleTable.managedByUserId])
+        val volunteer = assertNotNull(person("Val Volunteer"))
+        assertNull(volunteer[PeopleTable.managedByUserId])
+        assertNull(volunteer[PeopleTable.email])
+        assertEquals("", volunteer[PeopleTable.contactPhone])
+        assertTrue(registrations.peopleManagedBy(parent.id).isEmpty())
+
+        // Their question survives under an anonymous author, and the email can sign up afresh.
+        assertEquals(DELETED_USER_NAME, questions.list(null).single { it.id == question.id }.authorName)
+        val again = users.create("dparent@tbb.org", "Parent Again", null, adult = true,
+            passwordHash = Passwords.hash("password123"), roles = listOf(RoleGrant(Role.CONTESTANT)))
+        assertTrue(again.id != parent.id)
     }
 
     @Test

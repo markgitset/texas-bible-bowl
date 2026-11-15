@@ -77,6 +77,10 @@ data class ResetPasswordRequest(val email: String, val code: String, val newPass
 @Serializable
 data class ChangePasswordRequest(val currentPassword: String, val newPassword: String)
 
+/** Permanently deletes the signed-in user's account after proving they know [currentPassword]. */
+@Serializable
+data class DeleteAccountRequest(val currentPassword: String)
+
 /**
  * [birthdate] and [adult] drive division eligibility (see [division]); accounts created before
  * birthdates were collected may have neither — an incomplete profile with no division.

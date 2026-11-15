@@ -10,6 +10,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
@@ -17,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -26,6 +28,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -33,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.ChangePasswordRequest
 import net.markdrew.biblebowl.api.ContactInfoDto
+import net.markdrew.biblebowl.api.DeleteAccountRequest
 import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.Division
 import net.markdrew.biblebowl.api.ParticipationDto
@@ -125,6 +129,7 @@ fun AccountScreen(
             ClearPdfCacheButton(api)
         }
         OutlinedButton(onClick = onSignOut, modifier = Modifier.fillMaxWidth()) { Text("Sign out") }
+        DeleteAccountCard(api, onDeleted = onSignOut)
     }
 }
 
@@ -278,6 +283,83 @@ private fun ProfileCard(api: TbbApi, user: UserDto, onUserChange: (UserDto) -> U
                 if (busy) CircularProgressIndicator(Modifier.height(18.dp)) else Text("Save profile")
             }
             message?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }
+        }
+    }
+}
+
+/** Where the privacy policy lives; the app links out to it rather than carrying a copy. */
+private const val PRIVACY_URL = "https://texasbiblebowl.org/privacy/"
+
+/**
+ * Delete account (`POST /auth/delete-account`): a quiet button that opens a confirmation asking
+ * for the password. Google Play requires apps with sign-up to offer this in the app itself.
+ */
+@Composable
+private fun DeleteAccountCard(api: TbbApi, onDeleted: () -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val uriHandler = LocalUriHandler.current
+
+    if (!open) {
+        TextButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth()) {
+            Text("Delete account", color = MaterialTheme.colorScheme.error)
+        }
+        return
+    }
+    ElevatedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Delete account", style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.error)
+            Text(
+                "This permanently deletes your account: your sign-in, profile, contact details and " +
+                    "roles. It can't be undone. Questions you contributed stay in the question bank " +
+                    "without your name, and anyone on an event registration stays on it as the " +
+                    "event's record.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            TextButton(onClick = { uriHandler.openUri(PRIVACY_URL) }) { Text("Privacy policy") }
+            OutlinedTextField(
+                value = password, onValueChange = { password = it },
+                label = { Text("Password") }, singleLine = true,
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { open = false; password = ""; error = null },
+                    enabled = !busy,
+                    modifier = Modifier.weight(1f),
+                ) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        busy = true; error = null
+                        scope.launch {
+                            try {
+                                api.deleteAccount(DeleteAccountRequest(password))
+                                onDeleted()
+                            } catch (e: Throwable) {
+                                error = "Couldn't delete the account: ${e.message}"
+                                busy = false
+                            }
+                        }
+                    },
+                    enabled = !busy && password.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError,
+                    ),
+                    modifier = Modifier.weight(1f),
+                ) {
+                    if (busy) CircularProgressIndicator(Modifier.height(18.dp)) else Text("Delete forever")
+                }
+            }
+            error?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }

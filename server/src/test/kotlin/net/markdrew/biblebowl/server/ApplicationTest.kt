@@ -87,7 +87,7 @@ class ApplicationTest {
         // A contestant registers and submits a question (it lands PENDING).
         val contestant: AuthResponse = json.decodeFromString(
             api.post("/auth/register") {
-                setBody(RegisterRequest("kid2@tbb.org", "password123", "Lydia", birthdate = "2013-05-01"))
+                setBody(RegisterRequest("kid2@tbb.org", "password123", "Lydia", birthdate = accountBirthdate()))
             }.bodyAsText()
         )
         api.post("/questions") {
@@ -148,7 +148,7 @@ class ApplicationTest {
         // Seed one approved multiple-choice question.
         val contestant: AuthResponse = json.decodeFromString(
             api.post("/auth/register") {
-                setBody(RegisterRequest("kid3@tbb.org", "password123", "Rhoda", birthdate = "2015-05-01"))
+                setBody(RegisterRequest("kid3@tbb.org", "password123", "Rhoda", birthdate = accountBirthdate(15)))
             }.bodyAsText()
         )
         val q: QuestionDto = json.decodeFromString(
@@ -280,7 +280,7 @@ class ApplicationTest {
         assertEquals(HttpStatusCode.Unauthorized, api.put("/seasons/current") { setBody(season) }.status)
         val kid: AuthResponse = json.decodeFromString(
             api.post("/auth/register") {
-                setBody(RegisterRequest("kid4@tbb.org", "password123", "Priscilla", birthdate = "2012-05-01"))
+                setBody(RegisterRequest("kid4@tbb.org", "password123", "Priscilla", birthdate = accountBirthdate(15)))
             }.bodyAsText()
         )
         val forbidden = api.put("/seasons/current") {
@@ -472,7 +472,7 @@ class ApplicationTest {
         }
         val auth: AuthResponse = json.decodeFromString(
             api.post("/auth/register") {
-                setBody(RegisterRequest("tim@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
+                setBody(RegisterRequest("tim@tbb.org", "password123", "Timothy", birthdate = accountBirthdate()))
             }.bodyAsText()
         )
 
@@ -483,7 +483,7 @@ class ApplicationTest {
         )
         val blankName = api.put("/auth/me") {
             header(HttpHeaders.Authorization, "Bearer ${auth.token}")
-            setBody(UpdateProfileRequest("", birthdate = "2013-05-01"))
+            setBody(UpdateProfileRequest("", birthdate = accountBirthdate()))
         }
         assertEquals(HttpStatusCode.BadRequest, blankName.status)
         val noEligibility = api.put("/auth/me") {
@@ -495,19 +495,19 @@ class ApplicationTest {
         // A valid edit renames and updates the birthdate; /auth/me reflects it.
         val edited = api.put("/auth/me") {
             header(HttpHeaders.Authorization, "Bearer ${auth.token}")
-            setBody(UpdateProfileRequest("Tim of Lystra", birthdate = "2012-05-01"))
+            setBody(UpdateProfileRequest("Tim of Lystra", birthdate = accountBirthdate(15)))
         }
         assertEquals(HttpStatusCode.OK, edited.status)
         val me: UserDto = json.decodeFromString(
             api.get("/auth/me") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }.bodyAsText()
         )
         assertEquals("Tim of Lystra", me.displayName)
-        assertEquals("2012-05-01", me.birthdate)
+        assertEquals(accountBirthdate(15), me.birthdate)
 
         // Flipping to adult drops the stored birthdate.
         api.put("/auth/me") {
             header(HttpHeaders.Authorization, "Bearer ${auth.token}")
-            setBody(UpdateProfileRequest("Tim of Lystra", birthdate = "2012-05-01", adult = true))
+            setBody(UpdateProfileRequest("Tim of Lystra", birthdate = accountBirthdate(15), adult = true))
         }
         val adultMe: UserDto = json.decodeFromString(
             api.get("/auth/me") { header(HttpHeaders.Authorization, "Bearer ${auth.token}") }.bodyAsText()
@@ -563,7 +563,7 @@ class ApplicationTest {
 
         // A contestant registers.
         val reg = api.post("/auth/register") {
-            setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
+            setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = accountBirthdate()))
         }
         assertEquals(HttpStatusCode.Created, reg.status)
         val contestant: AuthResponse = json.decodeFromString(reg.bodyAsText())

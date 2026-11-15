@@ -246,7 +246,7 @@ fun Application.module(
                 ),
             )
         }
-        authRoutes(users, jwt, resets, email)
+        authRoutes(users, jwt, resets, email, registrations as? PeopleRepository)
         questionRoutes(users, questions, seasons)
         studyRoutes(study, seasons)
         generateRoutes(users, questions, seasons, study, pdfCache)
@@ -260,7 +260,7 @@ fun Application.module(
         studyMaterialRoutes(users, studyMaterials)
         scoreRoutes(users, seasons, registrations, scores, testerIds)
         testerRoutes(users, seasons, registrations, testerIds)
-        userRoutes(users, congregations)
+        userRoutes(users, congregations, registrations as? PeopleRepository, resets)
     }
 
     warmStudyCache(study, seasons)

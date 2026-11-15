@@ -36,11 +36,14 @@ class EndToEndFlowTest {
         if (!available) { println("Backend not reachable — skipping"); return }
         runBlocking {
             val suffix = Random.nextInt(100_000, 999_999)
+            // Accounts have a minimum age measured against today, so derive the birthdate from
+            // the run date rather than pinning one.
+            val youthBirthdate = java.time.LocalDate.now().minusYears(14).toString()
 
             // 1. Contestant registers through the same client the AuthScreen uses.
             val contestantApi = TbbApi()
             val reg = contestantApi.register(
-                RegisterRequest("e2e-$suffix@tbb.org", "password123", "E2E Kid $suffix", birthdate = "2013-05-01")
+                RegisterRequest("e2e-$suffix@tbb.org", "password123", "E2E Kid $suffix", birthdate = youthBirthdate)
             )
             assertTrue(Permission.QUESTION_SUBMIT in reg.user.permissions)
             assertTrue(contestantApi.isSignedIn)

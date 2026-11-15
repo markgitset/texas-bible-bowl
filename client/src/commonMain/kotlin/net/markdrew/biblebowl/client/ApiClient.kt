@@ -44,6 +44,7 @@ import net.markdrew.biblebowl.api.VerseQuestionDto
 import net.markdrew.biblebowl.api.HeadingSize
 import net.markdrew.biblebowl.api.IndexEntryDto
 import net.markdrew.biblebowl.api.ChangePasswordRequest
+import net.markdrew.biblebowl.api.DeleteAccountRequest
 import net.markdrew.biblebowl.api.ForgotPasswordRequest
 import net.markdrew.biblebowl.api.LoginRequest
 import net.markdrew.biblebowl.api.ModerateQuestionRequest
@@ -205,6 +206,17 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
         client.post("$baseUrl/auth/change-password") {
             authorize(); contentType(ContentType.Application.Json); setBody(req)
         }.bodyOrThrow<Unit>()
+    }
+
+    /**
+     * Permanently deletes the signed-in user's account (requires the current password), then
+     * forgets the session — the token is dead server-side from this point.
+     */
+    suspend fun deleteAccount(req: DeleteAccountRequest) {
+        client.post("$baseUrl/auth/delete-account") {
+            authorize(); contentType(ContentType.Application.Json); setBody(req)
+        }.bodyOrThrow<Unit>()
+        signOut()
     }
 
     /** Fetches the signed-in user's profile (requires a token). */
@@ -892,6 +904,11 @@ class TbbApi(val baseUrl: String = defaultBaseUrl()) {
     /** Searches users by name/email fragment (USER_MANAGE). A blank query returns nothing. */
     suspend fun searchUsers(query: String): List<UserDto> =
         client.get("$baseUrl/users") { authorize(); parameter("query", query) }.bodyOrThrow()
+
+    /** Permanently deletes another user's account on their behalf (USER_MANAGE; not admins, not yourself). */
+    suspend fun deleteUser(userId: String) {
+        client.delete("$baseUrl/users/$userId") { authorize() }.bodyOrThrow<Unit>()
+    }
 
     /** Grants [grant] to [userId] (ROLE_GRANT); returns the updated user. Idempotent. */
     suspend fun grantRole(userId: String, grant: RoleGrant): UserDto =

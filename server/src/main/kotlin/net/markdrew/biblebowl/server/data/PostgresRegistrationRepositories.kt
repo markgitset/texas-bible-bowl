@@ -174,6 +174,29 @@ class PostgresRegistrationRepository(private val db: Database) : RegistrationRep
         PersonClaimResult.Claimed(row.toPersonDto())
     }
 
+    override fun releaseAccount(userId: String): Unit = transaction(db) {
+        val ownPersonId = UsersTable.selectAll().where { UsersTable.id eq userId }
+            .singleOrNull()?.get(UsersTable.personId)
+        val managedIds = PeopleTable.selectAll().where { PeopleTable.managedByUserId eq userId }
+            .map { it[PeopleTable.id] }
+        UsersTable.update({ UsersTable.id eq userId }) { it[personId] = null }
+        PeopleTable.update({ PeopleTable.managedByUserId eq userId }) { it[managedByUserId] = null }
+        (managedIds + listOfNotNull(ownPersonId)).distinct().forEach(::prunePersonIfOrphaned)
+        // Still there = on a registration, so the event keeps the record; the account's own
+        // contact details go with the account.
+        ownPersonId?.let { own ->
+            PeopleTable.update({ PeopleTable.id eq own }) {
+                it[email] = null
+                it[contactAddress] = ""
+                it[contactCity] = ""
+                it[contactState] = ""
+                it[contactZip] = ""
+                it[contactPhone] = ""
+                it[contactPreference] = null
+            }
+        }
+    }
+
     override fun personWithParticipations(personId: String): PersonWithParticipationsDto? = transaction(db) {
         val row = PeopleTable.selectAll().where { PeopleTable.id eq personId }.singleOrNull()
             ?: return@transaction null

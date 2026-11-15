@@ -32,6 +32,12 @@ data class UserRecord(
     val personId: String? = null,
 )
 
+/** What a deleted account's tombstone shows wherever its id is still referenced. */
+const val DELETED_USER_NAME = "Deleted user"
+
+/** The tombstone's email: unique per account, undeliverable, and never matched by a sign-in. */
+internal fun deletedUserEmail(userId: String) = "deleted-$userId@deleted.invalid"
+
 interface UserRepository {
     fun create(
         email: String,
@@ -62,6 +68,15 @@ interface UserRepository {
      * doesn't exist.
      */
     fun linkPerson(userId: String, personId: String)
+    /**
+     * Deletes the account: its email, display name, password, role grants and person link are
+     * scrubbed, and it stops resolving through [findById]/[findByEmail]/[search]. The id survives
+     * as an anonymous tombstone ("Deleted user") so content that must keep an author — community
+     * questions, entered scores — still has one. The email is free to register again afterwards.
+     * Person records are the [PeopleRepository]'s to release first (see `releaseAccount`). False
+     * if no such live account.
+     */
+    fun deleteAccount(userId: String): Boolean
     /** Adds a role grant to an existing user (no-op if the identical grant is already held). */
     fun addRoleGrant(userId: String, grant: RoleGrant)
     /** Removes an exact grant (role + scopeType + scopeId). False if the user or grant wasn't found. */
@@ -196,6 +211,12 @@ class InMemoryUserRepository : UserRepository {
 
     override fun linkPerson(userId: String, personId: String) {
         byId.computeIfPresent(userId) { _, record -> record.copy(personId = personId) }
+    }
+
+    override fun deleteAccount(userId: String): Boolean {
+        val record = byId.remove(userId) ?: return false
+        idByEmail.remove(record.email)
+        return true
     }
 
     override fun addRoleGrant(userId: String, grant: RoleGrant) {

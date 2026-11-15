@@ -3,6 +3,7 @@ package net.markdrew.biblebowl.web.screens
 import kotlinx.coroutines.launch
 import net.markdrew.biblebowl.api.ChangePasswordRequest
 import net.markdrew.biblebowl.api.ContactInfoDto
+import net.markdrew.biblebowl.api.DeleteAccountRequest
 import net.markdrew.biblebowl.api.ContactPreference
 import net.markdrew.biblebowl.api.ParticipationDto
 import net.markdrew.biblebowl.api.PersonRelation
@@ -78,6 +79,92 @@ object AccountScreen {
                     Session.signOut()
                     Shell.navigate(Routes.STUDY) // → redirects to the site's study hub page
                 }
+            }
+        }
+        deleteAccountCard(container)
+    }
+
+    /**
+     * Delete account (`POST /auth/delete-account`): a quiet link that opens a confirmation asking
+     * for the password. This is also the web address Google Play lists for deleting an account
+     * without the Android app (the privacy page points here).
+     */
+    private fun deleteAccountCard(container: Element) {
+        val slot = container.child("div", "mt-4")
+
+        fun closed() {
+            slot.clear()
+            slot.child("div", "text-center") {
+                child("button", "btn btn-link link-danger", "Delete account") {
+                    setAttribute("type", "button")
+                    onClick { deleteAccountForm(slot, onCancel = { closed() }) }
+                }
+            }
+        }
+        closed()
+    }
+
+    private fun deleteAccountForm(slot: Element, onCancel: () -> Unit) {
+        slot.clear()
+        slot.child("div", "card section-card border-danger mb-3") {
+            child("div", "card-body") {
+                child("h5", "card-title text-danger", "Delete account")
+                child(
+                    "p", text = "This permanently deletes your account: your sign-in, profile, contact " +
+                        "details and roles. It can't be undone. Questions you contributed stay in the " +
+                        "question bank without your name, and anyone on an event registration stays on " +
+                        "it as the event's record.",
+                )
+                child("p") {
+                    child("a", text = "Privacy policy") { setAttribute("href", "../privacy/") }
+                }
+                val form = child("form")
+                lateinit var password: HTMLInputElement
+                form.child("div", "mb-3") {
+                    child("label", "form-label", "Password")
+                    password = (child("input", "form-control") as HTMLInputElement).apply {
+                        type = "password"
+                        setAttribute("autocomplete", "current-password")
+                    }
+                }
+                lateinit var cancel: HTMLButtonElement
+                lateinit var submit: HTMLButtonElement
+                form.child("div", "d-flex gap-2") {
+                    cancel = child("button", "btn btn-outline-secondary", "Cancel") {
+                        setAttribute("type", "button")
+                        onClick { onCancel() }
+                    } as HTMLButtonElement
+                    submit = child("button", "btn btn-danger", "Delete forever") {
+                        setAttribute("type", "submit")
+                    } as HTMLButtonElement
+                }
+                val messageSlot = form.child("div")
+
+                fun refresh() {
+                    submit.disabled = password.value.isEmpty()
+                }
+                refresh()
+                password.addEventListener("input", { refresh() })
+
+                form.addEventListener("submit", { event ->
+                    event.preventDefault()
+                    submit.disabled = true
+                    cancel.disabled = true
+                    messageSlot.clear()
+                    Shell.scope.launch {
+                        try {
+                            Session.api.deleteAccount(DeleteAccountRequest(password.value))
+                            Session.signOut() // the API dropped its token; this clears the stored one
+                            Shell.navigate(Routes.STUDY)
+                        } catch (e: Throwable) {
+                            messageSlot.child(
+                                "p", "text-danger mt-3 mb-0", "Couldn't delete the account: ${e.message}",
+                            )
+                            cancel.disabled = false
+                            refresh()
+                        }
+                    }
+                })
             }
         }
     }

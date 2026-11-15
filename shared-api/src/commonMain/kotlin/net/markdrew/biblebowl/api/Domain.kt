@@ -53,6 +53,17 @@ fun ageOn(birthdateIso: String, dateIso: String): Int? {
     return year - birthYear - (if (beforeBirthday) 1 else 0)
 }
 
+/** The youngest age that may hold an account; a younger child is managed from a parent's account. */
+const val MIN_ACCOUNT_AGE = 13
+
+/**
+ * True when someone born [birthdateIso] is at least [MIN_ACCOUNT_AGE] on [todayIso] — children
+ * under 13 can't have their own account (COPPA: we don't collect personal information from them
+ * directly). False for an unparseable date.
+ */
+fun isOldEnoughForAccount(birthdateIso: String, todayIso: String): Boolean =
+    (ageOn(birthdateIso, todayIso) ?: return false) >= MIN_ACCOUNT_AGE
+
 /**
  * Normalizes a stored [SeasonDto.gradeCutoffDate] to its "MM-DD" month-day, or null when it doesn't
  * parse. Accepts the current "MM-DD" form and legacy full-ISO "YYYY-MM-DD" values (year ignored, so

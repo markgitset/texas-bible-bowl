@@ -121,18 +121,21 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
         )
     }.let(::cached)
 
+    /** Excludes deleted accounts' tombstones (see [deleteAccount]) from every lookup. */
+    private val live get() = UsersTable.deletedAtEpochMs.isNull()
+
     private fun usersWithPerson() =
         UsersTable.join(PeopleTable, JoinType.LEFT, onColumn = UsersTable.personId, otherColumn = PeopleTable.id)
 
     override fun findByEmail(email: String): UserRecord? = transaction(db) {
-        usersWithPerson().selectAll().where { UsersTable.email eq email.lowercase() }
+        usersWithPerson().selectAll().where { (UsersTable.email eq email.lowercase()) and live }
             .singleOrNull()?.toUserRecord()
     }
 
     override fun findById(id: String): UserRecord? {
         cache[id]?.let { (expiresAt, record) -> if (expiresAt > System.currentTimeMillis()) return record }
         val record = transaction(db) {
-            usersWithPerson().selectAll().where { UsersTable.id eq id }.singleOrNull()?.toUserRecord()
+            usersWithPerson().selectAll().where { (UsersTable.id eq id) and live }.singleOrNull()?.toUserRecord()
         }
         return record?.let(::cached) ?: run { cache.remove(id); null }
     }
@@ -189,6 +192,21 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
         cache.remove(userId)
     }
 
+    override fun deleteAccount(userId: String): Boolean = transaction(db) {
+        val scrubbed = UsersTable.update({ (UsersTable.id eq userId) and live }) {
+            it[email] = deletedUserEmail(userId)
+            it[displayName] = DELETED_USER_NAME
+            it[passwordHash] = "" // matches no password (Passwords.verify needs three parts)
+            it[personId] = null
+            it[deletedAtEpochMs] = System.currentTimeMillis()
+        } > 0
+        if (scrubbed) {
+            RoleGrantsTable.deleteWhere { RoleGrantsTable.userId eq userId }
+            PasswordResetCodesTable.deleteWhere { PasswordResetCodesTable.userId eq userId }
+        }
+        scrubbed
+    }.also { cache.remove(userId) }
+
     override fun addRoleGrant(userId: String, grant: RoleGrant) {
         transaction(db) {
             RoleGrantsTable.insertIgnore {
@@ -218,7 +236,7 @@ class PostgresUserRepository(private val db: Database) : UserRepository {
         val q = "%${query.trim().lowercase()}%"
         return transaction(db) {
             usersWithPerson().selectAll()
-                .where { (UsersTable.email.lowerCase() like q) or (UsersTable.displayName.lowerCase() like q) }
+                .where { ((UsersTable.email.lowerCase() like q) or (UsersTable.displayName.lowerCase() like q)) and live }
                 .orderBy(UsersTable.email)
                 .limit(limit)
                 .map { it.toUserRecord() }
