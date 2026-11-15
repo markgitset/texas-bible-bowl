@@ -1,8 +1,8 @@
 name: Android release build
 
 # Builds the Android app for release, signed with the app's upload key:
-#   app-release-aab — the bundle to upload to Google Play (Play re-signs it with its app signing key)
-#   app-release-apk — for sideloading; every one installs as an update over the last (CI's debug
+#   app-release.aab — the bundle to upload to Google Play (Play re-signs it with its app signing key)
+#   app-release.apk — for sideloading; every one installs as an update over the last (CI's debug
 #                     APK is signed with a throwaway key per runner, so it can't)
 # versionCode is main's commit count, so each build outranks the one before, as Play requires.
 #
@@ -68,22 +68,28 @@ jobs:
           apksigner=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
           "$apksigner" verify --print-certs app/build/outputs/apk/release/app-release.apk
           keytool -printcert -jarfile app/build/outputs/bundle/release/app-release.aab
+          # keytool only prints; make an unsigned bundle fail the run instead of reaching Play.
+          jarsigner -verify app/build/outputs/bundle/release/app-release.aab | tee /dev/stderr | grep -q '^jar verified'
 
       - name: Upload release APK
         uses: actions/upload-artifact@v7
         with:
-          name: app-release-apk
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 90
+          # Download the file itself, not a zip around it: Play Console takes only a .aab, and
+          # a zip renamed to .aab reads as an unsigned bundle.
+          archive: false
 
       - name: Upload release bundle
         uses: actions/upload-artifact@v7
         with:
-          name: app-release-aab
           path: app/build/outputs/bundle/release/app-release.aab
           if-no-files-found: error
           retention-days: 90
+          # Download the file itself, not a zip around it: Play Console takes only a .aab, and
+          # a zip renamed to .aab reads as an unsigned bundle.
+          archive: false
 
       - name: Remove keystore
         if: always()

@@ -246,8 +246,9 @@ This renders the real pipeline without hitting Crossway.
   throwaway per-runner key, so it can't install as an update over an earlier one.
 - **Android release build (`android-release.yml`):** every merge to `main` builds
   `:app:bundleRelease` + `:app:assembleRelease` signed with the Play **upload key** and uploads
-  `app-release-aab` (for Play, which re-signs with the app signing key it holds) and
-  `app-release-apk` (to sideload; each one updates the last), 90 days each. versionCode is
+  `app-release.aab` (for Play, which re-signs with the app signing key it holds) and
+  `app-release.apk` (to sideload; each one updates the last), 90 days each, as bare files
+  (`archive: false` — a zip around the bundle is what Play rejects). versionCode is
   `git rev-list --count HEAD` passed as `TBB_VERSION_CODE` (local builds: 1), so it rises with
   every commit as Play requires — which is why that checkout is `fetch-depth: 0`. The key is
   `ANDROID_KEYSTORE_BASE64` + `ANDROID_KEYSTORE_PASSWORD` in the `android-release` environment
