@@ -317,7 +317,7 @@ class StudyRoutesTest {
         val token: String = json.decodeFromString<AuthResponse>(
             api.post("/auth/register") {
                 contentType(ContentType.Application.Json)
-                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
+                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = accountBirthdate()))
             }.bodyAsText()
         ).token
         val txt = api.get("/generate/quizlet-verses.txt") { header(HttpHeaders.Authorization, "Bearer $token") }.bodyAsText()
@@ -599,7 +599,7 @@ class StudyRoutesTest {
         val token: String = json.decodeFromString<AuthResponse>(
             api.post("/auth/register") {
                 contentType(ContentType.Application.Json)
-                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
+                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = accountBirthdate()))
             }.bodyAsText()
         ).token
 
@@ -648,7 +648,7 @@ class StudyRoutesTest {
         val token: String = json.decodeFromString<AuthResponse>(
             api.post("/auth/register") {
                 contentType(ContentType.Application.Json)
-                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
+                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = accountBirthdate()))
             }.bodyAsText()
         ).token
 

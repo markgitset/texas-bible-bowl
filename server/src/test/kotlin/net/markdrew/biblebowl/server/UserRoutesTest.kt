@@ -54,7 +54,7 @@ class UserRoutesTest {
     private suspend fun HttpClient.signUp(email: String, name: String, adult: Boolean = true): AuthResponse =
         json.decodeFromString(
             post("/auth/register") {
-                setBody(RegisterRequest(email, "password123", name, birthdate = "2013-05-01".takeUnless { adult }, adult = adult))
+                setBody(RegisterRequest(email, "password123", name, birthdate = accountBirthdate().takeUnless { adult }, adult = adult))
             }.bodyAsText()
         )
 

@@ -101,7 +101,7 @@ class TypstSourceDownloadTest {
         val kid: AuthResponse = json.decodeFromString(
             api.post("/auth/register") {
                 contentType(ContentType.Application.Json)
-                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = "2013-05-01"))
+                setBody(RegisterRequest("kid@tbb.org", "password123", "Timothy", birthdate = accountBirthdate()))
             }.bodyAsText()
         )
         val admin: AuthResponse = json.decodeFromString(
