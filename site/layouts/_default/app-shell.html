@@ -19,5 +19,7 @@
 
 {{ define "body-scripts" }}
 {{/* window.TBB_BACKEND_URL is emitted for every page by baseof.html, just above this block. */}}
-<script src="{{ .Site.BaseURL }}app/tbb.js"></script>
+{{/* ?v=<build>: tbb.js keeps one filename across deploys and nginx sends no cache headers, so
+     without it browsers keep running the previous deploy's app under a freshly fetched page. */}}
+<script src="{{ .Site.BaseURL }}app/tbb.js{{ with .Site.Params.siteVersion }}?v={{ . }}{{ end }}"></script>
 {{ end }}
