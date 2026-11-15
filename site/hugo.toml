@@ -225,10 +225,15 @@ canonifyURLs = true
   parent = "About"
   weight = 6
 
+# Contact sits at the end of About rather than in the top bar, which keeps the primary
+# navigation focused; the footer links to it too (footer.html).
+[[menus.main]]
+  name   = "Contact Us"
+  url    = "/contact/"
+  parent = "About"
+  weight = 7
+
 [[menus.main]]
   name   = "Donate"
   url    = "/donate/"
   weight = 70
-
-# Contact is intentionally not in the top nav — it lives in the footer to keep the
-# primary navigation focused. Update footer.html if that decision changes.
